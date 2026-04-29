@@ -182,7 +182,7 @@ pip install deepagents tavily-python python-dotenv langchain-openai
 ```bash
 # OPENAI风格配置
 OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-OPENAI_API_KEY=sk-6296bb4dab98463689911fd07a973c97
+OPENAI_API_KEY=your-api-key
 LLM_QWEN3=qwen3-32b
 LLM_QWEN_MAX=qwen-max
 
@@ -2666,7 +2666,7 @@ RAGFLOW_API_KEY=ragflow-gyMTY2NzM2MTA1ZDExZjE4OWZkNWUwNj
 # 你的 API 密钥
 # LLM配置
 OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-OPENAI_API_KEY=sk-6296bb4dab98463689911fd07a973c97
+OPENAI_API_KEY=your-api-key
 LLM_QWEN2.5=qwen2.5-14b-instruct
 LLM_QWEN3=qwen3-32b
 LLM_QWEN_MAX=qwen-max

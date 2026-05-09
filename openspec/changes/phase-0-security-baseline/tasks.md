@@ -5,7 +5,8 @@
 ### Task A.1: 添加 SQL 语句类型校验
 - **文件**: `tools/mysql_tools.py`
 - **内容**: 在 `execute_sql_query` 中添加 SQL 解析，只允许纯 SELECT 语句（拒绝 SELECT INTO、UNION DELETE 等写入操作）
-- **验收**: `DROP TABLE`、`DELETE FROM`、`UPDATE`、`SELECT INTO` 等语句被拒绝，返回错误信息
+- **验收**: `DROP TABLE`、`DELETE FROM`、`UPDATE`、`INSERT`、`ALTER`、`CREATE`、`TRUNCATE`、`SELECT INTO` 等语句被拒绝，返回错误信息
+- **状态**: [x] ✓ 2026-05-09
 
 ### Task A.2: 实现表名白名单校验
 - **文件**: `tools/mysql_tools.py`
@@ -13,6 +14,7 @@
   - 复用 `list_sql_tables()` 已有的 `SHOW TABLES` 查询逻辑获取白名单
   - 在 `get_table_data` 中用白名单替换黑名单过滤
 - **验收**: 恶意表名被拒绝，合法表名正常查询
+- **状态**: [x] ✓ 2026-05-09
 
 ### Task A.3: 编写 SQL 安全单元测试
 - **文件**: `tests/unit/test_mysql_security.py`
@@ -21,6 +23,10 @@
   - 测试 DROP/DELETE/UPDATE/INSERT/ALTER/CREATE/TRUNCATE/SELECT INTO 被拒绝
   - 测试恶意表名被拒绝
   - 测试空表名被拒绝
+- **验收**: 19 个测试全部通过
+- **状态**: [x] ✓ 2026-05-09
+
+**Quality Gate:** PASSED
 
 ## Phase B: 文件上传安全修复（~15 分钟）
 

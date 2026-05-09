@@ -31,14 +31,16 @@
 ## Phase B: 文件上传安全修复（~15 分钟）
 
 ### Task B.1: 添加文件名净化逻辑
-- **文件**: `api/server.py`
-- **内容**: 使用 `Path(file.filename).name` 提取纯文件名
+- **文件**: `api/server.py` → `api/upload_security.py`
+- **内容**: 使用 `Path(file.filename).name` 提取纯文件名，支持 Windows 风格路径
 - **验收**: `../../../etc/passwd` 被保存为 `passwd`
+- **状态**: [x] ✓ 2026-05-09
 
 ### Task B.2: 添加超长文件名防御
-- **文件**: `api/server.py`
+- **文件**: `api/upload_security.py`
 - **内容**: 文件名超过 255 字符时返回 400 错误
 - **验收**: 超长文件名被拒绝
+- **状态**: [x] ✓ 2026-05-09
 
 ### Task B.3: 编写文件上传安全单元测试
 - **文件**: `tests/unit/test_upload_security.py`
@@ -46,6 +48,11 @@
   - 测试路径遍历攻击被防御
   - 测试空文件名被拒绝
   - 测试超长文件名被拒绝
+  - 测试 Windows 风格路径遍历
+- **验收**: 6 个测试全部通过
+- **状态**: [x] ✓ 2026-05-09
+
+**Quality Gate:** PASSED
 
 ## Phase C: CORS 配置修复（~10 分钟）
 

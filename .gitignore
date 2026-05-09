@@ -18,6 +18,11 @@ venv/
 .DS_Store
 Thumbs.db
 
+# AI Agent internal state (never publish these)
+.agents/
+.claude/
+skills-lock.json
+
 # Runtime directories
 output/
 updated/

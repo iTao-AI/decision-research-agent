@@ -54,25 +54,25 @@ def _validate_sql_type(query: str) -> str:
     return ""
 
 
-def _get_table_whitelist() -> list:
+def _get_table_whitelist() -> tuple:
     """
     从数据库获取表名白名单。
     复用 list_sql_tables() 的 SHOW TABLES 逻辑。
 
     Returns:
-        list: 合法表名列表
+        tuple: (list: 合法表名列表, str: 错误信息或空字符串)
     """
     config = get_db_config()
     try:
         if not all([config["user"], config["password"], config["host"], config["port"], config["database"]]):
-            return []
+            return [], "错误：数据库配置缺失"
         with connect(**config) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SHOW TABLES")
                 tables = cursor.fetchall()
-                return [table[0] for table in tables]
-    except Error:
-        return []
+                return [table[0] for table in tables], ""
+    except Error as e:
+        return [], f"错误：无法获取表名白名单: {e}"
 
 
 def _validate_table_name(table_name: str) -> str:
@@ -94,7 +94,9 @@ def _validate_table_name(table_name: str) -> str:
         return "错误：无效的表名"
 
     # 白名单校验
-    whitelist = _get_table_whitelist()
+    whitelist, error = _get_table_whitelist()
+    if error and not whitelist:
+        return error
     if table_name not in whitelist:
         return f"错误：无效的表名 '{table_name}'"
 

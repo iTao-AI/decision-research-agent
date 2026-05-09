@@ -50,8 +50,18 @@ class TestModuleLoading:
     def test_security_functions_integrated(self):
         """安全函数应该能在 server 中使用"""
         from api.upload_security import sanitize_filename, validate_filename
-        from api.cors_config import get_allowed_origins
         from api.task_tracker import create_tracked_task, get_active_task, clear_active_tasks
+
+        # 保存原值
+        original = os.environ.get("FRONTEND_ORIGIN")
+        if "FRONTEND_ORIGIN" in os.environ:
+            del os.environ["FRONTEND_ORIGIN"]
+
+        # 重新导入获取默认值
+        import importlib
+        import api.cors_config
+        importlib.reload(api.cors_config)
+        from api.cors_config import get_allowed_origins
 
         # 验证函数可用
         assert sanitize_filename("test.txt") == "test.txt"
@@ -59,3 +69,7 @@ class TestModuleLoading:
         assert "http://localhost:5173" in get_allowed_origins()
         clear_active_tasks()
         assert get_active_task("nonexistent") is None
+
+        # 恢复
+        if original is not None:
+            os.environ["FRONTEND_ORIGIN"] = original

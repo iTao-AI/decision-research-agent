@@ -18,6 +18,7 @@ if str(project_root) not in sys.path:
 from agent.main_agent import run_deep_agent
 from api.monitor import monitor, manager
 from api.upload_security import sanitize_filename, validate_filename
+from api.cors_config import get_allowed_origins
 
 app = FastAPI(title="DeepAgents API")
 
@@ -29,7 +30,7 @@ updated_dir.mkdir(exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

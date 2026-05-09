@@ -19,6 +19,7 @@ from agent.main_agent import run_deep_agent
 from api.monitor import monitor, manager
 from api.upload_security import sanitize_filename, validate_filename
 from api.cors_config import get_allowed_origins
+from api.task_tracker import create_tracked_task
 
 app = FastAPI(title="DeepAgents API")
 
@@ -46,7 +47,7 @@ class TaskRequest(BaseModel):
 async def run_task(request: TaskRequest):
     """Start an agent task asynchronously."""
     thread_id = request.thread_id or str(uuid.uuid4())
-    asyncio.create_task(run_deep_agent(request.query, thread_id))
+    create_tracked_task(run_deep_agent(request.query, thread_id), thread_id)
     return {"status": "started", "thread_id": thread_id}
 
 

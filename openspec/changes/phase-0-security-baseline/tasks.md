@@ -75,12 +75,15 @@
 ## Phase D: 异步任务错误处理（~10 分钟）
 
 ### Task D.1: 保存 task 引用
-- **文件**: `api/server.py`
+- **文件**: `api/server.py` → `api/task_tracker.py`
 - **内容**:
-  - 添加全局 `active_tasks` 字典
-  - `asyncio.create_task` 返回值保存到字典
-  - 添加 `add_done_callback` 记录异常
+  - 添加 `active_tasks` 字典
+  - `create_tracked_task` 替代 `asyncio.create_task`
+  - `add_done_callback` 记录异常
 - **验收**: Agent 任务异常后，异常信息可通过日志查询
+- **状态**: [x] ✓ 2026-05-09
+
+**Quality Gate:** PASSED
 
 ## Phase E: 回归测试（~20 分钟）
 

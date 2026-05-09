@@ -89,3 +89,30 @@
 2. 上传文件名为 `../../../etc/passwd` 时，文件被保存为 `passwd` 或拒绝
 3. 非前端源发起的 CORS 预检请求被拒绝
 4. Agent 任务异常后，异常信息可通过 API 或日志查询
+
+---
+
+## Archive Information
+
+**Archived:** 2026-05-09
+**Duration:** 1 day
+**Outcome:** Successfully implemented
+
+### Files Modified
+- `tools/mysql_tools.py` — SQL 类型校验 + 表名白名单
+- `api/server.py` — CORS 限制 + 文件上传安全 + 任务跟踪
+- `api/upload_security.py` — 文件名净化（新）
+- `api/cors_config.py` — CORS 源配置（新）
+- `api/task_tracker.py` — 异步任务跟踪（新）
+- `api/context.py` — Unicode 引号修复
+- `tests/unit/test_mysql_security.py` — SQL 安全测试（新）
+- `tests/unit/test_upload_security.py` — 文件上传安全测试（新）
+- `tests/unit/test_cors_config.py` — CORS 配置测试（新）
+- `tests/unit/test_task_tracker.py` — 异步任务跟踪测试（新）
+- `tests/unit/test_regression.py` — 回归测试（新）
+- `.env.example` — 添加 FRONTEND_ORIGIN
+
+### Specs Created
+- `openspec/specs/database-security.md`
+- `openspec/specs/upload-security.md`
+- `openspec/specs/api-security.md`

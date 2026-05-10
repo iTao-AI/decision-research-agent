@@ -14,6 +14,7 @@ class TestDatabaseQueryAgent:
         """DatabaseQueryAgent 应该可以正常创建"""
         from agent.sub_agents.database_query_agent import DatabaseQueryAgent
         from agent.sub_agents.base import BaseAgent
+        from agent.prompts import sub_agents_config
 
         agent = DatabaseQueryAgent()
         assert isinstance(agent, BaseAgent)

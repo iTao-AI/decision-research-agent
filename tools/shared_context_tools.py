@@ -16,13 +16,25 @@ def _get_context() -> SharedContext:
     return _context
 
 
+def _resolve_thread_id(thread_id: str) -> str:
+    """自动从 session 上下文解析 thread_id，避免跨 session 事实泄漏"""
+    if thread_id:
+        return thread_id
+    try:
+        from api.context import get_thread_context
+        tid = get_thread_context()
+        return tid if tid else "default"
+    except Exception:
+        return "default"
+
+
 @tool
 def publish_fact(fact: str, source: str, topic: str = "", thread_id: str = "") -> str:
     """Publish a fact to the shared context for other agents to see."""
     try:
         ctx = _get_context()
         result = ctx.publish_fact(
-            thread_id=thread_id or "default",
+            thread_id=_resolve_thread_id(thread_id),
             fact=fact,
             source=source,
             topic=topic or source,
@@ -38,7 +50,7 @@ def query_facts(topic: str, source_filter: str = "", thread_id: str = "") -> str
     try:
         ctx = _get_context()
         results = ctx.query_facts(
-            thread_id=thread_id or "default",
+            thread_id=_resolve_thread_id(thread_id),
             topic=topic,
             source_filter=source_filter or None,
         )

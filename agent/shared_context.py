@@ -4,7 +4,7 @@
 支持事实发布、查询、去重、容量控制和 session 清理。
 """
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 

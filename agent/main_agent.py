@@ -138,6 +138,7 @@ async def run_deep_agent(task_query: str, thread_id: str = None):
     finally:
         if 'session_token' in locals():
             reset_session_context(session_token, thread_token)
+        shared_context.clear_facts(thread_id)
 
 
 # ====================== 本地测试入口 ======================

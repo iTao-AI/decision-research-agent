@@ -1,8 +1,8 @@
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from utils.pdf_converter import convert_md_to_pdf_pandoc
+from utils.pdf_converter import convert_md_to_pdf
 
 
 @pytest.fixture
@@ -18,12 +18,12 @@ def output_pdf_path(tmp_path):
     return tmp_path / "test_output.pdf"
 
 
-class TestConvertMdToPdfPandoc:
+class TestConvertMdToPdf:
     """测试跨平台 PDF 转换器"""
 
     def test_normal_conversion(self, test_md_file, output_pdf_path):
         """正常路径：MD 成功转换为 PDF"""
-        result = convert_md_to_pdf_pandoc(test_md_file, output_pdf_path)
+        result = convert_md_to_pdf(test_md_file, output_pdf_path)
         assert "成功转换" in result
         assert output_pdf_path.exists()
         assert output_pdf_path.stat().st_size > 0
@@ -31,13 +31,13 @@ class TestConvertMdToPdfPandoc:
     def test_temp_html_cleaned_up(self, test_md_file, output_pdf_path):
         """临时 HTML 文件在转换后被清理"""
         temp_html = test_md_file.with_suffix('.temp.html')
-        convert_md_to_pdf_pandoc(test_md_file, output_pdf_path)
+        convert_md_to_pdf(test_md_file, output_pdf_path)
         assert not temp_html.exists()
 
     def test_pdf_uses_same_directory(self, test_md_file):
         """输出 PDF 路径与 MD 同名同目录"""
         expected_pdf = test_md_file.with_suffix('.pdf')
-        result = convert_md_to_pdf_pandoc(test_md_file, expected_pdf)
+        result = convert_md_to_pdf(test_md_file, expected_pdf)
         assert "成功转换" in result
         assert expected_pdf.exists()
         expected_pdf.unlink()
@@ -46,26 +46,24 @@ class TestConvertMdToPdfPandoc:
         """输入文件不存在时返回错误字符串"""
         missing_file = tmp_path / "nonexistent.md"
         output = tmp_path / "output.pdf"
-        result = convert_md_to_pdf_pandoc(missing_file, output)
+        result = convert_md_to_pdf(missing_file, output)
         assert "错误" in result or "失败" in result
         assert not output.exists()
 
     def test_weasyprint_system_dep_missing(self, test_md_file, output_pdf_path):
         """weasyprint 系统依赖缺失时返回友好错误"""
-        with patch('utils.pdf_converter.HTML', side_effect=OSError("cannot load library libcairo")):
-            result = convert_md_to_pdf_pandoc(test_md_file, output_pdf_path)
+        with patch('weasyprint.HTML', side_effect=OSError("cannot load library libcairo")):
+            result = convert_md_to_pdf(test_md_file, output_pdf_path)
             assert "转换失败" in result
             assert "cairo" in result.lower() or "pango" in result.lower() or "系统依赖" in result
 
     def test_markdown_not_installed_error(self, test_md_file, output_pdf_path):
         """markdown 库未安装时返回友好错误"""
-        # 模拟 ImportError 场景：当 markdown 未安装时，函数内的 markdown 调用会抛 NameError
-        # 我们直接模拟整个函数内的 markdown 调用
         import utils.pdf_converter as converter_mod
         original_markdown = getattr(converter_mod, 'markdown', None)
-        converter_mod.markdown = None  # Simulate missing module
+        converter_mod.markdown = None
         try:
-            result = convert_md_to_pdf_pandoc(test_md_file, output_pdf_path)
+            result = convert_md_to_pdf(test_md_file, output_pdf_path)
             assert "转换失败" in result or "缺少依赖" in result
         finally:
             if original_markdown is not None:
@@ -76,7 +74,7 @@ class TestConvertMdToPdfPandoc:
         md = tmp_path / "chinese.md"
         md.write_text("# 中文标题\n\n这是一段中文内容。", encoding='utf-8')
         pdf = tmp_path / "chinese.pdf"
-        result = convert_md_to_pdf_pandoc(md, pdf)
+        result = convert_md_to_pdf(md, pdf)
         assert "成功转换" in result
         assert pdf.exists()
-        assert pdf.stat().st_size > 1000  # 至少有一些内容
+        assert pdf.stat().st_size > 1000

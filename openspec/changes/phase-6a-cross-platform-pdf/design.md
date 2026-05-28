@@ -18,19 +18,26 @@
 
 ## Decisions
 
-### Decision 1: pandoc + weasyprint 方案
+### Decision 1: markdown + weasyprint 方案
 
-**选择**: pandoc（MD → HTML） + weasyprint（HTML → PDF）
+**选择**: markdown（MD → HTML，Python 库） + weasyprint（HTML → PDF）
 
 **为什么**:
-- pandoc 是成熟的文档转换工具，跨平台，Docker 友好（`pip install pandoc` 或系统包安装）
+- markdown 是 Python 库，已有项目中已安装，无需额外系统依赖
 - weasyprint 是纯 Python 库，无需安装系统级 TeX 发行版（xelatex 需要数 GB 的依赖）
 - weasyprint 支持 CSS 控制字体，中文渲染只需在 CSS 中指定可用字体即可
+- 无需安装 pandoc 二进制文件，减少外部依赖
 
 **备选方案对比**:
 - **pandoc + xelatex**: 需要安装 TeX Live 发行版（>3GB），Docker 镜像体积膨胀严重
-- **WeasyPrint 直接读 MD**: WeasyPrint 只接受 HTML 输入，仍需中间转换步骤
+- **pandoc + weasyprint**: 多一个 pandoc 二进制依赖，但 markdown 库已足够做 MD → HTML
 - **pdfkit/wkhtmltopdf**: 依赖 wkhtmltopdf 二进制，已停止维护
+
+### Decision 1.5: weasyprint 延迟导入
+
+**选择**: weasyprint 在函数体内延迟导入，而非模块级 import
+
+**为什么**: weasyprint 依赖 cairo/pango/gobject 系统库。如果模块级导入，系统缺失这些库时整个 agent 无法启动。延迟导入允许 agent 在其他功能正常运行的同时，PDF 功能优雅降级并返回友好错误信息。
 
 ### Decision 2: 保留中间 HTML 步骤
 
@@ -40,9 +47,9 @@
 
 ### Decision 3: 文件结构
 
-- **新建** `utils/pdf_converter.py` — 核心转换逻辑（pandoc + weasyprint）
-- **重构** `utils/word_converter.py` — 内部调用改为新 converter，对外函数签名不变
-- **重构** `tools/pdf_tools.py` — 仅更新 import，无需改动核心逻辑
+- **新建** `utils/pdf_converter.py` — 核心转换逻辑（markdown + weasyprint）
+- **重构** `utils/word_converter.py` — 内部调用改为 `convert_md_to_pdf`，对外函数签名不变
+- **重构** `tools/pdf_tools.py` — 仅更新 docstring，无需改动核心逻辑
 
 ### Decision 4: 中文字体处理
 

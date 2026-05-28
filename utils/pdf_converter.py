@@ -1,19 +1,24 @@
 import logging
-import subprocess
 from pathlib import Path
 
 try:
     import markdown
-    from weasyprint import HTML
 except ImportError:
     pass
 
 
-def convert_md_to_pdf_pandoc(md_abs_path: Path, pdf_abs_path: Path) -> str:
+def convert_md_to_pdf(md_abs_path: Path, pdf_abs_path: Path) -> str:
     """
-    使用 pandoc + weasyprint 将 Markdown 转换为 PDF（跨平台）。
+    使用 markdown + weasyprint 将 Markdown 转换为 PDF（跨平台）。
     流程：MD → HTML (markdown) → PDF (weasyprint)
+    weasyprint 在函数内延迟导入，避免系统依赖缺失时阻止整个 agent 启动。
     """
+    # 延迟导入 weasyprint — 系统依赖 (cairo/pango/gobject) 可能缺失
+    try:
+        from weasyprint import HTML
+    except OSError as e:
+        return f"转换失败: weasyprint 系统依赖缺失 (cairo/pango)，请参考 https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#installation"
+
     temp_html_path = md_abs_path.with_suffix('.temp.html')
 
     try:
@@ -67,10 +72,6 @@ def convert_md_to_pdf_pandoc(md_abs_path: Path, pdf_abs_path: Path) -> str:
     except ImportError as e:
         missing = str(e).split()[-1].strip("'\"")
         return f"转换失败: 缺少依赖库 {missing}，请运行: pip install markdown weasyprint"
-    except OSError as e:
-        if "weasyprint" in str(e).lower() or "cairo" in str(e).lower() or "pango" in str(e).lower():
-            return "转换失败: weasyprint 系统依赖缺失 (cairo/pango)，请参考 https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#installation"
-        return f"转换失败: {str(e)}"
     except Exception as e:
         logging.error(f"PDF转换失败: {e}", exc_info=True)
         return f"转换失败: {str(e)}"

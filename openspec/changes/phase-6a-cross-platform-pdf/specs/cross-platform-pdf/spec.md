@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: 跨平台 Markdown 转 PDF
-系统 SHALL 使用 pandoc + weasyprint 作为 PDF 生成引擎，替代原有的 pywin32 Word COM 方案。转换必须在 Mac、Linux、Windows 三平台均可用。
+系统 SHALL 使用 markdown + weasyprint 作为 PDF 生成引擎，替代原有的 pywin32 Word COM 方案。转换必须在 Mac、Linux、Windows 三平台均可用。
 
 #### Scenario: 正常转换流程
 - **WHEN** Agent 调用 `convert_md_to_pdf` 工具并提供有效 Markdown 文件路径
@@ -15,9 +15,9 @@
 - **WHEN** 提供的 Markdown 文件路径不存在
 - **THEN** 工具返回错误字符串 "错误：文件不存在 {路径}"，不抛出异常
 
-#### Scenario: pandoc 未安装
-- **WHEN** 系统环境中未安装 pandoc 可执行文件
-- **THEN** 工具返回错误字符串 "转换失败: pandoc 未安装，请通过 pip install pandoc 或系统包管理器安装"，不抛出异常
+#### Scenario: weasyprint 系统依赖缺失
+- **WHEN** 系统环境中未安装 cairo/pango/gobject 系统库（weasyprint 的 C 依赖）
+- **THEN** 工具返回错误字符串，包含 "weasyprint 系统依赖缺失" 指引，不抛出异常
 
 ### Requirement: 统一 PDF 转换接口
 `convert_md_to_pdf` 工具的对外签名、输入输出格式 SHALL 保持不变，确保现有 Agent 和前端无需修改。

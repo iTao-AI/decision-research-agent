@@ -17,7 +17,7 @@ def convert_md_to_pdf(
         md_filename: Annotated[str, "Markdown document path (with .md extension)"],
         pdf_filename: Annotated[Optional[str], "Output PDF path (optional, defaults to same name)"] = None
 ) -> str:
-    """Convert a Markdown document to PDF (cross-platform via pandoc + weasyprint)."""
+    """Convert a Markdown document to PDF (cross-platform via markdown + weasyprint)."""
     monitor.report_tool("Markdown转PDF工具")
 
     try:

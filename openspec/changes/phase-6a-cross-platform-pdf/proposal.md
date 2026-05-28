@@ -4,12 +4,12 @@
 
 ## What Changes
 
-- 将 PDF 生成引擎从 `pywin32` Word 替换为 **pandoc** 跨平台方案
-- 新增 `utils/pdf_converter.py` — 基于 pandoc 的 Markdown → PDF 转换器
-- 重构 `tools/pdf_tools.py` — 使用新转换器，移除 Windows 专用代码
-- 重构 `utils/word_converter.py` — 替换内部实现为 pandoc 方案，保持对外接口不变
-- 引入 weasyprint 作为 pandoc 的 PDF 引擎（非 xelatex），确保中文渲染正确
-- 更新 `requirements.txt` — 移除 `pywin32`，添加 `weasyprint`
+- 将 PDF 生成引擎从 `pywin32` Word 替换为 **markdown + weasyprint** 跨平台方案
+- 新增 `utils/pdf_converter.py` — 基于 markdown 库 + weasyprint 的 Markdown → PDF 转换器
+- 重构 `tools/pdf_tools.py` — 使用新转换器，更新 docstring
+- 重构 `utils/word_converter.py` — 替换内部实现，保持对外接口不变
+- 引入 weasyprint 作为 HTML → PDF 引擎，确保中文渲染正确
+- 更新 `requirements.txt` — 移除 `pywin32`，添加 `markdown` + `weasyprint`
 
 ## Capabilities
 
@@ -23,9 +23,9 @@
 
 - **受影响文件**: `tools/pdf_tools.py`, `utils/word_converter.py`, `requirements.txt`
 - **新增文件**: `utils/pdf_converter.py`
-- **依赖变更**: 移除 `pywin32`（Windows 专用），添加 `weasyprint`（跨平台）
+- **依赖变更**: 移除 `pywin32`（Windows 专用），添加 `markdown` + `weasyprint`（跨平台）
 - **API 影响**: 无 — `convert_md_to_pdf` 工具对外接口保持不变
-- **回归风险**: 低 — 工具签名不变，仅内部实现替换。需验证中文渲染质量和现有集成测试通过。
+- **回归风险**: 低 — 工具签名不变，仅内部实现替换。weasyprint 需延迟导入以避免系统依赖缺失时阻止 agent 启动。
 
 ## Out of Scope
 

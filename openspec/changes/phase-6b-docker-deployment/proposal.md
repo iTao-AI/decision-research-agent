@@ -5,7 +5,7 @@
 ## What Changes
 
 - 新增 `Dockerfile.backend` — Python 3.11-slim 镜像，安装 weasyprint 系统依赖 + pip 依赖
-- 新增 `Dockerfile.frontend` — 多阶段构建（Node 18 → Nginx 静态托管）
+- 新增 `Dockerfile.frontend` — 多阶段构建（Node 22 → Nginx 静态托管）
 - 新增 `docker-compose.yml` — 编排 3 个服务：backend（8000）、frontend（80）、mysql（3306）
 - 新增 `.dockerignore` — 排除 .venv、node_modules、.git、测试文件等
 - Nginx 配置反向代理 `/api/` 和 `/ws/` 到 backend，统一端口消除 CORS

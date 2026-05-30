@@ -24,7 +24,7 @@
 | 决策 | 选择 | 理由 |
 |------|------|------|
 | 后端基础 | `python:3.11-slim` | 体积小（~150MB），与项目 Python 版本精确对齐 |
-| 前端构建 | `node:18-alpine` | 轻量构建环境，与前端 node 版本兼容 |
+| 前端构建 | `node:22-alpine` | 轻量构建环境，rolldown-vite 需要 Node 22+（`styleText` export） |
 | 前端运行 | `nginx:alpine` | 最小化运行时镜像（~40MB），原生支持反向代理 |
 | MySQL | `mysql:8.0` | 官方镜像，与 `.env.example` 兼容 |
 

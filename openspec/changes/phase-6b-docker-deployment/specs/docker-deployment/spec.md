@@ -12,7 +12,7 @@
 - **THEN** `pip install weasyprint` 或 `import weasyprint` 失败，构建报错
 
 ### Requirement: Frontend Dockerfile 多阶段构建
-前端镜像 MUST 使用多阶段构建：第一阶段 `node:18-alpine` 执行 `npm ci && npm run build`，第二阶段 `nginx:alpine` 托管构建产物。Nginx MUST 配置反向代理 `/api/` 和 `/ws/` 到 `backend:8000`。
+前端镜像 MUST 使用多阶段构建：第一阶段 `node:22-alpine` 执行 `npm ci && npm run build`，第二阶段 `nginx:alpine` 托管构建产物。Nginx MUST 配置反向代理 `/api/` 和 `/ws/` 到 `backend:8000`。
 
 #### Scenario: 成功构建前端镜像
 - **WHEN** 执行 `docker build -f Dockerfile.frontend -t deep-search-frontend .`

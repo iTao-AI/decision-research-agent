@@ -3,7 +3,6 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies required by weasyprint
-# Install system dependencies required by weasyprint
 # Retry logic for flaky mirrors
 RUN for i in $(seq 1 3); do \
     apt-get update && \

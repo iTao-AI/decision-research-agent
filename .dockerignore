@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Claude / gstack
+.claude/
+.gstack/
+
+# Output directories
+output/
+updated/
+
+# Tests (not needed in production)
+tests/
+
+# OS files
+.DS_Store
+
+# OpenSpec (not needed in production)
+openspec/
+
+# Documentation
+docs/
+*.md
+!README.md

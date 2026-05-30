@@ -39,3 +39,4 @@ frontend/dist/
 
 # RAGFlow Docker images (large tar files)
 ragflow-deploy/*.tar
+.gstack/

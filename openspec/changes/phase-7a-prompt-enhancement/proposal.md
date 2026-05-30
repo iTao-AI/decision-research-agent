@@ -21,7 +21,9 @@
 
 ## Impact
 
-- **修改文件**: `prompt/prompts.yml`（main_agent system_prompt + 新增 report_outline）
+- **修改文件**: `prompt/prompts.yml`（main_agent system_prompt）
+- **新增测试**: `tests/unit/test_prompt_config.py`（验证 prompt 结构正确性）
 - **不影响**：Agent 代码逻辑、工具实现、API 端点、子 Agent
 - **回归风险**：低 — 仅修改 prompt 文本，不改变代码逻辑
 - **行为变化**：Agent 执行流程更结构化，报告生成质量更稳定
+- **验证范围**：静态验证通过（prompt 结构测试）；端到端运行时验证需 API key 就绪后执行

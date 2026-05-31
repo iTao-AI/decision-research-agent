@@ -15,6 +15,8 @@ def get_db_config():
         "port": os.getenv("MYSQL_PORT"),
         "database": os.getenv("MYSQL_DATABASE"),
         "autocommit": True,
+        "connect_timeout": 10,   # 连接超时 10s
+        "read_timeout": 30,      # 读取超时 30s
     }
 
 

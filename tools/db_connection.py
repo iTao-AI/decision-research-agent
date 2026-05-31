@@ -19,10 +19,14 @@ class MySQLConnectionManager:
                 pool_name="deep_search_pool",
                 pool_size=5,
                 pool_reset_session=True,
+                connection_timeout=10,  # 连接超时 10s
                 **self.config,
             )
             return ""
         except Error as e:
+            error_msg = str(e).lower()
+            if "timed out" in error_msg or "timeout" in error_msg:
+                return "Error: database connection timed out"
             return f"错误：创建 MySQL 连接池失败: {e}"
 
     def get_connection(self):
@@ -32,6 +36,9 @@ class MySQLConnectionManager:
         try:
             return self._pool.get_connection()
         except Error as e:
+            error_msg = str(e).lower()
+            if "timed out" in error_msg or "timeout" in error_msg:
+                return "Error: database connection timed out"
             return f"错误：获取连接失败: {e}"
 
     def release_connection(self, connection):

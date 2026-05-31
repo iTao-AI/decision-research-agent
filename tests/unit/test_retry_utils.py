@@ -56,7 +56,7 @@ class TestTimeoutsConfig:
 
 
 # ============================================================
-# Retry Decoror Tests
+# Retry Decorator Tests
 # ============================================================
 
 class TestRetryDecorator:
@@ -178,6 +178,23 @@ class TestRetryDecorator:
         assert mock_monitor.report_retry.call_count == 1
 
     @pytest.mark.asyncio
+    async def test_max_retries_1_no_retries(self):
+        """max_retries=1 means exactly 1 attempt, 0 retries — failure propagates immediately."""
+        call_count = 0
+
+        @retry(max_retries=1, service_name="test_svc")
+        async def failing_fn():
+            nonlocal call_count
+            call_count += 1
+            raise TimeoutError("one shot")
+
+        with pytest.raises(TimeoutError, match="one shot"):
+            await failing_fn()
+
+        assert call_count == 1
+        assert mock_monitor.report_retry.call_count == 0
+
+    @pytest.mark.asyncio
     async def test_unlisted_exception_not_retried(self):
         """Exception not in retryable_exceptions should not be retried."""
         call_count = 0
@@ -262,6 +279,35 @@ class TestRetryAsyncFunction:
         assert result == "ok"
         assert call_count == 2
         assert mock_monitor.report_retry.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_rejects_pre_created_coroutine(self):
+        """Passing a pre-created coroutine object (not a function) should raise ValueError."""
+        async def some_fn():
+            return "result"
+
+        coro = some_fn()  # Pre-created coroutine, not a function
+        with pytest.raises(ValueError, match="requires an async function"):
+            await retry_async(coro, max_retries=3)
+
+        # Clean up the unawaited coroutine to avoid RuntimeWarning
+        coro.close()
+
+    @pytest.mark.asyncio
+    async def test_max_retries_1_no_retries_standalone(self):
+        """max_retries=1 means exactly 1 attempt, 0 retries."""
+        call_count = 0
+
+        async def failing_fn():
+            nonlocal call_count
+            call_count += 1
+            raise TimeoutError("one shot")
+
+        with pytest.raises(TimeoutError, match="one shot"):
+            await retry_async(failing_fn, max_retries=1, backoff_factor=0.001, max_wait=0.01)
+
+        assert call_count == 1
+        assert mock_monitor.report_retry.call_count == 0
 
 
 # ============================================================

@@ -55,15 +55,17 @@ def retry_async(
         The last exception if all retries are exhausted.
         Non-retryable exceptions are raised immediately.
     """
+    if not asyncio.iscoroutinefunction(coro_factory):
+        raise ValueError(
+            "retry_async requires an async function, not a pre-created coroutine object. "
+            "Pass the function itself, not the result of calling it."
+        )
     async def _inner():
         last_exception = None
 
         # Initial attempt (attempt 0)
         try:
-            if asyncio.iscoroutinefunction(coro_factory):
-                return await coro_factory(*args, **kwargs)
-            else:
-                return await coro_factory
+            return await coro_factory(*args, **kwargs)
         except asyncio.CancelledError:
             # wait_for timeout cancelled the task — treat as TimeoutError
             last_exception = TimeoutError("operation cancelled by timeout")
@@ -84,10 +86,7 @@ def retry_async(
             await asyncio.sleep(wait_time)
 
             try:
-                if asyncio.iscoroutinefunction(coro_factory):
-                    return await coro_factory(*args, **kwargs)
-                else:
-                    return await coro_factory
+                return await coro_factory(*args, **kwargs)
             except asyncio.CancelledError:
                 last_exception = TimeoutError("operation cancelled by timeout")
             except retryable_exceptions as e:

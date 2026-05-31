@@ -7,6 +7,7 @@ from langchain_core.tools import tool
 
 from api.monitor import monitor
 from tools.retry_utils import TIMEOUTS, retry_async
+from tools.cache import cached_tool
 
 
 async def _tavily_search(
@@ -40,13 +41,14 @@ async def _tavily_search(
     return result
 
 
-async def _search_with_resilience(
+@cached_tool(ttl=TIMEOUTS["tavily"] * 2, tool_name="tavily_search")
+async def _cached_search_with_resilience(
     query: str,
     max_results: int,
     topic: str,
     include_raw_content: bool,
 ) -> dict:
-    """Resilient Tavily search with centralized retry and timeout."""
+    """Resilient Tavily search with centralized retry and timeout, cached."""
     timeout = TIMEOUTS["tavily"]
     # Total timeout accounts for: 3 per-call timeouts + 2 backoff waits (2s + 4s = 6s)
     total_timeout = timeout * 3 + 15  # generous budget including backoff
@@ -80,7 +82,7 @@ def internet_search(
     monitor.report_tool("网络搜索工具", {"网络搜索工具": query})
     try:
         results = asyncio.run(
-            _search_with_resilience(query, max_results, topic, include_raw_content)
+            _cached_search_with_resilience(query, max_results, topic, include_raw_content)
         )
         monitor.report_end("网络搜索工具", results)
         return results

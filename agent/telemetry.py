@@ -1,5 +1,9 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agent.token_tracking import TokenUsageData
 
 
 @dataclass
@@ -10,6 +14,7 @@ class TelemetryRecord:
     duration_ms: float
     status: str
     error: str | None = None
+    token_usage: "TokenUsageData | None" = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

@@ -68,7 +68,7 @@ def _retry_with_timeout(func, max_retries: int = 3, service_name: str = "ragflow
             return _run_with_timeout(func, timeout)
         except TimeoutError:
             # Don't retry after timeout — each retry would leave a leaked thread.
-            return f"Error: {service_name} timed out after {timeout}s"
+            raise TimeoutError(f"{service_name} timed out after {timeout}s")
         except Exception as e:
             last_error = e
             if attempt < max_retries - 1:

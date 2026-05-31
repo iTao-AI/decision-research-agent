@@ -187,6 +187,18 @@ class ToolMonitor:
         """报告任务工作目录"""
         self._emit("session_created", f"工作目录已创建: {path}", {"path": path})
 
+    def report_retry(self, service_name: str, attempt: int, max_retries: int, error: str = ""):
+        """报告服务调用重试事件（供 @retry 装饰器使用）"""
+        message = f"Retry {attempt}/{max_retries} for {service_name}"
+        if error:
+            message += f": {error}"
+        self._emit("retry_event", message, {
+            "service_name": service_name,
+            "attempt": attempt,
+            "max_retries": max_retries,
+            "error": error,
+        })
+
 
 # 全局单例实例
 monitor = ToolMonitor()

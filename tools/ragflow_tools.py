@@ -31,64 +31,59 @@ def _load_ragflow_env() -> Tuple[Optional[str], Optional[str]]:
 async def _ragflow_list_chats(api_key: str, base_url: str):
     """List all RAGFlow chat assistants with timeout and retry."""
     timeout = TIMEOUTS["ragflow"]
-    total_timeout = timeout * 3  # budget for all retries combined
 
-    async def _do_list():
+    async def _do_list_with_timeout():
         loop = asyncio.get_running_loop()
         rag = RAGFlow(api_key=api_key, base_url=base_url)
-        return await loop.run_in_executor(None, rag.list_chats)
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, rag.list_chats),
+            timeout=timeout,
+        )
 
-    return await asyncio.wait_for(
-        retry_async(_do_list, max_retries=3, service_name="ragflow-list"),
-        timeout=total_timeout,
-    )
+    return await retry_async(_do_list_with_timeout, max_retries=3, service_name="ragflow-list")
 
 
 async def _ragflow_find_chat(assistant_name: str, api_key: str, base_url: str):
     """Find a specific RAGFlow chat by name with timeout and retry."""
     timeout = TIMEOUTS["ragflow"]
-    total_timeout = timeout * 3
 
-    async def _do_find():
+    async def _do_find_with_timeout():
         loop = asyncio.get_running_loop()
         rag = RAGFlow(api_key=api_key, base_url=base_url)
-        chats = await loop.run_in_executor(
-            None, lambda: rag.list_chats(name=assistant_name)
+        chats = await asyncio.wait_for(
+            loop.run_in_executor(
+                None, lambda: rag.list_chats(name=assistant_name)
+            ),
+            timeout=timeout,
         )
         return chats[0] if chats else None
 
-    return await asyncio.wait_for(
-        retry_async(_do_find, max_retries=3, service_name="ragflow-find-chat"),
-        timeout=total_timeout,
-    )
+    return await retry_async(_do_find_with_timeout, max_retries=3, service_name="ragflow-find-chat")
 
 
 async def _ragflow_create_session(chat, session_name: str = "temp_session"):
     """Create a RAGFlow session with timeout and retry."""
     timeout = TIMEOUTS["ragflow"]
-    total_timeout = timeout * 3
 
-    async def _do_create():
+    async def _do_create_with_timeout():
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: chat.create_session(name=session_name)
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: chat.create_session(name=session_name)),
+            timeout=timeout,
         )
 
-    return await asyncio.wait_for(
-        retry_async(_do_create, max_retries=3, service_name="ragflow-create-session"),
-        timeout=total_timeout,
-    )
+    return await retry_async(_do_create_with_timeout, max_retries=3, service_name="ragflow-create-session")
 
 
 async def _ragflow_ask(session, question: str) -> str:
     """Ask a RAGFlow session a question with timeout and retry.
 
-    The entire stream consumption is wrapped so a hanging stream triggers retry.
+    Each individual HTTP call is wrapped with 60s timeout; retry_async
+    retries if the timeout fails (TimeoutError is retryable).
     """
     timeout = TIMEOUTS["ragflow"]
-    total_timeout = timeout * 3
 
-    async def _do_ask():
+    async def _do_ask_with_timeout():
         loop = asyncio.get_running_loop()
 
         def _consume_stream():
@@ -99,12 +94,12 @@ async def _ragflow_ask(session, question: str) -> str:
                     full_answer = response.content
             return full_answer
 
-        return await loop.run_in_executor(None, _consume_stream)
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, _consume_stream),
+            timeout=timeout,
+        )
 
-    return await asyncio.wait_for(
-        retry_async(_do_ask, max_retries=3, service_name="ragflow-ask"),
-        timeout=total_timeout,
-    )
+    return await retry_async(_do_ask_with_timeout, max_retries=3, service_name="ragflow-ask")
 
 
 async def _ragflow_delete_sessions(chat, session_ids: list):
@@ -117,15 +112,6 @@ async def _ragflow_delete_sessions(chat, session_ids: list):
         )
     except Exception as e:
         logger.warning(f"Failed to delete RAGFlow session(s): {e}")
-
-
-# ---------------------------------------------------------------------------
-# Structured error formatting
-# ---------------------------------------------------------------------------
-
-def _format_degradation_error(operation: str, original_error: str) -> str:
-    """Format a structured degradation error string."""
-    return f"Error: knowledge base {operation} {'timed out after retries' if 'timeout' in original_error.lower() or 'timed out' in original_error.lower() else 'unavailable after retries'}"
 
 
 # ---------------------------------------------------------------------------

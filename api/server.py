@@ -154,6 +154,14 @@ async def get_telemetry(thread_id: str):
     ]
 
 
+@app.get("/api/token-usage/{thread_id}")
+async def get_token_usage(thread_id: str):
+    """Get token usage summary for a thread."""
+    from agent.token_tracking import token_collector
+    summary = token_collector.get_summary(thread_id)
+    return summary
+
+
 @app.websocket("/ws/{thread_id}")
 async def websocket_endpoint(websocket: WebSocket, thread_id: str):
     """WebSocket endpoint for real-time communication."""

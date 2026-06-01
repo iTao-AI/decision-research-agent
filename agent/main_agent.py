@@ -109,8 +109,13 @@ async def run_deep_agent(task_query: str, thread_id: str = None):
     session_token = set_session_context(session_dir_str)
     monitor.report_session_dir(session_dir_str)
 
+    # Register token tracking callback
+    from agent.token_tracking import TokenTrackingCallbackHandler
+    token_callback = TokenTrackingCallbackHandler(thread_id=thread_id)
+
     config = {
         "configurable": {"thread_id": thread_id},
+        "callbacks": [token_callback],
     }
 
     path_instruction = f"""

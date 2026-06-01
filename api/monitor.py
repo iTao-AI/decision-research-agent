@@ -199,6 +199,14 @@ class ToolMonitor:
             "error": error,
         })
 
+    def report_cache_hit(self, tool_name: str, cached: bool = True):
+        """报告缓存命中/未命中事件（供 @cached_tool 装饰器使用）"""
+        event = "cache_hit" if cached else "cache_miss"
+        self._emit(event, f"Cache {event} for {tool_name}", {
+            "tool_name": tool_name,
+            "cached": cached,
+        })
+
 
 # 全局单例实例
 monitor = ToolMonitor()

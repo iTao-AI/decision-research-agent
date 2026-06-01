@@ -88,8 +88,8 @@ class TestTavilyTools:
 
     @pytest.mark.asyncio
     async def test_search_with_resilience_end_to_end(self):
-        """_search_with_resilience should retry on failure and respect timeout."""
-        from tools.tavily_tools import _search_with_resilience
+        """_cached_search_with_resilience should retry on failure and respect timeout."""
+        from tools.tavily_tools import _cached_search_with_resilience
         import os
         os.environ["TAVILY_API_KEY"] = "test_key"
 
@@ -107,7 +107,7 @@ class TestTavilyTools:
             mock_client.search = MagicMock(side_effect=side_effect)
             mock_cls.return_value = mock_client
 
-            result = await _search_with_resilience("test query", 5, "general", False)
+            result = await _cached_search_with_resilience("test query", 5, "general", False)
 
             assert call_count["n"] == 3  # 2 failures + 1 success
             assert result == {"results": [{"title": "Found"}]}

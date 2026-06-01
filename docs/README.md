@@ -7,6 +7,26 @@
 | [PRD](prd.md) | 产品需求文档 — 产品愿景、目标用户、核心功能、成功指标 |
 | [决策记录](decisions/) | ADR（架构决策记录）— 记录为什么选择 A 而不是 B |
 
+## Superpowers 规划文档
+
+Superpowers 文档用于沉淀设计输入和实施计划，供后续 writing plan 或实现阶段读取。
+
+| 文档 | 说明 |
+|------|------|
+| [Evidence Readiness Design](superpowers/specs/2026-06-01-deep-search-agent-evidence-readiness-design.md) | 证据化文档改造设计 — README 作品集化、Evidence Pack、技术决策说明和验证边界 |
+| [Phase 7a Prompt Enhancement Plan](superpowers/plans/2026-05-30-phase-7a-prompt-enhancement.md) | Prompt 层补强实施计划 — 四阶段门控和报告大纲模板 |
+| [Phase 7b Tool Resilience Plan](superpowers/plans/2026-05-31-phase-7b-tool-resilience.md) | 工具韧性增强实施计划 — 超时、重试、降级和任务级超时 |
+
+## Evidence Pack
+
+运行证据、技术决策说明和基准数据。
+
+| 文件 | 说明 |
+|------|------|
+| [Evidence Pack 索引](evidence/README.md) | 证据目录总览 |
+| [Run Log](evidence/run-log.md) | 端到端运行记录模板 |
+| [Technical Decisions](evidence/technical-decisions.md) | 关键技术决策与代码路径 |
+
 ## 技术参考文档
 
 技术参考文档位于项目根目录 `spec/` 下，包含：

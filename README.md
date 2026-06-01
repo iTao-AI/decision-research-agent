@@ -2,7 +2,7 @@
 
 # Deep Search Agent
 
-An autonomous planning agent built on LangGraph. Users ask open-ended questions in natural language; the main agent autonomously plans, delegates to specialized sub-agents (network search, database query, knowledge base retrieval), synthesizes results, and generates reports in Markdown/PDF format.
+A multi-source information collection and report generation Agent built on LangGraph / DeepAgents. It supports main-agent autonomous planning, sub-agent delegation, WebSocket status streaming, session isolation, token usage tracking, and Docker deployment — for enterprise knowledge retrieval, data querying, and automated research report generation.
 
 ## Architecture
 
@@ -10,52 +10,92 @@ An autonomous planning agent built on LangGraph. Users ask open-ended questions 
 User Question
     │
     ▼
-┌──────────────────────────────────┐
-│         Main Agent (Planner)     │
-│  - Task decomposition            │
-│  - Sub-agent delegation          │
-│  - File system context mgmt      │
-│  - Report generation             │
-├──────────┬──────────┬────────────┤
-│ Network  │ Database │ Knowledge  │
-│ Search   │ Query    │ Base (RAG) │
-│ Agent    │ Agent    │ Agent      │
-│ (Tavily) │ (MySQL)  │ (RAGFlow)  │
-└──────────┴──────────┴────────────┘
-    │           │           │
-    ▼           ▼           ▼
-  Internet    Business   Enterprise
-  Search      Data       Knowledge
+┌──────────────────────────────────────────────────────┐
+│              Main Agent (LangGraph Planner)          │
+│  - Autonomous task decomposition                     │
+│  - Sub-agent delegation via DeepAgents `task` tool   │
+│  - File system context management (ContextVar)       │
+│  - Report synthesis (Markdown / PDF)                 │
+├──────────────┬──────────────────┬────────────────────┤
+│ Network      │ Database         │ Knowledge Base     │
+│ Search Agent │ Query Agent      │ (RAG) Agent        │
+│ (Tavily)     │ (MySQL)          │ (RAGFlow)          │
+└──────────────┴──────────────────┴────────────────────┘
+    │              │                    │
+    ▼              ▼                    ▼
+  Internet       Business           Enterprise
+  Search         Data               Knowledge
 ```
 
 **Data flow:**
 1. User submits a question via REST API or WebSocket
-2. Main Agent (LangGraph) analyzes the question and creates a task plan
-3. Sub-agents are dispatched via the `task` tool with isolated contexts
-4. Results are synthesized and written as Markdown/PDF reports
-5. Progress is streamed to the frontend via WebSocket in real time
+2. Main Agent analyzes the question and creates an execution plan
+3. Specialized sub-agents are dispatched with isolated contexts
+4. Results are synthesized into Markdown/PDF reports
+5. Progress streams to the frontend via WebSocket in real time
 
-## Tech Stack
+## End-to-End Task Walkthrough
 
-| Layer | Technology |
-|-------|-----------|
-| Agent Framework | DeepAgents SDK (LangGraph ecosystem) |
-| LLM | Qwen-Max (DashScope, OpenAI-compatible API) |
-| Network Search | Tavily Search API |
-| Database | MySQL (mysql.connector) |
-| Knowledge Base | RAGFlow (enterprise RAG engine) |
-| Web API | FastAPI + Uvicorn |
-| Real-Time Comm | WebSocket |
-| Frontend | Vue 3 + Vite |
+> Numbers below are illustrative examples of the output format, not benchmark results.
 
-## Features
+```
+User: "调研 AI 在医疗诊断中的应用趋势，生成 PDF 报告"
 
-- **Autonomous Task Planning**: Agent decides what to search, how many times, and when to stop
-- **Hierarchical Sub-Agent Delegation**: Three specialized sub-agents for different information sources
-- **File System Context Management**: Automatic workspace isolation per session via ContextVar, prevents concurrent request interference
-- **Real-Time Reasoning Stream**: WebSocket-based live progress tracking of agent's thinking process
-- **Report Generation**: Auto-generates Markdown/PDF reports from gathered information
-- **File Upload & Analysis**: Users can upload documents (PDF, Word, Excel) for the agent to analyze
+  ↓ Main Agent plans
+  ├── [Network Search Agent] → Tavily search: "AI medical diagnosis trends 2024"
+  │                              Tavily search: "AI radiology deep learning"
+  │                              → Collects search results
+  ├── [Database Query Agent]  → MySQL: SELECT recent medical-AI papers count
+  │                              → Returns query results
+  └── [Knowledge Base Agent]  → RAGFlow: retrieve internal medical-AI reports
+                                 → Returns relevant documents
+  ↓
+  Main Agent synthesizes → report.md → report.pdf
+  ↓
+  WebSocket events streamed to frontend in real time
+```
+
+> **Note**: Evidence table data comes from Task 1 actual command output. If numbers differ on re-run, Task 1 output takes precedence.
+
+## Evidence
+
+| Metric | Value | Source |
+|--------|-------|--------|
+| Local pytest run | 235 passed, 12 failed | `pytest -q` |
+| Docker deployment | Verified on localhost | [QA Report](docs/evidence/assets/qa-report-summary.md) |
+| Frontend build | Not verified on this machine | Missing `vue-tsc` locally; CI environment not yet configured |
+| Token tracking | Implemented (Phase 7c) | `agent/token_tracking.py`, `GET /api/token-usage/{thread_id}` |
+| TTL caching | Implemented (Phase 7c) | `tools/cache.py`, Tavily 300s TTL |
+
+> All metrics above are from actual command runs on this machine. Token/cost benchmark data and P95 latency are pending dedicated benchmark runs.
+
+## Key Engineering Decisions
+
+### ContextVar Session Isolation
+
+Concurrent API requests share the same Python process. Without isolation, global state (current thread_id, workspace path, LLM callbacks) would bleed between requests. We use `contextvars.ContextVar` to attach session-scoped state to each async task, ensuring request A's workspace never touches request B's files.
+
+See: [`api/context.py`](api/context.py)
+
+### YAML Prompt Configuration
+
+Agent system prompts live in `prompt/prompts.yml` instead of Python string literals. This separates prompt content from code, enables version-controlled prompt iteration without touching Python files, and allows non-developers to review/edit prompts.
+
+### WebSocket over Polling
+
+The agent execution produces many intermediate events (tool calls, sub-agent dispatches, reasoning steps). Polling would waste bandwidth and introduce latency. WebSocket pushes each event as it happens, giving the frontend real-time visibility into the agent's planning process.
+
+### Retry, Timeout, Cache, Token Tracking
+
+Every external call (Tavily, RAGFlow, MySQL) is wrapped with timeout policies, retry decorators with exponential backoff, and TTL caching for search results. Token tracking via LangChain `BaseCallbackHandler` records input/output/total tokens per LLM call with cost estimation. These make the system observable and resilient to transient failures.
+
+See: [`tools/cache.py`](tools/cache.py), [`agent/token_tracking.py`](agent/token_tracking.py), [`tools/retry_utils.py`](tools/retry_utils.py)
+
+### Upload/Download Path Security
+
+File uploads use filename sanitization (strip directory components, Windows path handling) and length validation. Download paths are resolved through a virtual-path cleaning mechanism that prevents `../` traversal, limiting the risk of out-of-bounds file access.
+
+See: [`api/upload_security.py`](api/upload_security.py), [`utils/path_utils.py`](utils/path_utils.py)
 
 ## Quick Start
 
@@ -63,13 +103,12 @@ User Question
 
 - Python >= 3.11
 - Node.js >= 18
-- Tavily API key (https://app.tavily.com/)
-- DashScope API key (https://bailian.console.aliyun.com/)
+- Tavily API key
+- DashScope API key
 
 ### 1. Install Backend Dependencies
 
 ```bash
-cd deep-search-agent
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -78,10 +117,8 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-vim .env
+# Fill in your API keys
 ```
-
-Fill in your API keys.
 
 ### 3. Run
 
@@ -94,73 +131,68 @@ cd frontend
 npm install && npm run dev
 ```
 
-The API provides:
+API endpoints:
 - **POST /api/task** — Start an agent task
 - **POST /api/upload** — Upload files for analysis
 - **GET /api/files** — List generated files
 - **GET /api/download** — Download generated files
+- **GET /api/token-usage/{thread_id}** — View token usage for a thread
 - **WebSocket /ws/{thread_id}** — Real-time reasoning stream
 
-## API Reference
-
-### POST /api/task
-
-Start an agent task. The agent runs asynchronously; progress is pushed via WebSocket.
-
-```json
-{
-  "query": "调研 AI 行业趋势并生成 PDF 报告",
-  "thread_id": "optional-uuid"
-}
-```
-
-Response:
-```json
-{
-  "status": "started",
-  "thread_id": "550e8400-e29b-41d4-a716-446655440000"
-}
-```
-
-### WebSocket /ws/{thread_id}
-
-Connect with the `thread_id` returned from `/api/task`. Events include:
-- `session_created` — Workspace directory ready
-- `tool_start` — A tool is being executed
-- `assistant_call` — A sub-agent is being dispatched
-- `task_result` — Final answer available
-- `error` — Execution failed
+WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `error`
 
 ## Project Structure
 
 ```
 deep-search-agent/
 ├── agent/
-│   ├── main_agent.py        # Main agent orchestration + runtime
-│   ├── llm.py               # LLM initialization
-│   ├── prompts.py           # Prompt config loader
+│   ├── main_agent.py              # Main agent orchestration
+│   ├── llm.py                     # LLM factory with callback support
+│   ├── prompts.py                 # YAML prompt config loader
+│   ├── token_tracking.py          # LangChain callback for token tracking
+│   ├── telemetry.py               # Telemetry recording
 │   └── sub_agents/
-│       ├── network_search_agent.py      # Tavily search sub-agent
-│       ├── database_query_agent.py      # MySQL query sub-agent
-│       └── knowledge_base_agent.py      # RAGFlow sub-agent
+│       ├── network_search_agent.py
+│       ├── database_query_agent.py
+│       └── knowledge_base_agent.py
 ├── tools/
-│   ├── tavily_tools.py      # Network search tool
-│   ├── mysql_tools.py       # Database query tools (list tables, preview, SQL)
-│   ├── ragflow_tools.py     # Knowledge base tools (assistant list, ask)
-│   ├── markdown_tools.py    # Markdown report generation
-│   ├── pdf_tools.py         # Markdown to PDF conversion
-│   └── upload_file_read_tool.py  # File reading (PDF, Word, Excel, text)
+│   ├── tavily_tools.py            # Search with TTL caching
+│   ├── mysql_tools.py             # Database query tools
+│   ├── ragflow_tools.py           # RAGFlow knowledge base tools
+│   ├── cache.py                   # TTL cache + @cached_tool decorator
+│   ├── retry_utils.py             # Retry decorator with backoff
+│   ├── markdown_tools.py          # Report generation
+│   └── upload_file_read_tool.py   # File reading (PDF, Word, Excel, text)
 ├── api/
-│   ├── server.py            # FastAPI server (REST + WebSocket)
-│   ├── monitor.py           # Real-time progress monitor (singleton)
-│   └── context.py           # ContextVar session isolation
+│   ├── server.py                  # FastAPI server (REST + WebSocket)
+│   ├── monitor.py                 # Real-time progress monitor
+│   └── context.py                 # ContextVar session isolation
 ├── utils/
-│   ├── path_utils.py        # Path resolution & virtual path cleaning
-│   └── word_converter.py    # Markdown to PDF via Word COM
+│   ├── path_utils.py              # Path security helpers
+│   └── word_converter.py          # PDF 转换（weasyprint 引擎）
 ├── prompt/
-│   └── prompts.yml          # Agent system prompts (YAML config)
-└── frontend/                # Vue 3 frontend (WebSocket real-time display)
+│   └── prompts.yml                # Agent system prompts
+├── tests/
+│   └── unit/                      # 单元测试（见 Evidence 表格）
+├── frontend/                      # Vue 3 frontend
+├── docs/                          # Product docs
+├── spec/                          # Technical specifications
+└── openspec/                      # OpenSpec change records
 ```
+
+## Evidence Pack & Technical Docs
+
+- [Evidence Pack](docs/evidence/) — Benchmark logs, screenshots, WebSocket events, sample reports
+- [Evidence Readiness Design](docs/superpowers/specs/2026-06-01-deep-search-agent-evidence-readiness-design.md) — Design spec for this documentation direction
+- [Architecture Spec](spec/architecture.md) — System architecture and data flow
+- [API Contract](spec/api-contract.md) — REST + WebSocket endpoint definitions
+
+## Known Boundaries
+
+- **WeasyPrint dependency**: PDF conversion tests fail on machines without WeasyPrint system libraries (cairo, pango, gobject). Docker 环境已包含这些依赖；本机失败是缺系统库。
+- **Frontend build**: Requires `vue-tsc` for type-checking build. Not verified on this local machine.
+- **No persistent task state**: Tasks are in-memory. Server restart loses in-progress tasks.
+- **No authentication/authorization**: All API endpoints are open. Suitable for internal/trusted-network deployment only.
 
 ## License
 

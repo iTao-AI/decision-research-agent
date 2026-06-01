@@ -5,12 +5,22 @@ Validates telemetry API, upload security, and task endpoint.
 
 Note: agent.main_agent is stubbed in conftest.py to prevent LLM init.
 """
+import os
 from fastapi.testclient import TestClient
 
 import pytest
 
 from agent.telemetry import collector, TelemetryRecord
 from api.server import app
+
+AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
+
+
+@pytest.fixture(autouse=True)
+def _auth_env():
+    """Set API_SECRET for all integration tests."""
+    os.environ["API_SECRET"] = "test-integration-key"
+    yield
 
 
 @pytest.fixture
@@ -59,7 +69,7 @@ class TestTelemetryEndpoint:
 
     def test_existing_thread_returns_records(self, client, seeded_collector):
         """GET /api/telemetry/test-thread-1 returns list of records."""
-        response = client.get("/api/telemetry/test-thread-1")
+        response = client.get("/api/telemetry/test-thread-1", headers=AUTH_HEADERS)
 
         assert response.status_code == 200
         data = response.json()
@@ -68,7 +78,7 @@ class TestTelemetryEndpoint:
 
     def test_nonexistent_thread_returns_empty(self, client):
         """GET /api/telemetry/nonexistent returns empty list."""
-        response = client.get("/api/telemetry/nonexistent-thread")
+        response = client.get("/api/telemetry/nonexistent-thread", headers=AUTH_HEADERS)
 
         assert response.status_code == 200
         data = response.json()
@@ -76,7 +86,7 @@ class TestTelemetryEndpoint:
 
     def test_record_has_all_expected_fields(self, client, seeded_collector):
         """Each record contains thread_id, agent_name, tool_name, duration_ms, status."""
-        response = client.get("/api/telemetry/test-thread-1")
+        response = client.get("/api/telemetry/test-thread-1", headers=AUTH_HEADERS)
 
         assert response.status_code == 200
         data = response.json()
@@ -104,7 +114,7 @@ class TestTelemetryEndpoint:
             error="Connection timeout",
         ))
 
-        response = client.get("/api/telemetry/test-thread-2")
+        response = client.get("/api/telemetry/test-thread-2", headers=AUTH_HEADERS)
 
         assert response.status_code == 200
         data = response.json()
@@ -124,6 +134,7 @@ class TestUploadEndpoint:
             "/api/upload",
             files={"files": ("", b"test content")},
             data={"thread_id": "test-thread-1"},
+            headers=AUTH_HEADERS,
         )
         assert response.status_code in (400, 422)
 
@@ -133,6 +144,7 @@ class TestUploadEndpoint:
             "/api/upload",
             files={"files": ("../../../etc/passwd", b"test content")},
             data={"thread_id": "test-thread-1"},
+            headers=AUTH_HEADERS,
         )
         # Must either reject or sanitize — never accept original traversal path
         assert response.status_code in (200, 400, 422)
@@ -158,6 +170,7 @@ class TestTaskEndpoint:
         response = client.post(
             "/api/task",
             json={"query": "Test query"},
+            headers=AUTH_HEADERS,
         )
         assert response.status_code == 200
         data = response.json()

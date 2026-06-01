@@ -1,12 +1,15 @@
 import sys
+import os
 import uuid
 import asyncio
+import logging
 import uvicorn
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 from typing import List
 import shutil
@@ -26,6 +29,37 @@ from api.upload_security import sanitize_filename, validate_filename
 from api.cors_config import get_allowed_origins
 from api.task_tracker import create_tracked_task
 
+
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Middleware that checks X-API-Key header against API_SECRET in .env.
+
+    When API_SECRET is not set, logs a warning and accepts all requests
+    (backwards-compatible with development environments).
+    """
+
+    async def dispatch(self, request, call_next):
+        # Skip auth for docs and health endpoints
+        if request.url.path in ("/docs", "/openapi.json", "/redoc"):
+            return await call_next(request)
+
+        api_secret = os.environ.get("API_SECRET", "")
+        if not api_secret:
+            logging.warning(
+                "API_SECRET is not set — all requests are accepted without authentication. "
+                "Set API_SECRET=your-key in .env to enable API key protection."
+            )
+            return await call_next(request)
+
+        client_key = request.headers.get("X-API-Key", "")
+        if client_key != api_secret:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "请设置 API_SECRET（在 .env 中）并通过请求头 X-API-Key 传递正确的密钥"},
+            )
+
+        return await call_next(request)
+
+
 app = FastAPI(title="DeepAgents API")
 
 output_dir = project_root / "output"
@@ -41,6 +75,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(APIKeyMiddleware)
 
 
 class TaskRequest(BaseModel):
@@ -165,6 +201,14 @@ async def get_token_usage(thread_id: str):
 @app.websocket("/ws/{thread_id}")
 async def websocket_endpoint(websocket: WebSocket, thread_id: str):
     """WebSocket endpoint for real-time communication."""
+    # Auth check for WebSocket connections
+    api_secret = os.environ.get("API_SECRET", "")
+    if api_secret:
+        client_key = websocket.headers.get("x-api-key", "")
+        if client_key != api_secret:
+            await websocket.close(code=4001, reason="Unauthorized")
+            return
+
     await manager.connect(websocket, thread_id)
 
     try:

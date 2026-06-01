@@ -1,18 +1,33 @@
 """Tests for the /api/telemetry/{thread_id} endpoint."""
+import os
 import sys
 from unittest.mock import MagicMock
 
 # Stub heavy imports before importing api.server
 sys.modules.setdefault("agent.main_agent", MagicMock(run_deep_agent=MagicMock()))
 
+import pytest
 from fastapi.testclient import TestClient
 
 from api.server import app
 from agent.telemetry import collector, TelemetryRecord
 
 
+API_KEY = "test-telemetry-key"
+AUTH_HEADERS = {"X-API-Key": API_KEY}
+
+
 class TestTelemetryApiEndpoint:
     """Test GET /api/telemetry/{thread_id}."""
+
+    @pytest.fixture(autouse=True)
+    def _auth_env(self):
+        """Set API_SECRET for all tests in this class."""
+        os.environ["API_SECRET"] = API_KEY
+        yield
+        # Only clean up if we set it (don't disturb other tests)
+        if os.environ.get("API_SECRET") == API_KEY:
+            del os.environ["API_SECRET"]
 
     def setup_method(self):
         """Clear test threads before each test."""
@@ -44,7 +59,7 @@ class TestTelemetryApiEndpoint:
 
         # Act
         client = TestClient(app)
-        response = client.get("/api/telemetry/test-thread-1")
+        response = client.get("/api/telemetry/test-thread-1", headers=AUTH_HEADERS)
 
         # Assert
         assert response.status_code == 200
@@ -55,7 +70,7 @@ class TestTelemetryApiEndpoint:
     def test_get_telemetry_nonexistent_thread_returns_empty(self):
         """GET /api/telemetry/nonexistent returns empty list."""
         client = TestClient(app)
-        response = client.get("/api/telemetry/nonexistent-thread")
+        response = client.get("/api/telemetry/nonexistent-thread", headers=AUTH_HEADERS)
 
         assert response.status_code == 200
         data = response.json()
@@ -72,7 +87,7 @@ class TestTelemetryApiEndpoint:
         ))
 
         client = TestClient(app)
-        response = client.get("/api/telemetry/test-thread-1")
+        response = client.get("/api/telemetry/test-thread-1", headers=AUTH_HEADERS)
 
         assert response.status_code == 200
         data = response.json()
@@ -107,7 +122,7 @@ class TestTelemetryApiEndpoint:
         ))
 
         client = TestClient(app)
-        response = client.get("/api/telemetry/test-thread-2")
+        response = client.get("/api/telemetry/test-thread-2", headers=AUTH_HEADERS)
 
         assert response.status_code == 200
         data = response.json()

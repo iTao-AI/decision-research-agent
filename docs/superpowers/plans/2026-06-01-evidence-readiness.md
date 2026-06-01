@@ -54,7 +54,7 @@ Expected output: 确认 vue-tsc 是否已安装或仍缺失，更新证据中的
 
 > 使用 Write 工具将以下内容直接写入 README.md。不要将内容包在代码块中，因为 README 自身包含 ``` 代码块会导致解析错误。
 
-```markdown
+````markdown
 [English](./README.md) | [中文](./README_CN.md)
 
 # Deep Search Agent
@@ -254,7 +254,7 @@ deep-search-agent/
 ## License
 
 MIT
-```
+````
 
 - [x] **Step 2: 验证 README.md 中的文件路径有效**
 
@@ -288,7 +288,7 @@ Expected: 无命中。
 
 > 使用 Write 工具将以下内容直接写入 README_CN.md。与英文版结构一致，使用中文表述。不要将内容包在代码块中。
 
-```markdown
+````markdown
 [English](./README.md) | [中文](./README_CN.md)
 
 # Deep Search Agent
@@ -486,7 +486,7 @@ deep-search-agent/
 ## License
 
 MIT
-```
+````
 
 - [x] **Step 2: 验证 README_CN.md 中的文件路径有效**
 

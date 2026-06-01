@@ -19,7 +19,7 @@ pip install -r requirements.txt
 python api/server.py
 ```
 
-### Frontend (Node.js 18+)
+### Frontend (Node.js 20.19+ or 22.12+)
 
 ```bash
 cd frontend

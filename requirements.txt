@@ -41,3 +41,7 @@ PyYAML>=6.0                 # [新增] YAML 配置文件解析 (prompts.py)
 pydantic>=2.0.0             # 数据校验
 python-dotenv>=1.0.0        # 环境变量管理
 typing-extensions>=4.5.0    # 类型兼容性支持
+
+# --- 测试依赖 (Test) ---
+pytest>=8.0.0               # 单元测试框架
+pytest-asyncio>=0.23.0      # 异步测试支持

@@ -92,7 +92,16 @@ const connectWebSocket = () => {
     }
   }
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
+    if (event.code === 4001) {
+      messages.value.push({
+        role: 'system',
+        content: 'WebSocket authentication failed. Check VITE_API_SECRET.',
+        timestamp: Date.now()
+      })
+      status.value = 'idle'
+      return
+    }
     console.log('WebSocket Disconnected, retrying in 3s...')
     setTimeout(connectWebSocket, 3000)
   }

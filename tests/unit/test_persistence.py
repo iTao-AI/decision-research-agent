@@ -45,6 +45,30 @@ class TestPersistence:
         assert task["query"] == "测试查询"
         assert task["status"] == "pending"
 
+    def test_save_task_same_thread_resets_existing_record(self, db_path):
+        """Starting another task in the same frontend thread resets status."""
+        from api.persistence import init_db, save_task, update_task, get_task
+        init_db(db_path)
+        save_task(db_path, thread_id="test-001", query="first")
+        update_task(
+            db_path,
+            "test-001",
+            status="failed",
+            output_path="/output/old.md",
+            token_usage_json='{"total": 1000}',
+            error_message="old error",
+        )
+
+        save_task(db_path, thread_id="test-001", query="second")
+
+        task = get_task(db_path, "test-001")
+        assert task["query"] == "second"
+        assert task["status"] == "pending"
+        assert task["completed_at"] is None
+        assert task["output_path"] is None
+        assert task["token_usage_json"] is None
+        assert task["error_message"] is None
+
     def test_update_task_status(self, db_path):
         """Update task status from pending to completed."""
         from api.persistence import init_db, save_task, update_task

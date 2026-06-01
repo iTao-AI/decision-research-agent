@@ -50,13 +50,22 @@ def save_task(
     query: str = "",
     status: str = "pending",
 ) -> None:
-    """Insert a new task record."""
+    """Insert or reset a task record for a thread."""
     path = _get_db_path(db_path)
     conn = init_db(path)
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """INSERT INTO tasks (thread_id, query, status, created_at)
-           VALUES (?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(thread_id) DO UPDATE SET
+             query = excluded.query,
+             status = excluded.status,
+             created_at = excluded.created_at,
+             started_at = NULL,
+             completed_at = NULL,
+             output_path = NULL,
+             token_usage_json = NULL,
+             error_message = NULL""",
         (thread_id, query, status, now),
     )
     conn.commit()

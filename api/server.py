@@ -39,6 +39,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request, call_next):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # Skip auth for docs and health endpoints
         if request.url.path in ("/docs", "/openapi.json", "/redoc"):
             return await call_next(request)
@@ -91,16 +94,21 @@ async def run_task(request: TaskRequest):
     thread_id = request.thread_id or str(uuid.uuid4())
 
     # Persist task and update status as it progresses
-    save_task(thread_id=thread_id, query=request.query, status="pending")
+    await asyncio.to_thread(save_task, thread_id=thread_id, query=request.query, status="pending")
 
     async def _run_with_persistence():
         try:
-            update_task(thread_id=thread_id, status="running")
+            await asyncio.to_thread(update_task, thread_id=thread_id, status="running")
             result = await run_deep_agent(request.query, thread_id)
-            update_task(thread_id=thread_id, status="completed")
+            await asyncio.to_thread(update_task, thread_id=thread_id, status="completed")
             return result
         except Exception as e:
-            update_task(thread_id=thread_id, status="failed", error_message=str(e))
+            await asyncio.to_thread(
+                update_task,
+                thread_id=thread_id,
+                status="failed",
+                error_message=str(e),
+            )
             raise
 
     create_tracked_task(_run_with_persistence(), thread_id)
@@ -110,7 +118,7 @@ async def run_task(request: TaskRequest):
 @app.get("/api/tasks/{thread_id}")
 async def get_task_status(thread_id: str):
     """Get task status and metadata from persistence."""
-    task = get_task(thread_id=thread_id)
+    task = await asyncio.to_thread(get_task, thread_id=thread_id)
     if task is None:
         return JSONResponse(status_code=404, content={"detail": "任务不存在"})
     return task

@@ -6,6 +6,7 @@ from agent.sub_agents.network_search_agent import network_search_agent
 from tools.markdown_tools import generate_markdown
 from tools.pdf_tools import convert_md_to_pdf
 from tools.upload_file_read_tool import read_file_content
+from tools.tavily_tools import clear_search_cache
 
 from deepagents import create_deep_agent
 
@@ -144,6 +145,7 @@ async def run_deep_agent(task_query: str, thread_id: str = None):
         if 'session_token' in locals():
             reset_session_context(session_token, thread_token)
         shared_context.clear_facts(thread_id)
+        clear_search_cache(thread_id)
 
 
 # ====================== 本地测试入口 ======================

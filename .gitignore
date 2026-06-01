@@ -28,6 +28,7 @@ CLAUDE.md
 output/
 updated/
 agent_workspace/
+data/
 
 # Logs
 logs/

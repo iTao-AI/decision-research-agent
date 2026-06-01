@@ -197,9 +197,10 @@ deep-search-agent/
 - **WeasyPrint dependency**: PDF conversion tests require WeasyPrint system libraries (cairo, pango, gobject). On machines with dependencies available, tests run for real. On machines without them, conversion tests are skipped via `pytest.mark.skipif`, and the missing-dependency error path is tested via import-stage `OSError` simulation. Docker 环境已包含这些依赖。
 - **Frontend build**: Verified (`cd frontend && npm run build` succeeded, built in 357ms).
 - **API Key auth**: All `/api/*` endpoints are protected by `APIKeyMiddleware`. Requests without `X-API-Key` header get 401. Set `API_SECRET=your-key` in `.env` to enable; if unset, a warning is logged but all requests pass through (dev mode).
+- **WebSocket auth**: Browser clients pass the key via the `api_key` query parameter because native WebSocket constructors cannot set custom headers. Production logs should avoid recording full WebSocket URLs.
 - **Task state persistence**: Tasks are persisted to SQLite (`data/tasks.db`) through `api/persistence.py`. Server restart does not lose completed task records. Query by `GET /api/tasks/{thread_id}`.
 - **CI/CD**: GitHub Actions runs backend tests and frontend build on push/PR to `main`. API keys must be configured in GitHub Secrets.
-- **Benchmark data**: Pending dedicated benchmark run — 5 fixed queries defined in the Phase 8 spec.
+- **Benchmark data**: Pending dedicated benchmark run — 5 fixed queries defined in the Phase 8 spec. Token before/after comparison is not used as Phase 8 acceptance evidence because repeated E2E runs are currently nondeterministic.
 
 ## License
 

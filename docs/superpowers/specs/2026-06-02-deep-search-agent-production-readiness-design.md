@@ -6,7 +6,7 @@
 
 ## Summary
 
-本设计定义 Deep Search Agent 的 Phase 8 生产就绪优化。在验证闭环（247 passed, E2E Run #1 完成）的基础上，通过 token 效率优化、任务状态持久化、API 鉴权、CI/CD 自动化和 benchmark 基准测试，把项目从"可验证的 demo"推进到"可稳定运行的服务"。
+本设计定义 Deep Search Agent 的 Phase 8 生产就绪优化。在验证闭环（260 passed, E2E Run #1 完成）的基础上，通过 token 效率优化、任务状态持久化、API 鉴权、CI/CD 自动化和 benchmark 基准测试，把项目从"可验证的 demo"推进到"可稳定运行的服务"。
 
 本轮输出面向后续 `superpowers:writing-plans`。计划生成后可交给 Claude Code 执行。
 
@@ -25,7 +25,7 @@
 以下事实来自 2026-06-02 的本机/代码检查。
 
 - 当前在 main 分支，已同步 origin/main。
-- `python -m pytest -q`：247 passed, 0 failed。
+- `python -m pytest -q`：260 passed, 0 failed。
 - `cd frontend && npm run build`：通过，built in ~100-400ms。
 - E2E Run #1 已完成：282s, 459K tokens, $19.39, 21 LLM calls, 2 子 Agent, 50 WebSocket events。
 - LLM 已从百炼切换到 DeepSeek（`deepseek-chat`），base URL `https://api.deepseek.com/v1`。
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 - 启动一个任务 → 重启服务器 → 能通过 API 查询到该任务的状态和结果
 - 任务完成后数据库中有完整记录
-- 不影响现有测试（247 passed）
+- 不影响现有测试（260 passed）
 
 ### P2: API Key 鉴权
 

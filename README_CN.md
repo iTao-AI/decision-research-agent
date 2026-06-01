@@ -195,9 +195,10 @@ deep-search-agent/
 - **WeasyPrint 依赖**: PDF 转换测试需要 WeasyPrint 系统库（cairo、pango、gobject）。依赖可用时真实运行；依赖缺失时相关转换测试 skip，并保留系统依赖缺失路径测试。Docker 环境已包含这些依赖。
 - **前端构建**: 已验证（`cd frontend && npm run build` 成功，built in 357ms）。
 - **API Key 鉴权**: 所有 `/api/*` 端点受 APIKeyMiddleware 保护。请求缺少 X-API-Key header 返回 401。在 .env 中设置 API_SECRET=your-key 启用；未设置时打印警告但放行所有请求（开发模式）。
+- **WebSocket 鉴权**: 浏览器端 WebSocket 通过 `api_key` query parameter 传递 key，因为原生 WebSocket 构造器不能设置自定义 header。生产环境日志应避免记录完整 WebSocket URL。
 - **任务状态持久化**: 通过 SQLite（data/tasks.db）持久化任务状态，重启服务器不丢失。查询 GET /api/tasks/{thread_id}。
 - **CI/CD**: GitHub Actions 在 push/PR 到 main 时自动运行 pytest + 前端构建。API keys 需在 GitHub Secrets 中配置。
-- **Benchmark 数据**: 待执行专项基准测试——Phase 8 spec 中定义了 5 个固定查询。
+- **Benchmark 数据**: 待执行专项基准测试——Phase 8 spec 中定义了 5 个固定查询。由于重复 E2E 当前存在非确定性，token before/after 对比不作为 Phase 8 验收证据。
 
 ## License
 

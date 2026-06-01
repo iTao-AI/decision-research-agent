@@ -480,7 +480,7 @@ git commit -m "docs: add E2E evidence run #1 to run log
 
 如果后端测试全绿：
 ```markdown
-| Local pytest run | 247 passed, 0 failed | `pytest -q` |
+| Local pytest run | 260 passed, 0 failed | `pytest -q` |
 ```
 
 如果后端测试有合理 skip：

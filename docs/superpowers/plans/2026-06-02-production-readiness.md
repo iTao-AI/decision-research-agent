@@ -628,48 +628,16 @@ git commit -m "perf: optimize token efficiency with search dedup + prompt trim (
 
 ---
 
-### Task 6: E2E token 验证（before/after 对比）
+### Task 6: E2E token 验证（before/after 对比）— Follow-up
 
 **Files:**
 - Modify: `docs/evidence/run-log.md`
 
-- [ ] **Step 1: 启动服务器并运行 E2E Run #2**
+- [ ] **Status: 暂缓执行**
 
-用和 E2E Run #1 相同的问题 ("2024年AI发展趋势")，跑一次端到端任务，记录：
-- 总耗时
-- Token 用量（input / output / total / calls）
-- 子 Agent 调用次数
-- WebSocket 事件数
+多次同题 E2E 运行出现 459K 到 3M tokens 波动，且报告生成行为不稳定。在未修改的原始代码上重跑也出现无报告结果，因此当前数据不能作为可靠 before/after benchmark。
 
-- [ ] **Step 2: 将数据追加到 run-log.md**
-
-在 run-log.md 中添加 `E2E Run #2` 段落，包含 before/after 对比表格：
-
-```markdown
-## E2E Run #2 (after P0 optimization)
-
-- **日期**: 2026-06-02
-- **环境**: 本机 (macOS, Python 3.13, DeepSeek API)
-- **输入问题**: "2024年AI发展趋势"（与 Run #1 完全相同）
-- **总耗时**: Xs
-- **Token 用量**: input: X / output: X / total: X / calls: X
-- **生成产物**: report.md
-
-### Before/After 对比
-
-| 指标 | Run #1 (before) | Run #2 (after) | 变化 |
-|------|----------------|----------------|------|
-| Token total | 459,265 | X | X% |
-| LLM calls | 21 | X | X% |
-| 耗时 | 282s | Xs | Xs |
-```
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add docs/evidence/run-log.md
-git commit -m "docs: add E2E Run #2 with token optimization before/after comparison"
-```
+后续执行前必须先固定 WebSocket 客户端脚本、重复运行次数和统计口径（例如取中位数），再将结果追加到 `docs/evidence/run-log.md`。
 
 ---
 
@@ -738,45 +706,22 @@ Run: `git push origin main`
 
 ---
 
-### Task 8: Benchmark 基准测试
+### Task 8: Benchmark 基准测试 — Follow-up
 
 **Files:**
 - Modify: `docs/evidence/run-log.md`
 
-- [ ] **Step 1: 运行 5 个 benchmark 问题**
+- [ ] **Status: 暂缓执行**
 
-按以下顺序逐个执行（无需自动化脚本，手动用 curl POST 任务）：
+待 E2E 随机性收敛后，按以下顺序逐个执行，并记录耗时、token、LLM calls、子 Agent、WebSocket events、报告大小：
 
-1. "2024年人工智能发展趋势"（与 Run #2 数据共用，已采集）
+1. "2024年人工智能发展趋势"
 2. "量子计算最新突破"（单主题搜索）
 3. "自动驾驶技术现状与未来"（技术对比类）
 4. "latest advances in CRISPR gene editing 2024"（英文搜索）
 5. "中国新能源汽车市场分析"（中文深度分析）
 
-每个问题记录：耗时、token、LLM calls、子 Agent、WebSocket events、报告大小。
-
-- [ ] **Step 2: 将 benchmark 数据追加到 run-log.md**
-
-```markdown
-## Benchmark Results (Phase 8, P4)
-
-| # | 问题 | 耗时 | Token | Calls | 子Agent | 报告大小 |
-|---|------|------|-------|-------|---------|---------|
-| 1 | 2024年AI发展趋势 | 282s | 459,265 | 21 | 2 | 12KB |
-| 2 | 量子计算最新突破 | Xs | X | X | X | XKB |
-| 3 | 自动驾驶技术现状 | Xs | X | X | X | XKB |
-| 4 | CRISPR gene editing | Xs | X | X | X | XKB |
-| 5 | 新能源汽车市场分析 | Xs | X | X | X | XKB |
-
-> Run #2 使用优化后的 prompt + 搜索去重，数据为 before/after 对比用。
-```
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add docs/evidence/run-log.md
-git commit -m "docs: add Phase 8 benchmark results (P4)"
-```
+结果追加到 `docs/evidence/run-log.md`。本轮 benchmark 仍待后续采集。
 
 ---
 
@@ -789,23 +734,18 @@ git commit -m "docs: add Phase 8 benchmark results (P4)"
 
 - [ ] **Step 1: 更新 README Evidence 表格**
 
-在 Evidence 表格的 Token 追踪行之前插入：
-
-```markdown
-| E2E Run #2 (after optimization) | Xs, X tokens, X calls | [Run Log](docs/evidence/run-log.md) |
-```
-
 更新 Known Boundaries：
 - 添加 "API Key 鉴权已实现，请求需带 X-API-Key header"
 - 添加 "任务状态通过 SQLite 持久化，服务器重启不丢失"
 - 添加 "CI/CD: GitHub Actions 自动运行测试和构建"
+- 添加 "Benchmark 仍待后续稳定脚本补充；不使用 token before/after 作为本轮验收证据"
 
 相应的更新 `README_CN.md`。
 
 - [ ] **Step 2: 更新 docs/evidence/README.md**
 
 ```markdown
-| [run-log.md](run-log.md) | E2E Run #1 & #2 + Benchmark 5 问题已采集 |
+| [run-log.md](run-log.md) | E2E Run #1 + Phase 8 收口状态；benchmark 仍待后续稳定脚本补充 |
 ```
 
 - [ ] **Step 3: 更新 docs/evidence/technical-decisions.md**
@@ -905,8 +845,8 @@ git diff --stat
 
 ## Handoff Notes
 
-- P0（token 优化）效果通过 E2E Run #1 vs #2 对比验证
-- P4（benchmark）5 个问题需要真实 API keys（DeepSeek + Tavily）已配置
+- P0（token 优化）代码已实现，但 E2E before/after 对比因模型随机性暂缓，不作为本轮验收证据
+- P4（benchmark）5 个问题仍待后续稳定脚本执行
 - CI/CD 首次 push 后需在 GitHub Settings → Secrets 配置 API keys
 - `tests/` 目录需手动创建新测试文件
-- `data/` 目录（tasks.db）已在 .gitignore 中
+- `data/` 目录（tasks.db）已加入 .gitignore

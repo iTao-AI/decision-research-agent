@@ -28,6 +28,7 @@ from api.monitor import monitor, manager
 from api.upload_security import sanitize_filename, validate_filename
 from api.cors_config import get_allowed_origins
 from api.task_tracker import create_tracked_task
+from api.persistence import save_task, update_task, get_task
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -88,8 +89,31 @@ class TaskRequest(BaseModel):
 async def run_task(request: TaskRequest):
     """Start an agent task asynchronously."""
     thread_id = request.thread_id or str(uuid.uuid4())
-    create_tracked_task(run_deep_agent(request.query, thread_id), thread_id)
+
+    # Persist task and update status as it progresses
+    save_task(thread_id=thread_id, query=request.query, status="pending")
+
+    async def _run_with_persistence():
+        try:
+            update_task(thread_id=thread_id, status="running")
+            result = await run_deep_agent(request.query, thread_id)
+            update_task(thread_id=thread_id, status="completed")
+            return result
+        except Exception as e:
+            update_task(thread_id=thread_id, status="failed", error_message=str(e))
+            raise
+
+    create_tracked_task(_run_with_persistence(), thread_id)
     return {"status": "started", "thread_id": thread_id}
+
+
+@app.get("/api/tasks/{thread_id}")
+async def get_task_status(thread_id: str):
+    """Get task status and metadata from persistence."""
+    task = get_task(thread_id=thread_id)
+    if task is None:
+        return JSONResponse(status_code=404, content={"detail": "任务不存在"})
+    return task
 
 
 @app.post("/api/upload")

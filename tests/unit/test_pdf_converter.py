@@ -2,7 +2,11 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.conftest import weasyprint_available
+
 from utils.pdf_converter import convert_md_to_pdf
+
+WEASYPRINT_SKIP_REASON = "WeasyPrint system dependencies (cairo/pango/gobject) not available"
 
 
 @pytest.fixture
@@ -21,6 +25,7 @@ def output_pdf_path(tmp_path):
 class TestConvertMdToPdf:
     """测试跨平台 PDF 转换器"""
 
+    @pytest.mark.skipif(not weasyprint_available(), reason=WEASYPRINT_SKIP_REASON)
     def test_normal_conversion(self, test_md_file, output_pdf_path):
         """正常路径：MD 成功转换为 PDF"""
         result = convert_md_to_pdf(test_md_file, output_pdf_path)
@@ -28,12 +33,14 @@ class TestConvertMdToPdf:
         assert output_pdf_path.exists()
         assert output_pdf_path.stat().st_size > 0
 
+    @pytest.mark.skipif(not weasyprint_available(), reason=WEASYPRINT_SKIP_REASON)
     def test_temp_html_cleaned_up(self, test_md_file, output_pdf_path):
         """临时 HTML 文件在转换后被清理"""
         temp_html = test_md_file.with_suffix('.temp.html')
         convert_md_to_pdf(test_md_file, output_pdf_path)
         assert not temp_html.exists()
 
+    @pytest.mark.skipif(not weasyprint_available(), reason=WEASYPRINT_SKIP_REASON)
     def test_pdf_uses_same_directory(self, test_md_file):
         """输出 PDF 路径与 MD 同名同目录"""
         expected_pdf = test_md_file.with_suffix('.pdf')
@@ -52,23 +59,35 @@ class TestConvertMdToPdf:
 
     def test_weasyprint_system_dep_missing(self, test_md_file, output_pdf_path):
         """weasyprint 系统依赖缺失时返回友好错误"""
-        with patch('weasyprint.HTML', side_effect=OSError("cannot load library libcairo")):
-            result = convert_md_to_pdf(test_md_file, output_pdf_path)
-            assert "转换失败" in result
-            assert "cairo" in result.lower() or "pango" in result.lower() or "系统依赖" in result
+        import builtins
+        import sys
 
-    def test_markdown_not_installed_error(self, test_md_file, output_pdf_path):
+        real_import = builtins.__import__
+        cached = sys.modules.pop("weasyprint", None)  # force fresh import attempt
+
+        def fake_import(name, *args, **kwargs):
+            if name == "weasyprint":
+                raise OSError("cannot load library libcairo")
+            return real_import(name, *args, **kwargs)
+
+        try:
+            with patch("builtins.__import__", side_effect=fake_import):
+                result = convert_md_to_pdf(test_md_file, output_pdf_path)
+                assert "转换失败" in result
+                assert "cairo" in result.lower() or "pango" in result.lower() or "系统依赖" in result
+        finally:
+            if cached is not None:
+                sys.modules["weasyprint"] = cached  # restore
+
+    @pytest.mark.skipif(not weasyprint_available(), reason=WEASYPRINT_SKIP_REASON)
+    def test_markdown_not_installed_error(self, test_md_file, output_pdf_path, monkeypatch):
         """markdown 库未安装时返回友好错误"""
         import utils.pdf_converter as converter_mod
-        original_markdown = getattr(converter_mod, 'markdown', None)
-        converter_mod.markdown = None
-        try:
-            result = convert_md_to_pdf(test_md_file, output_pdf_path)
-            assert "转换失败" in result or "缺少依赖" in result
-        finally:
-            if original_markdown is not None:
-                converter_mod.markdown = original_markdown
+        monkeypatch.setattr(converter_mod, 'markdown', None)
+        result = convert_md_to_pdf(test_md_file, output_pdf_path)
+        assert "转换失败" in result or "缺少依赖" in result
 
+    @pytest.mark.skipif(not weasyprint_available(), reason=WEASYPRINT_SKIP_REASON)
     def test_chinese_content_rendering(self, tmp_path):
         """中文内容正确渲染，无乱码"""
         md = tmp_path / "chinese.md"

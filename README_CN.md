@@ -59,9 +59,9 @@
 
 | 指标 | 值 | 来源 |
 |------|-----|------|
-| Local pytest run | 235 通过, 12 失败 | `pytest -q` |
+| Local pytest run | 247 通过, 0 失败 | `pytest -q` |
 | Docker 部署 | 本机验证通过 | [QA 报告](docs/evidence/assets/qa-report-summary.md) |
-| 前端构建 | 本机未验证 | 缺少 `vue-tsc`；CI 环境尚未配置 |
+| 前端构建 | 通过 | `cd frontend && npm run build` |
 | Token 追踪 | 已实现（Phase 7c） | `agent/token_tracking.py`, `GET /api/token-usage/{thread_id}` |
 | TTL 缓存 | 已实现（Phase 7c） | `tools/cache.py`, Tavily 300s TTL |
 
@@ -187,8 +187,8 @@ deep-search-agent/
 
 ## 已知边界
 
-- **WeasyPrint 依赖**: PDF 转换在缺少 WeasyPrint 系统库（cairo、pango、gobject）的机器上失败。Docker 环境已包含这些依赖；本机失败是缺系统库。
-- **前端构建**: 需要 `vue-tsc` 进行类型检查构建。本机未验证。
+- **WeasyPrint 依赖**: PDF 转换测试需要 WeasyPrint 系统库（cairo、pango、gobject）。依赖可用时真实运行；依赖缺失时相关转换测试 skip，并保留系统依赖缺失路径测试。Docker 环境已包含这些依赖。
+- **前端构建**: 已验证（`cd frontend && npm run build` 成功，built in 357ms）。
 - **无持久化任务状态**: 任务在内存中运行。服务器重启会丢失进行中的任务。
 - **无认证/鉴权**: 所有 API 端点开放。仅适合内部/可信网络部署。
 

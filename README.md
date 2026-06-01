@@ -61,9 +61,9 @@ User: "调研 AI 在医疗诊断中的应用趋势，生成 PDF 报告"
 
 | Metric | Value | Source |
 |--------|-------|--------|
-| Local pytest run | 235 passed, 12 failed | `pytest -q` |
+| Local pytest run | 247 passed, 0 failed | `pytest -q` |
 | Docker deployment | Verified on localhost | [QA Report](docs/evidence/assets/qa-report-summary.md) |
-| Frontend build | Not verified on this machine | Missing `vue-tsc` locally; CI environment not yet configured |
+| Frontend build | Passed | `cd frontend && npm run build` |
 | Token tracking | Implemented (Phase 7c) | `agent/token_tracking.py`, `GET /api/token-usage/{thread_id}` |
 | TTL caching | Implemented (Phase 7c) | `tools/cache.py`, Tavily 300s TTL |
 
@@ -189,8 +189,8 @@ deep-search-agent/
 
 ## Known Boundaries
 
-- **WeasyPrint dependency**: PDF conversion tests fail on machines without WeasyPrint system libraries (cairo, pango, gobject). Docker 环境已包含这些依赖；本机失败是缺系统库。
-- **Frontend build**: Requires `vue-tsc` for type-checking build. Not verified on this local machine.
+- **WeasyPrint dependency**: PDF conversion tests require WeasyPrint system libraries (cairo, pango, gobject). On machines with dependencies available, tests run for real. On machines without them, conversion tests are skipped via `pytest.mark.skipif`, and the missing-dependency error path is tested via import-stage `OSError` simulation. Docker 环境已包含这些依赖。
+- **Frontend build**: Verified (`cd frontend && npm run build` succeeded, built in 357ms).
 - **No persistent task state**: Tasks are in-memory. Server restart loses in-progress tasks.
 - **No authentication/authorization**: All API endpoints are open. Suitable for internal/trusted-network deployment only.
 

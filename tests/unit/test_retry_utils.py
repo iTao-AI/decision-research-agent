@@ -4,18 +4,14 @@ import asyncio
 import time
 from unittest.mock import AsyncMock, patch, MagicMock
 
-# Ensure monitor is mocked before importing retry_utils
-mock_monitor = MagicMock()
-fake_monitor_module = MagicMock()
-fake_monitor_module.monitor = mock_monitor
-with patch.dict("sys.modules", {"api.monitor": fake_monitor_module}):
-    from tools.retry_utils import retry, retry_async, TIMEOUTS
+from tools.retry_utils import retry, retry_async, TIMEOUTS
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def _reset_monitor():
-    """Reset mock before each test."""
-    mock_monitor.reset_mock()
+    """Patch monitor at the usage site so each test gets an isolated mock."""
+    with patch("tools.retry_utils.monitor") as mock_monitor:
+        yield mock_monitor
 
 
 # ============================================================
@@ -63,8 +59,9 @@ class TestRetryDecorator:
     """Test the @retry async decorator."""
 
     @pytest.mark.asyncio
-    async def test_first_attempt_success(self):
+    async def test_first_attempt_success(self, _reset_monitor):
         """Successful on first call — no retries needed."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         @retry(max_retries=3, service_name="test_svc")
@@ -80,8 +77,9 @@ class TestRetryDecorator:
         assert mock_monitor.report_retry.call_count == 0
 
     @pytest.mark.asyncio
-    async def test_retry_on_timeout(self):
+    async def test_retry_on_timeout(self, _reset_monitor):
         """TimeoutError should trigger retry, then succeed."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         @retry(max_retries=3, backoff_factor=0.001, max_wait=0.01, service_name="test_svc")
@@ -99,8 +97,9 @@ class TestRetryDecorator:
         assert mock_monitor.report_retry.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_max_retries_exhausted(self):
+    async def test_max_retries_exhausted(self, _reset_monitor):
         """After max_retries failures, the last exception should be raised."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         @retry(max_retries=3, backoff_factor=0.001, max_wait=0.01, service_name="test_svc")
@@ -118,7 +117,7 @@ class TestRetryDecorator:
         assert mock_monitor.report_retry.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_non_retryable_exception_raises_immediately(self):
+    async def test_non_retryable_exception_raises_immediately(self, _reset_monitor):
         """Non-retryable exceptions should not trigger any retry."""
         call_count = 0
 
@@ -134,8 +133,9 @@ class TestRetryDecorator:
         assert call_count == 1
 
     @pytest.mark.asyncio
-    async def test_custom_retry_parameters(self):
+    async def test_custom_retry_parameters(self, _reset_monitor):
         """Custom max_retries, backoff_factor, max_wait should be respected."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         @retry(max_retries=5, backoff_factor=0.001, max_wait=0.005, service_name="test_svc")
@@ -153,8 +153,9 @@ class TestRetryDecorator:
         assert mock_monitor.report_retry.call_count == 4
 
     @pytest.mark.asyncio
-    async def test_custom_retryable_exceptions(self):
+    async def test_custom_retryable_exceptions(self, _reset_monitor):
         """Only specified exceptions should be retried."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         @retry(
@@ -178,8 +179,9 @@ class TestRetryDecorator:
         assert mock_monitor.report_retry.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_max_retries_1_no_retries(self):
+    async def test_max_retries_1_no_retries(self, _reset_monitor):
         """max_retries=1 means exactly 1 attempt, 0 retries — failure propagates immediately."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         @retry(max_retries=1, service_name="test_svc")
@@ -195,7 +197,7 @@ class TestRetryDecorator:
         assert mock_monitor.report_retry.call_count == 0
 
     @pytest.mark.asyncio
-    async def test_unlisted_exception_not_retried(self):
+    async def test_unlisted_exception_not_retried(self, _reset_monitor):
         """Exception not in retryable_exceptions should not be retried."""
         call_count = 0
 
@@ -225,8 +227,9 @@ class TestRetryAsyncFunction:
     """Test the retry_async() standalone function."""
 
     @pytest.mark.asyncio
-    async def test_first_try_success(self):
+    async def test_first_try_success(self, _reset_monitor):
         """First attempt succeeds — no retries."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         async def success_fn():
@@ -240,8 +243,9 @@ class TestRetryAsyncFunction:
         assert mock_monitor.report_retry.call_count == 0
 
     @pytest.mark.asyncio
-    async def test_retries_succeed(self):
+    async def test_retries_succeed(self, _reset_monitor):
         """Retries eventually succeed."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         async def flaky_fn():
@@ -258,8 +262,9 @@ class TestRetryAsyncFunction:
         assert mock_monitor.report_retry.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_custom_exceptions(self):
+    async def test_custom_exceptions(self, _reset_monitor):
         """Should only retry on specified exceptions."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         async def custom_exc_fn():
@@ -281,7 +286,7 @@ class TestRetryAsyncFunction:
         assert mock_monitor.report_retry.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_rejects_pre_created_coroutine(self):
+    async def test_rejects_pre_created_coroutine(self, _reset_monitor):
         """Passing a pre-created coroutine object (not a function) should raise ValueError."""
         async def some_fn():
             return "result"
@@ -294,8 +299,9 @@ class TestRetryAsyncFunction:
         coro.close()
 
     @pytest.mark.asyncio
-    async def test_max_retries_1_no_retries_standalone(self):
+    async def test_max_retries_1_no_retries_standalone(self, _reset_monitor):
         """max_retries=1 means exactly 1 attempt, 0 retries."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         async def failing_fn():
@@ -323,8 +329,9 @@ class TestRetryWithAsyncioWaitFor:
     """
 
     @pytest.mark.asyncio
-    async def test_wait_for_each_attempt(self):
+    async def test_wait_for_each_attempt(self, _reset_monitor):
         """Each attempt wrapped in wait_for — timeout triggers retry."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         async def slow_fn():
@@ -350,8 +357,9 @@ class TestRetryWithAsyncioWaitFor:
         assert mock_monitor.report_retry.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_wait_for_all_attempts_timeout(self):
+    async def test_wait_for_all_attempts_timeout(self, _reset_monitor):
         """If all attempts also timeout, TimeoutError should propagate."""
+        mock_monitor = _reset_monitor
         call_count = 0
 
         async def always_slow():
@@ -376,7 +384,7 @@ class TestRetryWithAsyncioWaitFor:
         assert mock_monitor.report_retry.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_fast_function_not_affected_by_wait_for(self):
+    async def test_fast_function_not_affected_by_wait_for(self, _reset_monitor):
         """Fast function should complete within wait_for timeout."""
         async def fast_fn():
             return "instant"

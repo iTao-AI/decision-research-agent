@@ -6,7 +6,7 @@
 
 | 文件 | 说明 |
 |------|------|
-| [run-log.md](run-log.md) | 端到端运行记录：耗时、token、子 Agent 调用 |
+| [run-log.md](run-log.md) | E2E blocked partial evidence: pytest/build/Docker QA/API smoke；真实 token/耗时/子 Agent 指标待补 |
 | [technical-decisions.md](technical-decisions.md) | 关键技术决策说明与代码路径 |
 
 ## 已有截图

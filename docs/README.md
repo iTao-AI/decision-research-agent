@@ -5,7 +5,7 @@
 | 文档 | 说明 |
 |------|------|
 | [PRD](prd.md) | 产品需求文档 — 产品愿景、目标用户、核心功能、成功指标 |
-| [决策记录](decisions/) | ADR（架构决策记录）— 记录为什么选择 A 而不是 B |
+| [技术决策说明](evidence/technical-decisions.md) | 关键工程决策 — 记录为什么选择 A 而不是 B |
 
 ## Superpowers 规划文档
 
@@ -13,6 +13,7 @@ Superpowers 文档用于沉淀设计输入和实施计划，供后续 writing pl
 
 | 文档 | 说明 |
 |------|------|
+| [Verification Evidence Design](superpowers/specs/2026-06-01-deep-search-agent-verification-evidence-design.md) | 验证收口设计 — 后端测试、前端构建、真实端到端运行证据和职业展示材料时机 |
 | [Evidence Readiness Design](superpowers/specs/2026-06-01-deep-search-agent-evidence-readiness-design.md) | 证据化文档改造设计 — README 作品集化、Evidence Pack、技术决策说明和验证边界 |
 | [Evidence Readiness Plan](superpowers/plans/2026-06-01-evidence-readiness.md) | 证据化文档改造实施计划 — README 重写、Evidence Pack 目录、验证 |
 | [Phase 7b Tool Resilience Plan](superpowers/plans/2026-05-31-phase-7b-tool-resilience.md) | 工具韧性增强实施计划 — 超时、重试、降级和任务级超时 |

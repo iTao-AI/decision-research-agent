@@ -41,7 +41,11 @@ async def _tavily_search(
     return result
 
 
-@cached_tool(ttl=TIMEOUTS["tavily"] * 2, tool_name="tavily_search")
+# Cache TTL for Tavily: 5 minutes (300s) — balances API cost savings with result freshness
+TAVILY_CACHE_TTL = 300
+
+
+@cached_tool(ttl=TAVILY_CACHE_TTL, tool_name="tavily_search")
 async def _cached_search_with_resilience(
     query: str,
     max_results: int,

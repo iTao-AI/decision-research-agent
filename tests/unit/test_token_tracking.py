@@ -105,66 +105,79 @@ class TestTokenUsageCollector:
 
 
 class TestTokenTrackingCallbackHandler:
-    def test_on_llm_end_records_tokens(self):
-        """LLM 调用完成时应记录 token 用量"""
+    def test_on_llm_end_from_usage_metadata(self):
+        """从 AIMessage.usage_metadata 提取 token（langchain_core >= 0.3 标准路径）"""
+        from langchain_core.outputs import LLMResult, ChatGeneration
+        from langchain_core.messages import AIMessage
+
         collector = TokenUsageCollector()
         handler = TokenTrackingCallbackHandler(collector=collector, thread_id="thread-1")
 
-        mock_response = MagicMock()
-        mock_response.token_usage = MagicMock()
-        mock_response.token_usage.prompt_tokens = 150
-        mock_response.token_usage.completion_tokens = 75
+        msg = AIMessage(
+            content="test response",
+            usage_metadata={"input_tokens": 150, "output_tokens": 75, "total_tokens": 225}
+        )
+        gen = ChatGeneration(message=msg)
+        result = LLMResult(generations=[[gen]])
 
-        handler.on_llm_end(mock_response)
+        handler.on_llm_end(result)
 
         summary = collector.get_summary("thread-1")
         assert summary["call_count"] == 1
         assert summary["total_prompt"] == 150
         assert summary["total_completion"] == 75
 
-    def test_on_llm_end_uses_default_pricing(self):
-        """应使用默认定价计算成本"""
+    def test_on_llm_end_from_llm_output(self):
+        """从 llm_output.token_usage 提取 token（旧版 provider 兼容路径）"""
+        from langchain_core.outputs import LLMResult, ChatGeneration
+        from langchain_core.messages import AIMessage
+
         collector = TokenUsageCollector()
         handler = TokenTrackingCallbackHandler(collector=collector, thread_id="thread-1")
 
-        mock_response = MagicMock()
-        mock_response.token_usage = MagicMock()
-        mock_response.token_usage.prompt_tokens = 1000
-        mock_response.token_usage.completion_tokens = 500
+        msg = AIMessage(content="test")  # no usage_metadata
+        gen = ChatGeneration(message=msg)
+        result = LLMResult(
+            generations=[[gen]],
+            llm_output={"token_usage": {"prompt_tokens": 1000, "completion_tokens": 500}}
+        )
 
-        handler.on_llm_end(mock_response)
+        handler.on_llm_end(result)
 
         summary = collector.get_summary("thread-1")
+        assert summary["call_count"] == 1
+        assert summary["total_prompt"] == 1000
+        assert summary["total_completion"] == 500
         # qwen-max: prompt ¥0.04/1K, completion ¥0.12/1K
         expected_cost = (1000 / 1000) * 0.04 + (500 / 1000) * 0.12  # = 0.04 + 0.06 = 0.10
         assert abs(summary["total_cost"] - 0.10) < 0.001
 
-    def test_on_llm_end_no_token_usage_silent(self):
-        """响应无 token_usage 时应静默跳过"""
+    def test_on_llm_end_no_tokens_silent(self):
+        """响应无 token 信息时应静默跳过"""
+        from langchain_core.outputs import LLMResult, ChatGeneration
+        from langchain_core.messages import AIMessage
+
         collector = TokenUsageCollector()
         handler = TokenTrackingCallbackHandler(collector=collector, thread_id="thread-1")
 
-        mock_response = MagicMock()
-        mock_response.token_usage = None
+        msg = AIMessage(content="test")  # no usage_metadata
+        gen = ChatGeneration(message=msg)
+        result = LLMResult(generations=[[gen]])  # no llm_output
 
-        handler.on_llm_end(mock_response)  # 不应抛异常
+        handler.on_llm_end(result)  # 不应抛异常
 
         summary = collector.get_summary("thread-1")
         assert summary["call_count"] == 0
 
-    def test_on_llm_end_missing_model_uses_default_pricing(self):
-        """未知模型应使用默认定价"""
+    def test_on_llm_end_empty_generations_silent(self):
+        """空 generations 时应静默跳过"""
+        from langchain_core.outputs import LLMResult
+
         collector = TokenUsageCollector()
         handler = TokenTrackingCallbackHandler(collector=collector, thread_id="thread-1")
 
-        mock_response = MagicMock()
-        mock_response.token_usage = MagicMock()
-        mock_response.token_usage.prompt_tokens = 100
-        mock_response.token_usage.completion_tokens = 50
-        # 不提供 model_name 属性
-        del mock_response.model_name
-
-        handler.on_llm_end(mock_response)
+        result = LLMResult(generations=[])
+        handler.on_llm_end(result)
 
         summary = collector.get_summary("thread-1")
-        assert summary["call_count"] == 1
+        assert summary["call_count"] == 0

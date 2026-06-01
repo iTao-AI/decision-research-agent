@@ -89,13 +89,54 @@ class TokenTrackingCallbackHandler(BaseCallbackHandler):
         self._thread_id = thread_id or "default"
 
     def on_llm_end(self, response, **kwargs) -> None:
-        token_usage = getattr(response, "token_usage", None)
-        if token_usage is None:
+        """Extract token usage from LLMResult.
+
+        LangChain provides token info through multiple paths depending on the
+        provider. We check them in order:
+        1. response.generations[0][0].message.usage_metadata (langchain_core >= 0.3)
+        2. response.llm_output["token_usage"] (older provider format)
+        """
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        # Path 1: AIMessage.usage_metadata from the generation
+        if response.generations:
+            try:
+                gen = response.generations[0][0]
+                message = getattr(gen, "message", None)
+                if message:
+                    usage_meta = getattr(message, "usage_metadata", None)
+                    if usage_meta:
+                        if isinstance(usage_meta, dict):
+                            prompt_tokens = usage_meta.get("input_tokens", usage_meta.get("prompt_tokens", 0))
+                            completion_tokens = usage_meta.get("output_tokens", usage_meta.get("completion_tokens", 0))
+                        else:
+                            prompt_tokens = getattr(usage_meta, "input_tokens", getattr(usage_meta, "prompt_tokens", 0))
+                            completion_tokens = getattr(usage_meta, "output_tokens", getattr(usage_meta, "completion_tokens", 0))
+            except (IndexError, AttributeError, TypeError):
+                pass
+
+        # Path 2: response.llm_output["token_usage"]
+        if prompt_tokens == 0 and completion_tokens == 0:
+            llm_output = getattr(response, "llm_output", None) or {}
+            token_usage = llm_output.get("token_usage") if isinstance(llm_output, dict) else None
+            if token_usage:
+                if isinstance(token_usage, dict):
+                    prompt_tokens = token_usage.get("prompt_tokens", token_usage.get("input_tokens", 0))
+                    completion_tokens = token_usage.get("completion_tokens", token_usage.get("output_tokens", 0))
+                else:
+                    prompt_tokens = getattr(token_usage, "prompt_tokens", 0)
+                    completion_tokens = getattr(token_usage, "completion_tokens", 0)
+
+        if prompt_tokens == 0 and completion_tokens == 0:
             return
 
-        prompt_tokens = getattr(token_usage, "prompt_tokens", 0)
-        completion_tokens = getattr(token_usage, "completion_tokens", 0)
-        model = getattr(response, "model_name", "unknown") or "unknown"
+        model = "unknown"
+        if hasattr(response, "model_name") and response.model_name:
+            model = response.model_name
+        elif isinstance(getattr(response, "llm_output", None), dict):
+            model = response.llm_output.get("model_name", response.llm_output.get("model", "unknown")) or "unknown"
+
         cost = _calculate_cost(model, prompt_tokens, completion_tokens)
 
         usage = TokenUsageData(

@@ -9,6 +9,11 @@
 - 子 Agent 调用次数：记录单次任务中主 Agent 派发子 Agent 的次数。
 - 缓存命中率：对比 Tavily 搜索在短时间重复查询时的缓存命中情况。
 
+**前端构建：**
+
+- `cd frontend && npm install`：成功
+- `cd frontend && npm run build`：成功，输出 "built in 357ms"
+
 **已有数据：**
 
 - Local pytest run: 235 passed / 12 failed（12 失败集中在 WeasyPrint 本机依赖和 retry monitor mock）

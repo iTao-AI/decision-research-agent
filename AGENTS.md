@@ -83,59 +83,58 @@ Required in `.env` (copy from `.env.example`):
 
 Vue 3 + TypeScript + Vite. Entry: `frontend/src/main.ts` → `frontend/src/App.vue`. Connects to backend via WebSocket for real-time agent reasoning display and REST for file management.
 
-## OpenSpec 工作流规则
+## Codex Role
 
-本项目使用 OpenSpec SDD 工作流管理迭代。所有变更通过 `proposal → spec → tasks → apply → archive` 流程推进。
+- Codex owns direction, planning review, and final independent acceptance.
+- Claude Code owns implementation, TDD discipline, implementation subagents, and near-field fixes.
+- Codex must not claim tests, builds, QA, performance, or review passed unless actual command output supports the claim.
+- Codex must not commit, push, create PRs, ship, deploy, install tools, or modify user-level agent files unless the user explicitly asks.
 
-### 核心纪律
+## Skill Trigger Naming
 
-1. **先读后做**：执行任何 OpenSpec 命令前，先读取：
-   - `openspec/config.yaml`（项目约束）
-   - `openspec/specs/` 目录下相关域的规范（当前系统行为）
-   - `openspec/changes/` 当前活跃的变更（如果存在）
+- Codex Superpowers skills use namespaced handles such as `superpowers:brainstorming`, `superpowers:writing-plans`, and `superpowers:verification-before-completion`.
+- Codex GStack skills use `gstack-<skill-name>` handles such as `gstack-office-hours`, `gstack-autoplan`, `gstack-review`, `gstack-qa-only`, `gstack-investigate`, and `gstack-ship`.
+- Claude Code uses different skill names. Do not copy Claude-side skill trigger lines into Codex instructions without translating them.
 
-2. **不要猜测需求**：如果 spec 中没有明确定义某个行为，问用户，不要自行补充。
+## Planning Flow
 
-3. **out-of-scope 是红线**：proposal.md 中标注为 out-of-scope 的功能，严禁实现。
+When planning is required, use this Codex-facing sequence:
 
-### Apply 阶段规则
+```text
+gstack-office-hours
+superpowers:brainstorming
+superpowers:writing-plans
+gstack-autoplan
+Codex locks the plan
+```
 
-每个 task 完成后：
-1. 自检（运行测试、验证 spec 对齐）
-2. 有问题直接修复直到通过
-3. 标记 `[x]`，commit
-4. 直接进入下一个 task
+`gstack-office-hours` 只用于方向不清或产品取舍。小任务可跳过。
 
-严禁一次性实现所有任务，必须逐个 task 按 TDD 循环执行。
+`superpowers:writing-plans` 在 `gstack-autoplan` 之前；`gstack-autoplan` 审查已有 plan。
 
-### Task 完成自检
+## Final Acceptance Flow
 
-每个 task 标记 `[x]` 前必须：
-1. 运行该 task 相关的所有测试，确认全部通过
-2. 验证实现与 delta spec 对齐
-3. 运行已有测试，确认无回归
+Before final acceptance, Codex must review:
 
-### 配置同步
+- Source spec
+- Implementation plan
+- Claude execution evidence
+- `@agent-gstack-fixfirst-reviewer` output, if the agent is available
+- Git diff
+- Actual command output
 
-当变更引入新约定时（如新的错误处理模式、新的架构模式），需同步更新：
-- `openspec/config.yaml` — OpenSpec 工作流新约束
-- 本项目 `AGENTS.md` — 项目级执行规则
+Recommended Codex-facing sequence:
 
-具体判断标准见 `~/.Codex/skills/sdd-vibecoding/SKILL.md` 中的「配置维护指南」。
+```text
+gstack-review
+gstack-qa-only or gstack-qa when needed
+superpowers:verification-before-completion
+gstack-investigate only when failure or ambiguity remains
+gstack-ship only when the user explicitly asks to ship
+superpowers:finishing-a-development-branch when integration guidance is needed
+```
 
-### 归档流程
-
-PR 合并到 main 后，在 main 分支上执行 `/openspec-archive`。归档 commit 必须直接进入 main，禁止提前在 feature 分支上归档。
-
-### Phase 4 强制门控（CRITICAL）
-
-- **进入 Phase 4 后，必须先调用 `Skill("openspec-apply")`，再调用 `Skill("test-driven-development")`**
-- **严禁跳过 skill 直接写代码或测试**
-- 如果 skill 无法调用，必须向用户报告并等待手动触发指令
-
-### PR Body 格式
-
-### PR Body 格式
+## PR Body 格式
 
 PR body 按以下结构编写（不适用的段可省略）：
 

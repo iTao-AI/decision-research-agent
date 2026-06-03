@@ -125,7 +125,7 @@ flowchart TB
 | 数据库查询（MySQL 不可用） | completed_with_fallback | 16s | 39K | ✓ |
 | 知识库检索（RAGFlow 不可用） | completed_with_fallback | 91s | 134K | ✓ |
 
-> 成本说明：token_tracking 使用 Qwen-Max 定价显示 $58，实际 deepseek-chat 定价约 $0.41。单次快照，非统计采样。
+> 成本：DeepSeek 官方定价 ¥1/1M input + ¥4/1M output，5 问总成本 ¥1.50。单次快照，非统计采样。
 
 ## 核心设计决策
 

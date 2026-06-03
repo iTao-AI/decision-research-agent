@@ -91,5 +91,5 @@
 - **evidence-003**（PyTorch vs JAX）：token 消耗最大（822K），agent 进行了多次搜索和对比，生成了正式报告。Token 波动在 DeepSeek 正常范围内。
 - **evidence-004**（数据库查询）：外部 MySQL 不可用，子代理快速返回失败后走 fallback 路径。16s 耗时说明系统正确处理了 graceful degradation。
 - **evidence-005**（知识库检索）：RAGFlow 未配置或不可用，走 fallback 路径。13 次工具调用说明 agent 尝试了多次检索。
-- **成本说明**: token_tracking.py 的定价模型基于 Qwen-Max（$0.04/1K prompt, $0.12/1K completion），本次报告显示 $58.38。实际 deepseek-chat 定价（$0.27/1M input, $1.10/1M output）成本约 $0.41。成本数字请以 DeepSeek 账单为准。
+- **成本说明**: token_tracking.py 定价已修正为 DeepSeek 官方定价（¥1/1M input, ¥4/1M output），5 问总成本 ¥1.50，单条 ¥0.04 — ¥0.87。
 - **evidence-004/005**: 这两个 query 的可用性依赖外部服务，结果证明了系统的 graceful degradation 能力 —— 不可用时走 fallback 而非 crash。

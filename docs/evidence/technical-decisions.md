@@ -84,3 +84,40 @@ WebSocket 推送每个事件即时到达，前端只需按事件类型渲染。
 - 使用 per-thread 内存 cache（`_search_cache: dict = {}`），而非 Redis/TTL
 - 同一 thread 内相同 query 直接返回缓存，跨 thread 隔离
 - 不引入额外依赖，cache 随任务结束可手动清理
+
+## Phase 9 新增决策
+
+### 为什么选「确定性终态」模型
+
+Phase 8 收口时发现：同一 query 跑多次 E2E，有时生成报告、有时 agent 回答在 AIMessage 中但未写文件、有时 token 爆炸（459K → 3M）。根源是 DeepSeek 模型行为随机 + 报告生成依赖 agent 自主调用 write_file 工具。
+
+「确定性终态」把「报告是否生成」从 agent 的不可靠决策中抽离出来，变成后端代码的确定性逻辑：
+
+- 流的最后有 Markdown 文件 → `completed`
+- 流正常结束但无 Markdown 文件 → 后端生成 fallback 报告 → `completed_with_fallback`
+- 异常/超时 → `failed`
+
+这样每次 E2E 都有明确终态，不会出现「stream ended but no report」的尴尬。演示时即使 agent 没有生成正式报告，fallback 报告也包含完整诊断信息。
+
+### Fallback 报告内容策略
+
+Fallback 报告不是空的占位符，而是包含：
+
+1. 线程 ID 和生成时间（可追溯性）
+2. 原始查询（保留用户意图）
+3. 最后一个 agent 文本输出（即使没写成文件，LLM 的思考也在这里）
+4. 诊断事件列表（`tool:tavily`、`tool:ragflow` 等，证明 agent 确实在干活）
+
+这样 fallback 报告本身就是问题排查的起点——审查者或 debug 者看到它就能判断是 query 太难、模型没调用工具、还是工具调用后没收到结果。
+
+### TaskFinalization 接口设计
+
+`TaskFinalization` 是不可变数据类，五个字段：
+
+- `thread_id` — 对应原始请求
+- `status` — `"completed" | "completed_with_fallback" | "failed"`
+- `output_path` — 报告文件绝对路径（或 None）
+- `fallback_used` — 布尔值，前端据此决定是否显示「兜底报告」标记
+- `error_message` — 仅 `failed` 时有值
+
+`finalize_task_run()` 是唯一入口，接收 `AgentRunResult`，返回 `TaskFinalization`。不抛异常——报告搜索失败时走 fallback 路径而非崩溃。

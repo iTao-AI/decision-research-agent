@@ -21,7 +21,7 @@ from pathlib import Path
 
 from api.context import set_session_context, reset_session_context, set_thread_context
 
-from langchain_core.messages import AIMessage
+from agent.run_result import AgentRunAccumulator, AgentRunResult, process_stream_chunk
 
 def _resolve_subagent(agent):
     """Agent 类实例或 dict 的适配转换"""
@@ -75,30 +75,12 @@ def _prepare_session_environment(thread_id: str):
     return session_dir_str, relative_session_dir, uploaded_info
 
 
-def _process_stream_chunk(chunk):
+def _process_stream_chunk(chunk, accumulator: AgentRunAccumulator):
     """Process LangGraph stream output and report events to frontend."""
-    for node_name, state in chunk.items():
-        if not state or "messages" not in state:
-            continue
-
-        messages = state["messages"]
-        if isinstance(messages, list) and messages:
-            last_msg = messages[-1]
-
-            if isinstance(last_msg, AIMessage):
-                if last_msg.tool_calls:
-                    for tool in last_msg.tool_calls:
-                        if tool['name'] == 'task':
-                            monitor.report_assistant(
-                                tool['args'].get('subagent_type', 'Agent'),
-                                {"desc": tool['args'].get('description')}
-                            )
-
-                elif last_msg.content:
-                    monitor.report_task_result(last_msg.content)
+    process_stream_chunk(chunk, accumulator, monitor)
 
 
-async def run_deep_agent(task_query: str, thread_id: str = None):
+async def run_deep_agent(task_query: str, thread_id: str = None) -> AgentRunResult:
     """Main agent execution entry point."""
     if not thread_id:
         thread_id = str(uuid.uuid4())
@@ -109,6 +91,11 @@ async def run_deep_agent(task_query: str, thread_id: str = None):
     thread_token = set_thread_context(thread_id)
     session_token = set_session_context(session_dir_str)
     monitor.report_session_dir(session_dir_str)
+    accumulator = AgentRunAccumulator(
+        thread_id=thread_id,
+        query=task_query,
+        session_dir=Path(session_dir_str),
+    )
 
     # Register token tracking callback
     from agent.token_tracking import TokenTrackingCallbackHandler
@@ -135,12 +122,12 @@ async def run_deep_agent(task_query: str, thread_id: str = None):
                 {"messages": [{"role": "user", "content": task_query + path_instruction}]},
                 config=config
         ):
-            _process_stream_chunk(chunk)
-        return "Done"
+            _process_stream_chunk(chunk, accumulator)
+        return accumulator.to_result()
     except Exception as e:
         print(f"Error: {e}")
         monitor._emit("error", f"Execution failed: {e}")
-        return f"Error: {e}"
+        raise
     finally:
         if 'session_token' in locals():
             reset_session_context(session_token, thread_token)

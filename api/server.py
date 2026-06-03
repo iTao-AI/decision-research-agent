@@ -23,12 +23,14 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from agent.main_agent import run_deep_agent
+from agent.run_result import AgentRunResult
 from agent.telemetry import collector, TelemetryRecord
 from api.monitor import monitor, manager
 from api.upload_security import sanitize_filename, validate_filename
 from api.cors_config import get_allowed_origins
 from api.task_tracker import create_tracked_task
 from api.persistence import save_task, update_task, get_task
+from api.task_finalizer import finalize_task_run, TaskFinalization
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -88,6 +90,50 @@ class TaskRequest(BaseModel):
     thread_id: str = None
 
 
+async def _mark_task_timeout(thread_id: str, timeout_seconds: int) -> None:
+    error_message = f"Agent task timed out after {timeout_seconds}s"
+    await asyncio.to_thread(
+        update_task,
+        thread_id=thread_id,
+        status="failed",
+        error_message=error_message,
+    )
+    monitor.report_task_finalized(
+        thread_id=thread_id,
+        status="failed",
+        fallback_used=False,
+        output_path=None,
+        error_message=error_message,
+    )
+    monitor._emit("error", error_message)
+
+
+async def _run_task_with_persistence(query: str, thread_id: str) -> TaskFinalization:
+    try:
+        await asyncio.to_thread(update_task, thread_id=thread_id, status="running")
+        result = await run_deep_agent(query, thread_id)
+        if not isinstance(result, AgentRunResult):
+            raise RuntimeError(
+                f"run_deep_agent returned unsupported result type: {type(result).__name__}"
+            )
+        return await asyncio.to_thread(finalize_task_run, result)
+    except Exception as e:
+        await asyncio.to_thread(
+            update_task,
+            thread_id=thread_id,
+            status="failed",
+            error_message=str(e),
+        )
+        monitor.report_task_finalized(
+            thread_id=thread_id,
+            status="failed",
+            fallback_used=False,
+            output_path=None,
+            error_message=str(e),
+        )
+        raise
+
+
 @app.post("/api/task")
 async def run_task(request: TaskRequest):
     """Start an agent task asynchronously."""
@@ -96,22 +142,11 @@ async def run_task(request: TaskRequest):
     # Persist task and update status as it progresses
     await asyncio.to_thread(save_task, thread_id=thread_id, query=request.query, status="pending")
 
-    async def _run_with_persistence():
-        try:
-            await asyncio.to_thread(update_task, thread_id=thread_id, status="running")
-            result = await run_deep_agent(request.query, thread_id)
-            await asyncio.to_thread(update_task, thread_id=thread_id, status="completed")
-            return result
-        except Exception as e:
-            await asyncio.to_thread(
-                update_task,
-                thread_id=thread_id,
-                status="failed",
-                error_message=str(e),
-            )
-            raise
-
-    create_tracked_task(_run_with_persistence(), thread_id)
+    create_tracked_task(
+        _run_task_with_persistence(request.query, thread_id),
+        thread_id,
+        on_timeout=_mark_task_timeout,
+    )
     return {"status": "started", "thread_id": thread_id}
 
 

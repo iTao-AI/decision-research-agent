@@ -1,6 +1,6 @@
 # Phase 9 E2E Stability Fallback Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For Claude Code workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make every agent task end with a deterministic persisted terminal state and a downloadable Markdown artifact when the agent finishes without producing one.
 
@@ -11,6 +11,12 @@
 **Source Spec:** `docs/superpowers/plans/2026-06-02-phase-9-e2e-stability-fallback.md`
 
 **Execution note:** This plan contains commit steps because Superpowers execution plans are designed for frequent commits. If the user has not explicitly authorized commits in the execution session, stop before the first commit step and ask for commit authorization.
+
+**Workflow priority:** user instruction and project safety boundaries > activated Superpowers skill procedure > project default workflow > optional OpenSpec mode. `SUPERPOWERS_GATE` and `TDD_EVIDENCE` are evidence gates; they do not replace the execution steps required by the activated skill.
+
+**Subagent execution rule:** if `subagent-driven-development` is loaded, dispatch fresh implementation subagents for plan tasks instead of manually executing the plan. Provide the full task text, allowed files, RED/GREEN commands, expected evidence, and stop conditions in each implementer prompt.
+
+**Tool failure stop condition:** if 3 consecutive tool calls fail with missing/empty parameters or malformed invocation, stop manual execution, record the deviation, and switch to a fresh subagent or new session.
 
 ---
 

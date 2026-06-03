@@ -1,6 +1,6 @@
 # Phase 7b: 工具韧性增强 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 为所有外部服务调用（Tavily、RAGFlow、MySQL、PDF 转换）增加超时控制、重试机制和优雅降级能力，并在 API 层增加任务级超时。
 

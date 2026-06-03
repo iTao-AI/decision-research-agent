@@ -141,10 +141,11 @@ API endpoints:
 - **POST /api/upload** — Upload files for analysis
 - **GET /api/files** — List generated files
 - **GET /api/download** — Download generated files
+- **GET /api/tasks/{thread_id}** — View persisted task status and output path
 - **GET /api/token-usage/{thread_id}** — View token usage for a thread
 - **WebSocket /ws/{thread_id}** — Real-time reasoning stream
 
-WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `error`
+WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`
 
 ## Project Structure
 

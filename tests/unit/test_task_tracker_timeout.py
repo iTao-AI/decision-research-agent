@@ -31,23 +31,30 @@ class TestTaskTrackerTimeout:
         assert get_active_task("timeout-test-1") is None
 
     @pytest.mark.asyncio
-    async def test_timeout_wraps_wait_for(self):
-        """超时任务应通过 asyncio.wait_for 自动取消"""
+    async def test_timeout_calls_callback_and_does_not_return_error_string(self):
+        """Timed out tasks call on_timeout and return None instead of a success-like string."""
         from api.task_tracker import create_tracked_task, get_active_task, clear_active_tasks
 
         clear_active_tasks()
+        calls = []
 
         async def slow():
             await asyncio.sleep(100)
             return "done"
 
-        # 创建超时为 1 秒的任务 — asyncio.wait_for 会直接取消
-        task = create_tracked_task(slow(), "timeout-test-2", timeout_seconds=1)
+        async def on_timeout(task_id: str, timeout_seconds: int):
+            calls.append((task_id, timeout_seconds))
 
-        # 等待超时后任务应该完成（返回超时错误字符串）
+        task = create_tracked_task(
+            slow(),
+            "timeout-test-2",
+            timeout_seconds=1,
+            on_timeout=on_timeout,
+        )
+
         result = await asyncio.wait_for(task, timeout=3)
-        assert isinstance(result, str)
-        assert "timed out" in result.lower()
+        assert result is None
+        assert calls == [("timeout-test-2", 1)]
         assert get_active_task("timeout-test-2") is None
 
     @pytest.mark.asyncio

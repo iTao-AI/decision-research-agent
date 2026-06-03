@@ -74,7 +74,13 @@ class ToolMonitor:
         """设置 FastAPI 的 WebSocket 管理器"""
         self.websocket_manager = manager
 
-    def _emit(self, event_type: str, message: str, data: Optional[Dict[str, Any]] = None):
+    def _emit(
+        self,
+        event_type: str,
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+        thread_id: str | None = None,
+    ):
         """内部发送方法"""
         payload = {
             "type": "monitor_event",
@@ -87,14 +93,14 @@ class ToolMonitor:
         # 1. 优先尝试通过 FastAPI WebSocket 发送 (定向推送)
         if self.websocket_manager:
             try:
-                # 获取当前线程 ID
-                thread_id = get_thread_context()
+                # 获取当前线程 ID；finalization events may emit after context reset.
+                target_thread_id = thread_id or get_thread_context()
 
                 # 确保 loop 已加载
                 manager_loop = self.websocket_manager.get_loop()
 
                 if manager_loop:
-                    if thread_id:
+                    if target_thread_id:
                         # 检查当前是否在同一个事件循环中
                         try:
                             current_loop = asyncio.get_running_loop()
@@ -104,12 +110,12 @@ class ToolMonitor:
                         if current_loop and current_loop == manager_loop:
                             # 如果在同一个循环中（例如在 create_task 中运行），直接创建任务
                             current_loop.create_task(
-                                self.websocket_manager.send_to_thread(payload, thread_id)
+                                self.websocket_manager.send_to_thread(payload, target_thread_id)
                             )
                         else:
                             # 如果在不同线程，使用 threadsafe 方法
                             asyncio.run_coroutine_threadsafe(
-                                self.websocket_manager.send_to_thread(payload, thread_id),
+                                self.websocket_manager.send_to_thread(payload, target_thread_id),
                                 manager_loop
                             )
                     else:
@@ -182,6 +188,28 @@ class ToolMonitor:
             self._emit("task_result", "任务执行完成", {"result": truncated})
         else:
             self._emit("task_result", "任务执行完成", {"result": result})
+
+    def report_task_finalized(
+        self,
+        thread_id: str,
+        status: str,
+        fallback_used: bool = False,
+        output_path: str | None = None,
+        error_message: str | None = None,
+    ):
+        """Report terminal task persistence state."""
+        self._emit(
+            "task_finalized",
+            f"任务状态已完成: {status}",
+            {
+                "thread_id": thread_id,
+                "status": status,
+                "fallback_used": fallback_used,
+                "output_path": output_path,
+                "error_message": error_message,
+            },
+            thread_id=thread_id,
+        )
 
     def report_session_dir(self, path: str):
         """报告任务工作目录"""

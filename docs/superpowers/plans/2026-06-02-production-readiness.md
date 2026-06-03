@@ -1,6 +1,6 @@
 # Phase 8: Production Readiness Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把项目从"可验证的 demo"推进到"可稳定运行的服务"——token 效率优化、SQLite 持久化、API Key 鉴权、GitHub Actions CI/CD、benchmark 基准测试。
 

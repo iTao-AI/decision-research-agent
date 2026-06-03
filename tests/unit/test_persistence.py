@@ -91,3 +91,21 @@ class TestPersistence:
         from api.persistence import init_db, get_task
         init_db(db_path)
         assert get_task(db_path, "nonexistent") is None
+
+    def test_completed_with_fallback_sets_completed_at(self, db_path):
+        """completed_with_fallback is a terminal status that stamps completed_at."""
+        from api.persistence import init_db, save_task, update_task, get_task
+
+        init_db(db_path)
+        save_task(db_path, thread_id="fallback-001", query="test")
+        update_task(
+            db_path,
+            "fallback-001",
+            status="completed_with_fallback",
+            output_path="/output/session_fallback-001/fallback_report.md",
+        )
+
+        task = get_task(db_path, "fallback-001")
+        assert task["status"] == "completed_with_fallback"
+        assert task["completed_at"] is not None
+        assert task["output_path"].endswith("fallback_report.md")

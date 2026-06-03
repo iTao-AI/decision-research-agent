@@ -1,6 +1,6 @@
 # Deep Search Agent 证据化文档改造实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 将 README 从功能清单改造为作品集入口，建立 Evidence Pack 结构，补充技术决策说明，提升项目证据密度。
 

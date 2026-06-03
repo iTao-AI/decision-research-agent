@@ -1,8 +1,10 @@
 """异步任务错误处理和超时管理"""
 import asyncio
+import inspect
 import logging
 import os
-from typing import Dict
+from collections.abc import Awaitable, Callable
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -11,10 +13,14 @@ DEFAULT_TASK_TIMEOUT = int(os.getenv("AGENT_TASK_TIMEOUT_SECONDS", "1800"))
 
 # 活跃任务字典: task_id -> (asyncio.Task, timeout_seconds, start_time)
 active_tasks: Dict[str, tuple] = {}
+TimeoutCallback = Callable[[str, int], Awaitable[Any] | Any]
 
 
 def create_tracked_task(
-    coroutine, task_id: str, timeout_seconds: int = DEFAULT_TASK_TIMEOUT
+    coroutine,
+    task_id: str,
+    timeout_seconds: int = DEFAULT_TASK_TIMEOUT,
+    on_timeout: TimeoutCallback | None = None,
 ) -> asyncio.Task:
     """创建并跟踪异步任务，带超时保护。
 
@@ -33,7 +39,11 @@ def create_tracked_task(
             return await asyncio.wait_for(coroutine, timeout=timeout_seconds)
         except asyncio.TimeoutError:
             logger.warning(f"Task {task_id} timed out after {timeout_seconds}s")
-            return f"Error: Agent task timed out after {timeout_seconds}s"
+            if on_timeout is not None:
+                callback_result = on_timeout(task_id, timeout_seconds)
+                if inspect.isawaitable(callback_result):
+                    await callback_result
+            return None
 
     task = asyncio.create_task(_with_timeout())
     start_time = asyncio.get_event_loop().time()

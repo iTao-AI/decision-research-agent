@@ -22,6 +22,25 @@
 }
 ```
 
+### GET /api/tasks/{thread_id}
+
+查询异步 Agent 任务的持久化状态。
+
+**响应：**
+```json
+{
+  "thread_id": "唯一的会话线程ID",
+  "query": "用户提交的原始问题",
+  "status": "pending | running | completed | completed_with_fallback | failed",
+  "created_at": "ISO 8601 时间戳",
+  "started_at": "ISO 8601 时间戳或 null",
+  "completed_at": "ISO 8601 时间戳或 null",
+  "output_path": "完成状态下可下载的 Markdown 文件绝对路径或 null",
+  "token_usage_json": "JSON 字符串或 null",
+  "error_message": "失败原因或 null"
+}
+```
+
 ### POST /api/upload
 
 上传文件用于分析。
@@ -96,15 +115,16 @@
 
 实时接收 Agent 推理流事件。
 
+WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`
+
 **连接参数：**
 - `thread_id`：POST /api/task 返回的线程 ID
 
 **消息格式（服务端 → 客户端）：**
 ```json
 {
-  "type": "tool_start | tool_running | tool_end | error | complete",
-  "thread_id": "线程ID",
-  "tool_name": "工具名称",
+  "type": "monitor_event",
+  "event": "session_created | tool_start | assistant_call | task_result | task_finalized | error",
   "message": "事件描述",
   "data": { ... },
   "timestamp": "ISO 8601 时间戳"
@@ -115,11 +135,14 @@
 
 | type | 含义 |
 |------|------|
+| `session_created` | 后端会话目录已创建 |
 | `tool_start` | 工具开始执行 |
-| `tool_running` | 工具执行中（进度更新） |
-| `tool_end` | 工具执行完成 |
+| `assistant_call` | 子 Agent 被派发 |
+| `task_result` | Agent 输出中间或最终可见结果 |
+| `task_finalized` | 后端已写入持久化终态 |
 | `error` | 发生错误 |
-| `complete` | 整个任务完成 |
+
+`task_finalized` 表示后端已写入持久化终态。`data.status` 可能为 `completed`、`completed_with_fallback` 或 `failed`；`data.output_path` 在成功和兜底成功时指向可下载 Markdown 文件。
 
 ## 认证
 

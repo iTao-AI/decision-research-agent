@@ -96,6 +96,14 @@ Vue 3 + TypeScript + Vite. Entry: `frontend/src/main.ts` → `frontend/src/App.v
 - Codex GStack skills use `gstack-<skill-name>` handles such as `gstack-office-hours`, `gstack-autoplan`, `gstack-review`, `gstack-qa-only`, `gstack-investigate`, and `gstack-ship`.
 - Claude Code uses different skill names. Do not copy Claude-side skill trigger lines into Codex instructions without translating them.
 
+## Claude Execution Handoff
+
+- If `subagent-driven-development` is active in Claude Code, the activated skill procedure owns execution order; do not manually execute plan tasks just because the plan is detailed.
+- Claude main controller owns task extraction, context packaging, `SUPERPOWERS_GATE`, and evidence acceptance.
+- Implementation subagents own task-local RED/GREEN work when dispatched with full task text, allowed files, RED/GREEN commands, expected evidence, and stop conditions.
+- If `CLAUDE.md` is ignored or local-only, worktree sessions must copy, regenerate, or explicitly include Claude-facing rules before implementation.
+- If tool calls fail 3 consecutive times with missing/empty parameters or malformed invocation, stop manual execution and switch to a fresh subagent or new session.
+
 ## Planning Flow
 
 When planning is required, use this Codex-facing sequence:

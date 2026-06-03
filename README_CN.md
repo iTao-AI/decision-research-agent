@@ -139,10 +139,11 @@ API 端点:
 - **POST /api/upload** — 上传文件供分析
 - **GET /api/files** — 列出已生成文件
 - **GET /api/download** — 下载已生成文件
+- **GET /api/tasks/{thread_id}** — 查看任务持久化状态和输出路径
 - **GET /api/token-usage/{thread_id}** — 查看某个线程的 token 用量
 - **WebSocket /ws/{thread_id}** — 实时推理流
 
-WebSocket 事件: `session_created`, `tool_start`, `assistant_call`, `task_result`, `error`
+WebSocket 事件: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`
 
 ## 项目结构
 

@@ -93,8 +93,8 @@ class TestToolMonitorSanitization:
         captured = []
 
         class CapturingMonitor(ToolMonitor):
-            def _emit(self, event_type, message, data=None):
-                captured.append((event_type, message, data))
+            def _emit(self, event_type, message, data=None, thread_id=None):
+                captured.append((event_type, message, data, thread_id))
 
         mon = CapturingMonitor()
         return mon, captured
@@ -105,7 +105,7 @@ class TestToolMonitorSanitization:
         mon.report_start("search_tool", {"api_key": "sk-secret", "query": "hello world"})
 
         assert len(captured) == 1
-        event_type, message, data = captured[0]
+        event_type, message, data, _ = captured[0]
         assert event_type == "tool_start"
         assert data["args"]["api_key"] == "***REDACTED***"
         assert data["args"]["query"] == "hello world"
@@ -182,6 +182,31 @@ class TestToolMonitorSanitization:
         mon.report_tool("search_tool", {"api_key": "secret", "query": "test"})
 
         assert len(captured) == 1
-        event_type, message, data = captured[0]
+        event_type, message, data, _ = captured[0]
         assert event_type == "tool_start"
         assert data["args"]["api_key"] == "***REDACTED***"
+
+    def test_report_task_finalized_emits_terminal_payload(self):
+        """task_finalized includes status and fallback metadata."""
+        mon, captured = self._make_monitor_with_captured_emit()
+
+        mon.report_task_finalized(
+            thread_id="thread-001",
+            status="completed_with_fallback",
+            fallback_used=True,
+            output_path="/tmp/output/session_thread-001/fallback_report.md",
+            error_message=None,
+        )
+
+        assert len(captured) == 1
+        event_type, message, data, routed_thread_id = captured[0]
+        assert event_type == "task_finalized"
+        assert message == "任务状态已完成: completed_with_fallback"
+        assert routed_thread_id == "thread-001"
+        assert data == {
+            "thread_id": "thread-001",
+            "status": "completed_with_fallback",
+            "fallback_used": True,
+            "output_path": "/tmp/output/session_thread-001/fallback_report.md",
+            "error_message": None,
+        }

@@ -171,6 +171,34 @@ const handleSocketMessage = (data: any) => {
         timestamp: new Date().toLocaleTimeString()
       })
     }
+  } else if (event === 'task_finalized') {
+    const finalizedStatus = eventData.status
+    if (finalizedStatus === 'completed' || finalizedStatus === 'completed_with_fallback' || finalizedStatus === 'failed') {
+      status.value = 'idle'
+    }
+
+    if (finalizedStatus === 'completed_with_fallback') {
+      const fallbackMessage = '任务已完成但未生成正式报告，系统已创建兜底报告。'
+      if (lastAiMsg) {
+        lastAiMsg.content = fallbackMessage
+      } else {
+        messages.value.push({
+          role: 'ai',
+          content: fallbackMessage,
+          timestamp: Date.now()
+        })
+      }
+    }
+
+    if (finalizedStatus === 'failed') {
+      messages.value.push({
+        role: 'system',
+        content: `Error: ${eventData.error_message || message}`,
+        timestamp: Date.now()
+      })
+    }
+
+    fetchFiles()
   } else if (event === 'task_result') {
     if (lastAiMsg) {
       lastAiMsg.content = eventData.result

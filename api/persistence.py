@@ -11,6 +11,7 @@ from typing import Optional, Dict
 
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "tasks.db"
+TERMINAL_STATUSES = {"completed", "completed_with_fallback", "failed"}
 
 
 def _get_db_path(db_path: str = None) -> str:
@@ -83,7 +84,7 @@ def update_task(
     """Update a task record. Only provided fields are updated.
 
     When status is 'running', sets started_at automatically.
-    When status is 'completed' or 'failed', sets completed_at automatically.
+    When status is a terminal status, sets completed_at automatically.
     """
     path = _get_db_path(db_path)
     conn = init_db(path)
@@ -96,7 +97,7 @@ def update_task(
         if status == "running":
             sets.append("started_at = ?")
             params.append(now)
-        elif status in ("completed", "failed"):
+        elif status in TERMINAL_STATUSES:
             sets.append("completed_at = ?")
             params.append(now)
     if output_path is not None:

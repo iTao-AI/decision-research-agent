@@ -16,7 +16,7 @@
 
 **已有数据：**
 
-- Local pytest run: 264 passed, 0 failed（`python -m pytest -q`）
+- Local pytest run: 282 passed, 0 failed（`python -m pytest -q`）
 - Docker 部署: 本机验证通过（见 [QA 报告摘要](assets/qa-report-summary.md)）
 
 ## E2E Run #1
@@ -41,9 +41,16 @@
 - **调查结论**: 在未修改的原始代码上重跑同题 E2E 也出现无报告结果，说明 token/report 波动主要来自 DeepSeek 模型随机行为，不能作为本轮 token before/after benchmark 证据。
 - **后续跟进**: Task 6（token before/after 对比）和 Task 8（5 问 benchmark）应等固定 WebSocket 客户端脚本、重复运行策略和中位数统计方案确定后再执行。
 
-## Phase 9 Plan
+## Phase 9 Implementation
 
-- **状态**: PLANNED
-- **目标**: 将 Phase 8 的 E2E 不稳定报告生成问题收敛为确定性后端终态：`completed`、`completed_with_fallback` 或 `failed`。
-- **验证策略**: 后端单元测试覆盖 persistence、timeout、agent run accumulator 和 task finalizer；集成测试覆盖 completed、fallback、exception、timeout；真实 E2E 使用 `scripts/e2e_runner.py` 手动记录。
-- **非目标**: 本阶段不做 5 问 benchmark，不做 prompt 调优，不把真实 LLM E2E 放入 CI。
+- **状态**: DONE（2026-06-03）
+- **目标达成**: 将 E2E 不稳定报告生成问题收敛为确定性后端终态。
+- **新增模块**:
+  - `agent/run_result.py` — `AgentRunAccumulator`（流状态收集）+ `AgentRunResult`（不可变结果对象）+ `process_stream_chunk()`（替换 server.py 内联流处理）
+  - `api/task_finalizer.py` — `TaskFinalization`（终态数据类）+ `finalize_task_run()`（报告搜索 / fallback 报告 / 持久化）
+  - `api/server.py` — `_mark_task_timeout()` 回调 + `_run_task_with_persistence()` 封装；WebSocket 新增 `task_finalized` 事件
+  - `api/monitor.py` — `report_task_finalized()` 方法（发射终态事件）
+- **确定性终态**: `completed`（正式报告）| `completed_with_fallback`（兜底报告）| `failed`（异常/超时）
+- **Fallback 报告内容**: 线程 ID、生成时间、原始查询、最后一个 agent 输出、诊断事件列表
+- **测试覆盖**: 282 passed, 0 failed（含 `test_task_finalizer.py`、`test_persistence.py`、`test_monitor_sanitization.py` 中 Phase 9 相关用例）
+- **非目标**: 本阶段未做 5 问 benchmark、prompt 调优、真实 LLM E2E 入 CI

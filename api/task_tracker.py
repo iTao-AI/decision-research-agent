@@ -71,33 +71,6 @@ def _on_task_done(task: asyncio.Task, task_id: str):
         pass
 
 
-def check_timeouts() -> list:
-    """检查所有活跃任务是否超时，超时则取消。
-
-    Returns:
-        被取消的任务 ID 列表
-    """
-    cancelled = []
-    now = asyncio.get_event_loop().time()
-    timed_out_ids = []
-
-    for task_id, (task, timeout_seconds, start_time) in active_tasks.items():
-        elapsed = now - start_time
-        if elapsed > timeout_seconds:
-            timed_out_ids.append(task_id)
-
-    for task_id in timed_out_ids:
-        if task_id in active_tasks:
-            task, timeout_seconds, _ = active_tasks[task_id]
-            logger.warning(
-                f"Task {task_id} timed out after {timeout_seconds}s, cancelling"
-            )
-            task.cancel()
-            cancelled.append(task_id)
-
-    return cancelled
-
-
 def get_active_task(task_id: str) -> asyncio.Task | None:
     """获取指定任务"""
     entry = active_tasks.get(task_id)

@@ -160,6 +160,16 @@ class TestUploadEndpoint:
             # Rejected — that's the safe path
             pass
 
+    def test_rejects_path_traversal_thread_id(self, client):
+        response = client.post(
+            "/api/upload",
+            files={"files": ("notes.txt", b"test content")},
+            data={"thread_id": "../../../../../../tmp/escape"},
+            headers=AUTH_HEADERS,
+        )
+
+        assert response.status_code == 400
+
 
 class TestTaskEndpoint:
     """POST /api/task integration tests."""
@@ -175,3 +185,12 @@ class TestTaskEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "thread_id" in data
+
+    def test_rejects_path_traversal_thread_id(self, client):
+        response = client.post(
+            "/api/task",
+            json={"query": "Test query", "thread_id": "../../../../../../tmp/escape"},
+            headers=AUTH_HEADERS,
+        )
+
+        assert response.status_code == 422

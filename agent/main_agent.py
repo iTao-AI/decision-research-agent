@@ -20,6 +20,7 @@ import shutil
 from pathlib import Path
 
 from api.context import set_session_context, reset_session_context, set_thread_context
+from api.thread_ids import safe_session_dir
 
 from agent.run_result import AgentRunAccumulator, AgentRunResult, process_stream_chunk
 
@@ -51,14 +52,14 @@ print(f"----------------project_root-----------------: {project_root}")
 
 def _prepare_session_environment(thread_id: str):
     """Initialize session workspace (directory, file migration, path context)."""
-    session_dir = project_root / "output" / f"session_{thread_id}"
+    session_dir = safe_session_dir(project_root / "output", thread_id)
     session_dir.mkdir(parents=True, exist_ok=True)
 
     session_dir_str = str(session_dir).replace("\\", "/")
 
     relative_session_dir = str(session_dir.relative_to(project_root)).replace("\\", "/")
 
-    upload_dir = project_root / "updated" / f"session_{thread_id}"
+    upload_dir = safe_session_dir(project_root / "updated", thread_id)
     uploaded_info = ""
 
     if upload_dir.exists():

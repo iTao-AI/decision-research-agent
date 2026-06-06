@@ -19,6 +19,8 @@ Add a neutral Python tool client that can:
 - fetch persisted task status;
 - optionally fetch token usage;
 - pass `X-API-Key` without printing it;
+- read API keys only from the environment, never command-line arguments;
+- encode thread IDs in URL path segments;
 - return machine-readable JSON from a CLI.
 
 Also add a lightweight `GET /health` endpoint so callers can verify service readiness without starting a task.
@@ -62,6 +64,8 @@ All commands print JSON and exit non-zero on structured failures.
 
 - Connection errors, timeouts, non-2xx HTTP responses, and malformed JSON return `{"status":"failed","error":"..."}`.
 - The client sends but never prints API keys.
+- The CLI rejects API-key command-line arguments.
+- The server validates caller-provided thread IDs before using them in filesystem paths.
 
 ## Testing
 
@@ -70,6 +74,7 @@ Add tests that mock HTTP calls and verify:
 - healthcheck reads `/health`;
 - start-task posts query and thread id;
 - get-task and token-usage call the expected endpoints;
+- thread IDs are URL-encoded and unsafe IDs are rejected server-side;
 - API key is sent in headers but absent from printed or returned payloads;
 - HTTP failure returns a structured client error.
 

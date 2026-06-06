@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any
-from urllib import error, request
+from urllib import error, parse, request
 
 
 class ToolClientError(RuntimeError):
@@ -75,11 +75,13 @@ def start_task(query: str, thread_id: str | None, config: ToolConfig) -> dict[st
 
 
 def get_task(thread_id: str, config: ToolConfig) -> dict[str, Any]:
-    return _request_json("GET", _join_url(config.base_url, f"/api/tasks/{thread_id}"), config=config)
+    encoded_thread_id = parse.quote(thread_id, safe="")
+    return _request_json("GET", _join_url(config.base_url, f"/api/tasks/{encoded_thread_id}"), config=config)
 
 
 def token_usage(thread_id: str, config: ToolConfig) -> dict[str, Any]:
-    return _request_json("GET", _join_url(config.base_url, f"/api/token-usage/{thread_id}"), config=config)
+    encoded_thread_id = parse.quote(thread_id, safe="")
+    return _request_json("GET", _join_url(config.base_url, f"/api/token-usage/{encoded_thread_id}"), config=config)
 
 
 def config_from_env(args: argparse.Namespace) -> ToolConfig:
@@ -92,7 +94,7 @@ def config_from_env(args: argparse.Namespace) -> ToolConfig:
         timeout = ToolConfig.timeout_seconds
     return ToolConfig(
         base_url=(args.base_url or os.environ.get("DEEP_SEARCH_AGENT_URL") or ToolConfig.base_url).strip(),
-        api_key=args.api_key if args.api_key is not None else os.environ.get("DEEP_SEARCH_AGENT_API_KEY"),
+        api_key=os.environ.get("DEEP_SEARCH_AGENT_API_KEY"),
         timeout_seconds=timeout,
     )
 
@@ -100,7 +102,6 @@ def config_from_env(args: argparse.Namespace) -> ToolConfig:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Deep Search Agent integration tool")
     parser.add_argument("--base-url", default="")
-    parser.add_argument("--api-key", default=None)
     parser.add_argument("--timeout", default="")
     subparsers = parser.add_subparsers(dest="command", required=True)
 

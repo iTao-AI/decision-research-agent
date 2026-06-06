@@ -6,11 +6,11 @@ import logging
 import uvicorn
 from pathlib import Path
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List
 import shutil
 
@@ -31,6 +31,7 @@ from api.cors_config import get_allowed_origins
 from api.task_tracker import create_tracked_task
 from api.persistence import save_task, update_task, get_task
 from api.task_finalizer import finalize_task_run, TaskFinalization
+from api.thread_ids import safe_session_dir, validate_thread_id
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -94,6 +95,18 @@ async def health():
 class TaskRequest(BaseModel):
     query: str
     thread_id: str = None
+
+    @field_validator("thread_id")
+    @classmethod
+    def validate_optional_thread_id(cls, value):
+        return validate_thread_id(value) if value is not None else value
+
+
+def _validated_thread_id(thread_id: str) -> str:
+    try:
+        return validate_thread_id(thread_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def _mark_task_timeout(thread_id: str, timeout_seconds: int) -> None:
@@ -159,6 +172,7 @@ async def run_task(request: TaskRequest):
 @app.get("/api/tasks/{thread_id}")
 async def get_task_status(thread_id: str):
     """Get task status and metadata from persistence."""
+    thread_id = _validated_thread_id(thread_id)
     task = await asyncio.to_thread(get_task, thread_id=thread_id)
     if task is None:
         return JSONResponse(status_code=404, content={"detail": "任务不存在"})
@@ -168,7 +182,8 @@ async def get_task_status(thread_id: str):
 @app.post("/api/upload")
 async def upload_files(files: List[UploadFile] = File(...), thread_id: str = Form(...)):
     """Upload files for a session."""
-    target_dir = updated_dir / f"session_{thread_id}"
+    thread_id = _validated_thread_id(thread_id)
+    target_dir = safe_session_dir(updated_dir, thread_id)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     saved_files = []
@@ -248,6 +263,7 @@ async def list_files(path: str):
 @app.get("/api/telemetry/{thread_id}")
 async def get_telemetry(thread_id: str):
     """Get telemetry records for a thread."""
+    thread_id = _validated_thread_id(thread_id)
     records = collector.get_by_thread(thread_id)
     return [
         {
@@ -266,6 +282,7 @@ async def get_telemetry(thread_id: str):
 @app.get("/api/token-usage/{thread_id}")
 async def get_token_usage(thread_id: str):
     """Get token usage summary for a thread."""
+    thread_id = _validated_thread_id(thread_id)
     from agent.token_tracking import token_collector
     summary = token_collector.get_summary(thread_id)
     return summary
@@ -274,6 +291,12 @@ async def get_token_usage(thread_id: str):
 @app.websocket("/ws/{thread_id}")
 async def websocket_endpoint(websocket: WebSocket, thread_id: str):
     """WebSocket endpoint for real-time communication."""
+    try:
+        thread_id = validate_thread_id(thread_id)
+    except ValueError:
+        await websocket.close(code=1008, reason="Invalid thread_id")
+        return
+
     # Auth check for WebSocket connections
     api_secret = os.environ.get("API_SECRET", "")
     if api_secret:

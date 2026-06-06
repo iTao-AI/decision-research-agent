@@ -86,6 +86,24 @@ def test_get_task_and_token_usage_call_expected_endpoints(monkeypatch):
     ]
 
 
+def test_get_task_url_encodes_thread_id(monkeypatch):
+    urls = []
+
+    def fake_urlopen(req, timeout):
+        urls.append(req.full_url)
+        return FakeResponse({"thread_id": "a/b", "status": "completed"})
+
+    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
+
+    tool.get_task("a/b", tool.ToolConfig(base_url="http://127.0.0.1:9000"))
+    tool.token_usage("a/b", tool.ToolConfig(base_url="http://127.0.0.1:9000"))
+
+    assert urls == [
+        "http://127.0.0.1:9000/api/tasks/a%2Fb",
+        "http://127.0.0.1:9000/api/token-usage/a%2Fb",
+    ]
+
+
 def test_http_failure_raises_structured_error(monkeypatch):
     def fake_urlopen(req, timeout):
         return FakeResponse({"detail": "bad request"}, status=400)
@@ -109,3 +127,8 @@ def test_cli_does_not_print_api_key(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "secret-key" not in captured.out
     assert '"status": "ok"' in captured.out
+
+
+def test_cli_rejects_api_key_argument():
+    with pytest.raises(SystemExit):
+        tool._build_parser().parse_args(["--api-key", "secret-key", "healthcheck"])

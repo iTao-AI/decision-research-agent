@@ -27,7 +27,7 @@ Set defaults with environment variables:
 | `DEEP_SEARCH_AGENT_API_KEY` | Optional API key sent as `X-API-Key` |
 | `DEEP_SEARCH_AGENT_TIMEOUT_SECONDS` | Request timeout, default `10` |
 
-Command-line flags override environment defaults.
+Command-line flags override non-secret environment defaults. API keys are accepted only through `DEEP_SEARCH_AGENT_API_KEY`, not command-line arguments.
 
 ## Healthcheck
 
@@ -91,4 +91,6 @@ Failures include connection errors, timeouts, non-2xx HTTP responses, and malfor
 
 - The client sends `DEEP_SEARCH_AGENT_API_KEY` as `X-API-Key` when configured.
 - The client never prints the API key.
+- The CLI does not accept API keys as command-line arguments, avoiding shell-history and process-list exposure.
+- Thread IDs are restricted to 1-128 letters, digits, dots, underscores, or hyphens.
 - Use loopback binding for local agent orchestration unless remote access is intentionally configured.

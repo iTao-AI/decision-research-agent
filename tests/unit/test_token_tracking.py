@@ -2,7 +2,8 @@
 import pytest
 from unittest.mock import MagicMock
 from agent.token_tracking import (
-    TokenUsageData, TokenUsageCollector, TokenTrackingCallbackHandler
+    TokenUsageData, TokenUsageCollector, TokenTrackingCallbackHandler,
+    _calculate_cost,
 )
 
 
@@ -102,6 +103,14 @@ class TestTokenUsageCollector:
         collector.clear_thread("thread-1")
         summary = collector.get_summary("thread-1")
         assert summary["call_count"] == 0
+
+
+class TestTokenPricing:
+    def test_deepseek_v4_pro_cost_uses_default_pricing(self):
+        """默认成本估算应覆盖当前 DeepSeek V4 Pro 模型名。"""
+        cost = _calculate_cost("deepseek-v4-pro", prompt_tokens=1000, completion_tokens=1000)
+
+        assert abs(cost - 0.001305) < 0.000001
 
 
 class TestTokenTrackingCallbackHandler:

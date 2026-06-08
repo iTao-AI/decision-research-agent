@@ -59,7 +59,7 @@
 
 | 指标 | 值 | 来源 |
 |------|-----|------|
-| Local pytest run | 282 通过, 0 失败 | `pytest -q` |
+| Local pytest run | 303 通过, 0 失败 | `PYTHONPATH=. pytest -q` |
 | Docker 部署 | 本机验证通过 | [QA 报告](docs/evidence/assets/qa-report-summary.md) |
 | 前端构建 | 通过 | `cd frontend && npm run build` |
 | E2E Run #1 | 282秒, 459K token, 2 子Agent, 报告.md 已生成 | [运行记录](docs/evidence/run-log.md) |
@@ -71,6 +71,7 @@
 | CI/CD | 已配置（Phase 8） | `.github/workflows/ci.yml` |
 | 兜底报告 | 已实现（Phase 9） | `api/task_finalizer.py`，确定性终态 |
 | 任务超时处理 | 已实现（Phase 9） | `api/server.py`，`_mark_task_timeout` 回调 |
+| ResearchRun + EvidenceLedger | 已实现（Phase 10） | `agent/research.py`, `GET /api/research/runs/{thread_id}` |
 
 > 以上数据均来自本机实际命令运行结果。Token/cost 基准测试数据和 P95 延迟待专项基准运行后补充。
 
@@ -109,7 +110,7 @@ Tavily 和 RAGFlow 调用包裹了超时策略和指数退避重试装饰器。M
 - Python >= 3.11
 - Node.js 20.19+ 或 22.12+
 - Tavily API 密钥
-- DashScope API 密钥
+- DeepSeek API 密钥
 
 ### 1. 安装后端依赖
 
@@ -143,6 +144,8 @@ API 端点:
 - **GET /api/download** — 下载已生成文件
 - **GET /api/tasks/{thread_id}** — 查看任务持久化状态和输出路径
 - **GET /api/token-usage/{thread_id}** — 查看某个线程的 token 用量
+- **GET /api/research/runs/{thread_id}** — 查看某个线程的 ResearchRun 和 EvidenceLedger
+- **GET /api/research/runs** — 查看最近的 ResearchRun 列表
 - **WebSocket /ws/{thread_id}** — 实时推理流
 
 WebSocket 事件: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`
@@ -157,6 +160,7 @@ deep-search-agent/
 │   ├── prompts.py                 # YAML 提示词加载器
 │   ├── token_tracking.py          # LangChain 回调 token 追踪
 │   ├── telemetry.py               # 遥测记录
+│   ├── research.py                # ResearchRun 证据抽取和质量门禁
 │   ├── run_result.py               # AgentRunAccumulator + 流处理（Phase 9）
 │   └── sub_agents/
 │       ├── network_search_agent.py
@@ -174,7 +178,7 @@ deep-search-agent/
 │   ├── server.py                  # FastAPI 服务（REST + WebSocket）
 │   ├── monitor.py                 # 实时进度监控器
 │   ├── context.py                 # ContextVar 会话隔离
-│   ├── persistence.py              # SQLite 任务状态持久化（Phase 8）
+│   ├── persistence.py              # SQLite 任务状态 + ResearchRun 持久化
 │   └── task_finalizer.py           # 确定性任务终态处理（Phase 9）
 ├── utils/
 │   ├── path_utils.py              # 路径安全工具
@@ -185,6 +189,9 @@ deep-search-agent/
 │   └── unit/                      # 单元测试（见证据表格）
 ├── frontend/                      # Vue 3 前端
 ├── docs/                          # 产品文档
+├── scripts/
+│   ├── e2e_runner.py              # 手动 E2E runner
+│   └── benchmark_runner.py        # 重复 benchmark runner
 ├── spec/                          # 技术规格
 └── openspec/                      # OpenSpec 变更记录
 ```
@@ -203,8 +210,9 @@ deep-search-agent/
 - **API Key 鉴权**: 所有 `/api/*` 端点受 APIKeyMiddleware 保护。请求缺少 X-API-Key header 返回 401。在 .env 中设置 API_SECRET=your-key 启用；未设置时打印警告但放行所有请求（开发模式）。
 - **WebSocket 鉴权**: 浏览器端 WebSocket 通过 `api_key` query parameter 传递 key，因为原生 WebSocket 构造器不能设置自定义 header。生产环境日志应避免记录完整 WebSocket URL。
 - **任务状态持久化**: 通过 SQLite（data/tasks.db）持久化任务状态，重启服务器不丢失。查询 GET /api/tasks/{thread_id}。
+- **研究证据持久化**: 终态任务会额外持久化 ResearchRun 元数据和 EvidenceLedger。查询 GET /api/research/runs/{thread_id}。Evidence 条目来自工具消息中的来源型观察，不等同于已人工验证事实。
 - **CI/CD**: GitHub Actions 在 push/PR 到 main 时自动运行 pytest + 前端构建。API keys 需在 GitHub Secrets 中配置。
-- **Benchmark 数据**: 待执行专项基准测试——Phase 8 spec 中定义了 5 个固定查询。Phase 9 增加了确定性终态（`completed` / `completed_with_fallback` / `failed`），每次 E2E 运行都有明确结果，为可靠的数据采集奠定了基础。
+- **Benchmark 数据**: 已提供 `scripts/benchmark_runner.py` 重复 benchmark runner，但新的中位数/P95 只能在真实多轮 benchmark 执行并归档后报告。现有 5-query 数据仍是单次快照。
 
 ## License
 

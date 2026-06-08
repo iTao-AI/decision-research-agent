@@ -99,7 +99,7 @@ Agent 系统提示词存放在 `prompt/prompts.yml`，由 `agent/prompts.py` 加
                      ┌─────┴─────┐     ┌─────────────┐
                      │  External │────>│   Tavily    │
                      │  Services │────>│   RAGFlow   │
-                     │           │────>│   DashScope │
+                     │           │────>│  DeepSeek   │
                      └───────────┘     └─────────────┘
 ```
 

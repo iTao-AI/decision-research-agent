@@ -1,6 +1,6 @@
 # Run Log
 
-本文件记录端到端任务执行的实际数据。当前只有 E2E Run #1 可作为已完成端到端样例；专项 benchmark 和 token before/after 对比仍待后续稳定脚本补充。
+本文件记录端到端任务执行的实际数据。当前只有 E2E Run #1 可作为已完成端到端样例；重复 benchmark runner 已补充，但新的多轮 benchmark 和 token before/after 对比仍待真实执行。
 
 **计划测量项：**
 
@@ -16,7 +16,7 @@
 
 **已有数据：**
 
-- Local pytest run: 282 passed, 0 failed（`python -m pytest -q`）
+- Local pytest run: 303 passed, 0 failed（`PYTHONPATH=. pytest -q`，2026-06-08）
 - Docker 部署: 本机验证通过（见 [QA 报告摘要](assets/qa-report-summary.md)）
 
 ## E2E Run #1
@@ -93,3 +93,19 @@
 - **evidence-005**（知识库检索）：RAGFlow 未配置或不可用，走 fallback 路径。13 次工具调用说明 agent 尝试了多次检索。
 - **成本说明**: token_tracking.py 定价已修正为 DeepSeek 官方定价（¥1/1M input, ¥4/1M output），5 问总成本 ¥1.50，单条 ¥0.04 — ¥0.87。
 - **evidence-004/005**: 这两个 query 的可用性依赖外部服务，结果证明了系统的 graceful degradation 能力 —— 不可用时走 fallback 而非 crash。
+
+## Phase 10 ResearchRun / EvidenceLedger Harness（2026-06-08）
+
+- **状态**: IMPLEMENTED_WITHOUT_LIVE_BENCHMARK
+- **目标**: 将单次任务从“任务状态 + 输出文件”扩展为可审计 ResearchRun：原始 query、终态、assistant/tool 调用计数、diagnostics、token usage、质量门禁和 EvidenceLedger。
+- **新增模块**:
+  - `agent/research.py` — evidence 抽取、引用匹配、report quality gate。
+  - `api/persistence.py` — `research_runs` 和 `evidence_entries` SQLite 表。
+  - `api/task_finalizer.py` — 任务终态时持久化 ResearchRun 和 EvidenceLedger。
+  - `api/server.py` — `GET /api/research/runs/{thread_id}` 和 `GET /api/research/runs`。
+  - `tools/deep_search_agent_tool.py` — `research-run` / `research-runs` 查询命令。
+  - `scripts/benchmark_runner.py` — 多轮固定 query benchmark 汇总脚本。
+- **质量门禁**: 空报告和 fallback 报告判定为 failed；无 evidence 或无 cited evidence 判定为 warning；token 超过阈值判定为 warning。
+- **证据边界**: EvidenceLedger 条目来自工具消息中的来源型观察。`citation_status=cited` 只表示 source URL 出现在最终 Markdown 报告中，`verification_status` 默认仍为 `unverified`，不代表人工事实核验。
+- **benchmark 边界**: 本阶段只实现重复 benchmark runner 和汇总逻辑，未执行新的真实多轮 benchmark；现有 5-query 数据仍是单次快照，不能写成稳定中位数/P95。
+- **验证**: `PYTHONPATH=. pytest -q`，303 passed, 0 failed（2026-06-08）。

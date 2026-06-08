@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agent.research import EvidenceEntry, extract_evidence_entries
 from langchain_core.messages import AIMessage, ToolMessage
 
 
@@ -23,6 +24,7 @@ class AgentRunResult:
     assistant_calls: int = 0
     tool_starts: int = 0
     diagnostics: list[str] = field(default_factory=list)
+    evidence_entries: list[EvidenceEntry] = field(default_factory=list)
     error_message: str | None = None
 
 
@@ -38,6 +40,7 @@ class AgentRunAccumulator:
     assistant_calls: int = 0
     tool_starts: int = 0
     diagnostics: list[str] = field(default_factory=list)
+    evidence_entries: list[EvidenceEntry] = field(default_factory=list)
 
     def to_result(self, error_message: str | None = None) -> AgentRunResult:
         return AgentRunResult(
@@ -49,6 +52,7 @@ class AgentRunAccumulator:
             assistant_calls=self.assistant_calls,
             tool_starts=self.tool_starts,
             diagnostics=list(self.diagnostics),
+            evidence_entries=list(self.evidence_entries),
             error_message=error_message,
         )
 
@@ -109,3 +113,12 @@ def process_stream_chunk(
             accumulator.tool_starts += 1
             tool_name = getattr(last_msg, "name", None) or node_name
             accumulator.diagnostics.append(f"tool:{tool_name}")
+            accumulator.evidence_entries.extend(
+                extract_evidence_entries(
+                    thread_id=accumulator.thread_id,
+                    query_text=accumulator.query,
+                    subagent_name=node_name,
+                    tool_name=tool_name,
+                    content=last_msg.content,
+                )
+            )

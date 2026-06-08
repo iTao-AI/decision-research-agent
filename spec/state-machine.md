@@ -25,7 +25,7 @@ graph LR
 
 - **输入**: 用户自然语言查询
 - **输出**: 任务分解计划（子任务列表 + 每个任务的执行策略）
-- **LLM**: Qwen-Max
+- **LLM**: DeepSeek V4 Pro（fallback: DeepSeek V4 Flash）
 - **决策内容**: 需要哪些数据源？子任务之间的依赖关系？
 
 ### 路由决策节点（Router）

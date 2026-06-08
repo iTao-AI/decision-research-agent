@@ -104,6 +104,46 @@ class TestAgentRunAccumulator:
         assert accumulator.tool_starts == 1
         assert accumulator.diagnostics == ["tool:tavily_search"]
 
+    def test_collects_evidence_entries_from_tool_messages(self, tmp_path):
+        from agent.run_result import AgentRunAccumulator, process_stream_chunk
+
+        monitor = CapturingMonitor()
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-evidence",
+            query="研究 AI 搜索趋势",
+            session_dir=tmp_path,
+        )
+
+        process_stream_chunk(
+            {
+                "network_search": {
+                    "messages": [
+                        ToolMessage(
+                            content=(
+                                '[{"url": "https://example.com/report", '
+                                '"content": "Agent benchmark findings"}]'
+                            ),
+                            tool_call_id="call-1",
+                            name="tavily_search",
+                        )
+                    ]
+                }
+            },
+            accumulator,
+            monitor,
+        )
+
+        assert len(accumulator.evidence_entries) == 1
+        evidence = accumulator.evidence_entries[0]
+        assert evidence.thread_id == "thread-evidence"
+        assert evidence.query_text == "研究 AI 搜索趋势"
+        assert evidence.subagent_name == "network_search"
+        assert evidence.tool_name == "tavily_search"
+        assert evidence.source_url == "https://example.com/report"
+        assert evidence.snippet == "Agent benchmark findings"
+        assert evidence.citation_status == "uncited"
+        assert evidence.verification_status == "unverified"
+
     def test_to_result_copies_accumulator_state(self, tmp_path):
         from agent.run_result import AgentRunAccumulator
 
@@ -126,4 +166,5 @@ class TestAgentRunAccumulator:
         assert result.assistant_calls == 2
         assert result.tool_starts == 3
         assert result.diagnostics == ["tool:tavily_search"]
+        assert result.evidence_entries == []
         assert result.error_message is None

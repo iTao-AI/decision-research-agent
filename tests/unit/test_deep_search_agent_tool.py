@@ -86,6 +86,29 @@ def test_get_task_and_token_usage_call_expected_endpoints(monkeypatch):
     ]
 
 
+def test_research_run_and_research_runs_call_expected_endpoints(monkeypatch):
+    urls = []
+
+    def fake_urlopen(req, timeout):
+        urls.append(req.full_url)
+        if req.full_url.endswith("/api/research/runs/thread-1"):
+            return FakeResponse({"thread_id": "thread-1", "evidence": []})
+        return FakeResponse({"runs": [{"thread_id": "thread-1"}]})
+
+    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
+    config = tool.ToolConfig(base_url="http://127.0.0.1:9000")
+
+    run = tool.research_run("thread-1", config)
+    runs = tool.research_runs(config, limit=5)
+
+    assert run["thread_id"] == "thread-1"
+    assert runs["runs"][0]["thread_id"] == "thread-1"
+    assert urls == [
+        "http://127.0.0.1:9000/api/research/runs/thread-1",
+        "http://127.0.0.1:9000/api/research/runs?limit=5",
+    ]
+
+
 def test_get_task_url_encodes_thread_id(monkeypatch):
     urls = []
 
@@ -97,10 +120,12 @@ def test_get_task_url_encodes_thread_id(monkeypatch):
 
     tool.get_task("a/b", tool.ToolConfig(base_url="http://127.0.0.1:9000"))
     tool.token_usage("a/b", tool.ToolConfig(base_url="http://127.0.0.1:9000"))
+    tool.research_run("a/b", tool.ToolConfig(base_url="http://127.0.0.1:9000"))
 
     assert urls == [
         "http://127.0.0.1:9000/api/tasks/a%2Fb",
         "http://127.0.0.1:9000/api/token-usage/a%2Fb",
+        "http://127.0.0.1:9000/api/research/runs/a%2Fb",
     ]
 
 

@@ -53,6 +53,79 @@
 }
 ```
 
+### GET /api/research/runs/{thread_id}
+
+查询单次任务的 ResearchRun 与 EvidenceLedger。
+
+**响应：**
+```json
+{
+  "thread_id": "唯一的会话线程ID",
+  "query": "用户提交的原始问题",
+  "status": "completed | completed_with_fallback | failed",
+  "started_at": "ISO 8601 时间戳或 null",
+  "completed_at": "ISO 8601 时间戳或 null",
+  "output_path": "完成状态下可下载的 Markdown 文件绝对路径或 null",
+  "fallback_used": false,
+  "assistant_calls": 2,
+  "tool_starts": 3,
+  "diagnostics": ["tool:tavily_search"],
+  "token_usage": {
+    "total_prompt": 100,
+    "total_completion": 20,
+    "total_tokens": 120,
+    "total_cost": 0.001,
+    "call_count": 1
+  },
+  "quality_report": {
+    "status": "passed | warning | failed",
+    "issues": [],
+    "metrics": {
+      "report_size_bytes": 1024,
+      "evidence_count": 2,
+      "cited_evidence_count": 1,
+      "total_tokens": 120,
+      "diagnostic_count": 3
+    }
+  },
+  "evidence": [
+    {
+      "thread_id": "唯一的会话线程ID",
+      "query_text": "用户提交的原始问题",
+      "subagent_name": "network_search",
+      "tool_name": "tavily_search",
+      "source_url": "https://example.com/source",
+      "snippet": "来源片段",
+      "citation_status": "cited | uncited",
+      "verification_status": "unverified | verified | failed",
+      "created_at": "ISO 8601 时间戳"
+    }
+  ]
+}
+```
+
+### GET /api/research/runs
+
+查询最近的 ResearchRun 列表，不包含逐条 EvidenceLedger。
+
+**查询参数：**
+- `limit`：返回数量，默认 50，最大 200。
+
+**响应：**
+```json
+{
+  "runs": [
+    {
+      "thread_id": "唯一的会话线程ID",
+      "query": "用户提交的原始问题",
+      "status": "completed",
+      "quality_report": { "status": "passed", "issues": [] },
+      "token_usage": { "total_tokens": 120 }
+    }
+  ]
+}
+```
+
 ### POST /api/upload
 
 上传文件用于分析。
@@ -181,4 +254,5 @@ WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_resul
 
 | 日期 | 变更 |
 |------|------|
+| 2026-06-08 | 新增 ResearchRun / EvidenceLedger 查询接口 |
 | 2026-05-19 | 初始 API 规范 |

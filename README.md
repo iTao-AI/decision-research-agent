@@ -61,7 +61,7 @@ User: "调研 AI 在医疗诊断中的应用趋势，生成 PDF 报告"
 
 | Metric | Value | Source |
 |--------|-------|--------|
-| Local pytest run | 282 passed, 0 failed | `pytest -q` |
+| Local pytest run | 303 passed, 0 failed | `PYTHONPATH=. pytest -q` |
 | Docker deployment | Verified on localhost | [QA Report](docs/evidence/assets/qa-report-summary.md) |
 | Frontend build | Passed | `cd frontend && npm run build` |
 | E2E Run #1 | 282s, 459K tokens, 2 sub-agents, report.md generated | [Run Log](docs/evidence/run-log.md) |
@@ -73,6 +73,7 @@ User: "调研 AI 在医疗诊断中的应用趋势，生成 PDF 报告"
 | CI/CD | Configured (Phase 8) | `.github/workflows/ci.yml` |
 | Fallback reports | Implemented (Phase 9) | `api/task_finalizer.py`, deterministic terminal states |
 | Task timeout handling | Implemented (Phase 9) | `api/server.py`, `_mark_task_timeout` callback |
+| ResearchRun + EvidenceLedger | Implemented (Phase 10) | `agent/research.py`, `GET /api/research/runs/{thread_id}` |
 
 > All metrics above are from actual command runs on this machine. Token/cost benchmark data and P95 latency are pending dedicated benchmark runs.
 
@@ -111,7 +112,7 @@ See: [`api/upload_security.py`](api/upload_security.py), [`utils/path_utils.py`]
 - Python >= 3.11
 - Node.js 20.19+ or 22.12+
 - Tavily API key
-- DashScope API key
+- DeepSeek API key
 
 ### 1. Install Backend Dependencies
 
@@ -145,6 +146,8 @@ API endpoints:
 - **GET /api/download** — Download generated files
 - **GET /api/tasks/{thread_id}** — View persisted task status and output path
 - **GET /api/token-usage/{thread_id}** — View token usage for a thread
+- **GET /api/research/runs/{thread_id}** — View ResearchRun and EvidenceLedger for a thread
+- **GET /api/research/runs** — List recent ResearchRun records
 - **WebSocket /ws/{thread_id}** — Real-time reasoning stream
 
 WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`
@@ -159,6 +162,7 @@ deep-search-agent/
 │   ├── prompts.py                 # YAML prompt config loader
 │   ├── token_tracking.py          # LangChain callback for token tracking
 │   ├── telemetry.py               # Telemetry recording
+│   ├── research.py                # ResearchRun evidence extraction and quality gate
 │   ├── run_result.py               # AgentRunAccumulator + stream processing (Phase 9)
 │   └── sub_agents/
 │       ├── network_search_agent.py
@@ -176,7 +180,7 @@ deep-search-agent/
 │   ├── server.py                  # FastAPI server (REST + WebSocket)
 │   ├── monitor.py                 # Real-time progress monitor
 │   ├── context.py                 # ContextVar session isolation
-│   ├── persistence.py              # SQLite task state persistence (Phase 8)
+│   ├── persistence.py              # SQLite task + research run persistence
 │   └── task_finalizer.py           # Deterministic task finalization (Phase 9)
 ├── utils/
 │   ├── path_utils.py              # Path security helpers
@@ -187,6 +191,9 @@ deep-search-agent/
 │   └── unit/                      # 单元测试（见 Evidence 表格）
 ├── frontend/                      # Vue 3 frontend
 ├── docs/                          # Product docs
+├── scripts/
+│   ├── e2e_runner.py              # Manual E2E runner
+│   └── benchmark_runner.py        # Repeated benchmark runner
 ├── spec/                          # Technical specifications
 └── openspec/                      # OpenSpec change records
 ```
@@ -205,8 +212,9 @@ deep-search-agent/
 - **API Key auth**: All `/api/*` endpoints are protected by `APIKeyMiddleware`. Requests without `X-API-Key` header get 401. Set `API_SECRET=your-key` in `.env` to enable; if unset, a warning is logged but all requests pass through (dev mode).
 - **WebSocket auth**: Browser clients pass the key via the `api_key` query parameter because native WebSocket constructors cannot set custom headers. Production logs should avoid recording full WebSocket URLs.
 - **Task state persistence**: Tasks are persisted to SQLite (`data/tasks.db`) through `api/persistence.py`. Server restart does not lose completed task records. Query by `GET /api/tasks/{thread_id}`.
+- **Research evidence persistence**: Terminal tasks also persist ResearchRun metadata and EvidenceLedger entries. Query by `GET /api/research/runs/{thread_id}`. Evidence entries are source-like observations from tool messages, not independently verified facts.
 - **CI/CD**: GitHub Actions runs backend tests and frontend build on push/PR to `main`. API keys must be configured in GitHub Secrets.
-- **Benchmark data**: Pending dedicated benchmark run — 5 fixed queries defined in the Phase 8 spec. Phase 9 added deterministic terminal states (`completed` / `completed_with_fallback` / `failed`) so every E2E run has a definite outcome; this lays the foundation for reliable benchmark data collection.
+- **Benchmark data**: A repeated benchmark runner exists at `scripts/benchmark_runner.py`, but new median/P95 numbers should only be reported after a real multi-run benchmark is executed and archived. The existing 5-query data remains a single snapshot.
 
 ## License
 

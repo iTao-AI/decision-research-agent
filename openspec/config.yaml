@@ -7,7 +7,7 @@ context: |
     - 后端：Python 3.11+、FastAPI + Uvicorn、LangChain/LangGraph
     - 前端：Vue 3 + Vite + TypeScript
     - 数据库：MySQL（业务数据）、RAGFlow（企业知识库）
-    - 外部服务：Tavily Search API、DashScope Qwen-Max（LLM）
+    - 外部服务：Tavily Search API、DeepSeek 官方 API（LLM）
   通信：REST API（任务提交/文件管理）+ WebSocket（实时推理流）
   部署目标：Docker Compose（backend + frontend + MySQL）
 

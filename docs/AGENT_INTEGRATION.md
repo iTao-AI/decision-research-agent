@@ -8,6 +8,8 @@ The client wraps the existing HTTP API:
 - `POST /api/task`
 - `GET /api/tasks/{thread_id}`
 - `GET /api/token-usage/{thread_id}`
+- `GET /api/research/runs/{thread_id}`
+- `GET /api/research/runs`
 
 It does not store API keys, start the backend server, manage frontend sessions, or run benchmark jobs.
 
@@ -72,6 +74,26 @@ Terminal statuses come from the API persistence layer:
 ```bash
 python tools/deep_search_agent_tool.py token-usage \
   --thread-id "demo-thread-001"
+```
+
+## ResearchRun And EvidenceLedger
+
+After a task reaches a terminal state, fetch the auditable research run:
+
+```bash
+python tools/deep_search_agent_tool.py research-run \
+  --thread-id "demo-thread-001"
+```
+
+The response includes task status, token usage, quality gate output, diagnostics,
+and evidence entries extracted from tool messages. Evidence entries start as
+`unverified`; they are marked `cited` when their source URL appears in the final
+Markdown report.
+
+List recent research runs:
+
+```bash
+python tools/deep_search_agent_tool.py research-runs --limit 20
 ```
 
 ## Error Behavior

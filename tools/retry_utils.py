@@ -17,7 +17,7 @@ TIMEOUTS = {
     "ragflow": 60,         # Streaming Q&A, may need longer
     "mysql_connect": 10,   # Database connection
     "mysql_query": 30,     # SQL query
-    "llm": 120,            # Qwen-Max generation
+    "llm": 120,            # DeepSeek generation
     "pdf_convert": 60,     # weasyprint / word conversion
 }
 

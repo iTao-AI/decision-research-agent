@@ -116,7 +116,7 @@ class TestServerTaskFinalization:
     @pytest.mark.asyncio
     async def test_mark_task_timeout_persists_failed_status(self, task_db):
         import api.server as server
-        from api.persistence import get_task
+        from api.persistence import get_research_run_with_evidence, get_task
 
         thread_id = "server-timeout"
         _save_task(thread_id, "query")
@@ -124,5 +124,9 @@ class TestServerTaskFinalization:
         await server._mark_task_timeout(thread_id, 7)
 
         task = get_task(thread_id=thread_id)
+        research_run = get_research_run_with_evidence(thread_id=thread_id)
+
         assert task["status"] == "failed"
         assert task["error_message"] == "Agent task timed out after 7s"
+        assert research_run["status"] == "failed"
+        assert research_run["quality_report"]["issues"][0]["code"] == "task_timeout"

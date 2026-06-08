@@ -84,6 +84,16 @@ def token_usage(thread_id: str, config: ToolConfig) -> dict[str, Any]:
     return _request_json("GET", _join_url(config.base_url, f"/api/token-usage/{encoded_thread_id}"), config=config)
 
 
+def research_run(thread_id: str, config: ToolConfig) -> dict[str, Any]:
+    encoded_thread_id = parse.quote(thread_id, safe="")
+    return _request_json("GET", _join_url(config.base_url, f"/api/research/runs/{encoded_thread_id}"), config=config)
+
+
+def research_runs(config: ToolConfig, limit: int = 50) -> dict[str, Any]:
+    safe_limit = max(1, min(limit, 200))
+    return _request_json("GET", _join_url(config.base_url, f"/api/research/runs?limit={safe_limit}"), config=config)
+
+
 def config_from_env(args: argparse.Namespace) -> ToolConfig:
     timeout_raw = args.timeout or os.environ.get("DEEP_SEARCH_AGENT_TIMEOUT_SECONDS", "")
     try:
@@ -116,6 +126,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     usage = subparsers.add_parser("token-usage")
     usage.add_argument("--thread-id", required=True)
+
+    research = subparsers.add_parser("research-run")
+    research.add_argument("--thread-id", required=True)
+
+    research_list = subparsers.add_parser("research-runs")
+    research_list.add_argument("--limit", type=int, default=50)
     return parser
 
 
@@ -132,6 +148,10 @@ def main(argv: list[str] | None = None) -> int:
             result = get_task(args.thread_id, config)
         elif args.command == "token-usage":
             result = token_usage(args.thread_id, config)
+        elif args.command == "research-run":
+            result = research_run(args.thread_id, config)
+        elif args.command == "research-runs":
+            result = research_runs(config, args.limit)
         else:
             parser.error(f"unknown command: {args.command}")
             return 1

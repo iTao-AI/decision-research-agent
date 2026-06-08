@@ -6,12 +6,13 @@ import json
 from langchain_core.callbacks.base import BaseCallbackHandler
 
 
-# Default pricing: ¥ per 1K tokens
-# deepseek-chat: ¥1/1M input, ¥2/1M output (source: api-docs.deepseek.com)
-# qwen-max: ¥0.04/1K input, ¥0.12/1K output (approximate)
+# Default pricing estimate per 1K tokens. Override with TOKEN_PRICING_JSON
+# for provider-specific currency, cache-hit pricing, or negotiated rates.
 DEFAULT_PRICING = {
     "qwen-max": {"prompt": 0.04, "completion": 0.12},
     "deepseek-chat": {"prompt": 0.001, "completion": 0.002},
+    "deepseek-v4-flash": {"prompt": 0.00014, "completion": 0.00028},
+    "deepseek-v4-pro": {"prompt": 0.000435, "completion": 0.00087},
 }
 
 

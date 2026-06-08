@@ -144,17 +144,26 @@ superpowers:finishing-a-development-branch when integration guidance is needed
 
 ## PR Body 格式
 
-PR body 按以下结构编写（不适用的段可省略）：
+PR body 按以下结构编写。核心原则是先给 reviewer 明确完成状态，再展开实现和验证；不要把未完成项藏在 Test plan 末尾。
 
-**Summary** — 必写，按「问题 → 方案 → 价值」三段式：
-- **问题**：现有痛点或缺失（1 句）
-- **方案**：核心变更（1-2 句）
-- **价值**：对用户或项目的收益（1 句；内部变更可省略）
+**Summary** — 必写，用 1 段说明这次 PR 改了什么、为什么改、带来什么价值。
 
-**技术细节** — 必写，列出关键文件变更（每条 1 句）
+**Completion status** — 必写，用 checkbox 明确完成 / 未完成状态：
+- `[x]` 已完成的核心任务、文档同步和验证。
+- `[ ] Not completed: ...` 尚未完成但和 PR 范围相关的工作，并说明原因。
 
-**Test plan** — 必写，验证步骤清单
+**Implementation details** — 必写，列出关键文件变更，每条 1 句。
 
-**设计选型** — 仅当涉及技术决策时写，格式：方案 | 选择 | 理由
+**Verification** — 必写，列出实际运行的检查和结果；未运行的检查写 `Not run: <check>` 并说明原因。
 
-**Breaking Changes** — 仅当有破坏性变更时写，说明影响和迁移方式
+**Risk / Impact** — 涉及 API、数据结构、持久化、兼容性或用户行为变化时必写：
+- User impact
+- System impact
+- Compatibility impact
+- Rollback plan
+
+**Design choices** — 涉及技术选型时写，格式：Option | Decision | Reason。
+
+**Review focus** — 推荐写，列出希望 reviewer 重点看的 2-4 个问题。
+
+**Breaking Changes** — 仅当有破坏性变更时写，说明影响和迁移方式。

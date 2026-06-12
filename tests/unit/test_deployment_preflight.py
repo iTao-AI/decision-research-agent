@@ -1,4 +1,5 @@
 from pathlib import Path
+import inspect
 
 from packaging.requirements import Requirement
 import yaml
@@ -18,6 +19,17 @@ def test_verified_constraints_are_used_by_docker_and_ci():
     assert "COPY requirements.txt constraints.txt ./" in dockerfile
     assert "pip install --no-cache-dir -r requirements.txt -c constraints.txt" in dockerfile
     assert "pip install -r requirements.txt -c constraints.txt" in ci
+
+
+def test_deepagents_compatibility_baseline_exposes_selected_capability_surface():
+    from deepagents import create_deep_agent
+
+    parameters = inspect.signature(create_deep_agent).parameters
+
+    assert "skills" in parameters
+    assert "subagents" in parameters
+    assert "interrupt_on" in parameters
+    assert "profile" not in parameters
 
 
 def test_python_version_constraints_match_supported_dependency_sets():

@@ -229,11 +229,15 @@
 实时接收单个 run 的事件。同一 `thread_id` 的并发 run 使用不同连接，不会互相
 覆盖。事件顶层携带 `thread_id`、`run_id` 和 `segment_id`。
 
+Run-scoped events: `session_created`, `tool_start`, `assistant_call`, `task_result`,
+`run_timeout`, `error`
+
 ### WebSocket /ws/{thread_id}
 
 兼容接口：实时接收 legacy thread-scoped Agent 推理流事件。
 
-WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`
+Legacy events: `session_created`, `tool_start`, `assistant_call`, `task_result`,
+`task_finalized`, `error`
 
 **连接参数：**
 - `thread_id`：POST /api/task 返回的线程 ID
@@ -242,7 +246,7 @@ WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_resul
 ```json
 {
   "type": "monitor_event",
-  "event": "session_created | tool_start | assistant_call | task_result | task_finalized | error",
+  "event": "session_created | tool_start | assistant_call | task_result | task_finalized | run_timeout | error",
   "message": "事件描述",
   "data": { ... },
   "timestamp": "ISO 8601 时间戳"
@@ -258,9 +262,11 @@ WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_resul
 | `assistant_call` | 子 Agent 被派发 |
 | `task_result` | Agent 输出中间或最终可见结果 |
 | `task_finalized` | 后端已写入持久化终态 |
+| `run_timeout` | run-scoped task tracker 已触发超时并执行失败终结检查 |
 | `error` | 发生错误 |
 
 `task_finalized` 表示后端已写入持久化终态。`data.status` 可能为 `completed`、`completed_with_fallback` 或 `failed`；`data.output_path` 在成功和兜底成功时指向可下载 Markdown 文件。
+`run_timeout` 仅发送到 `/ws/runs/{run_id}`。
 
 ## 认证
 

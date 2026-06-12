@@ -7,6 +7,7 @@ from typing import Optional
 
 _session_dir_ctx: ContextVar[Optional[str]] = ContextVar("session_dir", default=None)
 _thread_id_ctx: ContextVar[Optional[str]] = ContextVar("thread_id", default=None)
+_run_id_ctx: ContextVar[Optional[str]] = ContextVar("run_id", default=None)
 
 
 def set_session_context(path: str):
@@ -37,6 +38,20 @@ def get_thread_context() -> Optional[str]:
     获取当前请求链路的 Thread ID。
     """
     return _thread_id_ctx.get()
+
+def set_run_context(run_id: str):
+    """Set the application ResearchRun identity for the current execution."""
+    return _run_id_ctx.set(run_id)
+
+def get_run_context() -> Optional[str]:
+    """Get the application ResearchRun identity without changing LangGraph thread state."""
+    return _run_id_ctx.get()
+
+def reset_execution_context(run_token, thread_token=None):
+    """Reset run and thread identities after one execution."""
+    _run_id_ctx.reset(run_token)
+    if thread_token:
+        _thread_id_ctx.reset(thread_token)
 
 def reset_session_context(session_token, thread_token=None):
     """

@@ -12,9 +12,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, F
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from typing import List
 import shutil
+from threading import Lock
 
 # Load env once at startup — tools read from os.environ
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
@@ -25,12 +26,12 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from agent.main_agent import run_deep_agent
-from agent.run_result import AgentRunResult
+from agent.run_result import AgentRunResult, OutcomeBox
 from agent.telemetry import collector, TelemetryRecord
 from api.monitor import monitor, manager
 from api.upload_security import sanitize_filename, validate_filename
 from api.cors_config import get_allowed_origins
-from api.task_tracker import create_tracked_task
+from api.task_tracker import create_tracked_task, get_active_task
 from api.persistence import (
     get_research_run_with_evidence,
     get_task,
@@ -39,8 +40,16 @@ from api.persistence import (
     save_task,
     update_task,
 )
-from api.task_finalizer import finalize_task_run, TaskFinalization
+from api.task_finalizer import finalize_task_run, persist_research_run, TaskFinalization
 from api.thread_ids import safe_session_dir, validate_thread_id
+from api.run_repository import (
+    create_run,
+    finalize_run_transaction,
+    get_run,
+    transition_run,
+)
+from agent.profile_registry import profile_registry
+from agent.talent_contracts import ResearchScope
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -76,7 +85,25 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-app = FastAPI(title="DeepAgents API")
+app = FastAPI(
+    title="Decision Research Agent API",
+    description="Source-backed research runs that produce decision-ready briefs.",
+)
+active_run_threads: set[str] = set()
+_active_run_threads_lock = Lock()
+
+
+def _reserve_run_thread(thread_id: str) -> bool:
+    with _active_run_threads_lock:
+        if thread_id in active_run_threads:
+            return False
+        active_run_threads.add(thread_id)
+        return True
+
+
+def _release_run_thread(thread_id: str) -> None:
+    with _active_run_threads_lock:
+        active_run_threads.discard(thread_id)
 
 output_dir = project_root / "output"
 output_dir.mkdir(exist_ok=True)
@@ -111,6 +138,18 @@ class TaskRequest(BaseModel):
         return validate_thread_id(value) if value is not None else value
 
 
+class RunRequest(BaseModel):
+    query: str
+    thread_id: str | None = None
+    profile_id: str = "generic"
+    scope: dict = Field(default_factory=dict)
+
+    @field_validator("thread_id")
+    @classmethod
+    def validate_optional_thread_id(cls, value):
+        return validate_thread_id(value) if value is not None else value
+
+
 def _validated_thread_id(thread_id: str) -> str:
     try:
         return validate_thread_id(thread_id)
@@ -118,36 +157,49 @@ def _validated_thread_id(thread_id: str) -> str:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-async def _mark_task_timeout(thread_id: str, timeout_seconds: int) -> None:
+async def _mark_task_timeout(
+    thread_id: str, timeout_seconds: int, outcome_box: OutcomeBox | None = None
+) -> None:
     error_message = f"Agent task timed out after {timeout_seconds}s"
     task = await asyncio.to_thread(get_task, thread_id=thread_id)
     query = task["query"] if task and task.get("query") else ""
     completed_at = datetime.now(timezone.utc).isoformat()
-    await asyncio.to_thread(
-        save_research_run,
-        thread_id=thread_id,
-        query=query,
-        status="failed",
-        completed_at=completed_at,
-        output_path=None,
-        fallback_used=False,
-        diagnostics_json=json.dumps([f"timeout:{timeout_seconds}s"], ensure_ascii=False),
-        token_usage_json="{}",
-        quality_report_json=json.dumps(
-            {
-                "status": "failed",
-                "issues": [
-                    {
-                        "code": "task_timeout",
-                        "severity": "error",
-                        "message": error_message,
-                    }
-                ],
-                "metrics": {"timeout_seconds": timeout_seconds},
-            },
-            ensure_ascii=False,
-        ),
-    )
+    outcome = outcome_box.latest() if outcome_box is not None else None
+    if outcome is not None:
+        await asyncio.to_thread(
+            persist_research_run,
+            run_result=outcome,
+            status="failed",
+            output_path=None,
+            fallback_used=False,
+            token_usage={},
+        )
+    else:
+        await asyncio.to_thread(
+            save_research_run,
+            thread_id=thread_id,
+            query=query,
+            status="failed",
+            completed_at=completed_at,
+            output_path=None,
+            fallback_used=False,
+            diagnostics_json=json.dumps([f"timeout:{timeout_seconds}s"], ensure_ascii=False),
+            token_usage_json="{}",
+            quality_report_json=json.dumps(
+                {
+                    "status": "failed",
+                    "issues": [
+                        {
+                            "code": "task_timeout",
+                            "severity": "error",
+                            "message": error_message,
+                        }
+                    ],
+                    "metrics": {"timeout_seconds": timeout_seconds},
+                },
+                ensure_ascii=False,
+            ),
+        )
     await asyncio.to_thread(
         update_task,
         thread_id=thread_id,
@@ -164,13 +216,46 @@ async def _mark_task_timeout(thread_id: str, timeout_seconds: int) -> None:
     monitor._emit("error", error_message)
 
 
-async def _run_task_with_persistence(query: str, thread_id: str) -> TaskFinalization:
+async def _run_task_with_persistence(
+    query: str, thread_id: str, outcome_box: OutcomeBox | None = None
+) -> TaskFinalization:
+    outcome_box = outcome_box or OutcomeBox()
     try:
         await asyncio.to_thread(update_task, thread_id=thread_id, status="running")
-        result = await run_deep_agent(query, thread_id)
+        result = await run_deep_agent(query, thread_id, outcome_box=outcome_box)
         if not isinstance(result, AgentRunResult):
             raise RuntimeError(
                 f"run_deep_agent returned unsupported result type: {type(result).__name__}"
+            )
+        if result.failure_kind is not None:
+            error_message = result.error_message or result.failure_kind
+            await asyncio.to_thread(
+                persist_research_run,
+                run_result=result,
+                status="failed",
+                output_path=None,
+                fallback_used=False,
+                token_usage={},
+            )
+            await asyncio.to_thread(
+                update_task,
+                thread_id=thread_id,
+                status="failed",
+                error_message=error_message,
+            )
+            monitor.report_task_finalized(
+                thread_id=thread_id,
+                status="failed",
+                fallback_used=False,
+                output_path=None,
+                error_message=error_message,
+            )
+            return TaskFinalization(
+                thread_id=thread_id,
+                status="failed",
+                output_path=None,
+                fallback_used=False,
+                error_message=error_message,
             )
         return await asyncio.to_thread(finalize_task_run, result)
     except Exception as e:
@@ -180,30 +265,41 @@ async def _run_task_with_persistence(query: str, thread_id: str) -> TaskFinaliza
             status="failed",
             error_message=str(e),
         )
-        await asyncio.to_thread(
-            save_research_run,
-            thread_id=thread_id,
-            query=query,
-            status="failed",
-            completed_at=None,
-            output_path=None,
-            fallback_used=False,
-            diagnostics_json=json.dumps([f"error:{str(e)}"], ensure_ascii=False),
-            token_usage_json="{}",
-            quality_report_json=json.dumps(
-                {
-                    "status": "failed",
-                    "issues": [
-                        {
-                            "code": "agent_error",
-                            "severity": "error",
-                            "message": "Agent execution failed.",
-                        }
-                    ],
-                },
-                ensure_ascii=False,
-            ),
-        )
+        outcome = outcome_box.latest()
+        if outcome is not None:
+            await asyncio.to_thread(
+                persist_research_run,
+                run_result=outcome,
+                status="failed",
+                output_path=None,
+                fallback_used=False,
+                token_usage={},
+            )
+        else:
+            await asyncio.to_thread(
+                save_research_run,
+                thread_id=thread_id,
+                query=query,
+                status="failed",
+                completed_at=None,
+                output_path=None,
+                fallback_used=False,
+                diagnostics_json=json.dumps([f"error:{str(e)}"], ensure_ascii=False),
+                token_usage_json="{}",
+                quality_report_json=json.dumps(
+                    {
+                        "status": "failed",
+                        "issues": [
+                            {
+                                "code": "agent_error",
+                                "severity": "error",
+                                "message": "Agent execution failed.",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+            )
         monitor.report_task_finalized(
             thread_id=thread_id,
             status="failed",
@@ -212,6 +308,103 @@ async def _run_task_with_persistence(query: str, thread_id: str) -> TaskFinaliza
             error_message=str(e),
         )
         raise
+    finally:
+        _release_run_thread(thread_id)
+
+
+async def _run_v2_with_persistence(
+    *,
+    query: str,
+    thread_id: str,
+    run_id: str,
+    segment_id: str,
+    outcome_box: OutcomeBox,
+) -> None:
+    """Execute one run-scoped request while preserving LangGraph thread identity."""
+    state_version = 0
+    allowed_previous_statuses = {"pending"}
+    try:
+        transitioned = await asyncio.to_thread(
+            transition_run,
+            run_id=run_id,
+            expected_state_version=0,
+            allowed_previous_statuses={"pending"},
+            execution_status="running",
+        )
+        if not transitioned:
+            raise RuntimeError("stale_run_write")
+        state_version = 1
+        allowed_previous_statuses = {"running"}
+        result = await run_deep_agent(
+            query,
+            thread_id,
+            run_id=run_id,
+            segment_id=segment_id,
+            outcome_box=outcome_box,
+        )
+        execution_status = (
+            "failed" if result.failure_kind is not None else "completed"
+        )
+        delivery_status = "failed" if execution_status == "failed" else "ready"
+        finalized = await asyncio.to_thread(
+            finalize_run_transaction,
+            run_id=run_id,
+            segment_id=segment_id,
+            expected_state_version=1,
+            allowed_previous_statuses={"running"},
+            execution_status=execution_status,
+            delivery_status=delivery_status,
+            evidence_entries=result.evidence_entries,
+        )
+        if not finalized:
+            raise RuntimeError("stale_run_write")
+    except asyncio.CancelledError:
+        outcome = outcome_box.latest()
+        await _finalize_failed_run_v2(
+            run_id=run_id,
+            segment_id=segment_id,
+            expected_state_version=state_version,
+            allowed_previous_statuses=allowed_previous_statuses,
+            evidence_entries=outcome.evidence_entries if outcome is not None else [],
+        )
+        raise
+    except Exception:
+        outcome = outcome_box.latest()
+        await _finalize_failed_run_v2(
+            run_id=run_id,
+            segment_id=segment_id,
+            expected_state_version=state_version,
+            allowed_previous_statuses=allowed_previous_statuses,
+            evidence_entries=outcome.evidence_entries if outcome is not None else [],
+        )
+        raise
+    finally:
+        _release_run_thread(thread_id)
+
+
+async def _finalize_failed_run_v2(
+    *,
+    run_id: str,
+    segment_id: str,
+    expected_state_version: int,
+    allowed_previous_statuses: set[str],
+    evidence_entries: list,
+) -> bool:
+    """Best-effort failure finalization that never masks the original error."""
+    try:
+        return await asyncio.to_thread(
+            finalize_run_transaction,
+            run_id=run_id,
+            segment_id=segment_id,
+            expected_state_version=expected_state_version,
+            allowed_previous_statuses=allowed_previous_statuses,
+            execution_status="failed",
+            delivery_status="failed",
+            evidence_entries=evidence_entries,
+        )
+    except Exception:
+        logging.exception("Failed to finalize ResearchRun %s after execution error", run_id)
+        return False
 
 
 @app.post("/api/task")
@@ -219,15 +412,137 @@ async def run_task(request: TaskRequest):
     """Start an agent task asynchronously."""
     thread_id = request.thread_id or str(uuid.uuid4())
 
-    # Persist task and update status as it progresses
-    await asyncio.to_thread(save_task, thread_id=thread_id, query=request.query, status="pending")
+    if get_active_task(thread_id) is not None or not _reserve_run_thread(thread_id):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "thread_already_active",
+                "problem": "This thread already has an active task.",
+                "fix": "Wait for the active task to finish or use a different thread_id.",
+            },
+        )
 
-    create_tracked_task(
-        _run_task_with_persistence(request.query, thread_id),
-        thread_id,
-        on_timeout=_mark_task_timeout,
-    )
+    # Persist task and update status as it progresses
+    try:
+        await asyncio.to_thread(
+            save_task, thread_id=thread_id, query=request.query, status="pending"
+        )
+        outcome_box = OutcomeBox()
+        task_coroutine = _run_task_with_persistence(request.query, thread_id, outcome_box)
+        try:
+            create_tracked_task(
+                task_coroutine,
+                thread_id,
+                on_timeout=lambda task_id, timeout_seconds: _mark_task_timeout(
+                    task_id, timeout_seconds, outcome_box
+                ),
+            )
+        except Exception:
+            task_coroutine.close()
+            raise
+    except Exception:
+        _release_run_thread(thread_id)
+        raise
     return {"status": "started", "thread_id": thread_id}
+
+
+@app.post("/api/runs")
+async def create_research_run(request: RunRequest):
+    """Create one run-scoped research execution."""
+    try:
+        profile = profile_registry.get(request.profile_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "unknown_profile",
+                "problem": str(exc),
+                "fix": "Use a profile returned by the server profile manifest.",
+            },
+        ) from exc
+    validated_scope = request.scope
+    if request.profile_id == "talent-hiring-signal":
+        try:
+            validated_scope = ResearchScope.model_validate(request.scope).model_dump(
+                mode="json"
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "invalid_research_scope",
+                    "problem": "Talent Hiring Signal scope failed validation.",
+                    "cause": exc.errors(include_url=False),
+                    "fix": "Provide a bounded ResearchScope with declared public samples.",
+                },
+            ) from exc
+    thread_id = request.thread_id or str(uuid.uuid4())
+    if get_active_task(thread_id) is not None or not _reserve_run_thread(thread_id):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "thread_already_active",
+                "problem": "This thread already has an active run.",
+                "fix": "Wait for the active run to finish or use a different thread_id.",
+            },
+        )
+    try:
+        created = await asyncio.to_thread(
+            create_run,
+            thread_id=thread_id,
+            query=request.query,
+            profile_id=request.profile_id,
+            profile_version=profile.version,
+            scope=validated_scope,
+        )
+    except Exception:
+        _release_run_thread(thread_id)
+        raise
+    outcome_box = OutcomeBox()
+    run_coroutine = _run_v2_with_persistence(
+        query=request.query,
+        thread_id=thread_id,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        outcome_box=outcome_box,
+    )
+    try:
+        create_tracked_task(run_coroutine, created["run_id"])
+    except Exception:
+        run_coroutine.close()
+        _release_run_thread(thread_id)
+        await _finalize_failed_run_v2(
+            run_id=created["run_id"],
+            segment_id=created["segment_id"],
+            expected_state_version=0,
+            allowed_previous_statuses={"pending"},
+            evidence_entries=[],
+        )
+        raise
+    return {"status": "started", **created}
+
+
+@app.get("/api/runs/{run_id}")
+async def get_research_run_v2(run_id: str):
+    run = await asyncio.to_thread(get_run, run_id=run_id)
+    if run is None:
+        return JSONResponse(status_code=404, content={"detail": "ResearchRun 不存在"})
+    return run
+
+
+@app.get("/api/profiles/{profile_id}")
+async def get_profile_manifest(profile_id: str):
+    try:
+        return profile_registry.manifest(profile_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "unknown_profile",
+                "problem": str(exc),
+                "fix": "Use a configured server profile.",
+            },
+        ) from exc
 
 
 @app.get("/api/tasks/{thread_id}")

@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -21,6 +22,14 @@ class FakeResponse:
 
     def getcode(self):
         return self.status
+
+
+def test_cli_help_uses_public_product_name(capsys):
+    with pytest.raises(SystemExit):
+        tool._build_parser().parse_args(["--help"])
+
+    output = re.sub(r"\s+", " ", capsys.readouterr().out)
+    assert "Decision Research Agent integration tool" in output
 
 
 def test_healthcheck_calls_health_endpoint(monkeypatch):
@@ -157,3 +166,49 @@ def test_cli_does_not_print_api_key(monkeypatch, capsys):
 def test_cli_rejects_api_key_argument():
     with pytest.raises(SystemExit):
         tool._build_parser().parse_args(["--api-key", "secret-key", "healthcheck"])
+
+
+def test_doctor_checks_health_and_profile_manifest(monkeypatch):
+    urls = []
+
+    def fake_urlopen(req, timeout):
+        urls.append(req.full_url)
+        if req.full_url.endswith("/health"):
+            return FakeResponse({"status": "ok", "service": "deep-search-agent"})
+        return FakeResponse(
+            {
+                "profile": {"profile_id": "talent-hiring-signal"},
+                "harness_policy": {"allowed_tools": ["internet_search"]},
+            }
+        )
+
+    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
+
+    result = tool.doctor(tool.ToolConfig(base_url="http://127.0.0.1:9000"))
+
+    assert result["status"] == "ok"
+    assert result["checks"]["server"]["status"] == "ok"
+    assert result["checks"]["talent_profile"]["status"] == "ok"
+    assert urls == [
+        "http://127.0.0.1:9000/health",
+        "http://127.0.0.1:9000/api/profiles/talent-hiring-signal",
+    ]
+
+
+def test_wait_for_run_polls_until_terminal(monkeypatch):
+    responses = iter(
+        [
+            FakeResponse({"run_id": "run-1", "execution_status": "running"}),
+            FakeResponse({"run_id": "run-1", "execution_status": "completed"}),
+        ]
+    )
+    monkeypatch.setattr(tool.request, "urlopen", lambda req, timeout: next(responses))
+    monkeypatch.setattr(tool.time, "sleep", lambda seconds: None)
+
+    result = tool.wait_for_run(
+        "run-1",
+        tool.ToolConfig(base_url="http://127.0.0.1:9000"),
+        poll_seconds=0.01,
+    )
+
+    assert result["execution_status"] == "completed"

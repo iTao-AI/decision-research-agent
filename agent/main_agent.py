@@ -19,10 +19,22 @@ import uuid
 import shutil
 from pathlib import Path
 
-from api.context import set_session_context, reset_session_context, set_thread_context
+from api.context import (
+    reset_execution_context,
+    reset_session_context,
+    set_run_context,
+    set_session_context,
+    set_thread_context,
+)
 from api.thread_ids import safe_session_dir
 
-from agent.run_result import AgentRunAccumulator, AgentRunResult, process_stream_chunk
+from agent.research import evidence_from_shared_context_snapshot, merge_evidence_entries
+from agent.run_result import (
+    AgentRunAccumulator,
+    AgentRunResult,
+    OutcomeBox,
+    process_stream_chunk,
+)
 
 def _resolve_subagent(agent):
     """Agent 类实例或 dict 的适配转换"""
@@ -81,30 +93,80 @@ def _process_stream_chunk(chunk, accumulator: AgentRunAccumulator):
     process_stream_chunk(chunk, accumulator, monitor)
 
 
-async def run_deep_agent(task_query: str, thread_id: str = None) -> AgentRunResult:
+def _freeze_execution_outcome(
+    accumulator: AgentRunAccumulator,
+    outcome_box: OutcomeBox | None,
+    *,
+    error_message: str | None = None,
+    failure_kind: str | None = None,
+    cancellation_state: str | None = None,
+) -> AgentRunResult:
+    """Freeze all evidence and diagnostics before runtime-scoped cleanup."""
+    execution_id = accumulator.run_id or accumulator.thread_id
+    accumulator.diagnostics.extend(shared_context.get_diagnostics(execution_id))
+    try:
+        snapshot = shared_context.snapshot_facts(
+            execution_id, topic="search_evidence"
+        )
+        snapshot_evidence = evidence_from_shared_context_snapshot(
+            thread_id=accumulator.thread_id,
+            query_text=accumulator.query,
+            snapshot=snapshot,
+        )
+        evidence_entries = merge_evidence_entries(
+            accumulator.evidence_entries, snapshot_evidence
+        )
+    except Exception as exc:
+        accumulator.diagnostics.append(f"evidence_snapshot_failed:{type(exc).__name__}")
+        evidence_entries = list(accumulator.evidence_entries)
+        failure_kind = failure_kind or "evidence_snapshot_failed"
+
+    outcome = accumulator.to_outcome(
+        evidence_entries=evidence_entries,
+        error_message=error_message,
+        failure_kind=failure_kind,
+        cancellation_state=cancellation_state,
+    )
+    if outcome_box is not None:
+        outcome_box.publish(outcome)
+    return outcome
+
+
+async def run_deep_agent(
+    task_query: str,
+    thread_id: str = None,
+    run_id: str | None = None,
+    segment_id: str | None = None,
+    outcome_box: OutcomeBox | None = None,
+) -> AgentRunResult:
     """Main agent execution entry point."""
     if not thread_id:
         thread_id = str(uuid.uuid4())
+    execution_id = run_id or thread_id
     print(f"--- Start Task: {task_query} (Thread: {thread_id}) ---")
 
-    session_dir_str, relative_session_dir, uploaded_info = _prepare_session_environment(thread_id)
+    session_dir_str, relative_session_dir, uploaded_info = _prepare_session_environment(execution_id)
 
     thread_token = set_thread_context(thread_id)
+    run_token = set_run_context(execution_id)
     session_token = set_session_context(session_dir_str)
     monitor.report_session_dir(session_dir_str)
     accumulator = AgentRunAccumulator(
         thread_id=thread_id,
         query=task_query,
         session_dir=Path(session_dir_str),
+        run_id=run_id,
+        segment_id=segment_id,
     )
 
     # Register token tracking callback
     from agent.token_tracking import TokenTrackingCallbackHandler
-    token_callback = TokenTrackingCallbackHandler(thread_id=thread_id)
+    token_callback = TokenTrackingCallbackHandler(thread_id=execution_id)
 
     config = {
         "configurable": {"thread_id": thread_id},
         "callbacks": [token_callback],
+        "metadata": {"research_run_id": execution_id, "thread_id": thread_id},
     }
 
     path_instruction = f"""
@@ -124,16 +186,33 @@ async def run_deep_agent(task_query: str, thread_id: str = None) -> AgentRunResu
                 config=config
         ):
             _process_stream_chunk(chunk, accumulator)
-        return accumulator.to_result()
+        return _freeze_execution_outcome(accumulator, outcome_box)
+    except asyncio.CancelledError as exc:
+        _freeze_execution_outcome(
+            accumulator,
+            outcome_box,
+            error_message=str(exc) or "Agent execution cancelled.",
+            failure_kind="cancelled",
+            cancellation_state="cancelled",
+        )
+        raise
     except Exception as e:
+        _freeze_execution_outcome(
+            accumulator,
+            outcome_box,
+            error_message=str(e),
+            failure_kind="execution_error",
+        )
         print(f"Error: {e}")
         monitor._emit("error", f"Execution failed: {e}")
         raise
     finally:
         if 'session_token' in locals():
             reset_session_context(session_token, thread_token)
-        shared_context.clear_facts(thread_id)
-        clear_search_cache(thread_id)
+        if 'run_token' in locals():
+            reset_execution_context(run_token)
+        shared_context.clear_facts(execution_id)
+        clear_search_cache(execution_id)
 
 
 # ====================== 本地测试入口 ======================

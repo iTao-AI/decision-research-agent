@@ -3,13 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib import error, parse, request
 
 
 class ToolClientError(RuntimeError):
-    """Raised when the Deep Search Agent tool client cannot complete a request."""
+    """Raised when the Decision Research Agent client cannot complete a request."""
 
 
 @dataclass(frozen=True)
@@ -94,6 +96,84 @@ def research_runs(config: ToolConfig, limit: int = 50) -> dict[str, Any]:
     return _request_json("GET", _join_url(config.base_url, f"/api/research/runs?limit={safe_limit}"), config=config)
 
 
+def profile_manifest(profile_id: str, config: ToolConfig) -> dict[str, Any]:
+    encoded_profile_id = parse.quote(profile_id, safe="")
+    return _request_json(
+        "GET",
+        _join_url(config.base_url, f"/api/profiles/{encoded_profile_id}"),
+        config=config,
+    )
+
+
+def doctor(config: ToolConfig) -> dict[str, Any]:
+    """Check the backend and the compiled Talent profile contract."""
+    checks: dict[str, dict[str, Any]] = {}
+    health = healthcheck(config)
+    checks["server"] = {
+        "status": "ok" if health.get("status") == "ok" else "failed",
+        "service": health.get("service"),
+    }
+    manifest = profile_manifest("talent-hiring-signal", config)
+    checks["talent_profile"] = {
+        "status": (
+            "ok"
+            if manifest.get("profile", {}).get("profile_id") == "talent-hiring-signal"
+            else "failed"
+        ),
+        "allowed_tools": manifest.get("harness_policy", {}).get("allowed_tools", []),
+    }
+    return {
+        "status": "ok"
+        if all(check["status"] == "ok" for check in checks.values())
+        else "failed",
+        "checks": checks,
+    }
+
+
+def start_run(
+    *,
+    query: str,
+    thread_id: str | None,
+    profile_id: str,
+    scope: dict[str, Any],
+    config: ToolConfig,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "query": query,
+        "profile_id": profile_id,
+        "scope": scope,
+    }
+    if thread_id:
+        payload["thread_id"] = thread_id
+    return _request_json(
+        "POST", _join_url(config.base_url, "/api/runs"), config=config, payload=payload
+    )
+
+
+def get_run(run_id: str, config: ToolConfig) -> dict[str, Any]:
+    encoded_run_id = parse.quote(run_id, safe="")
+    return _request_json(
+        "GET", _join_url(config.base_url, f"/api/runs/{encoded_run_id}"), config=config
+    )
+
+
+def wait_for_run(
+    run_id: str,
+    config: ToolConfig,
+    *,
+    poll_seconds: float = 1.0,
+) -> dict[str, Any]:
+    while True:
+        result = get_run(run_id, config)
+        if result.get("execution_status") in {
+            "completed",
+            "completed_with_fallback",
+            "failed",
+        }:
+            return result
+        time.sleep(poll_seconds)
+
+
 def config_from_env(args: argparse.Namespace) -> ToolConfig:
     timeout_raw = args.timeout or os.environ.get("DEEP_SEARCH_AGENT_TIMEOUT_SECONDS", "")
     try:
@@ -110,12 +190,15 @@ def config_from_env(args: argparse.Namespace) -> ToolConfig:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Deep Search Agent integration tool")
+    parser = argparse.ArgumentParser(
+        description="Decision Research Agent integration tool"
+    )
     parser.add_argument("--base-url", default="")
     parser.add_argument("--timeout", default="")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("healthcheck")
+    subparsers.add_parser("doctor")
 
     start = subparsers.add_parser("start-task")
     start.add_argument("--query", required=True)
@@ -132,6 +215,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
     research_list = subparsers.add_parser("research-runs")
     research_list.add_argument("--limit", type=int, default=50)
+
+    run = subparsers.add_parser("run")
+    run.add_argument("--query", required=True)
+    run.add_argument("--thread-id")
+    run.add_argument("--profile", default="generic")
+    run.add_argument("--scope-file")
+    run.add_argument("--wait", action="store_true")
+
+    result = subparsers.add_parser("result")
+    result.add_argument("--run-id", required=True)
     return parser
 
 
@@ -142,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "healthcheck":
             result = healthcheck(config)
+        elif args.command == "doctor":
+            result = doctor(config)
         elif args.command == "start-task":
             result = start_task(args.query, args.thread_id, config)
         elif args.command == "get-task":
@@ -152,6 +247,21 @@ def main(argv: list[str] | None = None) -> int:
             result = research_run(args.thread_id, config)
         elif args.command == "research-runs":
             result = research_runs(config, args.limit)
+        elif args.command == "run":
+            scope = {}
+            if args.scope_file:
+                scope = json.loads(Path(args.scope_file).read_text(encoding="utf-8"))
+            result = start_run(
+                query=args.query,
+                thread_id=args.thread_id,
+                profile_id=args.profile,
+                scope=scope,
+                config=config,
+            )
+            if args.wait:
+                result = wait_for_run(result["run_id"], config)
+        elif args.command == "result":
+            result = get_run(args.run_id, config)
         else:
             parser.error(f"unknown command: {args.command}")
             return 1

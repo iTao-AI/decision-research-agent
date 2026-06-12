@@ -5,7 +5,7 @@ from typing import Literal
 
 from langchain_core.tools import tool
 
-from api.context import get_thread_context
+from api.context import get_run_context, get_thread_context
 from api.monitor import monitor
 from tools.retry_utils import TIMEOUTS, retry_async
 from tools.cache import cached_tool
@@ -116,7 +116,7 @@ def internet_search(
     include_raw_content: bool = False,
 ):
     """Search the internet for public information, news, or finance data."""
-    thread_id = get_thread_context() or "default"
+    thread_id = get_run_context() or get_thread_context() or "default"
     result = search_with_dedup(
         query,
         search_fn=_internet_search_impl,

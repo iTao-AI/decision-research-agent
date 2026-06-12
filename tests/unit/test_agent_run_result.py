@@ -168,3 +168,25 @@ class TestAgentRunAccumulator:
         assert result.diagnostics == ["tool:tavily_search"]
         assert result.evidence_entries == []
         assert result.error_message is None
+
+
+class TestOutcomeBox:
+    def test_publishes_latest_immutable_execution_outcome(self, tmp_path):
+        from agent.run_result import AgentRunAccumulator, ExecutionOutcome, OutcomeBox
+
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-outcome",
+            query="query",
+            session_dir=tmp_path,
+        )
+        outcome = accumulator.to_outcome(
+            failure_kind="timeout",
+            cancellation_state="cancelled",
+        )
+        box = OutcomeBox()
+
+        box.publish(outcome)
+
+        assert isinstance(box.latest(), ExecutionOutcome)
+        assert box.latest().failure_kind == "timeout"
+        assert box.latest().cancellation_state == "cancelled"

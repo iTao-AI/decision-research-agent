@@ -51,7 +51,7 @@ with patch('agent.main_agent.create_deep_agent', return_value=MagicMock()):
         with patch('ragflow_sdk.RAGFlow', return_value=MagicMock()):
             from api import server
             assert server.app is not None
-            assert server.app.title == "DeepAgents API"
+            assert server.app.title == "Decision Research Agent API"
             print("OK")
 """],
             capture_output=True, text=True, cwd=os.getcwd(),

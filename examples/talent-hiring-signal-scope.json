@@ -1,0 +1,24 @@
+{
+  "target_roles": [
+    "AI Agent Engineer",
+    "LLM Application Engineer",
+    "RAG Engineer"
+  ],
+  "target_companies": [],
+  "time_window": {
+    "start": "2026-01-01",
+    "end": "2026-06-12"
+  },
+  "declared_samples": [],
+  "allowed_source_types": [
+    "public_job_posting",
+    "provided_aggregate"
+  ],
+  "research_questions": [
+    "Which engineering capabilities recur within the declared sample?",
+    "Which signals materially change a role prioritization decision?"
+  ],
+  "requested_outputs": [
+    "decision_brief"
+  ]
+}

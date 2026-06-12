@@ -1,6 +1,8 @@
 # Agent Integration
 
-Deep Search Agent exposes a small Python tool client for upper-layer agents and automation scripts.
+Decision Research Agent exposes a small Python tool client for upper-layer agents and automation scripts.
+
+The health response continues to use `deep-search-agent` as its compatibility service identifier.
 
 The client wraps the existing HTTP API:
 

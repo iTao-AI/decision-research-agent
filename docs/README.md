@@ -1,4 +1,4 @@
-# Deep Search Agent — 项目文档
+# Decision Research Agent — 项目文档
 
 ## 文档索引
 
@@ -6,6 +6,7 @@
 |------|------|
 | [PRD](prd.md) | 产品需求文档 — 产品愿景、目标用户、核心功能、成功指标 |
 | [Agent Integration](AGENT_INTEGRATION.md) | 上层 Agent / 自动化脚本调用 Deep Search Agent 的稳定工具客户端 |
+| [LangSmith 可观测性](observability.md) | 隐私优先 Trace 配置、CLI 验证和完整 Trace 切换门槛 |
 | [Run Log](evidence/run-log.md) | E2E、ResearchRun 和 benchmark 证据记录 |
 | [技术决策说明](evidence/technical-decisions.md) | 关键工程决策 — 记录为什么选择 A 而不是 B |
 

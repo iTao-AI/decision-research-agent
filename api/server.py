@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -45,11 +45,13 @@ from api.thread_ids import safe_session_dir, validate_thread_id
 from api.run_repository import (
     create_run,
     finalize_run_transaction,
+    get_artifact,
     get_run,
     transition_run,
 )
 from agent.profile_registry import profile_registry
 from agent.talent_contracts import ResearchScope
+from api.talent_artifacts import build_talent_artifacts
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -351,6 +353,20 @@ async def _run_v2_with_persistence(
             "failed" if result.failure_kind is not None else "completed"
         )
         delivery_status = "failed" if execution_status == "failed" else "ready"
+        review_status = "not_required"
+        review_bundle = None
+        artifacts = []
+        if execution_status == "completed" and profile_id == "talent-hiring-signal":
+            review_bundle, _, artifacts = build_talent_artifacts(
+                run_id=run_id,
+                scope=scope or {},
+                packets=result.research_packets,
+                evidence_entries=result.evidence_entries,
+                generated_at=result.started_at or datetime.now(timezone.utc),
+            )
+            review_status = review_bundle.status
+            if review_bundle.required_before_delivery:
+                delivery_status = "review_required"
         finalized = await asyncio.to_thread(
             finalize_run_transaction,
             run_id=run_id,
@@ -359,7 +375,11 @@ async def _run_v2_with_persistence(
             allowed_previous_statuses={"running"},
             execution_status=execution_status,
             delivery_status=delivery_status,
+            review_status=review_status,
             evidence_entries=result.evidence_entries,
+            research_packets=result.research_packets,
+            review_bundle=review_bundle,
+            artifacts=artifacts,
         )
         if not finalized:
             raise RuntimeError("stale_run_write")
@@ -567,6 +587,16 @@ async def get_research_run_v2(run_id: str):
     if run is None:
         return JSONResponse(status_code=404, content={"detail": "ResearchRun 不存在"})
     return run
+
+
+@app.get("/api/runs/{run_id}/artifacts/{artifact_id}")
+async def get_run_artifact(run_id: str, artifact_id: str):
+    artifact = await asyncio.to_thread(
+        get_artifact, run_id=run_id, artifact_id=artifact_id
+    )
+    if artifact is None:
+        return JSONResponse(status_code=404, content={"detail": "Artifact 不存在"})
+    return Response(content=artifact["content"], media_type=artifact["media_type"])
 
 
 @app.get("/api/profiles/{profile_id}")

@@ -155,7 +155,7 @@ API endpoints:
 - **WebSocket /ws/runs/{run_id}** — Run-scoped real-time event stream
 - **WebSocket /ws/{thread_id}** — Real-time reasoning stream
 
-WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`
+WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `run_timeout`, `error`
 
 ## Project Structure
 

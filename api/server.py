@@ -89,6 +89,7 @@ app = FastAPI(
     title="Decision Research Agent API",
     description="Source-backed research runs that produce decision-ready briefs.",
 )
+# Legacy `/api/task` only. Run-scoped `/api/runs` does not use this process-local guard.
 active_run_threads: set[str] = set()
 _active_run_threads_lock = Lock()
 
@@ -405,6 +406,45 @@ async def _finalize_failed_run_v2(
         return False
 
 
+async def _mark_run_timeout(
+    run_id: str,
+    timeout_seconds: int,
+    *,
+    segment_id: str,
+    outcome_box: OutcomeBox,
+) -> None:
+    """Fail-close a nonterminal ResearchRun after task tracker timeout."""
+    run = await asyncio.to_thread(get_run, run_id=run_id)
+    if run is None:
+        logging.error("Timed out ResearchRun %s no longer exists", run_id)
+        return
+
+    outcome = outcome_box.latest()
+    previous_status = run["execution_status"]
+    finalized_by_callback = False
+    if previous_status in {"pending", "running"}:
+        finalized_by_callback = await _finalize_failed_run_v2(
+            run_id=run_id,
+            segment_id=segment_id,
+            expected_state_version=run["state_version"],
+            allowed_previous_statuses={previous_status},
+            evidence_entries=outcome.evidence_entries if outcome is not None else [],
+        )
+
+    monitor._emit(
+        "run_timeout",
+        f"ResearchRun timed out after {timeout_seconds}s",
+        {
+            "timeout_seconds": timeout_seconds,
+            "previous_status": previous_status,
+            "finalized_by_callback": finalized_by_callback,
+        },
+        thread_id=run["thread_id"],
+        run_id=run_id,
+        segment_id=segment_id,
+    )
+
+
 @app.post("/api/task")
 async def run_task(request: TaskRequest):
     """Start an agent task asynchronously."""
@@ -492,7 +532,16 @@ async def create_research_run(request: RunRequest):
         outcome_box=outcome_box,
     )
     try:
-        create_tracked_task(run_coroutine, created["run_id"])
+        create_tracked_task(
+            run_coroutine,
+            created["run_id"],
+            on_timeout=lambda run_id, timeout_seconds: _mark_run_timeout(
+                run_id,
+                timeout_seconds,
+                segment_id=created["segment_id"],
+                outcome_box=outcome_box,
+            ),
+        )
     except Exception:
         run_coroutine.close()
         await _finalize_failed_run_v2(

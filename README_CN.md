@@ -153,7 +153,7 @@ API 端点:
 - **WebSocket /ws/runs/{run_id}** — run 级实时事件流
 - **WebSocket /ws/{thread_id}** — 实时推理流
 
-WebSocket 事件: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`
+WebSocket 事件: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `run_timeout`, `error`
 
 ## 项目结构
 

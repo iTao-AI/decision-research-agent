@@ -148,6 +148,9 @@ API 端点:
 - **GET /api/token-usage/{thread_id}** — 查看某个线程的 token 用量
 - **GET /api/research/runs/{thread_id}** — 查看某个线程的 ResearchRun 和 EvidenceLedger
 - **GET /api/research/runs** — 查看最近的 ResearchRun 列表
+- **POST /api/runs** / **GET /api/runs/{run_id}** — 启动并查询隔离的研究执行
+- **GET /api/telemetry/runs/{run_id}** / **GET /api/token-usage/runs/{run_id}** — 查看 run 级可观测数据
+- **WebSocket /ws/runs/{run_id}** — run 级实时事件流
 - **WebSocket /ws/{thread_id}** — 实时推理流
 
 WebSocket 事件: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`

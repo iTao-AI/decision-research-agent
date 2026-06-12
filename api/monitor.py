@@ -1,9 +1,10 @@
 import datetime
 import asyncio
 import time
+from threading import RLock
 from typing import Any, Dict, Optional
 from fastapi import WebSocket
-from api.context import get_thread_context
+from api.context import get_run_context, get_segment_context, get_thread_context
 from agent.telemetry import collector, TelemetryRecord
 
 # Exact match for known sensitive field names (case-insensitive)
@@ -66,7 +67,8 @@ class ToolMonitor:
         if cls._instance is None or not isinstance(cls._instance, cls):
             instance = super(ToolMonitor, cls).__new__(cls)
             instance.websocket_manager = None
-            instance._start_times: dict[str, float] = {}
+            instance._start_times: dict[tuple[str, str], list[float]] = {}
+            instance._start_times_lock = RLock()
             cls._instance = instance
         return cls._instance
 
@@ -74,53 +76,60 @@ class ToolMonitor:
         """设置 FastAPI 的 WebSocket 管理器"""
         self.websocket_manager = manager
 
+    def _schedule_websocket_send(self, payload: dict, run_id: str | None, thread_id: str | None):
+        """Schedule one WebSocket send without leaking a coroutine on loop failure."""
+        manager_loop = self.websocket_manager.get_loop()
+        if not manager_loop or not manager_loop.is_running():
+            return
+
+        send = (
+            self.websocket_manager.send_to_run(payload, run_id)
+            if run_id
+            else self.websocket_manager.send_to_thread(payload, thread_id)
+        )
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        try:
+            if current_loop is manager_loop:
+                current_loop.create_task(send)
+            else:
+                asyncio.run_coroutine_threadsafe(send, manager_loop)
+        except Exception:
+            send.close()
+            raise
+
     def _emit(
         self,
         event_type: str,
         message: str,
         data: Optional[Dict[str, Any]] = None,
         thread_id: str | None = None,
+        run_id: str | None = None,
+        segment_id: str | None = None,
     ):
         """内部发送方法"""
+        target_thread_id = thread_id or get_thread_context()
+        target_run_id = run_id or get_run_context()
+        target_segment_id = segment_id or get_segment_context()
         payload = {
             "type": "monitor_event",
             "event": event_type,
             "message": message,
             "data": data or {},
+            "thread_id": target_thread_id,
+            "run_id": target_run_id,
+            "segment_id": target_segment_id,
             "timestamp": datetime.datetime.now().isoformat()
         }
 
         # 1. 优先尝试通过 FastAPI WebSocket 发送 (定向推送)
         if self.websocket_manager:
             try:
-                # 获取当前线程 ID；finalization events may emit after context reset.
-                target_thread_id = thread_id or get_thread_context()
-
-                # 确保 loop 已加载
-                manager_loop = self.websocket_manager.get_loop()
-
-                if manager_loop:
-                    if target_thread_id:
-                        # 检查当前是否在同一个事件循环中
-                        try:
-                            current_loop = asyncio.get_running_loop()
-                        except RuntimeError:
-                            current_loop = None
-
-                        if current_loop and current_loop == manager_loop:
-                            # 如果在同一个循环中（例如在 create_task 中运行），直接创建任务
-                            current_loop.create_task(
-                                self.websocket_manager.send_to_thread(payload, target_thread_id)
-                            )
-                        else:
-                            # 如果在不同线程，使用 threadsafe 方法
-                            asyncio.run_coroutine_threadsafe(
-                                self.websocket_manager.send_to_thread(payload, target_thread_id),
-                                manager_loop
-                            )
-                    else:
-                        # 如果没有 thread_id，说明可能是系统级消息，或者未上下文环境
-                        pass
+                if target_run_id or target_thread_id:
+                    self._schedule_websocket_send(payload, target_run_id, target_thread_id)
             except Exception as e:
                 print(f"[Monitor] WebSocket send failed: {e}")
 
@@ -138,7 +147,11 @@ class ToolMonitor:
 
     def report_start(self, tool_name: str, args: Dict[str, Any] = None):
         """报告工具开始执行"""
-        self._start_times[tool_name] = time.monotonic()
+        execution_id = get_run_context() or get_thread_context() or "default"
+        with self._start_times_lock:
+            self._start_times.setdefault((execution_id, tool_name), []).append(
+                time.monotonic()
+            )
         sanitized = sanitize_args(args)
         self._emit("tool_start", f"开始执行工具: {tool_name}", {"tool_name": tool_name, "args": sanitized})
 
@@ -148,16 +161,25 @@ class ToolMonitor:
 
     def report_end(self, tool_name: str, result: Any = None, error: str | None = None):
         """报告工具执行结束，生成 TelemetryRecord。"""
-        start = self._start_times.pop(tool_name, None)
+        thread_id = get_thread_context() or "default"
+        run_id = get_run_context()
+        segment_id = get_segment_context()
+        execution_id = run_id or thread_id
+        with self._start_times_lock:
+            starts = self._start_times.get((execution_id, tool_name), [])
+            start = starts.pop() if starts else None
+            if not starts:
+                self._start_times.pop((execution_id, tool_name), None)
         duration_ms = 0.0
         if start is not None:
             duration_ms = (time.monotonic() - start) * 1000.0
 
-        thread_id = get_thread_context() or "default"
         status = "error" if error else "success"
 
         collector.record(TelemetryRecord(
             thread_id=thread_id,
+            run_id=run_id,
+            segment_id=segment_id,
             agent_name="main",
             tool_name=tool_name,
             duration_ms=duration_ms,
@@ -243,19 +265,22 @@ monitor = ToolMonitor()
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
+        self.active_run_connections: Dict[str, WebSocket] = {}
+        self.run_threads: Dict[str, str] = {}
         # 延迟绑定 loop，防止初始化时 loop 不一致
         self.loop = None
 
     def get_loop(self):
         """懒加载获取当前运行的事件循环"""
-        if self.loop is None:
-            try:
-                self.loop = asyncio.get_running_loop()
+        try:
+            current_loop = asyncio.get_running_loop()
+            if self.loop is None or self.loop.is_closed() or not self.loop.is_running():
+                self.loop = current_loop
                 # 同时设置 monitor 的 manager (确保双向绑定)
                 monitor.set_websocket_manager(self)
                 print(f"[Monitor] ConnectionManager auto-bound to loop: {id(self.loop)}")
-            except RuntimeError:
-                print("[Monitor] Warning: No running event loop found yet.")
+        except RuntimeError:
+            print("[Monitor] Warning: No running event loop found yet.")
         return self.loop
 
     async def connect(self, websocket: WebSocket, thread_id: str):
@@ -266,10 +291,23 @@ class ConnectionManager:
         self.active_connections[thread_id] = websocket
         print(f"Client connected: {thread_id}")
 
+    async def connect_run(self, websocket: WebSocket, run_id: str, thread_id: str):
+        self.get_loop()
+        await websocket.accept()
+        self.active_run_connections[run_id] = websocket
+        self.run_threads[run_id] = thread_id
+        print(f"Client connected: {thread_id}/{run_id}")
+
     def disconnect(self, websocket: WebSocket, thread_id: str):
         if thread_id in self.active_connections:
             del self.active_connections[thread_id]
         print(f"Client disconnected: {thread_id}")
+
+    def disconnect_run(self, websocket: WebSocket, run_id: str):
+        if self.active_run_connections.get(run_id) is websocket:
+            del self.active_run_connections[run_id]
+            self.run_threads.pop(run_id, None)
+        print(f"Client disconnected: {run_id}")
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
         await websocket.send_text(message)
@@ -277,6 +315,11 @@ class ConnectionManager:
     async def send_to_thread(self, message: dict, thread_id: str):
         if thread_id in self.active_connections:
             websocket = self.active_connections[thread_id]
+            await websocket.send_json(message)
+
+    async def send_to_run(self, message: dict, run_id: str):
+        if run_id in self.active_run_connections:
+            websocket = self.active_run_connections[run_id]
             await websocket.send_json(message)
 
 

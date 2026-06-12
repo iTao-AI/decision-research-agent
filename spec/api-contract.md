@@ -26,6 +26,24 @@
 }
 ```
 
+### POST /api/runs
+
+启动一个以 `run_id` 隔离的研究执行。同一 `thread_id` 可以同时存在多个 run。
+
+**响应：**
+```json
+{
+  "status": "started",
+  "thread_id": "调用方会话标识",
+  "run_id": "唯一研究执行标识",
+  "segment_id": "当前执行片段标识"
+}
+```
+
+### GET /api/runs/{run_id}
+
+查询一个 run 的执行、review、delivery、segment 与 evidence 状态。
+
 **响应：**
 ```json
 {
@@ -176,7 +194,7 @@
 
 ### GET /api/telemetry/{thread_id}
 
-获取指定线程的遥测记录。
+兼容接口：获取指定线程下所有 run 的遥测记录。
 
 **路径参数：**
 - `thread_id`：POST /api/task 返回的线程 ID
@@ -194,11 +212,26 @@
 }
 ```
 
+### GET /api/telemetry/runs/{run_id}
+
+获取单个 run 的遥测记录；每条记录同时携带 `thread_id`、`run_id` 和
+`segment_id`。
+
+### GET /api/token-usage/runs/{run_id}
+
+获取单个 run 的 token 用量汇总。兼容接口 `GET /api/token-usage/{thread_id}`
+继续保留。
+
 ## WebSocket
+
+### WebSocket /ws/runs/{run_id}
+
+实时接收单个 run 的事件。同一 `thread_id` 的并发 run 使用不同连接，不会互相
+覆盖。事件顶层携带 `thread_id`、`run_id` 和 `segment_id`。
 
 ### WebSocket /ws/{thread_id}
 
-实时接收 Agent 推理流事件。
+兼容接口：实时接收 legacy thread-scoped Agent 推理流事件。
 
 WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`
 
@@ -254,5 +287,6 @@ WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_resul
 
 | 日期 | 变更 |
 |------|------|
+| 2026-06-12 | 新增 run-scoped telemetry、token usage、WebSocket 与同 thread 并发契约 |
 | 2026-06-08 | 新增 ResearchRun / EvidenceLedger 查询接口 |
 | 2026-05-19 | 初始 API 规范 |

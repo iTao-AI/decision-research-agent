@@ -6,7 +6,7 @@ import pytest
 
 from api.monitor import ToolMonitor
 from agent.telemetry import collector, TelemetryRecord
-from api.context import set_thread_context, get_thread_context, reset_session_context
+from api.context import _thread_id_ctx, set_thread_context
 
 
 class TestMonitorToCollectorIntegration:
@@ -21,6 +21,7 @@ class TestMonitorToCollectorIntegration:
         """Clean up after each test."""
         collector.clear_thread("integration-thread-1")
         collector.clear_thread("integration-thread-2")
+        _thread_id_ctx.set(None)
 
     def _create_monitor_with_no_websocket(self):
         """Create a fresh ToolMonitor with no websocket_manager."""
@@ -124,6 +125,7 @@ class TestCollectorClearIntegration:
 
     def teardown_method(self):
         collector.clear_thread("clear-test-thread")
+        _thread_id_ctx.set(None)
 
     def test_clear_thread_removes_records(self):
         """After clear_thread, get_by_thread returns empty."""

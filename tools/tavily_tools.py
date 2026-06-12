@@ -1,6 +1,7 @@
 """Tavily internet search tool with unified retry and timeout handling."""
 import asyncio
 import os
+from threading import RLock
 from typing import Literal
 
 from langchain_core.tools import tool
@@ -157,6 +158,7 @@ def _internet_search_impl(
 
 # Per-thread search result cache for de-duplication within a task
 _search_cache: dict = {}
+_search_cache_lock = RLock()
 
 
 def _dedup_key(query: str, kwargs: dict) -> tuple:
@@ -186,23 +188,23 @@ def search_with_dedup(
     if search_fn is None:
         search_fn = _internet_search_impl
 
-    if thread_id not in _search_cache:
-        _search_cache[thread_id] = {}
-
-    cache = _search_cache[thread_id]
     cache_key = _dedup_key(query, kwargs)
-    if cache_key in cache:
-        monitor.report_cache_hit("tavily_search_dedup", cached=True)
-        return cache[cache_key]
+    with _search_cache_lock:
+        cache = _search_cache.setdefault(thread_id, {})
+        if cache_key in cache:
+            monitor.report_cache_hit("tavily_search_dedup", cached=True)
+            return cache[cache_key]
 
     result = search_fn(query, **kwargs)
-    cache[cache_key] = result
+    with _search_cache_lock:
+        _search_cache.setdefault(thread_id, {})[cache_key] = result
     return result
 
 
 def clear_search_cache(thread_id: str = None):
     """Clear the search cache for a thread, or all threads if None."""
-    if thread_id:
-        _search_cache.pop(thread_id, None)
-    else:
-        _search_cache.clear()
+    with _search_cache_lock:
+        if thread_id:
+            _search_cache.pop(thread_id, None)
+        else:
+            _search_cache.clear()

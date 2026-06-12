@@ -150,6 +150,9 @@ API endpoints:
 - **GET /api/token-usage/{thread_id}** — View token usage for a thread
 - **GET /api/research/runs/{thread_id}** — View ResearchRun and EvidenceLedger for a thread
 - **GET /api/research/runs** — List recent ResearchRun records
+- **POST /api/runs** / **GET /api/runs/{run_id}** — Start and inspect isolated research runs
+- **GET /api/telemetry/runs/{run_id}** / **GET /api/token-usage/runs/{run_id}** — View run-scoped observability
+- **WebSocket /ws/runs/{run_id}** — Run-scoped real-time event stream
 - **WebSocket /ws/{thread_id}** — Real-time reasoning stream
 
 WebSocket events: `session_created`, `tool_start`, `assistant_call`, `task_result`, `task_finalized`, `error`

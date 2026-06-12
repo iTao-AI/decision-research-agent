@@ -45,12 +45,18 @@ def test_create_and_get_run_returns_distinct_thread_and_run_identity(
     server.active_run_threads.clear()
 
 
-def test_create_run_rejects_same_thread_while_active(tmp_path, monkeypatch):
+def test_create_run_does_not_depend_on_legacy_thread_guard(tmp_path, monkeypatch):
     import api.server as server
 
     monkeypatch.setenv("TASKS_DB_PATH", str(tmp_path / "tasks.db"))
     os.environ["API_SECRET"] = "test-integration-key"
     server.active_run_threads.add("thread-active")
+    scheduled = []
+
+    def capture_task(coroutine, task_id, **kwargs):
+        scheduled.append(coroutine)
+
+    monkeypatch.setattr(server, "create_tracked_task", capture_task)
     client = TestClient(app)
 
     response = client.post(
@@ -59,8 +65,10 @@ def test_create_run_rejects_same_thread_while_active(tmp_path, monkeypatch):
         headers=AUTH_HEADERS,
     )
 
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "thread_already_active"
+    assert response.status_code == 200
+    assert response.json()["thread_id"] == "thread-active"
+    assert "thread-active" in server.active_run_threads
+    scheduled[0].close()
     server.active_run_threads.clear()
 
 
@@ -150,7 +158,8 @@ async def test_run_v2_cancellation_without_outcome_still_finalizes_failed(
     run = get_run(run_id=created["run_id"])
     assert run["execution_status"] == "failed"
     assert run["delivery_status"] == "failed"
-    assert "cancel-thread" not in server.active_run_threads
+    assert "cancel-thread" in server.active_run_threads
+    server.active_run_threads.clear()
 
 
 def test_create_run_scheduler_failure_releases_guard_and_marks_run_failed(

@@ -8,6 +8,7 @@ from typing import Optional
 _session_dir_ctx: ContextVar[Optional[str]] = ContextVar("session_dir", default=None)
 _thread_id_ctx: ContextVar[Optional[str]] = ContextVar("thread_id", default=None)
 _run_id_ctx: ContextVar[Optional[str]] = ContextVar("run_id", default=None)
+_segment_id_ctx: ContextVar[Optional[str]] = ContextVar("segment_id", default=None)
 
 
 def set_session_context(path: str):
@@ -47,8 +48,18 @@ def get_run_context() -> Optional[str]:
     """Get the application ResearchRun identity without changing LangGraph thread state."""
     return _run_id_ctx.get()
 
-def reset_execution_context(run_token, thread_token=None):
+def set_segment_context(segment_id: str | None):
+    """Set the current business segment identity."""
+    return _segment_id_ctx.set(segment_id)
+
+def get_segment_context() -> Optional[str]:
+    """Get the current business segment identity."""
+    return _segment_id_ctx.get()
+
+def reset_execution_context(run_token, thread_token=None, segment_token=None):
     """Reset run and thread identities after one execution."""
+    if segment_token is not None:
+        _segment_id_ctx.reset(segment_token)
     _run_id_ctx.reset(run_token)
     if thread_token:
         _thread_id_ctx.reset(thread_token)

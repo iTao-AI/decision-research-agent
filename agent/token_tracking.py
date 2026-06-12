@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 import os
 import json
+from threading import RLock
 
 from langchain_core.callbacks.base import BaseCallbackHandler
 
@@ -52,17 +53,20 @@ class TokenUsageCollector:
     def __init__(self, max_capacity: int = 1000):
         self._records: dict[str, list[TokenUsageData]] = {}
         self._max_capacity = max_capacity
+        self._lock = RLock()
 
     def record(self, thread_id: str, usage: TokenUsageData) -> None:
-        if thread_id not in self._records:
-            self._records[thread_id] = []
-        self._records[thread_id].append(usage)
+        with self._lock:
+            if thread_id not in self._records:
+                self._records[thread_id] = []
+            self._records[thread_id].append(usage)
 
-        if len(self._records[thread_id]) > self._max_capacity:
-            self._records[thread_id].pop(0)
+            if len(self._records[thread_id]) > self._max_capacity:
+                self._records[thread_id].pop(0)
 
     def get_summary(self, thread_id: str) -> dict:
-        records = self._records.get(thread_id, [])
+        with self._lock:
+            records = list(self._records.get(thread_id, []))
         if not records:
             return {
                 "total_prompt": 0, "total_completion": 0,
@@ -78,7 +82,8 @@ class TokenUsageCollector:
         }
 
     def clear_thread(self, thread_id: str) -> None:
-        self._records.pop(thread_id, None)
+        with self._lock:
+            self._records.pop(thread_id, None)
 
 
 # Global singleton

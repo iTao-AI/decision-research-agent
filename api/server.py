@@ -378,8 +378,6 @@ async def _run_v2_with_persistence(
             evidence_entries=outcome.evidence_entries if outcome is not None else [],
         )
         raise
-    finally:
-        _release_run_thread(thread_id)
 
 
 async def _finalize_failed_run_v2(
@@ -477,27 +475,14 @@ async def create_research_run(request: RunRequest):
                 },
             ) from exc
     thread_id = request.thread_id or str(uuid.uuid4())
-    if get_active_task(thread_id) is not None or not _reserve_run_thread(thread_id):
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "thread_already_active",
-                "problem": "This thread already has an active run.",
-                "fix": "Wait for the active run to finish or use a different thread_id.",
-            },
-        )
-    try:
-        created = await asyncio.to_thread(
-            create_run,
-            thread_id=thread_id,
-            query=request.query,
-            profile_id=request.profile_id,
-            profile_version=profile.version,
-            scope=validated_scope,
-        )
-    except Exception:
-        _release_run_thread(thread_id)
-        raise
+    created = await asyncio.to_thread(
+        create_run,
+        thread_id=thread_id,
+        query=request.query,
+        profile_id=request.profile_id,
+        profile_version=profile.version,
+        scope=validated_scope,
+    )
     outcome_box = OutcomeBox()
     run_coroutine = _run_v2_with_persistence(
         query=request.query,
@@ -510,7 +495,6 @@ async def create_research_run(request: RunRequest):
         create_tracked_task(run_coroutine, created["run_id"])
     except Exception:
         run_coroutine.close()
-        _release_run_thread(thread_id)
         await _finalize_failed_run_v2(
             run_id=created["run_id"],
             segment_id=created["segment_id"],
@@ -653,14 +637,12 @@ async def list_files(path: str):
     return {"files": files}
 
 
-@app.get("/api/telemetry/{thread_id}")
-async def get_telemetry(thread_id: str):
-    """Get telemetry records for a thread."""
-    thread_id = _validated_thread_id(thread_id)
-    records = collector.get_by_thread(thread_id)
+def _serialize_telemetry(records):
     return [
         {
             "thread_id": r.thread_id,
+            "run_id": r.run_id,
+            "segment_id": r.segment_id,
             "agent_name": r.agent_name,
             "tool_name": r.tool_name,
             "duration_ms": r.duration_ms,
@@ -672,25 +654,82 @@ async def get_telemetry(thread_id: str):
     ]
 
 
+@app.get("/api/telemetry/runs/{run_id}")
+async def get_run_telemetry(run_id: str):
+    """Get telemetry records for one ResearchRun."""
+    run_id = _validated_thread_id(run_id)
+    return _serialize_telemetry(collector.get_by_run(run_id))
+
+
+@app.get("/api/telemetry/{thread_id}")
+async def get_telemetry(thread_id: str):
+    """Legacy thread-grouped telemetry compatibility endpoint."""
+    thread_id = _validated_thread_id(thread_id)
+    return _serialize_telemetry(collector.get_by_thread(thread_id))
+
+
 @app.get("/api/token-usage/{thread_id}")
 async def get_token_usage(thread_id: str):
-    """Get token usage summary for a thread."""
+    """Legacy token usage summary keyed by thread."""
     thread_id = _validated_thread_id(thread_id)
     from agent.token_tracking import token_collector
     summary = token_collector.get_summary(thread_id)
     return summary
 
 
+@app.get("/api/token-usage/runs/{run_id}")
+async def get_run_token_usage(run_id: str):
+    """Get token usage summary for one ResearchRun."""
+    run_id = _validated_thread_id(run_id)
+    from agent.token_tracking import token_collector
+    return token_collector.get_summary(run_id)
+
+
+@app.websocket("/ws/runs/{run_id}")
+async def run_websocket_endpoint(websocket: WebSocket, run_id: str):
+    """Run-scoped WebSocket endpoint that permits same-thread concurrent runs."""
+    try:
+        run_id = validate_thread_id(run_id)
+    except ValueError:
+        await websocket.close(code=1008, reason="Invalid run_id")
+        return
+
+    api_secret = os.environ.get("API_SECRET", "")
+    if api_secret:
+        client_key = websocket.headers.get("x-api-key", "") or websocket.query_params.get(
+            "api_key", ""
+        )
+        if client_key != api_secret:
+            await websocket.close(code=4001, reason="Unauthorized")
+            return
+
+    run = await asyncio.to_thread(get_run, run_id=run_id)
+    if run is None:
+        await websocket.close(code=1008, reason="ResearchRun not found")
+        return
+
+    await manager.connect_run(websocket, run_id=run_id, thread_id=run["thread_id"])
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_json(
+                {"type": "pong", "run_id": run_id, "message": f"服务端已收到: {data}"}
+            )
+    except WebSocketDisconnect:
+        manager.disconnect_run(websocket, run_id)
+    except Exception:
+        manager.disconnect_run(websocket, run_id)
+
+
 @app.websocket("/ws/{thread_id}")
 async def websocket_endpoint(websocket: WebSocket, thread_id: str):
-    """WebSocket endpoint for real-time communication."""
+    """Legacy thread-scoped WebSocket endpoint."""
     try:
         thread_id = validate_thread_id(thread_id)
     except ValueError:
         await websocket.close(code=1008, reason="Invalid thread_id")
         return
 
-    # Auth check for WebSocket connections
     api_secret = os.environ.get("API_SECRET", "")
     if api_secret:
         client_key = websocket.headers.get("x-api-key", "") or websocket.query_params.get("api_key", "")
@@ -710,7 +749,7 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, thread_id)
-    except Exception as e:
+    except Exception:
         manager.disconnect(websocket, thread_id)
 
 

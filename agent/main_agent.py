@@ -23,6 +23,7 @@ from api.context import (
     reset_execution_context,
     reset_session_context,
     set_run_context,
+    set_segment_context,
     set_session_context,
     set_thread_context,
 )
@@ -149,6 +150,7 @@ async def run_deep_agent(
 
     thread_token = set_thread_context(thread_id)
     run_token = set_run_context(execution_id)
+    segment_token = set_segment_context(segment_id)
     session_token = set_session_context(session_dir_str)
     monitor.report_session_dir(session_dir_str)
     accumulator = AgentRunAccumulator(
@@ -210,7 +212,7 @@ async def run_deep_agent(
         if 'session_token' in locals():
             reset_session_context(session_token, thread_token)
         if 'run_token' in locals():
-            reset_execution_context(run_token)
+            reset_execution_context(run_token, segment_token=segment_token)
         shared_context.clear_facts(execution_id)
         clear_search_cache(execution_id)
 

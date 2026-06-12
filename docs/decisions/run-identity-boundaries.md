@@ -24,5 +24,6 @@ and scripts. These references must not be mechanically renamed.
 - Logs and diagnostics needed to correlate caller sessions with executions.
 - Migration responses and legacy compatibility projections.
 
-Same-thread concurrency remains rejected with `409 thread_already_active` until
-telemetry, WebSocket routing, and all remaining auxiliary state pass run-isolation tests.
+`POST /api/runs` permits same-thread concurrency after telemetry, WebSocket routing,
+token collection, workspace, SharedContext, and search cache passed run-isolation tests.
+Legacy `POST /api/task` remains protected by `409 thread_already_active`.

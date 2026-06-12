@@ -22,6 +22,10 @@ def build_review_bundle(
         if not claim.evidence_refs:
             triggers.append(f"claim_without_evidence:{claim.claim_id}")
             actions.append(f"Attach evidence or remove claim {claim.claim_id}.")
+        for ref in claim.evidence_refs:
+            if ref not in evidence_by_id:
+                triggers.append(f"missing_evidence_ref:{claim.claim_id}:{ref}")
+                actions.append(f"Attach evidence {ref} or revise claim {claim.claim_id}.")
         if claim.confidence < confidence_threshold:
             triggers.append(f"low_confidence:{claim.claim_id}")
             actions.append(f"Review confidence for claim {claim.claim_id}.")
@@ -37,8 +41,9 @@ def build_review_bundle(
             actions.append(f"Verify evidence for claim {claim.claim_id}.")
 
     status = "required" if triggers else "not_required"
+    review_identity = "\n".join([run_id, str(revision), *triggers])
     return ReviewBundle(
-        review_id=f"review_{uuid.uuid4().hex}",
+        review_id=f"review_{uuid.uuid5(uuid.NAMESPACE_URL, review_identity).hex}",
         run_id=run_id,
         revision=revision,
         status=status,

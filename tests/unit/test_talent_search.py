@@ -49,13 +49,22 @@ def test_talent_public_search_scopes_query_and_filters_results(monkeypatch):
     assert result == {
         "status": "ok",
         "results": [
-            {"url": "https://jobs.example.com/role", "content": "allowed"}
+            {
+                "url": "https://jobs.example.com/role",
+                "content": "allowed",
+                "evidence_id": result["results"][0]["evidence_id"],
+            }
         ],
     }
+    assert result["results"][0]["evidence_id"].startswith("ev_")
     assert published == {
         "results": {
             "results": [
-                {"url": "https://jobs.example.com/role", "content": "allowed"}
+                {
+                    "url": "https://jobs.example.com/role",
+                    "content": "allowed",
+                    "evidence_id": result["results"][0]["evidence_id"],
+                }
             ]
         },
         "thread_id": "run-talent",

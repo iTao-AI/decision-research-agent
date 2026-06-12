@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from langchain_core.tools import tool
 
 from api.context import get_allowed_source_domains_context, get_run_context
+from agent.research import evidence_id_for
 from tools.tavily_tools import (
     _internet_search_impl,
     _publish_search_evidence,
@@ -59,6 +60,17 @@ def talent_public_search(
         for item in result.get("results", [])
         if isinstance(item, dict)
         and (urlparse(item.get("url", "")).hostname or "").lower() in allowed_domains
+    ]
+    results = [
+        {
+            **item,
+            "evidence_id": evidence_id_for(
+                item.get("url"),
+                item.get("content") or item.get("title") or "",
+                run_id=execution_id,
+            ),
+        }
+        for item in results
     ]
     _publish_search_evidence({"results": results}, thread_id=execution_id)
     return {"status": "ok", "results": results}

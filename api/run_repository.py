@@ -104,6 +104,44 @@ def init_run_schema(db_path: str | None = None) -> None:
                 """
             )
             conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS research_packets_v2 (
+                    packet_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL REFERENCES research_runs_v2(run_id) ON DELETE CASCADE,
+                    segment_id TEXT NOT NULL REFERENCES run_segments(segment_id) ON DELETE CASCADE,
+                    packet_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(run_id, packet_id)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS review_bundles_v2 (
+                    review_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL UNIQUE REFERENCES research_runs_v2(run_id) ON DELETE CASCADE,
+                    revision INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    bundle_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS run_artifacts_v2 (
+                    artifact_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL REFERENCES research_runs_v2(run_id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(run_id, artifact_id)
+                )
+                """
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_research_runs_v2_thread "
                 "ON research_runs_v2(thread_id, created_at DESC)"
             )
@@ -197,6 +235,23 @@ def get_run(*, run_id: str, db_path: str | None = None) -> dict[str, Any] | None
             (run_id,),
         ).fetchall()
         result["evidence"] = [dict(entry) for entry in evidence]
+        packets = conn.execute(
+            "SELECT packet_json FROM research_packets_v2 WHERE run_id = ? ORDER BY packet_id",
+            (run_id,),
+        ).fetchall()
+        result["research_packets"] = [json.loads(item["packet_json"]) for item in packets]
+        review = conn.execute(
+            "SELECT bundle_json FROM review_bundles_v2 WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        result["review_bundle"] = json.loads(review["bundle_json"]) if review else None
+        artifacts = conn.execute(
+            """
+            SELECT artifact_id, kind, media_type, content_hash, created_at
+            FROM run_artifacts_v2 WHERE run_id = ? ORDER BY artifact_id
+            """,
+            (run_id,),
+        ).fetchall()
+        result["artifacts"] = [dict(item) for item in artifacts]
         return result
     finally:
         conn.close()
@@ -213,6 +268,9 @@ def finalize_run_transaction(
     evidence_entries: list[Any],
     db_path: str | None = None,
     review_status: str = "not_required",
+    research_packets: list[Any] | None = None,
+    review_bundle: Any | None = None,
+    artifacts: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Atomically persist terminal run, segment, and evidence state."""
     if execution_status not in EXECUTION_STATUSES:
@@ -275,7 +333,7 @@ def finalize_run_transaction(
                 """,
                 [
                     (
-                        f"ev_{uuid.uuid4().hex}",
+                        f"ev_{run_id}_{entry.evidence_fingerprint}",
                         run_id,
                         segment_id,
                         entry.query_text,
@@ -294,7 +352,74 @@ def finalize_run_transaction(
                     for entry in evidence_entries
                 ],
             )
+            conn.executemany(
+                """
+                INSERT INTO research_packets_v2 (
+                    packet_id, run_id, segment_id, packet_json, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        packet.packet_id,
+                        run_id,
+                        segment_id,
+                        packet.model_dump_json(),
+                        now,
+                    )
+                    for packet in (research_packets or [])
+                ],
+            )
+            if review_bundle is not None:
+                conn.execute(
+                    """
+                    INSERT INTO review_bundles_v2 (
+                        review_id, run_id, revision, status, bundle_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        review_bundle.review_id,
+                        run_id,
+                        review_bundle.revision,
+                        review_bundle.status,
+                        review_bundle.model_dump_json(),
+                        now,
+                    ),
+                )
+            conn.executemany(
+                """
+                INSERT INTO run_artifacts_v2 (
+                    artifact_id, run_id, kind, media_type, content, content_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        artifact["artifact_id"],
+                        run_id,
+                        artifact["kind"],
+                        artifact["media_type"],
+                        artifact["content"],
+                        artifact["content_hash"],
+                        now,
+                    )
+                    for artifact in (artifacts or [])
+                ],
+            )
             return True
+    finally:
+        conn.close()
+
+
+def get_artifact(
+    *, run_id: str, artifact_id: str, db_path: str | None = None
+) -> dict[str, Any] | None:
+    init_run_schema(db_path)
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM run_artifacts_v2 WHERE run_id = ? AND artifact_id = ?",
+            (run_id, artifact_id),
+        ).fetchone()
+        return dict(row) if row else None
     finally:
         conn.close()
 

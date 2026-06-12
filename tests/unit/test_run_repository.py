@@ -98,6 +98,9 @@ def test_finalize_run_transaction_persists_terminal_state_and_evidence(tmp_path)
     assert run["delivery_status"] == "ready"
     assert run["segments"][0]["status"] == "completed"
     assert run["evidence"][0]["evidence_fingerprint"] == evidence.evidence_fingerprint
+    assert run["evidence"][0]["evidence_id"] == (
+        f"ev_{created['run_id']}_{evidence.evidence_fingerprint}"
+    )
 
 
 def test_finalize_run_transaction_rolls_back_terminal_state_on_evidence_failure(tmp_path):
@@ -133,3 +136,96 @@ def test_finalize_run_transaction_rolls_back_terminal_state_on_evidence_failure(
     assert run["state_version"] == 0
     assert run["segments"][0]["status"] == "pending"
     assert run["evidence"] == []
+
+
+def test_finalize_run_transaction_persists_talent_artifacts_atomically(tmp_path):
+    from datetime import datetime, timezone
+    from agent.talent_contracts import ResearchPacket
+    from api.run_repository import create_run, finalize_run_transaction, get_artifact, get_run
+    from api.talent_artifacts import build_talent_artifacts
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(
+        db_path=db_path,
+        thread_id="thread-1",
+        query="query",
+        profile_id="talent-hiring-signal",
+        scope={
+            "target_roles": ["AI Agent Engineer"],
+            "target_companies": [],
+            "time_window": {"start": "2026-01-01", "end": "2026-06-12"},
+            "declared_samples": [],
+            "allowed_source_types": ["public_job_posting"],
+            "research_questions": ["question-1"],
+            "requested_outputs": ["decision_brief"],
+        },
+    )
+    packet = ResearchPacket(
+        packet_id="packet-1", scope_id="scope-1", findings=[], candidate_claims=[]
+    )
+    review, _, artifacts = build_talent_artifacts(
+        run_id=created["run_id"],
+        scope=get_run(db_path=db_path, run_id=created["run_id"])["scope"],
+        packets=[packet],
+        evidence_entries=[],
+        generated_at=datetime(2026, 6, 12, tzinfo=timezone.utc),
+    )
+
+    assert finalize_run_transaction(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="completed",
+        review_status=review.status,
+        delivery_status="ready",
+        evidence_entries=[],
+        research_packets=[packet],
+        review_bundle=review,
+        artifacts=artifacts,
+    )
+
+    run = get_run(db_path=db_path, run_id=created["run_id"])
+    assert run["research_packets"][0]["packet_id"] == "packet-1"
+    assert run["review_bundle"]["review_id"] == review.review_id
+    assert get_artifact(
+        db_path=db_path, run_id=created["run_id"], artifact_id="decision-brief.json"
+    )["content_hash"] == artifacts[0]["content_hash"]
+
+
+def test_same_evidence_can_be_persisted_in_two_runs_without_id_collision(tmp_path):
+    from agent.research import EvidenceEntry
+    from api.run_repository import create_run, finalize_run_transaction, get_run
+
+    db_path = str(tmp_path / "runs.db")
+    evidence = EvidenceEntry(
+        thread_id="thread-1",
+        query_text="query",
+        subagent_name="network_search",
+        tool_name="internet_search",
+        source_url="https://example.com/source",
+        snippet="same evidence",
+    )
+    runs = [
+        create_run(db_path=db_path, thread_id="thread-1", query="query"),
+        create_run(db_path=db_path, thread_id="thread-1", query="query"),
+    ]
+
+    for created in runs:
+        assert finalize_run_transaction(
+            db_path=db_path,
+            run_id=created["run_id"],
+            segment_id=created["segment_id"],
+            expected_state_version=0,
+            allowed_previous_statuses={"pending"},
+            execution_status="completed",
+            delivery_status="ready",
+            evidence_entries=[evidence],
+        )
+
+    ids = [
+        get_run(db_path=db_path, run_id=item["run_id"])["evidence"][0]["evidence_id"]
+        for item in runs
+    ]
+    assert ids[0] != ids[1]

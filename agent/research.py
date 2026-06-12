@@ -110,6 +110,12 @@ def _evidence_fingerprint(source_identity: str, content: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def evidence_id_for(source_url: str | None, content: str, *, run_id: str) -> str:
+    """Return the stable ledger identity exposed to structured researchers."""
+    fingerprint = _evidence_fingerprint(_source_identity(source_url), _truncate(content))
+    return f"ev_{run_id}_{fingerprint}"
+
+
 def evidence_from_shared_context_snapshot(
     *, thread_id: str, query_text: str, snapshot: list[dict[str, Any]]
 ) -> list[EvidenceEntry]:

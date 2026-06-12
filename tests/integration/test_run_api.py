@@ -194,6 +194,7 @@ async def test_run_v2_cancellation_without_outcome_still_finalizes_failed(
 async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch):
     import api.server as server
     from agent.run_result import AgentRunResult
+    from agent.talent_contracts import ResearchPacket
     from api.run_repository import create_run
 
     monkeypatch.setenv("TASKS_DB_PATH", str(tmp_path / "tasks.db"))
@@ -203,6 +204,15 @@ async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch
         profile_id="talent-hiring-signal",
     )
     captured = {}
+    scope = {
+        "target_roles": ["AI Agent Engineer"],
+        "target_companies": [],
+        "time_window": {"start": "2026-01-01", "end": "2026-06-12"},
+        "declared_samples": [],
+        "allowed_source_types": ["public_job_posting"],
+        "research_questions": ["question-1"],
+        "requested_outputs": ["decision_brief"],
+    }
 
     async def capture_agent(*args, **kwargs):
         captured.update(kwargs)
@@ -210,8 +220,17 @@ async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch
             thread_id="talent-thread",
             query="query",
             session_dir=tmp_path,
+            profile_id="talent-hiring-signal",
             run_id=created["run_id"],
             segment_id=created["segment_id"],
+            research_packets=[
+                ResearchPacket(
+                    packet_id="packet-1",
+                    scope_id="scope-1",
+                    findings=[],
+                    candidate_claims=[],
+                )
+            ],
         )
 
     monkeypatch.setattr(server, "run_deep_agent", capture_agent)
@@ -222,10 +241,105 @@ async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch
         run_id=created["run_id"],
         segment_id=created["segment_id"],
         profile_id="talent-hiring-signal",
+        scope=scope,
         outcome_box=server.OutcomeBox(),
     )
 
     assert captured["profile_id"] == "talent-hiring-signal"
+
+
+@pytest.mark.asyncio
+async def test_talent_run_persists_review_and_canonical_artifacts(tmp_path, monkeypatch):
+    import api.server as server
+    from agent.run_result import AgentRunResult
+    from agent.talent_contracts import ResearchPacket
+    from api.run_repository import create_run, get_run
+
+    monkeypatch.setenv("TASKS_DB_PATH", str(tmp_path / "tasks.db"))
+    scope = {
+        "target_roles": ["AI Agent Engineer"],
+        "target_companies": [],
+        "time_window": {"start": "2026-01-01", "end": "2026-06-12"},
+        "declared_samples": [],
+        "allowed_source_types": ["public_job_posting"],
+        "research_questions": ["question-1"],
+        "requested_outputs": ["decision_brief"],
+    }
+    created = create_run(
+        thread_id="talent-thread", query="query", profile_id="talent-hiring-signal",
+        scope=scope,
+    )
+    packet = ResearchPacket(
+        packet_id="packet-1",
+        scope_id="scope-1",
+        findings=[{
+            "finding_id": "finding-1",
+            "research_question_id": "question-1",
+            "statement": "Signal",
+            "evidence_refs": [],
+            "sample_scope": "declared",
+            "confidence": 0.8,
+        }],
+        candidate_claims=[{
+            "claim_id": "claim-1",
+            "text": "Claim requiring review",
+            "claim_type": "signal",
+            "finding_refs": ["finding-1"],
+            "evidence_refs": [],
+            "confidence": 0.8,
+            "citation_status": "uncited",
+            "verification_status": "unverified",
+            "review_status": "pending",
+            "conflict_status": "none",
+        }],
+    )
+
+    async def capture_agent(*args, **kwargs):
+        return AgentRunResult(
+            thread_id="talent-thread", query="query", session_dir=tmp_path,
+            profile_id="talent-hiring-signal", run_id=created["run_id"],
+            segment_id=created["segment_id"], research_packets=[packet],
+        )
+
+    monkeypatch.setattr(server, "run_deep_agent", capture_agent)
+    await server._run_v2_with_persistence(
+        query="query", thread_id="talent-thread", run_id=created["run_id"],
+        segment_id=created["segment_id"], profile_id="talent-hiring-signal",
+        scope=scope, outcome_box=server.OutcomeBox(),
+    )
+
+    run = get_run(run_id=created["run_id"])
+    assert run["research_packets"][0]["packet_id"] == "packet-1"
+    assert run["review_status"] == "required"
+    assert run["delivery_status"] == "review_required"
+    assert {item["artifact_id"] for item in run["artifacts"]} == {
+        "decision-brief.json", "decision-brief.md",
+    }
+
+
+def test_run_artifact_api_resolves_by_run_and_artifact_id(tmp_path, monkeypatch):
+    from api.run_repository import create_run, finalize_run_transaction
+
+    monkeypatch.setenv("TASKS_DB_PATH", str(tmp_path / "tasks.db"))
+    os.environ["API_SECRET"] = "test-integration-key"
+    created = create_run(thread_id="thread-1", query="query")
+    finalize_run_transaction(
+        run_id=created["run_id"], segment_id=created["segment_id"],
+        expected_state_version=0, allowed_previous_statuses={"pending"},
+        execution_status="completed", delivery_status="ready", evidence_entries=[],
+        artifacts=[{
+            "artifact_id": "brief.md", "kind": "markdown", "media_type": "text/markdown",
+            "content": "# Brief", "content_hash": "hash",
+        }],
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        f"/api/runs/{created['run_id']}/artifacts/brief.md", headers=AUTH_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.text == "# Brief"
 
 
 @pytest.mark.asyncio

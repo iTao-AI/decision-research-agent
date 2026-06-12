@@ -58,6 +58,46 @@ class TestTaskTrackerTimeout:
         assert get_active_task("timeout-test-2") is None
 
     @pytest.mark.asyncio
+    async def test_timeout_callback_reads_outcome_published_during_cancellation(self, tmp_path):
+        from agent.run_result import AgentRunAccumulator, OutcomeBox
+        from api.task_tracker import clear_active_tasks, create_tracked_task
+
+        clear_active_tasks()
+        box = OutcomeBox()
+        observed = []
+        accumulator = AgentRunAccumulator(
+            thread_id="timeout-closure",
+            query="query",
+            session_dir=tmp_path,
+        )
+
+        async def slow():
+            try:
+                await asyncio.sleep(100)
+            except asyncio.CancelledError:
+                box.publish(
+                    accumulator.to_outcome(
+                        failure_kind="cancelled",
+                        cancellation_state="cancelled",
+                    )
+                )
+                raise
+
+        async def on_timeout(task_id: str, timeout_seconds: int):
+            observed.append(box.latest())
+
+        task = create_tracked_task(
+            slow(),
+            "timeout-closure",
+            timeout_seconds=0.01,
+            on_timeout=on_timeout,
+        )
+
+        assert await task is None
+        assert observed[0].failure_kind == "cancelled"
+        assert observed[0].cancellation_state == "cancelled"
+
+    @pytest.mark.asyncio
     async def test_default_timeout_from_env(self):
         """默认超时应从环境变量读取"""
         # 清除已缓存的模块

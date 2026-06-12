@@ -4,7 +4,9 @@
 支持事实发布、查询、去重、容量控制和 session 清理。
 """
 import time
+from copy import deepcopy
 from dataclasses import dataclass
+from threading import RLock
 from typing import Optional
 
 
@@ -37,6 +39,8 @@ class SharedContext:
     def __init__(self, max_facts: int = DEFAULT_MAX_FACTS):
         self._max_facts = max_facts
         self._facts: dict[str, list[Fact]] = {}
+        self._diagnostics: dict[str, list[str]] = {}
+        self._lock = RLock()
 
     def publish_fact(
         self,
@@ -54,21 +58,26 @@ class SharedContext:
         if topic is None:
             topic = source
 
-        facts_list = self._facts.setdefault(thread_id, [])
+        with self._lock:
+            facts_list = self._facts.setdefault(thread_id, [])
 
-        # Dedup: same fact + source already exists
-        for existing in facts_list:
-            if existing.fact == fact and existing.source == source:
-                return existing.to_dict()
+            # Dedup: same fact + source already exists
+            for existing in facts_list:
+                if existing.fact == fact and existing.source == source:
+                    return existing.to_dict()
 
-        new_fact = Fact(fact=fact, source=source, topic=topic, timestamp=time.time())
-        facts_list.append(new_fact)
+            new_fact = Fact(fact=fact, source=source, topic=topic, timestamp=time.time())
+            facts_list.append(new_fact)
 
-        # Evict oldest if over capacity
-        while len(facts_list) > self._max_facts:
-            facts_list.pop(0)
+            evicted = 0
+            while len(facts_list) > self._max_facts:
+                facts_list.pop(0)
+                evicted += 1
+            if evicted:
+                diagnostics = self._diagnostics.setdefault(thread_id, [])
+                diagnostics.append(f"evidence_truncated:{evicted}")
 
-        return new_fact.to_dict()
+            return new_fact.to_dict()
 
     def query_facts(
         self,
@@ -80,19 +89,35 @@ class SharedContext:
 
         空 thread_id 或不存在的 topic 返回空列表。
         """
-        facts_list = self._facts.get(thread_id, [])
-        results = []
-        for f in facts_list:
-            if f.topic != topic:
-                continue
-            if source_filter is not None and f.source != source_filter:
-                continue
-            results.append(f.to_dict())
-        return results
+        with self._lock:
+            facts_list = self._facts.get(thread_id, [])
+            results = []
+            for f in facts_list:
+                if f.topic != topic:
+                    continue
+                if source_filter is not None and f.source != source_filter:
+                    continue
+                results.append(f.to_dict())
+            return results
+
+    def snapshot_facts(self, thread_id: str, topic: str | None = None) -> list[dict]:
+        """Return a deep-copy snapshot safe to use after runtime cleanup."""
+        with self._lock:
+            facts = self._facts.get(thread_id, [])
+            return deepcopy(
+                [fact.to_dict() for fact in facts if topic is None or fact.topic == topic]
+            )
+
+    def get_diagnostics(self, thread_id: str) -> list[str]:
+        """Return capacity and lifecycle diagnostics for one execution."""
+        with self._lock:
+            return list(self._diagnostics.get(thread_id, []))
 
     def clear_facts(self, thread_id: str) -> None:
         """清理指定 thread_id 的所有事实。
 
         不存在的 thread_id 静默处理。
         """
-        self._facts.pop(thread_id, None)
+        with self._lock:
+            self._facts.pop(thread_id, None)
+            self._diagnostics.pop(thread_id, None)

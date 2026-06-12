@@ -16,6 +16,15 @@ from api.server import app
 AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
 
 
+def test_public_api_title_uses_product_name_and_health_keeps_compatibility_id():
+    client = TestClient(app)
+
+    assert app.title == "Decision Research Agent API"
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["service"] == "deep-search-agent"
+
+
 @pytest.fixture(autouse=True)
 def _auth_env():
     """Set API_SECRET for all integration tests."""
@@ -194,3 +203,24 @@ class TestTaskEndpoint:
         )
 
         assert response.status_code == 422
+
+    def test_rejects_second_active_task_for_same_thread(
+        self, client, monkeypatch, tmp_path
+    ):
+        import api.server as server
+        from api.persistence import get_task, save_task
+
+        monkeypatch.setenv("TASKS_DB_PATH", str(tmp_path / "tasks.db"))
+        thread_id = "active-thread"
+        save_task(thread_id=thread_id, query="original query", status="running")
+        monkeypatch.setattr(server, "get_active_task", lambda task_id: object())
+
+        response = client.post(
+            "/api/task",
+            json={"query": "replacement query", "thread_id": thread_id},
+            headers=AUTH_HEADERS,
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "thread_already_active"
+        assert get_task(thread_id=thread_id)["query"] == "original query"

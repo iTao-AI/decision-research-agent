@@ -1,0 +1,22 @@
+{
+  "benchmark_status": "not_run",
+  "declared_sample_count": 0,
+  "target_roles": [],
+  "target_companies": [],
+  "generic_baseline_run_id": null,
+  "talent_profile_run_id": null,
+  "manually_useful_findings": [],
+  "manually_useful_claims": [],
+  "non_actionable_filler": [],
+  "expected_limitations": [],
+  "expected_recommendations": [],
+  "value_gate": {
+    "evidence_coverage": null,
+    "scope_adherence": null,
+    "limitations": null,
+    "reviewability": null,
+    "improved_dimensions": 0,
+    "required_improved_dimensions": 3,
+    "passed": false
+  }
+}

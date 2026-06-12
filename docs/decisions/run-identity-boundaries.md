@@ -1,0 +1,28 @@
+# Run Identity Boundaries
+
+The P0B audit found 276 source references to `thread_id` across runtime, API, tools,
+and scripts. These references must not be mechanically renamed.
+
+## Keep as `thread_id`
+
+- LangGraph `configurable.thread_id` and future checkpoint resume cursor.
+- Caller conversation/session grouping.
+- Legacy `/api/task`, `/api/tasks/{thread_id}`, and `/ws/{thread_id}` compatibility.
+
+## Use `run_id`
+
+- Workspace directory for `/api/runs`.
+- SharedContext snapshot/cleanup key.
+- Search de-duplication cache key.
+- Token collection key.
+- New ResearchRun, segment, and evidence persistence.
+- New task tracking and result polling identity.
+
+## Carry both
+
+- LangSmith metadata and future monitor/telemetry events.
+- Logs and diagnostics needed to correlate caller sessions with executions.
+- Migration responses and legacy compatibility projections.
+
+Same-thread concurrency remains rejected with `409 thread_already_active` until
+telemetry, WebSocket routing, and all remaining auxiliary state pass run-isolation tests.

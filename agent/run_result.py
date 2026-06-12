@@ -6,6 +6,7 @@ stream processing without initializing the LLM-backed DeepAgent.
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from agent.research import EvidenceEntry, extract_evidence_entries
@@ -13,12 +14,16 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 
 @dataclass(frozen=True)
-class AgentRunResult:
+class ExecutionOutcome:
     """Summary of one main-agent execution."""
 
     thread_id: str
     query: str
     session_dir: Path
+    run_id: str | None = None
+    segment_id: str | None = None
+    attempt: int = 1
+    state_version: int = 0
     started_at: datetime | None = None
     last_agent_text: str = ""
     assistant_calls: int = 0
@@ -26,6 +31,28 @@ class AgentRunResult:
     diagnostics: list[str] = field(default_factory=list)
     evidence_entries: list[EvidenceEntry] = field(default_factory=list)
     error_message: str | None = None
+    failure_kind: str | None = None
+    cancellation_state: str | None = None
+
+
+# Backwards-compatible public name while callers migrate to ExecutionOutcome.
+AgentRunResult = ExecutionOutcome
+
+
+class OutcomeBox:
+    """Thread-safe mutable holder captured by timeout/failure closures."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._outcome: ExecutionOutcome | None = None
+
+    def publish(self, outcome: ExecutionOutcome) -> None:
+        with self._lock:
+            self._outcome = outcome
+
+    def latest(self) -> ExecutionOutcome | None:
+        with self._lock:
+            return self._outcome
 
 
 @dataclass
@@ -35,6 +62,10 @@ class AgentRunAccumulator:
     thread_id: str
     query: str
     session_dir: Path
+    run_id: str | None = None
+    segment_id: str | None = None
+    attempt: int = 1
+    state_version: int = 0
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_agent_text: str = ""
     assistant_calls: int = 0
@@ -42,19 +73,37 @@ class AgentRunAccumulator:
     diagnostics: list[str] = field(default_factory=list)
     evidence_entries: list[EvidenceEntry] = field(default_factory=list)
 
-    def to_result(self, error_message: str | None = None) -> AgentRunResult:
-        return AgentRunResult(
+    def to_outcome(
+        self,
+        *,
+        evidence_entries: list[EvidenceEntry] | None = None,
+        error_message: str | None = None,
+        failure_kind: str | None = None,
+        cancellation_state: str | None = None,
+    ) -> ExecutionOutcome:
+        return ExecutionOutcome(
             thread_id=self.thread_id,
             query=self.query,
             session_dir=self.session_dir,
+            run_id=self.run_id,
+            segment_id=self.segment_id,
+            attempt=self.attempt,
+            state_version=self.state_version,
             started_at=self.started_at,
             last_agent_text=self.last_agent_text,
             assistant_calls=self.assistant_calls,
             tool_starts=self.tool_starts,
             diagnostics=list(self.diagnostics),
-            evidence_entries=list(self.evidence_entries),
+            evidence_entries=list(
+                self.evidence_entries if evidence_entries is None else evidence_entries
+            ),
             error_message=error_message,
+            failure_kind=failure_kind,
+            cancellation_state=cancellation_state,
         )
+
+    def to_result(self, error_message: str | None = None) -> AgentRunResult:
+        return self.to_outcome(error_message=error_message)
 
 
 def _text_from_content(content: Any) -> str:

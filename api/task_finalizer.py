@@ -79,48 +79,6 @@ def _token_usage_json(token_usage: dict) -> str:
     return json.dumps(token_usage, ensure_ascii=False)
 
 
-def _collect_shared_context_evidence(
-    thread_id: str, query_text: str, existing_urls: set[str] | None = None
-) -> list:
-    """Collect search evidence facts from SharedContext, de-duplicating by URL.
-
-    Only facts with topic ``"search_evidence"`` are collected.  Each fact is
-    converted to an EvidenceEntry, skipping URLs already present in the
-    stream-based evidence set so that sub-agent search evidence supplements
-    (not duplicates) what the main-agent ToolMessage stream already captured.
-    """
-    existing = existing_urls or set()
-    try:
-        from tools.shared_context_tools import _get_context
-        from agent.research import EvidenceEntry
-
-        ctx = _get_context()
-        facts = ctx.query_facts(thread_id=thread_id, topic="search_evidence")
-    except Exception:
-        return []
-
-    entries: list[EvidenceEntry] = []
-    for fact in facts:
-        url = fact.get("source")
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-            continue
-        if url in existing:
-            continue
-        existing.add(url)
-        snippet = str(fact.get("fact", "") or "").strip()
-        entries.append(
-            EvidenceEntry(
-                thread_id=thread_id,
-                query_text=query_text,
-                subagent_name="network_search",
-                tool_name="internet_search",
-                source_url=url,
-                snippet=snippet[:1000],
-            )
-        )
-    return entries
-
-
 def persist_research_run(
     run_result: AgentRunResult,
     status: str,
@@ -134,13 +92,6 @@ def persist_research_run(
         run_result.evidence_entries,
         report_path,
     )
-    # Merge sub-agent search evidence from SharedContext
-    sc_evidence = _collect_shared_context_evidence(
-        run_result.thread_id,
-        run_result.query,
-        existing_urls={entry.source_url for entry in evidence_entries if entry.source_url},
-    )
-    evidence_entries = evidence_entries + sc_evidence
     quality_report = evaluate_report_quality(
         report_path=report_path,
         fallback_used=fallback_used,
@@ -185,7 +136,7 @@ def finalize_task_run(run_result: AgentRunResult) -> TaskFinalization:
         status = "completed_with_fallback"
 
     output_path = str(report_path)
-    token_usage = _token_usage(run_result.thread_id)
+    token_usage = _token_usage(run_result.run_id or run_result.thread_id)
     persist_research_run(
         run_result=run_result,
         status=status,

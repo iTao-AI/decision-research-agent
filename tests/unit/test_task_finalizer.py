@@ -22,6 +22,15 @@ def _save_task(thread_id: str, query: str):
 
 
 class TestTaskFinalizer:
+    def test_finalizer_module_does_not_read_shared_context(self):
+        import inspect
+        import api.task_finalizer as task_finalizer
+
+        source = inspect.getsource(task_finalizer)
+
+        assert "_collect_shared_context_evidence" not in source
+        assert "shared_context_tools" not in source
+
     def test_selects_newest_existing_markdown_report(self, tmp_path, task_db):
         from api.persistence import get_task
         from api.task_finalizer import finalize_task_run
@@ -240,90 +249,3 @@ class TestTaskFinalizer:
         task = get_task(thread_id=thread_id)
         assert task["status"] == "running"
         assert task["output_path"] is None
-
-
-class TestCollectSharedContextEvidence:
-    """P3.1: Merge sub-agent search evidence from SharedContext."""
-
-    @staticmethod
-    def _patch_get_context(monkeypatch, sc):
-        """Inject a test SharedContext into the lazy _get_context() path."""
-        import tools.shared_context_tools
-
-        monkeypatch.setattr(tools.shared_context_tools, "_context", sc)
-
-    def test_collects_shared_context_facts_as_evidence_entries(self, monkeypatch):
-        """Facts published as search_evidence are converted to EvidenceEntries."""
-        from agent.shared_context import SharedContext
-        from api.task_finalizer import _collect_shared_context_evidence
-
-        sc = SharedContext()
-        self._patch_get_context(monkeypatch, sc)
-        sc.publish_fact(
-            thread_id="thread-sc-1",
-            fact="Agent framework comparison findings",
-            source="https://example.com/research/agents",
-            topic="search_evidence",
-        )
-        sc.publish_fact(
-            thread_id="thread-sc-1",
-            fact="LangGraph vs AutoGen analysis",
-            source="https://example.com/langgraph-autogen",
-            topic="search_evidence",
-        )
-
-        entries = _collect_shared_context_evidence(
-            "thread-sc-1",
-            "test query",
-        )
-
-        assert len(entries) == 2
-        urls = {e.source_url for e in entries}
-        assert urls == {
-            "https://example.com/research/agents",
-            "https://example.com/langgraph-autogen",
-        }
-        for entry in entries:
-            assert entry.thread_id == "thread-sc-1"
-            assert entry.query_text == "test query"
-            assert entry.subagent_name == "network_search"
-            assert entry.tool_name == "internet_search"
-
-    def test_dedups_against_existing_stream_evidence(self, monkeypatch):
-        """URLs already in the stream-based evidence set are not duplicated."""
-        from agent.shared_context import SharedContext
-        from api.task_finalizer import _collect_shared_context_evidence
-
-        sc = SharedContext()
-        self._patch_get_context(monkeypatch, sc)
-        sc.publish_fact(
-            thread_id="thread-sc-2",
-            fact="Already captured from stream",
-            source="https://example.com/stream-captured",
-            topic="search_evidence",
-        )
-        sc.publish_fact(
-            thread_id="thread-sc-2",
-            fact="Only in SharedContext",
-            source="https://example.com/only-sc",
-            topic="search_evidence",
-        )
-
-        entries = _collect_shared_context_evidence(
-            "thread-sc-2",
-            "test query",
-            existing_urls={"https://example.com/stream-captured"},
-        )
-
-        assert len(entries) == 1
-        assert entries[0].source_url == "https://example.com/only-sc"
-
-    def test_empty_when_no_facts_published(self):
-        """Returns empty list when SharedContext has no search_evidence."""
-        from api.task_finalizer import _collect_shared_context_evidence
-
-        entries = _collect_shared_context_evidence(
-            "thread-nonexistent",
-            "test query",
-        )
-        assert entries == []

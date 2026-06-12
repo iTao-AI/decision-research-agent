@@ -1,4 +1,4 @@
-# Deep Search Agent — 项目文档
+# Decision Research Agent — 项目文档
 
 ## 文档索引
 

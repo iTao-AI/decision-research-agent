@@ -10,6 +10,9 @@ services:
     environment:
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
+    volumes:
+      - backend_data:/app/data
+      - backend_output:/app/output
     depends_on:
       mysql:
         condition: service_started
@@ -43,6 +46,8 @@ services:
       - app-network
 
 volumes:
+  backend_data:
+  backend_output:
   mysql_data:
 
 networks:

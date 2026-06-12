@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -30,6 +31,10 @@ class EvidenceEntry:
     tool_name: str
     source_url: str | None
     snippet: str
+    source_identity: str = ""
+    evidence_fingerprint: str = ""
+    retrieved_at: str | None = None
+    tool_call_id: str | None = None
     citation_status: str = "uncited"
     verification_status: str = "unverified"
     created_at: str = field(
@@ -38,6 +43,14 @@ class EvidenceEntry:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    def __post_init__(self) -> None:
+        source_identity = self.source_identity or _source_identity(self.source_url)
+        fingerprint = self.evidence_fingerprint or _evidence_fingerprint(
+            source_identity, self.snippet
+        )
+        object.__setattr__(self, "source_identity", source_identity)
+        object.__setattr__(self, "evidence_fingerprint", fingerprint)
 
 
 @dataclass(frozen=True)
@@ -82,6 +95,55 @@ def _url_from_mapping(item: dict[str, Any]) -> str | None:
 
 def _normalize_url(url: str) -> str:
     return url.rstrip(_URL_TRAILING_PUNCTUATION)
+
+
+def _source_identity(source_url: str | None) -> str:
+    return _normalize_url(source_url.strip()) if source_url else "source:unknown"
+
+
+def _normalize_evidence_content(content: str) -> str:
+    return " ".join(str(content).split())
+
+
+def _evidence_fingerprint(source_identity: str, content: str) -> str:
+    payload = f"{source_identity}\n{_normalize_evidence_content(content)}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def evidence_from_shared_context_snapshot(
+    *, thread_id: str, query_text: str, snapshot: list[dict[str, Any]]
+) -> list[EvidenceEntry]:
+    """Convert an execution-boundary SharedContext snapshot into evidence."""
+    entries: list[EvidenceEntry] = []
+    for fact in snapshot:
+        url = fact.get("source")
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            continue
+        entries.append(
+            EvidenceEntry(
+                thread_id=thread_id,
+                query_text=query_text,
+                subagent_name="network_search",
+                tool_name="internet_search",
+                source_url=url,
+                snippet=_truncate(fact.get("fact", "")),
+                retrieved_at=str(fact.get("timestamp")) if fact.get("timestamp") else None,
+            )
+        )
+    return entries
+
+
+def merge_evidence_entries(*entry_groups: list[EvidenceEntry]) -> list[EvidenceEntry]:
+    """Merge evidence using normalized source plus normalized content identity."""
+    merged: list[EvidenceEntry] = []
+    seen: set[str] = set()
+    for entries in entry_groups:
+        for entry in entries:
+            if entry.evidence_fingerprint in seen:
+                continue
+            seen.add(entry.evidence_fingerprint)
+            merged.append(entry)
+    return merged
 
 
 def _snippet_from_mapping(item: dict[str, Any]) -> str:

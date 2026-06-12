@@ -160,6 +160,14 @@ class TestSharedContextCapacity:
         assert len(self.ctx.query_facts(thread_id="t1", topic="t")) == 5
         assert len(self.ctx.query_facts(thread_id="t2", topic="t")) == 5
 
+    def test_capacity_eviction_records_truncation_diagnostic(self):
+        ctx = SharedContext(max_facts=1)
+
+        ctx.publish_fact(thread_id="t1", fact="first", source="s1", topic="t")
+        ctx.publish_fact(thread_id="t1", fact="second", source="s1", topic="t")
+
+        assert ctx.get_diagnostics("t1") == ["evidence_truncated:1"]
+
 
 class TestSharedContextClear:
     """测试清理"""
@@ -187,3 +195,21 @@ class TestSharedContextClear:
         facts = self.ctx.query_facts(thread_id="t1", topic="t")
         assert len(facts) == 1
         assert facts[0]["fact"] == "new"
+
+
+class TestSharedContextSnapshot:
+    def test_snapshot_returns_deep_copy_and_can_filter_topic(self):
+        ctx = SharedContext()
+        ctx.publish_fact(
+            thread_id="t1",
+            fact="search result",
+            source="https://example.com/source",
+            topic="search_evidence",
+        )
+        ctx.publish_fact(thread_id="t1", fact="other", source="s1", topic="other")
+
+        snapshot = ctx.snapshot_facts("t1", topic="search_evidence")
+        snapshot[0]["fact"] = "mutated"
+
+        assert len(snapshot) == 1
+        assert ctx.query_facts("t1", "search_evidence")[0]["fact"] == "search result"

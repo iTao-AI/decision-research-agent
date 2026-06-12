@@ -38,6 +38,25 @@ class TestAgentContext:
         assert ctx.metadata["call_count"] == 3
         assert ctx.metadata["execution_time"] == 1.5
 
+    def test_run_context_is_independent_from_langgraph_thread_context(self):
+        from api.context import (
+            get_run_context,
+            get_thread_context,
+            reset_execution_context,
+            set_run_context,
+            set_thread_context,
+        )
+
+        thread_token = set_thread_context("thread-1")
+        run_token = set_run_context("run-1")
+
+        assert get_thread_context() == "thread-1"
+        assert get_run_context() == "run-1"
+
+        reset_execution_context(run_token, thread_token)
+        assert get_thread_context() is None
+        assert get_run_context() is None
+
 
 class TestAgentConfig:
     """Test AgentConfig creation and to_dict compatibility"""

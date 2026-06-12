@@ -17,13 +17,12 @@ def _get_context() -> SharedContext:
 
 
 def _resolve_thread_id(thread_id: str) -> str:
-    """自动从 session 上下文解析 thread_id，避免跨 session 事实泄漏"""
+    """Resolve the run-scoped execution key, falling back to legacy thread_id."""
     if thread_id:
         return thread_id
     try:
-        from api.context import get_thread_context
-        tid = get_thread_context()
-        return tid if tid else "default"
+        from api.context import get_run_context, get_thread_context
+        return get_run_context() or get_thread_context() or "default"
     except Exception:
         return "default"
 

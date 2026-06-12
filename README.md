@@ -1,8 +1,10 @@
 [English](./README.md) | [中文](./README_CN.md)
 
-# Deep Search Agent
+# Decision Research Agent
 
-A multi-source information collection and report generation Agent built on LangGraph / DeepAgents. It supports main-agent autonomous planning, sub-agent delegation, WebSocket status streaming, session isolation, token usage tracking, and Docker deployment — for enterprise knowledge retrieval, data querying, and automated research report generation.
+An evidence-driven research agent that gathers source-backed findings and turns them into decision-ready briefs. Built on LangGraph / DeepAgents, it combines autonomous planning, delegated research, auditable evidence capture, run-scoped persistence, and deterministic delivery contracts.
+
+The repository and compatibility identifier remain `deep-search-agent` during the ongoing migration.
 
 ## Architecture
 

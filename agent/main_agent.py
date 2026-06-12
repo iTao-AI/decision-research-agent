@@ -12,12 +12,16 @@ from deepagents import create_deep_agent
 
 from agent.llm import model
 from agent.prompts import main_agent_config
+from agent.profile_agents import compile_profile_agent
+from agent.profile_registry import AgentFactory, profile_registry
 
 from api.monitor import monitor
 import asyncio
+import json
 import uuid
 import shutil
 from pathlib import Path
+from urllib.parse import urlparse
 
 from api.context import (
     reset_execution_context,
@@ -26,6 +30,7 @@ from api.context import (
     set_segment_context,
     set_session_context,
     set_thread_context,
+    set_allowed_source_domains_context,
 )
 from api.thread_ids import safe_session_dir
 
@@ -58,12 +63,21 @@ main_agent = create_deep_agent(
     tools=[generate_markdown, convert_md_to_pdf, read_file_content],
     system_prompt=main_agent_config["system_prompt"]
 )
+agent_factory = AgentFactory(
+    profile_registry,
+    lambda profile, policy: compile_profile_agent(
+        profile,
+        policy,
+        model=model,
+        generic_agent=main_agent,
+    ),
+)
 
 project_root = Path(__file__).parents[1].resolve()
 print(f"----------------project_root-----------------: {project_root}")
 
 
-def _prepare_session_environment(thread_id: str):
+def _prepare_session_environment(thread_id: str, *, include_uploads: bool = True):
     """Initialize session workspace (directory, file migration, path context)."""
     session_dir = safe_session_dir(project_root / "output", thread_id)
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -75,7 +89,7 @@ def _prepare_session_environment(thread_id: str):
     upload_dir = safe_session_dir(project_root / "updated", thread_id)
     uploaded_info = ""
 
-    if upload_dir.exists():
+    if include_uploads and upload_dir.exists():
         files = [f.name for f in upload_dir.iterdir() if f.is_file()]
 
         if files:
@@ -87,6 +101,19 @@ def _prepare_session_environment(thread_id: str):
                              "\n    请优先使用工具读取并参考这些文件。")
 
     return session_dir_str, relative_session_dir, uploaded_info
+
+
+def _allowed_source_domains(scope: dict | None) -> tuple[str, ...]:
+    domains = set()
+    for sample in (scope or {}).get("declared_samples", []):
+        if not isinstance(sample, dict):
+            continue
+        if sample.get("source_type") != "public_job_posting":
+            continue
+        hostname = urlparse(sample.get("reference", "")).hostname
+        if hostname:
+            domains.add(hostname.lower())
+    return tuple(sorted(domains))
 
 
 def _process_stream_chunk(chunk, accumulator: AgentRunAccumulator):
@@ -139,6 +166,8 @@ async def run_deep_agent(
     run_id: str | None = None,
     segment_id: str | None = None,
     outcome_box: OutcomeBox | None = None,
+    profile_id: str = "generic",
+    scope: dict | None = None,
 ) -> AgentRunResult:
     """Main agent execution entry point."""
     if not thread_id:
@@ -146,17 +175,26 @@ async def run_deep_agent(
     execution_id = run_id or thread_id
     print(f"--- Start Task: {task_query} (Thread: {thread_id}) ---")
 
-    session_dir_str, relative_session_dir, uploaded_info = _prepare_session_environment(execution_id)
+    session_dir_str, relative_session_dir, uploaded_info = _prepare_session_environment(
+        execution_id,
+        include_uploads=profile_id != "talent-hiring-signal",
+    )
 
     thread_token = set_thread_context(thread_id)
     run_token = set_run_context(execution_id)
     segment_token = set_segment_context(segment_id)
+    allowed_source_domains_token = set_allowed_source_domains_context(
+        _allowed_source_domains(scope)
+        if profile_id == "talent-hiring-signal"
+        else ()
+    )
     session_token = set_session_context(session_dir_str)
     monitor.report_session_dir(session_dir_str)
     accumulator = AgentRunAccumulator(
         thread_id=thread_id,
         query=task_query,
         session_dir=Path(session_dir_str),
+        profile_id=profile_id,
         run_id=run_id,
         segment_id=segment_id,
     )
@@ -168,7 +206,11 @@ async def run_deep_agent(
     config = {
         "configurable": {"thread_id": thread_id},
         "callbacks": [token_callback],
-        "metadata": {"research_run_id": execution_id, "thread_id": thread_id},
+        "metadata": {
+            "research_run_id": execution_id,
+            "thread_id": thread_id,
+            "profile_id": profile_id,
+        },
     }
 
     path_instruction = f"""
@@ -181,9 +223,16 @@ async def run_deep_agent(
     2. 使用相对路径，禁止使用绝对路径
     3. 若存在上传文件，请先分析内容
     """
+    if profile_id == "talent-hiring-signal":
+        path_instruction = (
+            "\n【受限研究范围】\n"
+            + json.dumps(scope or {}, ensure_ascii=False, sort_keys=True)
+            + "\n只研究上述声明范围，并返回 schema-valid ResearchPacket。"
+        )
 
     try:
-        async for chunk in main_agent.astream(
+        selected_agent = agent_factory.get(profile_id)
+        async for chunk in selected_agent.astream(
                 {"messages": [{"role": "user", "content": task_query + path_instruction}]},
                 config=config
         ):
@@ -212,7 +261,11 @@ async def run_deep_agent(
         if 'session_token' in locals():
             reset_session_context(session_token, thread_token)
         if 'run_token' in locals():
-            reset_execution_context(run_token, segment_token=segment_token)
+            reset_execution_context(
+                run_token,
+                segment_token=segment_token,
+                allowed_source_domains_token=allowed_source_domains_token,
+            )
         shared_context.clear_facts(execution_id)
         clear_search_cache(execution_id)
 

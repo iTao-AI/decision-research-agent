@@ -10,7 +10,9 @@ from threading import Lock
 from typing import Any
 
 from agent.research import EvidenceEntry, extract_evidence_entries
+from agent.talent_contracts import ResearchPacket
 from langchain_core.messages import AIMessage, ToolMessage
+from pydantic import ValidationError
 
 
 @dataclass(frozen=True)
@@ -20,6 +22,7 @@ class ExecutionOutcome:
     thread_id: str
     query: str
     session_dir: Path
+    profile_id: str = "generic"
     run_id: str | None = None
     segment_id: str | None = None
     attempt: int = 1
@@ -30,6 +33,7 @@ class ExecutionOutcome:
     tool_starts: int = 0
     diagnostics: list[str] = field(default_factory=list)
     evidence_entries: list[EvidenceEntry] = field(default_factory=list)
+    research_packets: list[ResearchPacket] = field(default_factory=list)
     error_message: str | None = None
     failure_kind: str | None = None
     cancellation_state: str | None = None
@@ -62,6 +66,7 @@ class AgentRunAccumulator:
     thread_id: str
     query: str
     session_dir: Path
+    profile_id: str = "generic"
     run_id: str | None = None
     segment_id: str | None = None
     attempt: int = 1
@@ -72,6 +77,7 @@ class AgentRunAccumulator:
     tool_starts: int = 0
     diagnostics: list[str] = field(default_factory=list)
     evidence_entries: list[EvidenceEntry] = field(default_factory=list)
+    research_packets: list[ResearchPacket] = field(default_factory=list)
 
     def to_outcome(
         self,
@@ -81,10 +87,22 @@ class AgentRunAccumulator:
         failure_kind: str | None = None,
         cancellation_state: str | None = None,
     ) -> ExecutionOutcome:
+        resolved_failure_kind = failure_kind
+        if (
+            resolved_failure_kind is None
+            and self.profile_id == "talent-hiring-signal"
+            and not self.research_packets
+        ):
+            resolved_failure_kind = (
+                "invalid_research_packet"
+                if "invalid_research_packet" in self.diagnostics
+                else "missing_research_packet"
+            )
         return ExecutionOutcome(
             thread_id=self.thread_id,
             query=self.query,
             session_dir=self.session_dir,
+            profile_id=self.profile_id,
             run_id=self.run_id,
             segment_id=self.segment_id,
             attempt=self.attempt,
@@ -97,8 +115,9 @@ class AgentRunAccumulator:
             evidence_entries=list(
                 self.evidence_entries if evidence_entries is None else evidence_entries
             ),
+            research_packets=list(self.research_packets),
             error_message=error_message,
-            failure_kind=failure_kind,
+            failure_kind=resolved_failure_kind,
             cancellation_state=cancellation_state,
         )
 
@@ -162,6 +181,23 @@ def process_stream_chunk(
             accumulator.tool_starts += 1
             tool_name = getattr(last_msg, "name", None) or node_name
             accumulator.diagnostics.append(f"tool:{tool_name}")
+            if (
+                accumulator.profile_id == "talent-hiring-signal"
+                and tool_name == "task"
+            ):
+                try:
+                    packet = (
+                        ResearchPacket.model_validate_json(last_msg.content)
+                        if isinstance(last_msg.content, str)
+                        else ResearchPacket.model_validate(last_msg.content)
+                    )
+                    accumulator.research_packets.append(packet)
+                    accumulator.diagnostics.append(
+                        f"research_packet:{packet.packet_id}"
+                    )
+                except (ValidationError, ValueError, TypeError):
+                    accumulator.diagnostics.append("invalid_research_packet")
+                continue
             accumulator.evidence_entries.extend(
                 extract_evidence_entries(
                     thread_id=accumulator.thread_id,

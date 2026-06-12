@@ -51,6 +51,16 @@ def test_research_scope_rejects_personal_candidate_fields():
         ResearchScope.model_validate(payload)
 
 
+def test_research_scope_rejects_non_url_public_job_posting_reference():
+    from agent.talent_contracts import ResearchScope
+
+    payload = _scope_payload()
+    payload["declared_samples"][0]["reference"] = "internal note"
+
+    with pytest.raises(ValidationError, match="http"):
+        ResearchScope.model_validate(payload)
+
+
 def test_deterministic_review_requires_claim_without_evidence():
     from agent.talent_contracts import Claim, EvidenceSnapshot
     from api.review_service import build_review_bundle
@@ -101,3 +111,54 @@ def test_deterministic_review_does_not_invent_claims():
 
     assert bundle.claim_snapshots == []
     assert bundle.status == "not_required"
+
+
+def _research_packet_payload():
+    return {
+        "packet_id": "packet-1",
+        "scope_id": "scope-1",
+        "findings": [
+            {
+                "finding_id": "finding-1",
+                "research_question_id": "question-1",
+                "statement": "Agent evaluation appears in the declared sample.",
+                "evidence_refs": ["evidence-1"],
+                "sample_scope": "declared samples",
+                "confidence": 0.8,
+            }
+        ],
+        "candidate_claims": [
+            {
+                "claim_id": "claim-1",
+                "text": "Agent evaluation is a recurring signal.",
+                "claim_type": "hiring_signal",
+                "finding_refs": ["finding-1"],
+                "evidence_refs": ["evidence-1"],
+                "confidence": 0.8,
+                "citation_status": "cited",
+                "verification_status": "unverified",
+                "review_status": "pending",
+                "conflict_status": "none",
+            }
+        ],
+    }
+
+
+def test_research_packet_rejects_duplicate_finding_ids():
+    from agent.talent_contracts import ResearchPacket
+
+    payload = _research_packet_payload()
+    payload["findings"].append(dict(payload["findings"][0]))
+
+    with pytest.raises(ValueError, match="finding_id must be unique"):
+        ResearchPacket.model_validate(payload)
+
+
+def test_research_packet_rejects_claim_reference_to_unknown_finding():
+    from agent.talent_contracts import ResearchPacket
+
+    payload = _research_packet_payload()
+    payload["candidate_claims"][0]["finding_refs"] = ["missing-finding"]
+
+    with pytest.raises(ValueError, match="unknown finding"):
+        ResearchPacket.model_validate(payload)

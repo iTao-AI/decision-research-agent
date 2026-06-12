@@ -9,6 +9,9 @@ _session_dir_ctx: ContextVar[Optional[str]] = ContextVar("session_dir", default=
 _thread_id_ctx: ContextVar[Optional[str]] = ContextVar("thread_id", default=None)
 _run_id_ctx: ContextVar[Optional[str]] = ContextVar("run_id", default=None)
 _segment_id_ctx: ContextVar[Optional[str]] = ContextVar("segment_id", default=None)
+_allowed_source_domains_ctx: ContextVar[tuple[str, ...]] = ContextVar(
+    "allowed_source_domains", default=()
+)
 
 
 def set_session_context(path: str):
@@ -56,10 +59,22 @@ def get_segment_context() -> Optional[str]:
     """Get the current business segment identity."""
     return _segment_id_ctx.get()
 
-def reset_execution_context(run_token, thread_token=None, segment_token=None):
+def set_allowed_source_domains_context(domains: tuple[str, ...]):
+    """Set server-validated public source domains for a restricted research run."""
+    return _allowed_source_domains_ctx.set(domains)
+
+def get_allowed_source_domains_context() -> tuple[str, ...]:
+    """Get the public source allowlist for the current restricted research run."""
+    return _allowed_source_domains_ctx.get()
+
+def reset_execution_context(
+    run_token, thread_token=None, segment_token=None, allowed_source_domains_token=None
+):
     """Reset run and thread identities after one execution."""
     if segment_token is not None:
         _segment_id_ctx.reset(segment_token)
+    if allowed_source_domains_token is not None:
+        _allowed_source_domains_ctx.reset(allowed_source_domains_token)
     _run_id_ctx.reset(run_token)
     if thread_token:
         _thread_id_ctx.reset(thread_token)

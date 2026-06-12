@@ -144,6 +144,163 @@ class TestAgentRunAccumulator:
         assert evidence.citation_status == "uncited"
         assert evidence.verification_status == "unverified"
 
+    def test_talent_task_message_collects_schema_valid_research_packet(self, tmp_path):
+        import json
+
+        from agent.run_result import AgentRunAccumulator, process_stream_chunk
+
+        monitor = CapturingMonitor()
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-talent",
+            query="研究招聘信号",
+            session_dir=tmp_path,
+            profile_id="talent-hiring-signal",
+        )
+        packet = {
+            "packet_id": "packet-1",
+            "scope_id": "scope-1",
+            "findings": [
+                {
+                    "finding_id": "finding-1",
+                    "research_question_id": "question-1",
+                    "statement": "Agent evaluation appears in the declared sample.",
+                    "evidence_refs": ["ev-1"],
+                    "sample_scope": "declared samples",
+                    "confidence": 0.8,
+                }
+            ],
+            "candidate_claims": [
+                {
+                    "claim_id": "claim-1",
+                    "text": "Agent evaluation is a recurring signal.",
+                    "claim_type": "hiring_signal",
+                    "finding_refs": ["finding-1"],
+                    "evidence_refs": ["ev-1"],
+                    "confidence": 0.8,
+                    "citation_status": "cited",
+                    "verification_status": "unverified",
+                    "review_status": "pending",
+                    "conflict_status": "none",
+                }
+            ],
+        }
+
+        process_stream_chunk(
+            {
+                "tools": {
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps(packet),
+                            tool_call_id="call-task",
+                            name="task",
+                        )
+                    ]
+                }
+            },
+            accumulator,
+            monitor,
+        )
+
+        assert [item.packet_id for item in accumulator.research_packets] == ["packet-1"]
+        assert accumulator.evidence_entries == []
+
+    def test_talent_invalid_task_message_fails_closed_in_outcome(self, tmp_path):
+        from agent.run_result import AgentRunAccumulator, process_stream_chunk
+
+        monitor = CapturingMonitor()
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-talent",
+            query="研究招聘信号",
+            session_dir=tmp_path,
+            profile_id="talent-hiring-signal",
+        )
+
+        process_stream_chunk(
+            {
+                "tools": {
+                    "messages": [
+                        ToolMessage(
+                            content='{"packet_id": "broken"}',
+                            tool_call_id="call-task",
+                            name="task",
+                        )
+                    ]
+                }
+            },
+            accumulator,
+            monitor,
+        )
+        outcome = accumulator.to_outcome()
+
+        assert outcome.failure_kind == "invalid_research_packet"
+        assert outcome.research_packets == []
+
+    def test_talent_task_message_with_broken_finding_reference_fails_closed(
+        self, tmp_path
+    ):
+        import json
+
+        from agent.run_result import AgentRunAccumulator, process_stream_chunk
+
+        monitor = CapturingMonitor()
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-talent",
+            query="研究招聘信号",
+            session_dir=tmp_path,
+            profile_id="talent-hiring-signal",
+        )
+        packet = {
+            "packet_id": "packet-1",
+            "scope_id": "scope-1",
+            "findings": [],
+            "candidate_claims": [
+                {
+                    "claim_id": "claim-1",
+                    "text": "Unsupported claim.",
+                    "claim_type": "hiring_signal",
+                    "finding_refs": ["missing-finding"],
+                    "evidence_refs": ["ev-1"],
+                    "confidence": 0.8,
+                    "citation_status": "cited",
+                    "verification_status": "unverified",
+                    "review_status": "pending",
+                    "conflict_status": "none",
+                }
+            ],
+        }
+
+        process_stream_chunk(
+            {
+                "tools": {
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps(packet),
+                            tool_call_id="call-task",
+                            name="task",
+                        )
+                    ]
+                }
+            },
+            accumulator,
+            monitor,
+        )
+
+        assert accumulator.to_outcome().failure_kind == "invalid_research_packet"
+
+    def test_talent_missing_packet_does_not_mask_execution_failure(self, tmp_path):
+        from agent.run_result import AgentRunAccumulator
+
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-talent",
+            query="研究招聘信号",
+            session_dir=tmp_path,
+            profile_id="talent-hiring-signal",
+        )
+
+        outcome = accumulator.to_outcome(failure_kind="execution_error")
+
+        assert outcome.failure_kind == "execution_error"
+
     def test_to_result_copies_accumulator_state(self, tmp_path):
         from agent.run_result import AgentRunAccumulator
 

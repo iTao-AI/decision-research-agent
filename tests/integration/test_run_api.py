@@ -191,6 +191,44 @@ async def test_run_v2_cancellation_without_outcome_still_finalizes_failed(
 
 
 @pytest.mark.asyncio
+async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch):
+    import api.server as server
+    from agent.run_result import AgentRunResult
+    from api.run_repository import create_run
+
+    monkeypatch.setenv("TASKS_DB_PATH", str(tmp_path / "tasks.db"))
+    created = create_run(
+        thread_id="talent-thread",
+        query="query",
+        profile_id="talent-hiring-signal",
+    )
+    captured = {}
+
+    async def capture_agent(*args, **kwargs):
+        captured.update(kwargs)
+        return AgentRunResult(
+            thread_id="talent-thread",
+            query="query",
+            session_dir=tmp_path,
+            run_id=created["run_id"],
+            segment_id=created["segment_id"],
+        )
+
+    monkeypatch.setattr(server, "run_deep_agent", capture_agent)
+
+    await server._run_v2_with_persistence(
+        query="query",
+        thread_id="talent-thread",
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        profile_id="talent-hiring-signal",
+        outcome_box=server.OutcomeBox(),
+    )
+
+    assert captured["profile_id"] == "talent-hiring-signal"
+
+
+@pytest.mark.asyncio
 async def test_mark_run_timeout_finalizes_nonterminal_run_with_frozen_evidence(
     tmp_path, monkeypatch
 ):

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -35,6 +36,14 @@ class SampleRef(ContractModel):
     sample_id: BoundedString
     source_type: SourceType
     reference: BoundedString
+
+    @model_validator(mode="after")
+    def validate_public_reference(self):
+        if self.source_type == "public_job_posting":
+            parsed = urlparse(self.reference)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise ValueError("public_job_posting reference must be an http(s) URL")
+        return self
 
 
 class ResearchScope(ContractModel):
@@ -81,6 +90,26 @@ class ResearchPacket(ContractModel):
     candidate_claims: list[Claim]
     contradictions: list[BoundedString] = Field(default_factory=list)
     limitations: list[BoundedString] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_references(self):
+        finding_ids = [finding.finding_id for finding in self.findings]
+        if len(finding_ids) != len(set(finding_ids)):
+            raise ValueError("finding_id must be unique within a ResearchPacket")
+
+        claim_ids = [claim.claim_id for claim in self.candidate_claims]
+        if len(claim_ids) != len(set(claim_ids)):
+            raise ValueError("claim_id must be unique within a ResearchPacket")
+
+        known_findings = set(finding_ids)
+        for claim in self.candidate_claims:
+            unknown = set(claim.finding_refs) - known_findings
+            if unknown:
+                raise ValueError(
+                    f"claim {claim.claim_id} references unknown finding: "
+                    + ", ".join(sorted(unknown))
+                )
+        return self
 
 
 class EvidenceSnapshot(ContractModel):

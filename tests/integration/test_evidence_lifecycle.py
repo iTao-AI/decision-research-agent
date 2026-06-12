@@ -169,3 +169,68 @@ def test_run_deep_agent_uses_run_id_for_runtime_state_but_thread_id_for_langgrap
 
     assert result.returncode == 0, result.stderr
     assert "OK" in result.stdout
+
+
+def test_talent_profile_does_not_copy_uploaded_files_into_run_workspace(tmp_path):
+    script = textwrap.dedent(
+        f"""
+        import asyncio
+        import os
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        os.environ["OPENAI_API_KEY"] = "test"
+        os.environ["OPENAI_BASE_URL"] = "http://test"
+        os.environ["LLM_QWEN_MAX"] = "test"
+
+        with patch("deepagents.create_deep_agent", return_value=MagicMock()):
+            import agent.main_agent as main_agent
+
+        class FakeTalentAgent:
+            async def astream(self, *args, **kwargs):
+                from api.context import get_allowed_source_domains_context
+                assert get_allowed_source_domains_context() == ("jobs.example.com",)
+                if False:
+                    yield None
+
+        main_agent.project_root = Path({str(tmp_path)!r})
+        upload_dir = main_agent.project_root / "updated" / "session_run-talent"
+        upload_dir.mkdir(parents=True)
+        (upload_dir / "private.txt").write_text("private", encoding="utf-8")
+        main_agent.agent_factory._compiled[
+            ("talent-hiring-signal", "1", "talent-restricted-v1")
+        ] = FakeTalentAgent()
+
+        outcome = asyncio.run(
+            main_agent.run_deep_agent(
+                "query",
+                "thread-talent",
+                run_id="run-talent",
+                profile_id="talent-hiring-signal",
+                scope={{
+                    "declared_samples": [
+                        {{
+                            "source_type": "public_job_posting",
+                            "reference": "https://jobs.example.com/role",
+                        }}
+                    ]
+                }},
+            )
+        )
+
+        assert not (outcome.session_dir / "private.txt").exists()
+        from api.context import get_allowed_source_domains_context
+        assert get_allowed_source_domains_context() == ()
+        print("OK")
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).parents[2],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout

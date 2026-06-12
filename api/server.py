@@ -320,6 +320,8 @@ async def _run_v2_with_persistence(
     run_id: str,
     segment_id: str,
     outcome_box: OutcomeBox,
+    profile_id: str = "generic",
+    scope: dict | None = None,
 ) -> None:
     """Execute one run-scoped request while preserving LangGraph thread identity."""
     state_version = 0
@@ -342,6 +344,8 @@ async def _run_v2_with_persistence(
             run_id=run_id,
             segment_id=segment_id,
             outcome_box=outcome_box,
+            profile_id=profile_id,
+            scope=scope,
         )
         execution_status = (
             "failed" if result.failure_kind is not None else "completed"
@@ -530,6 +534,8 @@ async def create_research_run(request: RunRequest):
         run_id=created["run_id"],
         segment_id=created["segment_id"],
         outcome_box=outcome_box,
+        profile_id=request.profile_id,
+        scope=validated_scope,
     )
     try:
         create_tracked_task(

@@ -22,7 +22,7 @@ mysql-connector-python>=8.0.0 # [修正] MySQL 官方驱动 (用于 mysql_tools)
 
 # --- 文件处理 (File Processing - upload_file_read_tool) ---
 python-docx>=1.0.0          # Word (.docx) 读取
-pypdf>=3.0.0                # [修正] PDF 读取 (代码用的是 pypdf)
+pypdf>=6.12.0                # [修正] PDF 读取 (代码用的是 pypdf)
 pandas>=2.0.0               # Excel 数据处理
 openpyxl>=3.1.0             # Excel 读取引擎 (Pandas 依赖)
 aiofiles>=23.0.0            # 异步文件操作

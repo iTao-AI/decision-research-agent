@@ -14,7 +14,7 @@ openai>=1.0.0               # OpenAI 官方 SDK
 # --- Web 服务 (API & WebSocket) ---
 fastapi>=0.100.0            # 异步 Web 框架
 uvicorn[standard]>=0.20.0   # 服务器引擎 (含 WebSocket)
-python-multipart>=0.0.6     # 文件上传支持
+python-multipart>=0.0.27     # 文件上传支持
 
 # --- 数据库与存储 (Database) ---
 mysql-connector-python>=8.0.0 # [修正] MySQL 官方驱动 (用于 mysql_tools)

@@ -189,7 +189,7 @@ def build_benchmark_bundle(
     inputs: BenchmarkInputs,
     repetitions: int,
     paired_results: list[dict[str, Any]],
-    generated_at,
+    generated_at: datetime,
 ) -> dict[str, Any]:
     """Build a fail-closed review bundle without making a value judgment."""
     runs = [
@@ -354,14 +354,14 @@ def _failed_run_record(
     }
 
 
-def _attach_talent_artifacts(
+def _enrich_with_talent_artifacts(
     serialized: dict[str, Any],
     *,
     outcome: AgentRunResult,
     scope: dict[str, Any],
-) -> None:
+) -> dict[str, Any]:
     if outcome.failure_kind is not None or not outcome.research_packets:
-        return
+        return serialized
     from api.talent_artifacts import build_talent_artifacts
 
     review, _, artifacts = build_talent_artifacts(
@@ -373,6 +373,7 @@ def _attach_talent_artifacts(
     )
     serialized["review_bundle"] = review.model_dump(mode="json")
     serialized["artifacts"] = artifacts
+    return serialized
 
 
 async def run_value_gate(
@@ -431,7 +432,11 @@ async def run_value_gate(
                     elapsed_seconds=time.monotonic() - started,
                 )
                 if profile_id == "talent-hiring-signal":
-                    _attach_talent_artifacts(serialized, outcome=outcome, scope=scope)
+                    serialized = _enrich_with_talent_artifacts(
+                        serialized,
+                        outcome=outcome,
+                        scope=scope,
+                    )
                 runs[profile_id] = serialized
             except Exception as exc:
                 runs[profile_id] = _failed_run_record(

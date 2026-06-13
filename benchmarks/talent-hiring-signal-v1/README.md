@@ -41,6 +41,8 @@ Any failed run, missing Talent packet, missing Talent artifact, mismatched input
 hash, invalid Profile pair, or reused run identity keeps
 `benchmark_status=incomplete`. Evidence URLs outside the bundled fixture are
 counted by Profile and remain available for the human scope-adherence score.
+Completion counters are independent diagnostics, so one failed Talent run may
+increment both `schema_failure_count` and `artifact_failure_count`.
 
 ## Service Fixture Boundary
 

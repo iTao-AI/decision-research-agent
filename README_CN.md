@@ -221,4 +221,8 @@ deep-search-agent/
 
 ## License
 
-MIT
+MIT，详见 [LICENSE](./LICENSE)。
+
+## 安全
+
+请通过 GitHub private vulnerability reporting 报告疑似漏洞，详见 [SECURITY.md](./SECURITY.md)。

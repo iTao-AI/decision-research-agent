@@ -240,4 +240,8 @@ deep-search-agent/
 
 ## License
 
-MIT
+MIT. See [LICENSE](./LICENSE).
+
+## Security
+
+Report suspected vulnerabilities through GitHub private vulnerability reporting. See [SECURITY.md](./SECURITY.md).

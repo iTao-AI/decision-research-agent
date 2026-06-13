@@ -84,26 +84,28 @@ Required in `.env` (copy from `.env.example`):
 
 Vue 3 + TypeScript + Vite. Entry: `frontend/src/main.ts` → `frontend/src/App.vue`. Connects to backend via WebSocket for real-time agent reasoning display and REST for file management.
 
-## Codex Role
+## Working Model
 
-- Codex owns direction, planning review, and final independent acceptance.
-- Claude Code owns implementation, TDD discipline, implementation subagents, and near-field fixes.
-- Codex must not claim tests, builds, QA, performance, or review passed unless actual command output supports the claim.
-- Codex must not commit, push, create PRs, ship, deploy, install tools, or modify user-level agent files unless the user explicitly asks.
+Codex is the primary project Agent and owns direction, design, planning, implementation, testing, documentation, PR preparation, and final verification.
+
+- Complete safe, discoverable workflow steps proactively instead of asking the user to remember them.
+- Use TDD for behavior changes and regression tests for bug fixes.
+- Do not claim tests, builds, QA, performance, or review passed unless actual command output supports the claim.
+- Do not push, create PRs, merge, ship, deploy, install tools, or modify user-level agent files unless the user explicitly asks.
+- Recommend an independent second view only for major architecture decisions, high-risk cross-module changes, important milestones, or unresolved uncertainty.
 
 ## Skill Trigger Naming
 
 - Codex Superpowers skills use namespaced handles such as `superpowers:brainstorming`, `superpowers:writing-plans`, and `superpowers:verification-before-completion`.
 - Codex GStack skills use `gstack-<skill-name>` handles such as `gstack-office-hours`, `gstack-autoplan`, `gstack-review`, `gstack-qa-only`, `gstack-investigate`, and `gstack-ship`.
-- Claude Code uses different skill names. Do not copy Claude-side skill trigger lines into Codex instructions without translating them.
 
-## Claude Execution Handoff
+## Task Start And Handoff
 
-- If `subagent-driven-development` is active in Claude Code, the activated skill procedure owns execution order; do not manually execute plan tasks just because the plan is detailed.
-- Claude main controller owns task extraction, context packaging, `SUPERPOWERS_GATE`, and evidence acceptance.
-- Implementation subagents own task-local RED/GREEN work when dispatched with full task text, allowed files, RED/GREEN commands, expected evidence, and stop conditions.
-- If `CLAUDE.md` is ignored or local-only, worktree sessions must copy, regenerate, or explicitly include Claude-facing rules before implementation.
-- If tool calls fail 3 consecutive times with missing/empty parameters or malformed invocation, stop manual execution and switch to a fresh subagent or new session.
+- Before making decisions, inspect the current repository, relevant specs, tests, open PR context, and actual command output.
+- Use an isolated worktree for implementation plans or changes that should not share state with the current checkout.
+- Do not overwrite or revert unrelated user changes.
+- At task completion, report the branch and PR, actual verification results, documentation impact, remaining risks, and any deferred Issue.
+- Treat direct user requests, PR review findings, CI failures, and bugs within the current PR scope as work to handle directly. Create an Issue only for deferred, out-of-scope, cross-PR, or continued-investigation work.
 
 ## Planning Flow
 
@@ -127,8 +129,6 @@ Before final acceptance, Codex must review:
 
 - Source spec
 - Implementation plan
-- Claude execution evidence
-- `@agent-gstack-fixfirst-reviewer` output, if the agent is available
 - Git diff
 - Actual command output
 

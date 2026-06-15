@@ -34,7 +34,7 @@ weasyprint>=60.0            # HTML → PDF 跨平台引擎
 # --- 外部工具集成 (Integrations) ---
 tavily-python>=0.3.0        # 联网搜索 API
 ragflow-sdk>=0.1.0          # 知识库 SDK
-requests>=2.31.0            # HTTP 请求库
+requests>=2.33.0            # HTTP 请求库
 
 # --- 基础工具 (Utilities) ---
 PyYAML>=6.0                 # [新增] YAML 配置文件解析 (prompts.py)

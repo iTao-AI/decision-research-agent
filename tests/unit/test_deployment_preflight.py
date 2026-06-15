@@ -13,9 +13,9 @@ def test_verified_constraints_are_used_by_docker_and_ci():
     dockerfile = (PROJECT_ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
     ci = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "deepagents==0.5.8" in constraints
-    assert "langgraph==1.2.2" in constraints
-    assert "langsmith==0.8.3" in constraints
+    assert "deepagents==0.6.10" in constraints
+    assert "langgraph==1.2.5" in constraints
+    assert "langsmith==0.8.15" in constraints
     assert "COPY requirements.txt constraints.txt ./" in dockerfile
     assert "pip install --no-cache-dir -r requirements.txt -c constraints.txt" in dockerfile
     assert "pip install -r requirements.txt -c constraints.txt" in ci
@@ -52,11 +52,11 @@ def test_python_version_constraints_match_supported_dependency_sets():
         ]
 
     assert active_versions("ragflow-sdk", "3.11") == ["==0.13.0"]
-    assert active_versions("ragflow-sdk", "3.12") == ["==0.25.1"]
-    assert active_versions("ragflow-sdk", "3.13") == ["==0.25.1"]
+    assert active_versions("ragflow-sdk", "3.12") == ["==0.26.0"]
+    assert active_versions("ragflow-sdk", "3.13") == ["==0.26.0"]
     assert active_versions("pytest==", "3.11") == ["==8.4.2"]
-    assert active_versions("pytest==", "3.12") == ["==9.0.3"]
-    assert active_versions("pytest==", "3.13") == ["==9.0.3"]
+    assert active_versions("pytest==", "3.12") == ["==9.1.0"]
+    assert active_versions("pytest==", "3.13") == ["==9.1.0"]
 
 
 def test_backend_data_and_output_use_named_volumes():

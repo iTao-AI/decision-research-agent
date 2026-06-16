@@ -367,6 +367,120 @@ def test_talent_run_prefetches_declared_aggregate_evidence_and_normalizes_refs(t
     assert "OK" in result.stdout
 
 
+def test_talent_profile_sets_bounded_recursion_limit(tmp_path):
+    script = textwrap.dedent(
+        f"""
+        import asyncio
+        import os
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        os.environ["OPENAI_API_KEY"] = "test"
+        os.environ["OPENAI_BASE_URL"] = "http://test"
+        os.environ["LLM_QWEN_MAX"] = "test"
+        os.environ["DEEP_SEARCH_AGENT_TALENT_RECURSION_LIMIT"] = "37"
+
+        with patch("deepagents.create_deep_agent", return_value=MagicMock()):
+            import agent.main_agent as main_agent
+
+        captured = {{}}
+
+        class FakeTalentAgent:
+            async def astream(self, *args, **kwargs):
+                captured["config"] = kwargs["config"]
+                if False:
+                    yield None
+
+        main_agent.project_root = Path({str(tmp_path)!r})
+        main_agent.agent_factory._compiled[
+            ("talent-hiring-signal", "1", "talent-restricted-v1")
+        ] = FakeTalentAgent()
+
+        outcome = asyncio.run(
+            main_agent.run_deep_agent(
+                "query",
+                "thread-talent",
+                run_id="run-talent",
+                profile_id="talent-hiring-signal",
+                scope={{"declared_samples": []}},
+            )
+        )
+
+        assert captured["config"]["recursion_limit"] == 37
+        assert outcome.failure_kind == "missing_research_packet"
+        print("OK")
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).parents[2],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout
+
+
+def test_talent_profile_returns_failure_outcome_on_recursion_limit(tmp_path):
+    script = textwrap.dedent(
+        f"""
+        import asyncio
+        import os
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from langgraph.errors import GraphRecursionError
+
+        os.environ["OPENAI_API_KEY"] = "test"
+        os.environ["OPENAI_BASE_URL"] = "http://test"
+        os.environ["LLM_QWEN_MAX"] = "test"
+
+        with patch("deepagents.create_deep_agent", return_value=MagicMock()):
+            import agent.main_agent as main_agent
+
+        class LoopingTalentAgent:
+            async def astream(self, *args, **kwargs):
+                raise GraphRecursionError("recursion limit reached")
+                yield
+
+        main_agent.project_root = Path({str(tmp_path)!r})
+        main_agent.agent_factory._compiled[
+            ("talent-hiring-signal", "1", "talent-restricted-v1")
+        ] = LoopingTalentAgent()
+
+        from agent.run_result import OutcomeBox
+        box = OutcomeBox()
+        outcome = asyncio.run(
+            main_agent.run_deep_agent(
+                "query",
+                "thread-loop",
+                run_id="run-loop",
+                outcome_box=box,
+                profile_id="talent-hiring-signal",
+                scope={{"declared_samples": []}},
+            )
+        )
+
+        assert outcome.failure_kind == "recursion_limit_exceeded"
+        assert "recursion limit reached" in outcome.error_message
+        assert box.latest() == outcome
+        print("OK")
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).parents[2],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout
+
+
 def test_talent_preload_failure_records_diagnostics_and_resets_context(tmp_path):
     script = textwrap.dedent(
         f"""

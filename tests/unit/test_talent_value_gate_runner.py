@@ -268,6 +268,7 @@ def test_build_benchmark_bundle_marks_complete_pairs_ready_for_human_review():
         "artifact_failure_count": 0,
         "disallowed_tool_failure_count": 0,
         "timeout_failure_count": 0,
+        "recursion_limit_failure_count": 0,
         "profile_mismatch_count": 0,
         "identity_collision_count": 0,
         "ready_for_human_review": True,
@@ -511,6 +512,28 @@ def test_build_benchmark_bundle_rejects_profile_mismatch_and_identity_collision(
     assert bundle["benchmark_status"] == "incomplete"
     assert bundle["completion"]["profile_mismatch_count"] == 1
     assert bundle["completion"]["identity_collision_count"] == 1
+
+
+def test_build_benchmark_bundle_counts_recursion_limit_failures():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    talent = pairs[0]["runs"]["talent-hiring-signal"]
+    talent["status"] = "failed"
+    talent["failure_kind"] = "recursion_limit_exceeded"
+    talent["error_message"] = "recursion limit reached"
+    talent["research_packets"] = []
+    talent.pop("review_bundle", None)
+    talent.pop("artifacts", None)
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["benchmark_status"] == "incomplete"
+    assert bundle["completion"]["recursion_limit_failure_count"] == 1
 
 
 def test_build_benchmark_bundle_does_not_count_missing_legacy_identity_as_collision():

@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import uuid
 
-from agent.talent_contracts import Claim, EvidenceSnapshot, ReviewBundle
+from agent.talent_contracts import Claim, EvidenceSnapshot, Finding, ReviewBundle
 
 
 def build_review_bundle(
     *,
     run_id: str,
+    findings: list[Finding] | None = None,
     claims: list[Claim],
     evidence: list[EvidenceSnapshot],
     confidence_threshold: float,
@@ -17,6 +18,17 @@ def build_review_bundle(
     evidence_by_id = {item.evidence_id: item for item in evidence}
     triggers: list[str] = []
     actions: list[str] = []
+
+    for finding in findings or []:
+        if not finding.evidence_refs:
+            triggers.append(f"finding_without_evidence:{finding.finding_id}")
+            actions.append(f"Attach evidence or remove finding {finding.finding_id}.")
+        for ref in finding.evidence_refs:
+            if ref not in evidence_by_id:
+                triggers.append(f"missing_evidence_ref:{finding.finding_id}:{ref}")
+                actions.append(
+                    f"Attach evidence {ref} or revise finding {finding.finding_id}."
+                )
 
     for claim in claims:
         if not claim.evidence_refs:

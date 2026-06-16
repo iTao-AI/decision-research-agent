@@ -204,6 +204,175 @@ class TestAgentRunAccumulator:
         assert [item.packet_id for item in accumulator.research_packets] == ["packet-1"]
         assert accumulator.evidence_entries == []
 
+    def test_talent_outcome_normalizes_declared_evidence_alias_refs(self, tmp_path):
+        import json
+
+        from agent.run_result import AgentRunAccumulator, process_stream_chunk
+
+        monitor = CapturingMonitor()
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-talent",
+            query="研究招聘信号",
+            session_dir=tmp_path,
+            profile_id="talent-hiring-signal",
+        )
+        accumulator.evidence_aliases = {
+            "sample-1": ("ev_run_abc",),
+            "aggregate-v1": ("ev_run_abc", "ev_run_def"),
+        }
+        packet = {
+            "packet_id": "packet-1",
+            "scope_id": "scope-1",
+            "findings": [
+                {
+                    "finding_id": "finding-1",
+                    "research_question_id": "question-1",
+                    "statement": "Agent evaluation appears in the declared sample.",
+                    "evidence_refs": ["sample-1"],
+                    "sample_scope": "declared samples",
+                    "confidence": 0.8,
+                },
+                {
+                    "finding_id": "finding-2",
+                    "research_question_id": "question-1",
+                    "statement": "Aggregate-level limitation applies.",
+                    "evidence_refs": [],
+                    "sample_scope": "declared aggregate",
+                    "confidence": 0.7,
+                }
+            ],
+            "candidate_claims": [
+                {
+                    "claim_id": "claim-1",
+                    "text": "Agent evaluation is a recurring signal.",
+                    "claim_type": "hiring_signal",
+                    "finding_refs": ["finding-1"],
+                    "evidence_refs": ["aggregate-v1"],
+                    "confidence": 0.8,
+                    "citation_status": "cited",
+                    "verification_status": "unverified",
+                    "review_status": "pending",
+                    "conflict_status": "none",
+                }
+            ],
+        }
+
+        process_stream_chunk(
+            {
+                "tools": {
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps(packet),
+                            tool_call_id="call-task",
+                            name="task",
+                        )
+                    ]
+                }
+            },
+            accumulator,
+            monitor,
+        )
+        outcome = accumulator.to_outcome()
+
+        assert outcome.research_packets[0].findings[0].evidence_refs == ["ev_run_abc"]
+        assert outcome.research_packets[0].findings[1].evidence_refs == []
+        assert outcome.research_packets[0].candidate_claims[0].evidence_refs == [
+            "ev_run_abc",
+            "ev_run_def",
+        ]
+
+    def test_talent_outcome_preserves_unknown_evidence_refs(self, tmp_path):
+        import json
+
+        from agent.run_result import AgentRunAccumulator, process_stream_chunk
+
+        monitor = CapturingMonitor()
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-talent",
+            query="研究招聘信号",
+            session_dir=tmp_path,
+            profile_id="talent-hiring-signal",
+        )
+        accumulator.evidence_aliases = {"sample-1": ("ev_run_abc",)}
+        packet = {
+            "packet_id": "packet-1",
+            "scope_id": "scope-1",
+            "findings": [
+                {
+                    "finding_id": "finding-1",
+                    "research_question_id": "question-1",
+                    "statement": "Unknown refs should remain reviewable.",
+                    "evidence_refs": ["sample-1", "ev_missing"],
+                    "sample_scope": "declared samples",
+                    "confidence": 0.8,
+                }
+            ],
+            "candidate_claims": [
+                {
+                    "claim_id": "claim-1",
+                    "text": "Unknown refs should remain reviewable.",
+                    "claim_type": "hiring_signal",
+                    "finding_refs": ["finding-1"],
+                    "evidence_refs": ["ev_missing"],
+                    "confidence": 0.8,
+                    "citation_status": "cited",
+                    "verification_status": "unverified",
+                    "review_status": "pending",
+                    "conflict_status": "none",
+                }
+            ],
+        }
+
+        process_stream_chunk(
+            {
+                "tools": {
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps(packet),
+                            tool_call_id="call-task",
+                            name="task",
+                        )
+                    ]
+                }
+            },
+            accumulator,
+            monitor,
+        )
+        outcome = accumulator.to_outcome()
+
+        assert outcome.research_packets[0].findings[0].evidence_refs == [
+            "ev_run_abc",
+            "ev_missing",
+        ]
+        assert outcome.research_packets[0].candidate_claims[0].evidence_refs == [
+            "ev_missing"
+        ]
+
+    def test_talent_outcome_freezes_when_evidence_ref_normalization_fails(
+        self, tmp_path, monkeypatch
+    ):
+        import agent.run_result as run_result
+
+        accumulator = run_result.AgentRunAccumulator(
+            thread_id="thread-talent",
+            query="研究招聘信号",
+            session_dir=tmp_path,
+            profile_id="talent-hiring-signal",
+        )
+
+        def broken_normalize(*args, **kwargs):
+            raise RuntimeError("broken")
+
+        monkeypatch.setattr(
+            run_result,
+            "_normalize_research_packet_evidence_refs",
+            broken_normalize,
+        )
+        outcome = accumulator.to_outcome()
+
+        assert outcome.failure_kind == "invalid_research_packet"
+        assert "evidence_ref_normalization_failed:RuntimeError" in outcome.diagnostics
+
     def test_talent_invalid_task_message_fails_closed_in_outcome(self, tmp_path):
         from agent.run_result import AgentRunAccumulator, process_stream_chunk
 

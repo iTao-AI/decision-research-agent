@@ -7,7 +7,13 @@ import json
 
 from agent.profile_registry import profile_registry
 from agent.research import EvidenceEntry
-from agent.talent_contracts import DecisionBrief, EvidenceSnapshot, ResearchPacket, ResearchScope
+from agent.talent_contracts import (
+    DecisionBrief,
+    EvidenceSnapshot,
+    ResearchPacket,
+    ResearchScope,
+    ReviewBundle,
+)
 from api.decision_brief import render_markdown, with_content_hash
 from api.review_service import build_review_bundle
 
@@ -26,7 +32,7 @@ def build_talent_artifacts(
     packets: list[ResearchPacket],
     evidence_entries: list[EvidenceEntry],
     generated_at: datetime,
-) -> tuple[object, DecisionBrief, list[dict]]:
+) -> tuple[ReviewBundle, DecisionBrief, list[dict]]:
     """Build review plus canonical JSON/Markdown artifacts without model calls."""
     profile = profile_registry.get("talent-hiring-signal")
     validated_scope = ResearchScope.model_validate(scope)
@@ -43,6 +49,7 @@ def build_talent_artifacts(
     ]
     review = build_review_bundle(
         run_id=run_id,
+        findings=findings,
         claims=claims,
         evidence=evidence,
         confidence_threshold=0.6,

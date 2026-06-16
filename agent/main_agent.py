@@ -17,7 +17,9 @@ from agent.profile_registry import AgentFactory, profile_registry
 
 from api.monitor import monitor
 import asyncio
+from dataclasses import replace
 import json
+import os
 import uuid
 import shutil
 from pathlib import Path
@@ -128,6 +130,77 @@ def _allowed_aggregate_ids(scope: dict | None) -> tuple[str, ...]:
     return tuple(sorted(aggregate_ids))
 
 
+def _add_evidence_alias(
+    accumulator: AgentRunAccumulator,
+    alias: str,
+    evidence_id: str,
+) -> None:
+    existing = list(accumulator.evidence_aliases.get(alias, ()))
+    if evidence_id not in existing:
+        existing.append(evidence_id)
+    accumulator.evidence_aliases[alias] = tuple(existing)
+
+
+async def _preload_declared_aggregate_evidence(
+    accumulator: AgentRunAccumulator,
+    aggregate_ids: tuple[str, ...],
+) -> None:
+    """Load declared benchmark aggregates into run-scoped evidence."""
+    if not aggregate_ids:
+        return
+    if os.getenv("DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES", "").lower() != "true":
+        return
+
+    from tools.provided_aggregate import provided_aggregate
+
+    for aggregate_id in aggregate_ids:
+        try:
+            result = await asyncio.to_thread(
+                provided_aggregate.invoke,
+                {"aggregate_id": aggregate_id},
+            )
+        except Exception as exc:
+            accumulator.diagnostics.append(
+                f"provided_aggregate_preload_failed:{type(exc).__name__}"
+            )
+            continue
+        if not isinstance(result, dict) or result.get("status") != "ok":
+            code = (
+                result.get("error", {}).get("code")
+                if isinstance(result, dict)
+                else "invalid_preload_result"
+            )
+            accumulator.diagnostics.append(f"provided_aggregate_preload_failed:{code}")
+            continue
+
+        processed = 0
+        for item in result.get("results", []):
+            if not isinstance(item, dict):
+                accumulator.diagnostics.append("provided_aggregate_item_invalid")
+                continue
+            evidence_id = item.get("evidence_id")
+            if not isinstance(evidence_id, str) or not evidence_id:
+                accumulator.diagnostics.append(
+                    "provided_aggregate_item_missing_evidence_id"
+                )
+                continue
+            accumulator.verified_evidence_ids.add(evidence_id)
+            _add_evidence_alias(accumulator, aggregate_id, evidence_id)
+            sample_id = item.get("sample_id")
+            if isinstance(sample_id, str) and sample_id:
+                _add_evidence_alias(accumulator, sample_id, evidence_id)
+            source_url = item.get("url")
+            if isinstance(source_url, str) and source_url:
+                _add_evidence_alias(accumulator, source_url, evidence_id)
+            processed += 1
+        if processed:
+            accumulator.diagnostics.append(f"provided_aggregate_prefetched:{aggregate_id}")
+        else:
+            accumulator.diagnostics.append(
+                f"provided_aggregate_preload_failed:no_valid_results"
+            )
+
+
 def _process_stream_chunk(chunk, accumulator: AgentRunAccumulator):
     """Process LangGraph stream output and report events to frontend."""
     process_stream_chunk(chunk, accumulator, monitor)
@@ -156,6 +229,18 @@ def _freeze_execution_outcome(
         evidence_entries = merge_evidence_entries(
             accumulator.evidence_entries, snapshot_evidence
         )
+        if accumulator.verified_evidence_ids:
+            evidence_entries = [
+                replace(
+                    entry,
+                    citation_status="cited",
+                    verification_status="verified",
+                )
+                if f"ev_{execution_id}_{entry.evidence_fingerprint}"
+                in accumulator.verified_evidence_ids
+                else entry
+                for entry in evidence_entries
+            ]
     except Exception as exc:
         accumulator.diagnostics.append(f"evidence_snapshot_failed:{type(exc).__name__}")
         evidence_entries = list(accumulator.evidence_entries)
@@ -215,7 +300,6 @@ async def run_deep_agent(
         run_id=run_id,
         segment_id=segment_id,
     )
-
     # Register token tracking callback
     from agent.token_tracking import TokenTrackingCallbackHandler
     token_callback = TokenTrackingCallbackHandler(thread_id=execution_id)
@@ -248,6 +332,11 @@ async def run_deep_agent(
         )
 
     try:
+        if profile_id == "talent-hiring-signal":
+            await _preload_declared_aggregate_evidence(
+                accumulator,
+                _allowed_aggregate_ids(scope),
+            )
         selected_agent = agent_factory.get(profile_id)
         async for chunk in selected_agent.astream(
                 {"messages": [{"role": "user", "content": task_query + path_instruction}]},

@@ -25,6 +25,19 @@ from agent.run_result import AgentRunResult
 from agent.talent_contracts import ResearchScope
 
 
+_TALENT_PROFILE_ID = "talent-hiring-signal"
+_DISALLOWED_TALENT_TOOL_DIAGNOSTICS = frozenset(
+    {
+        "tool:convert_md_to_pdf",
+        "tool:edit_file",
+        "tool:generate_markdown",
+        "tool:glob",
+        "tool:ls",
+        "tool:read_file",
+        "tool:read_file_content",
+        "tool:write_file",
+    }
+)
 _SECRET_PATTERNS = (
     re.compile(r"(?i)(api[_-]?key\s*[=:]\s*)[^\s,;]+"),
     re.compile(r"(?i)(bearer\s+)[^\s,;]+"),
@@ -145,6 +158,7 @@ def serialize_outcome(
     elapsed_seconds: float,
 ) -> dict[str, Any]:
     """Serialize only reviewable fields from one execution outcome."""
+    evidence_identity = outcome.run_id or outcome.thread_id
     bundle = {
         "profile_id": outcome.profile_id,
         "thread_id": outcome.thread_id,
@@ -165,6 +179,7 @@ def serialize_outcome(
         "diagnostics": list(outcome.diagnostics),
         "evidence": [
             {
+                "evidence_id": f"ev_{evidence_identity}_{entry.evidence_fingerprint}",
                 "source_url": entry.source_url,
                 "snippet": entry.snippet,
                 "source_identity": entry.source_identity,
@@ -184,6 +199,63 @@ def serialize_outcome(
     return _sanitize_export_value(bundle)
 
 
+def _is_talent_run(run: dict[str, Any]) -> bool:
+    return run.get("profile_id") == _TALENT_PROFILE_ID
+
+
+def _evidence_ids_for_run(run: dict[str, Any]) -> set[str]:
+    run_identity = run.get("run_id") or run.get("thread_id") or ""
+    evidence_ids: set[str] = set()
+    for evidence in run.get("evidence", []):
+        if not isinstance(evidence, dict):
+            continue
+        evidence_id = evidence.get("evidence_id")
+        if isinstance(evidence_id, str) and evidence_id:
+            evidence_ids.add(evidence_id)
+            continue
+        fingerprint = evidence.get("evidence_fingerprint")
+        if isinstance(fingerprint, str) and fingerprint and run_identity:
+            evidence_ids.add(f"ev_{run_identity}_{fingerprint}")
+    return evidence_ids
+
+
+def _run_has_unresolved_talent_evidence_refs(run: dict[str, Any]) -> bool:
+    if not _is_talent_run(run):
+        return False
+    evidence_ids = _evidence_ids_for_run(run)
+    for packet in run.get("research_packets", []):
+        if not isinstance(packet, dict):
+            return True
+        findings = packet.get("findings", [])
+        claims = packet.get("candidate_claims", [])
+        if not isinstance(findings, list) or not findings:
+            return True
+        if not isinstance(claims, list) or not claims:
+            return True
+        for collection_name in ("findings", "candidate_claims"):
+            collection = packet.get(collection_name, [])
+            if not isinstance(collection, list):
+                return True
+            for item in collection:
+                if not isinstance(item, dict):
+                    return True
+                refs = item.get("evidence_refs")
+                if not isinstance(refs, list) or not refs:
+                    return True
+                if any(ref not in evidence_ids for ref in refs):
+                    return True
+    return False
+
+
+def _run_has_disallowed_talent_tool(run: dict[str, Any]) -> bool:
+    if not _is_talent_run(run):
+        return False
+    return any(
+        diagnostic in _DISALLOWED_TALENT_TOOL_DIAGNOSTICS
+        for diagnostic in run.get("diagnostics", [])
+    )
+
+
 def build_benchmark_bundle(
     *,
     inputs: BenchmarkInputs,
@@ -200,16 +272,25 @@ def build_benchmark_bundle(
     ]
     completed_run_count = sum(run.get("status") == "completed" for run in runs)
     schema_failure_count = sum(
-        run.get("profile_id") == "talent-hiring-signal"
+        _is_talent_run(run)
         and (
             run.get("status") != "completed"
             or not run.get("research_packets")
         )
         for run in runs
     )
+    evidence_failure_count = sum(
+        _is_talent_run(run)
+        and run.get("status") == "completed"
+        and not run.get("evidence")
+        for run in runs
+    )
+    evidence_ref_failure_count = sum(
+        _run_has_unresolved_talent_evidence_refs(run) for run in runs
+    )
     out_of_scope_evidence_by_profile = {
         "generic": 0,
-        "talent-hiring-signal": 0,
+        _TALENT_PROFILE_ID: 0,
     }
     for run in runs:
         profile_id = run.get("profile_id")
@@ -226,7 +307,7 @@ def build_benchmark_bundle(
     )
     required_artifact_ids = {"decision-brief.json", "decision-brief.md"}
     artifact_failure_count = sum(
-        run.get("profile_id") == "talent-hiring-signal"
+        _is_talent_run(run)
         and (
             not run.get("review_bundle")
             or not required_artifact_ids.issubset(
@@ -239,7 +320,13 @@ def build_benchmark_bundle(
         )
         for run in runs
     )
-    expected_profiles = {"generic", "talent-hiring-signal"}
+    disallowed_tool_failure_count = sum(
+        _run_has_disallowed_talent_tool(run) for run in runs
+    )
+    timeout_failure_count = sum(
+        run.get("failure_kind") == "runner_timeout" for run in runs
+    )
+    expected_profiles = {"generic", _TALENT_PROFILE_ID}
     profile_mismatch_count = sum(
         set(pair.get("runs", {})) != expected_profiles
         or any(
@@ -253,7 +340,6 @@ def build_benchmark_bundle(
     for field in ("thread_id", "run_id", "segment_id"):
         values = [run.get(field) for run in runs]
         present = [value for value in values if value]
-        identity_collision_count += len(values) - len(present)
         identity_collision_count += len(present) - len(set(present))
     expected_run_count = repetitions * 2
     ready = (
@@ -261,8 +347,12 @@ def build_benchmark_bundle(
         and len(runs) == expected_run_count
         and completed_run_count == expected_run_count
         and schema_failure_count == 0
+        and evidence_failure_count == 0
+        and evidence_ref_failure_count == 0
         and input_mismatch_count == 0
         and artifact_failure_count == 0
+        and disallowed_tool_failure_count == 0
+        and timeout_failure_count == 0
         and profile_mismatch_count == 0
         and identity_collision_count == 0
     )
@@ -291,10 +381,14 @@ def build_benchmark_bundle(
             "expected_run_count": expected_run_count,
             "completed_run_count": completed_run_count,
             "schema_failure_count": schema_failure_count,
+            "evidence_failure_count": evidence_failure_count,
+            "evidence_ref_failure_count": evidence_ref_failure_count,
             "out_of_scope_evidence_count": out_of_scope_evidence_count,
             "out_of_scope_evidence_by_profile": out_of_scope_evidence_by_profile,
             "input_mismatch_count": input_mismatch_count,
             "artifact_failure_count": artifact_failure_count,
+            "disallowed_tool_failure_count": disallowed_tool_failure_count,
+            "timeout_failure_count": timeout_failure_count,
             "profile_mismatch_count": profile_mismatch_count,
             "identity_collision_count": identity_collision_count,
             "ready_for_human_review": ready,
@@ -333,22 +427,26 @@ def _failed_run_record(
     run_id: str,
     segment_id: str,
     elapsed_seconds: float,
-    exc: Exception,
+    exc: Exception | None = None,
+    failure_kind: str = "runner_exception",
+    error_message: str | None = None,
 ) -> dict[str, Any]:
+    message = error_message if error_message is not None else str(exc or "")
+    diagnostic_type = type(exc).__name__ if exc is not None else failure_kind
     return {
         "profile_id": profile_id,
         "thread_id": thread_id,
         "run_id": run_id,
         "segment_id": segment_id,
         "status": "failed",
-        "failure_kind": "runner_exception",
-        "error_message": _sanitize_error_message(str(exc)),
+        "failure_kind": failure_kind,
+        "error_message": _sanitize_error_message(message),
         "cancellation_state": None,
         "elapsed_seconds": round(elapsed_seconds, 3),
         "final_text": "",
         "assistant_calls": 0,
         "tool_starts": 0,
-        "diagnostics": [f"runner_exception:{type(exc).__name__}"],
+        "diagnostics": [f"{failure_kind}:{diagnostic_type}"],
         "evidence": [],
         "research_packets": [],
     }
@@ -382,6 +480,7 @@ async def run_value_gate(
     repetitions: int,
     agent_runner=None,
     generated_at: datetime | None = None,
+    per_run_timeout_seconds: float | None = 600.0,
 ) -> dict[str, Any]:
     """Run sequential Generic/Talent pairs against one shared prompt envelope."""
     if repetitions < 1:
@@ -396,7 +495,7 @@ async def run_value_gate(
     paired_results: list[dict[str, Any]] = []
     for repetition in range(1, repetitions + 1):
         runs: dict[str, dict[str, Any]] = {}
-        for profile_id in ("generic", "talent-hiring-signal"):
+        for profile_id in ("generic", _TALENT_PROFILE_ID):
             identity = uuid.uuid4().hex
             thread_id = f"benchmark-{profile_id}-{identity}"
             run_id = f"run_{identity}"
@@ -406,19 +505,26 @@ async def run_value_gate(
                 previous_fixture_setting = os.environ.get(
                     "DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"
                 )
-                if profile_id == "talent-hiring-signal":
+                if profile_id == _TALENT_PROFILE_ID:
                     os.environ["DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"] = "true"
                 try:
-                    outcome = await agent_runner(
+                    run_coro = agent_runner(
                         task_query=prompt,
                         thread_id=thread_id,
                         run_id=run_id,
                         segment_id=segment_id,
                         profile_id=profile_id,
-                        scope=scope if profile_id == "talent-hiring-signal" else None,
+                        scope=scope if profile_id == _TALENT_PROFILE_ID else None,
                     )
+                    if per_run_timeout_seconds is None:
+                        outcome = await run_coro
+                    else:
+                        outcome = await asyncio.wait_for(
+                            run_coro,
+                            timeout=per_run_timeout_seconds,
+                        )
                 finally:
-                    if profile_id == "talent-hiring-signal":
+                    if profile_id == _TALENT_PROFILE_ID:
                         if previous_fixture_setting is None:
                             os.environ.pop(
                                 "DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES", None
@@ -431,13 +537,25 @@ async def run_value_gate(
                     outcome,
                     elapsed_seconds=time.monotonic() - started,
                 )
-                if profile_id == "talent-hiring-signal":
+                if profile_id == _TALENT_PROFILE_ID:
                     serialized = _enrich_with_talent_artifacts(
                         serialized,
                         outcome=outcome,
                         scope=scope,
                     )
                 runs[profile_id] = serialized
+            except asyncio.TimeoutError:
+                runs[profile_id] = _failed_run_record(
+                    profile_id=profile_id,
+                    thread_id=thread_id,
+                    run_id=run_id,
+                    segment_id=segment_id,
+                    elapsed_seconds=time.monotonic() - started,
+                    failure_kind="runner_timeout",
+                    error_message=(
+                        f"run exceeded {per_run_timeout_seconds:g}s timeout"
+                    ),
+                )
             except Exception as exc:
                 runs[profile_id] = _failed_run_record(
                     profile_id=profile_id,
@@ -477,6 +595,7 @@ def parse_args() -> argparse.Namespace:
         default=Path("benchmarks/fixtures/talent-hiring-signal-v1.json"),
     )
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--per-run-timeout-seconds", type=float, default=600.0)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -485,7 +604,11 @@ def main() -> None:
     args = parse_args()
     inputs = load_benchmark_inputs(args.scope, args.fixture)
     bundle = asyncio.run(
-        run_value_gate(inputs=inputs, repetitions=args.repetitions)
+        run_value_gate(
+            inputs=inputs,
+            repetitions=args.repetitions,
+            per_run_timeout_seconds=args.per_run_timeout_seconds,
+        )
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

@@ -32,6 +32,7 @@ def test_cli_help_runs_from_repository_root():
 
     assert result.returncode == 0, result.stderr
     assert "--repetitions" in result.stdout
+    assert "--per-run-timeout-seconds" in result.stdout
 
 
 def test_load_benchmark_inputs_builds_byte_stable_shared_envelope():
@@ -78,13 +79,36 @@ def test_load_benchmark_inputs_rejects_invalid_sample(
         runner.load_benchmark_inputs(SCOPE_PATH, fixture_path)
 
 
-def _packet() -> ResearchPacket:
+def _packet(evidence_refs: list[str] | None = None) -> ResearchPacket:
+    evidence_refs = list(evidence_refs or [])
     return ResearchPacket.model_validate(
         {
             "packet_id": "packet-1",
             "scope_id": "talent-hiring-signal-v1",
-            "findings": [],
-            "candidate_claims": [],
+            "findings": [
+                {
+                    "finding_id": "finding-1",
+                    "research_question_id": "question-1",
+                    "statement": "Declared sample contains a bounded hiring signal.",
+                    "evidence_refs": evidence_refs,
+                    "sample_scope": "declared samples",
+                    "confidence": 0.8,
+                }
+            ],
+            "candidate_claims": [
+                {
+                    "claim_id": "claim-1",
+                    "text": "Declared sample contains a bounded hiring signal.",
+                    "claim_type": "hiring_signal",
+                    "finding_refs": ["finding-1"],
+                    "evidence_refs": evidence_refs,
+                    "confidence": 0.8,
+                    "citation_status": "cited" if evidence_refs else "uncited",
+                    "verification_status": "unverified",
+                    "review_status": "pending",
+                    "conflict_status": "none",
+                }
+            ],
             "limitations": ["Five declared snapshots only."],
         }
     )
@@ -97,6 +121,7 @@ def _outcome(
     failed: bool = False,
     include_packet: bool = True,
 ) -> ExecutionOutcome:
+    run_id = f"run-{profile_id}"
     evidence = (
         [
             EvidenceEntry(
@@ -111,18 +136,21 @@ def _outcome(
         if source_url
         else []
     )
+    evidence_refs = [
+        f"ev_{run_id}_{entry.evidence_fingerprint}" for entry in evidence
+    ]
     return ExecutionOutcome(
         thread_id=f"{profile_id}-thread",
         query="bounded query",
         session_dir=Path("/private/runtime/session"),
         profile_id=profile_id,
-        run_id=f"run-{profile_id}",
+        run_id=run_id,
         segment_id=f"seg-{profile_id}",
         started_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
         last_agent_text="final answer",
         diagnostics=["tool:provided_aggregate"],
         evidence_entries=evidence,
-        research_packets=[_packet()]
+        research_packets=[_packet(evidence_refs)]
         if profile_id == "talent-hiring-signal" and include_packet
         else [],
         error_message="failed" if failed else None,
@@ -229,6 +257,8 @@ def test_build_benchmark_bundle_marks_complete_pairs_ready_for_human_review():
         "expected_run_count": 2,
         "completed_run_count": 2,
         "schema_failure_count": 0,
+        "evidence_failure_count": 0,
+        "evidence_ref_failure_count": 0,
         "out_of_scope_evidence_count": 0,
         "out_of_scope_evidence_by_profile": {
             "generic": 0,
@@ -236,6 +266,8 @@ def test_build_benchmark_bundle_marks_complete_pairs_ready_for_human_review():
         },
         "input_mismatch_count": 0,
         "artifact_failure_count": 0,
+        "disallowed_tool_failure_count": 0,
+        "timeout_failure_count": 0,
         "profile_mismatch_count": 0,
         "identity_collision_count": 0,
         "ready_for_human_review": True,
@@ -352,6 +384,97 @@ def test_build_benchmark_bundle_requires_talent_review_artifacts():
     assert bundle["completion"]["artifact_failure_count"] == 1
 
 
+def test_build_benchmark_bundle_allows_required_review_bundle_for_human_scoring():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    pairs[0]["runs"]["talent-hiring-signal"]["review_bundle"] = {
+        "run_id": pairs[0]["runs"]["talent-hiring-signal"]["run_id"],
+        "status": "required",
+        "required_before_delivery": True,
+        "triggers": ["conflicting_sources:claim-1"],
+    }
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["benchmark_status"] == "ready_for_human_review"
+    assert bundle["completion"]["artifact_failure_count"] == 0
+
+
+def test_build_benchmark_bundle_requires_talent_evidence_even_with_artifacts():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    pairs[0]["runs"]["talent-hiring-signal"]["evidence"] = []
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["benchmark_status"] == "incomplete"
+    assert bundle["completion"]["evidence_failure_count"] == 1
+    assert bundle["completion"]["evidence_ref_failure_count"] == 1
+
+
+def test_build_benchmark_bundle_rejects_unresolved_talent_evidence_refs():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    packet = pairs[0]["runs"]["talent-hiring-signal"]["research_packets"][0]
+    packet["findings"][0]["evidence_refs"] = ["ev_missing"]
+    packet["candidate_claims"][0]["evidence_refs"] = ["ev_missing"]
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["benchmark_status"] == "incomplete"
+    assert bundle["completion"]["evidence_failure_count"] == 0
+    assert bundle["completion"]["evidence_ref_failure_count"] == 1
+
+
+def test_build_benchmark_bundle_rejects_empty_talent_findings_and_claims():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    packet = pairs[0]["runs"]["talent-hiring-signal"]["research_packets"][0]
+    packet["findings"] = []
+    packet["candidate_claims"] = []
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["benchmark_status"] == "incomplete"
+    assert bundle["completion"]["evidence_ref_failure_count"] == 1
+
+
+def test_build_benchmark_bundle_rejects_talent_filesystem_tool_diagnostics():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    pairs[0]["runs"]["talent-hiring-signal"]["diagnostics"].append("tool:write_file")
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["benchmark_status"] == "incomplete"
+    assert bundle["completion"]["disallowed_tool_failure_count"] == 1
+
+
 def test_build_benchmark_bundle_allows_additional_talent_artifacts():
     inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
     pairs = _paired_results(inputs)
@@ -390,6 +513,22 @@ def test_build_benchmark_bundle_rejects_profile_mismatch_and_identity_collision(
     assert bundle["completion"]["identity_collision_count"] == 1
 
 
+def test_build_benchmark_bundle_does_not_count_missing_legacy_identity_as_collision():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    pairs[0]["runs"]["generic"]["segment_id"] = None
+    pairs[0]["runs"]["talent-hiring-signal"]["segment_id"] = None
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["completion"]["identity_collision_count"] == 0
+
+
 def test_run_value_gate_redacts_secret_like_exception_text():
     inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
 
@@ -409,6 +548,46 @@ def test_run_value_gate_redacts_secret_like_exception_text():
     assert "secret-value" not in encoded
     assert "sk-private-token" not in encoded
     assert "[REDACTED]" in encoded
+
+
+def test_run_value_gate_times_out_one_run_and_continues_pair():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    calls = []
+
+    async def fake_agent_runner(**kwargs):
+        calls.append(kwargs)
+        if kwargs["profile_id"] == "generic":
+            await asyncio.sleep(0.05)
+        source_url = next(iter(inputs.source_urls))
+        return replace(
+            _outcome(kwargs["profile_id"], source_url=source_url),
+            thread_id=kwargs["thread_id"],
+            run_id=kwargs["run_id"],
+            segment_id=kwargs["segment_id"],
+            query=kwargs["task_query"],
+        )
+
+    bundle = asyncio.run(
+        runner.run_value_gate(
+            inputs=inputs,
+            repetitions=1,
+            agent_runner=fake_agent_runner,
+            generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+            per_run_timeout_seconds=0.01,
+        )
+    )
+
+    assert [call["profile_id"] for call in calls] == [
+        "generic",
+        "talent-hiring-signal",
+    ]
+    generic = bundle["paired_results"][0]["runs"]["generic"]
+    talent = bundle["paired_results"][0]["runs"]["talent-hiring-signal"]
+    assert generic["status"] == "failed"
+    assert generic["failure_kind"] == "runner_timeout"
+    assert talent["status"] == "completed"
+    assert bundle["benchmark_status"] == "incomplete"
+    assert bundle["completion"]["timeout_failure_count"] == 1
 
 
 def test_run_value_gate_attaches_talent_review_and_decision_brief_artifacts():

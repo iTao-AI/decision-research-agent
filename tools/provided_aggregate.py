@@ -45,7 +45,7 @@ def provided_aggregate(aggregate_id: str) -> dict:
         payload = json.loads(fixture_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return _error("provided_aggregate_not_found", "The declared aggregate was not found.")
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return _error(
             "invalid_provided_aggregate_fixture",
             "The declared aggregate fixture could not be validated.",

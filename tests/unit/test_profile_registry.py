@@ -44,16 +44,23 @@ def test_agent_factory_compiles_each_immutable_profile_policy_once():
 
 def test_talent_agent_compiler_enforces_restricted_harness(monkeypatch):
     import agent.profile_agents as profile_agents
+    from langchain.agents.structured_output import ToolStrategy
     from agent.profile_registry import profile_registry
     from agent.talent_contracts import ResearchPacket
 
     captured = {}
+    captured_researcher = {}
 
     def capture_create_deep_agent(**kwargs):
         captured.update(kwargs)
         return object()
 
+    def capture_create_agent(**kwargs):
+        captured_researcher.update(kwargs)
+        return {"compiled": "researcher"}
+
     monkeypatch.setattr(profile_agents, "create_deep_agent", capture_create_deep_agent)
+    monkeypatch.setattr(profile_agents, "create_agent", capture_create_agent)
     profile = profile_registry.get("talent-hiring-signal")
     policy = profile_registry.policy_for("talent-hiring-signal")
 
@@ -75,8 +82,11 @@ def test_talent_agent_compiler_enforces_restricted_harness(monkeypatch):
     assert len(captured["subagents"]) == 1
     researcher = captured["subagents"][0]
     assert researcher["name"] == "general-purpose"
-    assert researcher["response_format"] is ResearchPacket
-    assert [tool.name for tool in researcher["tools"]] == [
+    assert researcher["runnable"] == {"compiled": "researcher"}
+    assert captured_researcher["name"] == "general-purpose"
+    assert isinstance(captured_researcher["response_format"], ToolStrategy)
+    assert captured_researcher["response_format"].schema is ResearchPacket
+    assert [tool.name for tool in captured_researcher["tools"]] == [
         "internet_search",
         "provided_aggregate",
     ]

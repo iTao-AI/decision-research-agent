@@ -365,3 +365,148 @@ def test_talent_run_prefetches_declared_aggregate_evidence_and_normalizes_refs(t
 
     assert result.returncode == 0, result.stderr
     assert "OK" in result.stdout
+
+
+def test_talent_preload_failure_records_diagnostics_and_resets_context(tmp_path):
+    script = textwrap.dedent(
+        f"""
+        import asyncio
+        import os
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        os.environ["OPENAI_API_KEY"] = "test"
+        os.environ["OPENAI_BASE_URL"] = "http://test"
+        os.environ["LLM_QWEN_MAX"] = "test"
+        os.environ["DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"] = "true"
+
+        with patch("deepagents.create_deep_agent", return_value=MagicMock()):
+            import agent.main_agent as main_agent
+
+        import tools.provided_aggregate as aggregate_tool
+        from api.context import get_run_context
+
+        class FakeTalentAgent:
+            async def astream(self, *args, **kwargs):
+                if False:
+                    yield None
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("fixture read failed")
+
+        main_agent.project_root = Path({str(tmp_path)!r})
+        main_agent.agent_factory._compiled[
+            ("talent-hiring-signal", "1", "talent-restricted-v1")
+        ] = FakeTalentAgent()
+
+        with patch.object(type(aggregate_tool.provided_aggregate), "invoke", side_effect=boom):
+            outcome = asyncio.run(
+                main_agent.run_deep_agent(
+                    "query",
+                    "thread-preload",
+                    run_id="run-preload",
+                    profile_id="talent-hiring-signal",
+                    scope={{
+                        "declared_samples": [{{
+                            "sample_id": "aggregate-v1",
+                            "source_type": "provided_aggregate",
+                            "reference": "aggregate-v1",
+                        }}]
+                    }},
+                )
+            )
+
+        assert "provided_aggregate_preload_failed:RuntimeError" in outcome.diagnostics
+        assert outcome.failure_kind == "missing_research_packet"
+        assert get_run_context() is None
+        assert main_agent.shared_context.query_facts("run-preload", "search_evidence") == []
+        print("OK")
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).parents[2],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout
+
+
+def test_talent_preload_records_non_ok_and_malformed_result_diagnostics(tmp_path):
+    script = textwrap.dedent(
+        f"""
+        import asyncio
+        import os
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        os.environ["OPENAI_API_KEY"] = "test"
+        os.environ["OPENAI_BASE_URL"] = "http://test"
+        os.environ["LLM_QWEN_MAX"] = "test"
+        os.environ["DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"] = "true"
+
+        with patch("deepagents.create_deep_agent", return_value=MagicMock()):
+            import agent.main_agent as main_agent
+
+        import tools.provided_aggregate as aggregate_tool
+        from agent.run_result import AgentRunAccumulator
+
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-preload",
+            query="query",
+            session_dir=Path({str(tmp_path)!r}),
+            profile_id="talent-hiring-signal",
+            run_id="run-preload",
+        )
+        responses = iter([
+            "not-a-dict",
+            {{"status": "error", "error": {{"code": "fixture_bad"}}}},
+            {{
+                "status": "ok",
+                "results": [
+                    "bad-item",
+                    {{"sample_id": "missing-id"}},
+                    {{
+                        "sample_id": "sample-1",
+                        "url": "https://jobs.example.com/role",
+                        "evidence_id": "ev_run-preload_abc",
+                    }},
+                ],
+            }},
+        ])
+
+        def fake_invoke(*args, **kwargs):
+            return next(responses)
+
+        with patch.object(type(aggregate_tool.provided_aggregate), "invoke", side_effect=fake_invoke):
+            asyncio.run(
+                main_agent._preload_declared_aggregate_evidence(
+                    accumulator,
+                    ("bad-type", "bad-status", "aggregate-v1"),
+                )
+            )
+
+        assert "provided_aggregate_preload_failed:invalid_preload_result" in accumulator.diagnostics
+        assert "provided_aggregate_preload_failed:fixture_bad" in accumulator.diagnostics
+        assert "provided_aggregate_item_invalid" in accumulator.diagnostics
+        assert "provided_aggregate_item_missing_evidence_id" in accumulator.diagnostics
+        assert "provided_aggregate_prefetched:aggregate-v1" in accumulator.diagnostics
+        assert accumulator.evidence_aliases["aggregate-v1"] == ("ev_run-preload_abc",)
+        assert accumulator.evidence_aliases["sample-1"] == ("ev_run-preload_abc",)
+        assert "__declared_aggregate__" not in accumulator.evidence_aliases
+        print("OK")
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).parents[2],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout

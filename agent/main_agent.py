@@ -141,7 +141,7 @@ def _add_evidence_alias(
     accumulator.evidence_aliases[alias] = tuple(existing)
 
 
-def _preload_declared_aggregate_evidence(
+async def _preload_declared_aggregate_evidence(
     accumulator: AgentRunAccumulator,
     aggregate_ids: tuple[str, ...],
 ) -> None:
@@ -154,7 +154,16 @@ def _preload_declared_aggregate_evidence(
     from tools.provided_aggregate import provided_aggregate
 
     for aggregate_id in aggregate_ids:
-        result = provided_aggregate.invoke({"aggregate_id": aggregate_id})
+        try:
+            result = await asyncio.to_thread(
+                provided_aggregate.invoke,
+                {"aggregate_id": aggregate_id},
+            )
+        except Exception as exc:
+            accumulator.diagnostics.append(
+                f"provided_aggregate_preload_failed:{type(exc).__name__}"
+            )
+            continue
         if not isinstance(result, dict) or result.get("status") != "ok":
             code = (
                 result.get("error", {}).get("code")
@@ -164,15 +173,18 @@ def _preload_declared_aggregate_evidence(
             accumulator.diagnostics.append(f"provided_aggregate_preload_failed:{code}")
             continue
 
-        accumulator.diagnostics.append(f"provided_aggregate_prefetched:{aggregate_id}")
+        processed = 0
         for item in result.get("results", []):
             if not isinstance(item, dict):
+                accumulator.diagnostics.append("provided_aggregate_item_invalid")
                 continue
             evidence_id = item.get("evidence_id")
             if not isinstance(evidence_id, str) or not evidence_id:
+                accumulator.diagnostics.append(
+                    "provided_aggregate_item_missing_evidence_id"
+                )
                 continue
             accumulator.verified_evidence_ids.add(evidence_id)
-            _add_evidence_alias(accumulator, "__declared_aggregate__", evidence_id)
             _add_evidence_alias(accumulator, aggregate_id, evidence_id)
             sample_id = item.get("sample_id")
             if isinstance(sample_id, str) and sample_id:
@@ -180,6 +192,13 @@ def _preload_declared_aggregate_evidence(
             source_url = item.get("url")
             if isinstance(source_url, str) and source_url:
                 _add_evidence_alias(accumulator, source_url, evidence_id)
+            processed += 1
+        if processed:
+            accumulator.diagnostics.append(f"provided_aggregate_prefetched:{aggregate_id}")
+        else:
+            accumulator.diagnostics.append(
+                f"provided_aggregate_preload_failed:no_valid_results"
+            )
 
 
 def _process_stream_chunk(chunk, accumulator: AgentRunAccumulator):
@@ -281,12 +300,6 @@ async def run_deep_agent(
         run_id=run_id,
         segment_id=segment_id,
     )
-    if profile_id == "talent-hiring-signal":
-        _preload_declared_aggregate_evidence(
-            accumulator,
-            _allowed_aggregate_ids(scope),
-        )
-
     # Register token tracking callback
     from agent.token_tracking import TokenTrackingCallbackHandler
     token_callback = TokenTrackingCallbackHandler(thread_id=execution_id)
@@ -319,6 +332,11 @@ async def run_deep_agent(
         )
 
     try:
+        if profile_id == "talent-hiring-signal":
+            await _preload_declared_aggregate_evidence(
+                accumulator,
+                _allowed_aggregate_ids(scope),
+            )
         selected_agent = agent_factory.get(profile_id)
         async for chunk in selected_agent.astream(
                 {"messages": [{"role": "user", "content": task_query + path_instruction}]},

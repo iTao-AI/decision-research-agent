@@ -89,11 +89,19 @@ class AgentRunAccumulator:
         failure_kind: str | None = None,
         cancellation_state: str | None = None,
     ) -> ExecutionOutcome:
-        research_packets = _normalize_research_packet_evidence_refs(
-            self.research_packets,
-            self.evidence_aliases,
-        )
         resolved_failure_kind = failure_kind
+        try:
+            research_packets = _normalize_research_packet_evidence_refs(
+                self.research_packets,
+                self.evidence_aliases,
+            )
+        except Exception as exc:
+            self.diagnostics.append(
+                f"evidence_ref_normalization_failed:{type(exc).__name__}"
+            )
+            research_packets = list(self.research_packets)
+            if self.profile_id == "talent-hiring-signal":
+                resolved_failure_kind = resolved_failure_kind or "invalid_research_packet"
         if (
             resolved_failure_kind is None
             and self.profile_id == "talent-hiring-signal"
@@ -157,8 +165,6 @@ def _expand_evidence_refs(
 ) -> list[str]:
     expanded: list[str] = []
     seen: set[str] = set()
-    if not refs:
-        refs = aliases.get("__declared_aggregate__", ())
     for ref in refs:
         replacements = aliases.get(ref, (ref,))
         for item in replacements:

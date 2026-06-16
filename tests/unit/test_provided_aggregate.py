@@ -94,3 +94,24 @@ def test_provided_aggregate_rejects_path_like_identifier(monkeypatch):
 
     assert result["status"] == "error"
     assert result["error"]["code"] == "invalid_provided_aggregate_id"
+
+
+def test_provided_aggregate_rejects_non_utf8_fixture(tmp_path, monkeypatch):
+    from api.context import _allowed_aggregate_ids_ctx, set_allowed_aggregate_ids_context
+    from tools import provided_aggregate as aggregate_tool
+
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    (fixtures / "aggregate-v1.json").write_bytes(b"\xff\xfe\x00")
+    monkeypatch.setenv("DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES", "true")
+    monkeypatch.setattr(aggregate_tool, "FIXTURE_ROOT", fixtures)
+    token = set_allowed_aggregate_ids_context(("aggregate-v1",))
+    try:
+        result = aggregate_tool.provided_aggregate.invoke(
+            {"aggregate_id": "aggregate-v1"}
+        )
+    finally:
+        _allowed_aggregate_ids_ctx.reset(token)
+
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "invalid_provided_aggregate_fixture"

@@ -226,6 +226,12 @@ def _run_has_unresolved_talent_evidence_refs(run: dict[str, Any]) -> bool:
     for packet in run.get("research_packets", []):
         if not isinstance(packet, dict):
             return True
+        findings = packet.get("findings", [])
+        claims = packet.get("candidate_claims", [])
+        if not isinstance(findings, list) or not findings:
+            return True
+        if not isinstance(claims, list) or not claims:
+            return True
         for collection_name in ("findings", "candidate_claims"):
             collection = packet.get(collection_name, [])
             if not isinstance(collection, list):
@@ -334,7 +340,6 @@ def build_benchmark_bundle(
     for field in ("thread_id", "run_id", "segment_id"):
         values = [run.get(field) for run in runs]
         present = [value for value in values if value]
-        identity_collision_count += len(values) - len(present)
         identity_collision_count += len(present) - len(set(present))
     expected_run_count = repetitions * 2
     ready = (

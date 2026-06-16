@@ -52,6 +52,7 @@ def test_talent_artifacts_are_deterministic_and_require_review_for_unknown_evide
     )
 
     assert first[0].status == "required"
+    assert "missing_evidence_ref:finding-1:ev_missing" in first[0].triggers
     assert "missing_evidence_ref:claim-1:ev_missing" in first[0].triggers
     assert first[2] == second[2]
 

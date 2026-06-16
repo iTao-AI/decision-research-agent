@@ -441,6 +441,24 @@ def test_build_benchmark_bundle_rejects_unresolved_talent_evidence_refs():
     assert bundle["completion"]["evidence_ref_failure_count"] == 1
 
 
+def test_build_benchmark_bundle_rejects_empty_talent_findings_and_claims():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    packet = pairs[0]["runs"]["talent-hiring-signal"]["research_packets"][0]
+    packet["findings"] = []
+    packet["candidate_claims"] = []
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["benchmark_status"] == "incomplete"
+    assert bundle["completion"]["evidence_ref_failure_count"] == 1
+
+
 def test_build_benchmark_bundle_rejects_talent_filesystem_tool_diagnostics():
     inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
     pairs = _paired_results(inputs)
@@ -493,6 +511,22 @@ def test_build_benchmark_bundle_rejects_profile_mismatch_and_identity_collision(
     assert bundle["benchmark_status"] == "incomplete"
     assert bundle["completion"]["profile_mismatch_count"] == 1
     assert bundle["completion"]["identity_collision_count"] == 1
+
+
+def test_build_benchmark_bundle_does_not_count_missing_legacy_identity_as_collision():
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    pairs[0]["runs"]["generic"]["segment_id"] = None
+    pairs[0]["runs"]["talent-hiring-signal"]["segment_id"] = None
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["completion"]["identity_collision_count"] == 0
 
 
 def test_run_value_gate_redacts_secret_like_exception_text():

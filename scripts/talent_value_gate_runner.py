@@ -326,6 +326,9 @@ def build_benchmark_bundle(
     timeout_failure_count = sum(
         run.get("failure_kind") == "runner_timeout" for run in runs
     )
+    recursion_limit_failure_count = sum(
+        run.get("failure_kind") == "recursion_limit_exceeded" for run in runs
+    )
     expected_profiles = {"generic", _TALENT_PROFILE_ID}
     profile_mismatch_count = sum(
         set(pair.get("runs", {})) != expected_profiles
@@ -353,6 +356,7 @@ def build_benchmark_bundle(
         and artifact_failure_count == 0
         and disallowed_tool_failure_count == 0
         and timeout_failure_count == 0
+        and recursion_limit_failure_count == 0
         and profile_mismatch_count == 0
         and identity_collision_count == 0
     )
@@ -389,6 +393,7 @@ def build_benchmark_bundle(
             "artifact_failure_count": artifact_failure_count,
             "disallowed_tool_failure_count": disallowed_tool_failure_count,
             "timeout_failure_count": timeout_failure_count,
+            "recursion_limit_failure_count": recursion_limit_failure_count,
             "profile_mismatch_count": profile_mismatch_count,
             "identity_collision_count": identity_collision_count,
             "ready_for_human_review": ready,

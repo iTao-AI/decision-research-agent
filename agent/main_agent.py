@@ -44,6 +44,9 @@ from agent.run_result import (
     OutcomeBox,
     process_stream_chunk,
 )
+from langgraph.errors import GraphRecursionError
+
+DEFAULT_TALENT_RECURSION_LIMIT = 80
 
 def _resolve_subagent(agent):
     """Agent 类实例或 dict 的适配转换"""
@@ -128,6 +131,19 @@ def _allowed_aggregate_ids(scope: dict | None) -> tuple[str, ...]:
         and isinstance(sample.get("reference"), str)
     }
     return tuple(sorted(aggregate_ids))
+
+
+def _talent_recursion_limit() -> int:
+    configured = os.getenv("DEEP_SEARCH_AGENT_TALENT_RECURSION_LIMIT")
+    if configured is None or not configured.strip():
+        return DEFAULT_TALENT_RECURSION_LIMIT
+    try:
+        limit = int(configured)
+    except ValueError:
+        return DEFAULT_TALENT_RECURSION_LIMIT
+    if limit < 1:
+        return DEFAULT_TALENT_RECURSION_LIMIT
+    return limit
 
 
 def _add_evidence_alias(
@@ -313,6 +329,8 @@ async def run_deep_agent(
             "profile_id": profile_id,
         },
     }
+    if profile_id == "talent-hiring-signal":
+        config["recursion_limit"] = _talent_recursion_limit()
 
     path_instruction = f"""
     【工作环境指令】
@@ -344,6 +362,13 @@ async def run_deep_agent(
         ):
             _process_stream_chunk(chunk, accumulator)
         return _freeze_execution_outcome(accumulator, outcome_box)
+    except GraphRecursionError as e:
+        return _freeze_execution_outcome(
+            accumulator,
+            outcome_box,
+            error_message=str(e),
+            failure_kind="recursion_limit_exceeded",
+        )
     except asyncio.CancelledError as exc:
         _freeze_execution_outcome(
             accumulator,

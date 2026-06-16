@@ -17,6 +17,14 @@
 - **模型**: 默认 `deepseek-v4-pro`，fallback 为 `deepseek-v4-flash`
 - **兼容变量**: `LLM_QWEN_MAX` 仅在 `LLM_MODEL` 未设置时读取
 - **当前配置**: thinking mode 默认 enabled，`reasoning_effort` 默认 max
+- **工具调用兼容性**: DeepSeek V4 thinking mode 与强制 `tool_choice`
+  不兼容。运行时仅在 `tool_choice=True`、`"any"`、`"required"`、指定
+  tool name 或 tool-selection dict 时，使用独立模型副本关闭
+  `extra_body.thinking` 完成 tool binding；普通调用和 `"auto"` / `"none"`
+  仍保留默认 thinking mode。
+- **应急诊断**: `LLM_THINKING_MODE=disabled` 可用于临时确认 provider
+  兼容性问题，但不应作为默认修复方式，因为它会关闭所有普通推理调用的
+  thinking mode。
 - **待改进**: 请求 ID 记录、provider 错误分层统计
 
 ### Tavily Search

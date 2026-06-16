@@ -133,6 +133,20 @@ def _resolve_talent_packets(
     diagnostics: list[str],
     failure_kind: str | None,
 ) -> tuple[list[ResearchPacket], str | None]:
+    """Normalize, supersede, and validate research packets for outcome assembly.
+
+    For the Talent profile (``talent-hiring-signal``):
+    1. Attempt evidence-ref normalization via aliases.
+    2. If multiple packets exist, keep only the last one and record superseded
+       packet IDs in diagnostics as ``research_packet_superseded:<count>:<ids>``.
+    3. If no packets remain, derive ``failure_kind`` from the presence of an
+       ``invalid_research_packet`` diagnostic.
+
+    For non-Talent profiles, packets pass through unchanged after normalization.
+
+    Returns:
+        A ``(research_packets, resolved_failure_kind)`` tuple.
+    """
     resolved_failure_kind = failure_kind
     try:
         research_packets = _normalize_research_packet_evidence_refs(

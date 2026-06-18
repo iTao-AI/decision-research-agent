@@ -26,6 +26,7 @@ from agent.talent_contracts import ResearchScope
 
 
 _TALENT_PROFILE_ID = "talent-hiring-signal"
+_BENCHMARK_FIXTURE_ENV = "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"
 _DISALLOWED_TALENT_TOOL_DIAGNOSTICS = frozenset(
     {
         "tool:convert_md_to_pdf",
@@ -498,7 +499,11 @@ async def run_value_gate(
     generated_at: datetime | None = None,
     per_run_timeout_seconds: float | None = 600.0,
 ) -> dict[str, Any]:
-    """Run sequential Generic/Talent pairs against one shared prompt envelope."""
+    """Run sequential Generic/Talent pairs against one shared prompt envelope.
+
+    This runner temporarily mutates process-global environment state and must
+    not be invoked concurrently within the same process.
+    """
     if repetitions < 1:
         raise ValueError("repetitions must be at least 1")
     if agent_runner is None:
@@ -518,11 +523,9 @@ async def run_value_gate(
             segment_id = f"{run_id}_seg_000"
             started = time.monotonic()
             try:
-                previous_fixture_setting = os.environ.get(
-                    "DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"
-                )
+                previous_fixture_setting = os.environ.get(_BENCHMARK_FIXTURE_ENV)
                 if profile_id == _TALENT_PROFILE_ID:
-                    os.environ["DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"] = "true"
+                    os.environ[_BENCHMARK_FIXTURE_ENV] = "true"
                 try:
                     run_coro = agent_runner(
                         task_query=prompt,
@@ -542,13 +545,11 @@ async def run_value_gate(
                 finally:
                     if profile_id == _TALENT_PROFILE_ID:
                         if previous_fixture_setting is None:
-                            os.environ.pop(
-                                "DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES", None
-                            )
+                            os.environ.pop(_BENCHMARK_FIXTURE_ENV, None)
                         else:
-                            os.environ[
-                                "DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"
-                            ] = previous_fixture_setting
+                            os.environ[_BENCHMARK_FIXTURE_ENV] = (
+                                previous_fixture_setting
+                            )
                 serialized = serialize_outcome(
                     outcome,
                     elapsed_seconds=time.monotonic() - started,

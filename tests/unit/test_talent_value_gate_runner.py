@@ -662,16 +662,21 @@ def test_run_value_gate_attaches_talent_review_and_decision_brief_artifacts():
     }
 
 
-def test_run_value_gate_enables_fixture_provider_only_for_talent(monkeypatch):
+def test_run_value_gate_restores_canonical_fixture_setting_after_success(monkeypatch):
     inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
-    monkeypatch.setenv("DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES", "false")
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES",
+        "false",
+    )
     observed = []
 
     async def fake_agent_runner(**kwargs):
         observed.append(
             (
                 kwargs["profile_id"],
-                os.getenv("DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"),
+                os.getenv(
+                    "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"
+                ),
             )
         )
         return _outcome(kwargs["profile_id"])
@@ -689,7 +694,51 @@ def test_run_value_gate_enables_fixture_provider_only_for_talent(monkeypatch):
         ("generic", "false"),
         ("talent-hiring-signal", "true"),
     ]
-    assert os.getenv("DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES") == "false"
+    assert (
+        os.getenv("DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES")
+        == "false"
+    )
+
+
+def test_run_value_gate_removes_temporary_canonical_fixture_setting_after_failure(
+    monkeypatch,
+):
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    monkeypatch.delenv(
+        "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES",
+        raising=False,
+    )
+    observed = []
+
+    async def fake_agent_runner(**kwargs):
+        observed.append(
+            (
+                kwargs["profile_id"],
+                os.getenv(
+                    "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"
+                ),
+            )
+        )
+        if kwargs["profile_id"] == "talent-hiring-signal":
+            raise RuntimeError("talent failed")
+        return _outcome(kwargs["profile_id"])
+
+    bundle = asyncio.run(
+        runner.run_value_gate(
+            inputs=inputs,
+            repetitions=1,
+            agent_runner=fake_agent_runner,
+            generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+        )
+    )
+
+    talent = bundle["paired_results"][0]["runs"]["talent-hiring-signal"]
+    assert observed == [
+        ("generic", None),
+        ("talent-hiring-signal", "true"),
+    ]
+    assert talent["failure_kind"] == "runner_exception"
+    assert "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES" not in os.environ
 
 
 def test_build_benchmark_bundle_recursively_redacts_secret_like_text():

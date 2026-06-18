@@ -225,6 +225,7 @@ deep-search-agent/
 
 ## Evidence Pack & Technical Docs
 
+- [Documentation Index](docs/README.md) — Product docs, technical references, decisions, and implementation plans
 - [Evidence Pack](docs/evidence/) — QA screenshots, run log, technical decisions
 - [Evidence Readiness Design](docs/superpowers/specs/2026-06-01-deep-search-agent-evidence-readiness-design.md) — Design spec for this documentation direction
 - [Architecture Spec](spec/architecture.md) — System architecture and data flow

@@ -68,7 +68,7 @@ New canonical variables:
 Resolution rules:
 
 1. If the canonical variable exists, use it, including an explicitly empty value.
-2. Otherwise, if the legacy alias exists, use it and emit a `DeprecationWarning` once per process and legacy key.
+2. Otherwise, if the legacy alias exists, use it and emit a `FutureWarning` once per process and legacy key.
 3. Otherwise, use the existing default.
 4. Never log variable values, especially API keys.
 
@@ -100,7 +100,7 @@ The implementation moves to the canonical module. The legacy file becomes a thin
 - New default project: `decision-research-agent-dev`
 - Existing project: `deep-search-agent-dev`
 
-New local runs use the new project through `.env.example` and observability documentation. Historical traces remain in the old project and are not copied, deleted, or treated as the business audit ledger. Privacy defaults remain `LANGSMITH_HIDE_INPUTS=true` and `LANGSMITH_HIDE_OUTPUTS=true`.
+Newly configured local runs use the new project through `.env.example` and observability documentation. Existing untracked `.env` files are not edited automatically; operators must opt in by changing `LANGSMITH_PROJECT`. Historical traces remain in the old project and are not copied, deleted, or treated as the business audit ledger. Privacy defaults remain `LANGSMITH_HIDE_INPUTS=true` and `LANGSMITH_HIDE_OUTPUTS=true`.
 
 ### API, Persistence, And Deployment
 
@@ -113,20 +113,26 @@ New local runs use the new project through `.env.example` and observability docu
 
 Create `agent/runtime_env.py` as the server-side compatibility resolver. Agent runtime modules use it for benchmark fixture and Talent recursion settings. The standalone Tool Client keeps a small local resolver because direct execution with `python tools/decision_research_agent_tool.py` must not depend on repository-root import behavior.
 
-The resolver emits no value data. Warning deduplication is process-local and protected against repeated calls. Canonical precedence is deterministic even when both names are set.
+The resolver emits no value data. It uses `FutureWarning` because Python displays that category by default, so operators can see the migration requirement without enabling developer-only warnings. Warning deduplication is process-local and protected against repeated calls. Canonical precedence is deterministic even when both names are set.
 
 ## Documentation Policy
 
 Update current entrypoints:
 
+- `AGENTS.md`
 - `README.md`
 - `README_CN.md`
 - `.env.example`
+- `CHANGELOG.md`
 - `docs/README.md`
 - `docs/AGENT_INTEGRATION.md`
 - `docs/observability.md`
+- `docs/prd.md`
 - `docs/decisions/product-naming.md`
+- `spec/README.md`
 - `spec/api-contract.md`
+- `spec/architecture.md`
+- `spec/state-machine.md`
 
 Do not bulk-edit:
 
@@ -137,6 +143,8 @@ Do not bulk-edit:
 - benchmark snapshots and historical execution paths
 
 Historical documents describe the identity that existed when evidence was produced. Current index pages may add a migration note linking old and new names.
+
+The existing README and architecture diagrams still describe valid generic-profile modules and data flows. This migration updates product labels and the project-root tree name, but does not redraw those diagrams or imply that the Talent direct structured path replaced the generic architecture.
 
 ## File-Level Scope
 
@@ -151,7 +159,11 @@ Historical documents describe the identity that existed when evidence was produc
 | `tools/deep_search_agent_tool.py` | Remain as a compatibility shim. |
 | `api/server.py` | Add `product=decision-research-agent` while preserving `service=deep-search-agent`. |
 | `.env.example` | Publish canonical fixture and LangSmith defaults. |
-| current docs/spec files | Document canonical usage and bounded compatibility. |
+| `AGENTS.md`, `README.md`, `README_CN.md`, `docs/prd.md` | Replace stale current-product and repository labels without rewriting architecture narrative. |
+| `docs/README.md`, `docs/AGENT_INTEGRATION.md`, `docs/observability.md` | Make the migration discoverable and document canonical client, env, health, and LangSmith usage. |
+| `docs/decisions/product-naming.md` | Record the completed repository rename and the remaining compatibility boundary. |
+| `spec/README.md`, `spec/api-contract.md`, `spec/architecture.md`, `spec/state-machine.md` | Update current-state reference labels and the exact health/client configuration contract. |
+| `CHANGELOG.md` | Add an Unreleased compatibility-migration entry without rewriting historical releases. |
 | focused tests | Lock canonical precedence, legacy fallback, warning behavior, health compatibility, Tool Client shim, and benchmark env restoration. |
 
 ## Error And Rollback Behavior

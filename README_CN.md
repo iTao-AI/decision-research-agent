@@ -203,6 +203,7 @@ deep-search-agent/
 
 ## Evidence Pack 与技术文档
 
+- [文档索引](docs/README.md) — 产品文档、技术参考、决策记录和实施计划入口
 - [Evidence Pack](docs/evidence/) — QA 截图、运行记录、技术决策
 - [证据化设计规格](docs/superpowers/specs/2026-06-01-deep-search-agent-evidence-readiness-design.md) — 本文档改造方向
 - [架构规格](spec/architecture.md) — 系统架构与数据流

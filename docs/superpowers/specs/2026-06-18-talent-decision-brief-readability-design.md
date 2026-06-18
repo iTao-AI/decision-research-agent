@@ -185,6 +185,7 @@ Render one row for every claim:
 | Finding refs | `Claim.finding_refs` |
 | Evidence refs | `Claim.evidence_refs` |
 | Status | citation, verification, review, and conflict status |
+| Boundaries | `Claim.limitations` |
 
 This section remains explicitly labeled as candidate claims. Rendering does not
 promote a pending or unverified claim to an approved decision.
@@ -192,6 +193,7 @@ promote a pending or unverified claim to an approved decision.
 ### Boundaries And Recommendations
 
 - Aggregate finding evidence gaps into an `Evidence Gaps` section.
+- Render `review_summary.triggers` in a `Review Triggers` section when present.
 - Render brief-level `conflicts` and `limitations` in separate sections.
 - Render `Recommendations` only when `brief.recommendations` is non-empty.
 - An empty recommendations list produces no recommendations section and is not
@@ -256,7 +258,7 @@ No API, database, frontend, Agent prompt, or tool files are in scope.
 | More than three claims | Summary contains only the top three; all claims remain in the detailed table. |
 | No claims | Summary falls back to top findings and claims section says `None declared`. |
 | No recommendations | Recommendations section is absent. |
-| Evidence gaps/conflicts/limitations | Each appears only in its corresponding evidence-bound section. |
+| Evidence gaps/review triggers/conflicts/limitations | Each appears only in its corresponding evidence-bound section or table column. |
 | Pending/unverified claim | Status remains visible; renderer does not promote it. |
 | Persisted artifact integration | Existing JSON/Markdown artifact IDs and hashes remain queryable. |
 | Fixed 1x2 diagnostic | Both runs complete and Talent readiness counters remain zero. |

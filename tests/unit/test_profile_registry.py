@@ -98,6 +98,34 @@ def test_talent_compiled_researcher_binds_recursion_budget(monkeypatch):
     assert compiled["bound_config"]["recursion_limit"] == 37
 
 
+def test_canonical_talent_recursion_limit_overrides_legacy(monkeypatch):
+    from agent.talent_runtime import talent_recursion_limit
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_TALENT_RECURSION_LIMIT", "41")
+    monkeypatch.setenv("DEEP_SEARCH_AGENT_TALENT_RECURSION_LIMIT", "37")
+
+    assert talent_recursion_limit() == 41
+
+
+@pytest.mark.parametrize("canonical_value", ["", "invalid", "0", "-1"])
+def test_invalid_canonical_talent_recursion_limit_uses_default_without_legacy(
+    monkeypatch,
+    canonical_value,
+):
+    from agent.talent_runtime import (
+        DEFAULT_TALENT_RECURSION_LIMIT,
+        talent_recursion_limit,
+    )
+
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_TALENT_RECURSION_LIMIT",
+        canonical_value,
+    )
+    monkeypatch.setenv("DEEP_SEARCH_AGENT_TALENT_RECURSION_LIMIT", "37")
+
+    assert talent_recursion_limit() == DEFAULT_TALENT_RECURSION_LIMIT
+
+
 def test_talent_researcher_prompt_forbids_uncited_findings():
     from agent.profile_agents import TALENT_RESEARCHER_PROMPT
 

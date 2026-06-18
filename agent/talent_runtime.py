@@ -1,14 +1,17 @@
 """Runtime limits for the Talent Hiring Signal profile."""
 from __future__ import annotations
 
-import os
+from agent.runtime_env import resolve_env
 
 
 DEFAULT_TALENT_RECURSION_LIMIT = 160
 
 
 def talent_recursion_limit() -> int:
-    configured = os.getenv("DEEP_SEARCH_AGENT_TALENT_RECURSION_LIMIT")
+    configured = resolve_env(
+        "DECISION_RESEARCH_AGENT_TALENT_RECURSION_LIMIT",
+        "DEEP_SEARCH_AGENT_TALENT_RECURSION_LIMIT",
+    )
     if configured is None or not configured.strip():
         return DEFAULT_TALENT_RECURSION_LIMIT
     try:

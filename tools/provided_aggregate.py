@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 import re
 
 from langchain_core.tools import tool
 
 from agent.research import evidence_id_for
+from agent.runtime_env import resolve_env
 from api.context import get_allowed_aggregate_ids_context, get_run_context
 from tools.tavily_tools import _publish_search_evidence
 
@@ -24,7 +24,12 @@ def _error(code: str, message: str) -> dict:
 @tool("provided_aggregate")
 def provided_aggregate(aggregate_id: str) -> dict:
     """Read one scope-declared, server-bundled aggregate in benchmark mode."""
-    if os.getenv("DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES", "").lower() != "true":
+    fixtures_enabled = resolve_env(
+        "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES",
+        "DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES",
+        default="",
+    )
+    if (fixtures_enabled or "").lower() != "true":
         return _error(
             "provided_aggregate_disabled",
             "The server-side benchmark fixture provider is disabled.",

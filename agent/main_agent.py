@@ -14,12 +14,12 @@ from agent.llm import model
 from agent.prompts import main_agent_config
 from agent.profile_agents import compile_profile_agent
 from agent.profile_registry import AgentFactory, profile_registry
+from agent.runtime_env import resolve_env
 
 from api.monitor import monitor
 import asyncio
 from dataclasses import replace
 import json
-import os
 import uuid
 import shutil
 from pathlib import Path
@@ -150,7 +150,12 @@ async def _preload_declared_aggregate_evidence(
     """Load declared benchmark aggregates into run-scoped evidence."""
     if not aggregate_ids:
         return
-    if os.getenv("DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES", "").lower() != "true":
+    fixtures_enabled = resolve_env(
+        "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES",
+        "DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES",
+        default="",
+    )
+    if (fixtures_enabled or "").lower() != "true":
         return
 
     from tools.provided_aggregate import provided_aggregate

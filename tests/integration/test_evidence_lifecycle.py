@@ -284,7 +284,7 @@ def test_talent_run_prefetches_declared_aggregate_evidence_and_normalizes_refs(t
         os.environ["OPENAI_API_KEY"] = "test"
         os.environ["OPENAI_BASE_URL"] = "http://test"
         os.environ["LLM_QWEN_MAX"] = "test"
-        os.environ["DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"] = "true"
+        os.environ["DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES"] = "true"
 
         with patch("deepagents.create_deep_agent", return_value=MagicMock()):
             import agent.main_agent as main_agent

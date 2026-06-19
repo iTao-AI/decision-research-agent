@@ -232,6 +232,7 @@ Workflow statuses:
 - `waiting_decision`
 - `resume_pending`
 - `resuming`
+- `resolution_pending`
 - `approved`
 - `rejected`
 - `manual_recovery`
@@ -285,8 +286,9 @@ stateDiagram-v2
 
     waiting_decision --> resume_pending: immutable decision persisted
     resume_pending --> resuming: worker acquires lease
-    resuming --> approved: approve applied exactly once
-    resuming --> rejected: reject applied exactly once
+    resuming --> resolution_pending: graph completed with matching decision
+    resolution_pending --> approved: approve applied exactly once
+    resolution_pending --> rejected: reject applied exactly once
     resuming --> resume_pending: lease expires before durable result
     resuming --> manual_recovery: checkpoint and ledger cannot reconcile
 
@@ -457,7 +459,9 @@ a bounded interval while the feature is enabled.
   `decision-brief.reviewed.md` deterministically from the original canonical
   brief and immutable decision.
 - Set the embedded review summary to resolved and include the decision ID,
-  action, reason, and the non-sensitive reviewer kind `service_credential`.
+  action, `reason_recorded`, and the non-sensitive reviewer kind
+  `service_credential`. The reason text remains audit-only in the application
+  database.
 - Preserve every evidence `verification_status`; approval does not verify a
   source.
 - Atomically insert reviewed artifacts and transition the run to
@@ -483,7 +487,7 @@ based on deterministic IDs and observable state.
 | `waiting_decision` | interrupted | no-op |
 | `resume_pending` | interrupted | acquire lease and resume |
 | `resuming`, lease expired | interrupted | reclaim and resume same decision |
-| `resuming`, lease expired | graph completed with matching decision | apply fenced resolution |
+| `resuming`, lease expired | graph completed with matching decision | mark `resolution_pending`, then apply fenced resolution |
 | resolved workflow | any duplicate callback | no-op |
 | decision exists | corrupt or mismatched checkpoint after resume attempt | `manual_recovery` |
 | checkpoint decision differs from ledger | any | `manual_recovery` |
@@ -496,12 +500,13 @@ No recovery path invents a decision or infers approval from checkpoint position.
 projections for:
 
 - current review workflow status;
-- accepted decision ID, action, reason, and timestamp;
+- accepted decision ID, action, `reason_recorded`, and timestamp;
 - resolution status and reviewed artifact IDs;
 - bounded recovery diagnostic code.
 
-The response does not expose credential fingerprint, lease owner, raw checkpoint
-payload, checkpoint database path, or internal exception text.
+The response does not expose decision reason text, credential fingerprint, lease
+owner, raw checkpoint payload, checkpoint database path, or internal exception
+text.
 
 ## Persistence and Migration
 

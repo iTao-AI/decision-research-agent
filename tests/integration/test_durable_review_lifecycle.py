@@ -118,6 +118,20 @@ async def test_talent_finalization_atomically_seeds_checkpoint_pending_workflow(
     }
 
 
+@pytest.mark.asyncio
+async def test_required_review_remains_not_deliverable_before_resolution(
+    tmp_path,
+    monkeypatch,
+):
+    run = await _finalize_talent_fixture(tmp_path, monkeypatch, enabled=True)
+
+    assert run["review_status"] == "required"
+    assert run["delivery_status"] == "review_required"
+    assert "decision-brief.reviewed.json" not in {
+        item["artifact_id"] for item in run["artifacts"]
+    }
+
+
 class FakeWorker:
     def __init__(self, starts, stops):
         self.starts = starts

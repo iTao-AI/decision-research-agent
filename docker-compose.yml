@@ -10,6 +10,10 @@ services:
     environment:
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
+      - TASKS_DB_PATH=/app/data/tasks.db
+      - DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH=/app/data/review_checkpoints.db
+      - DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL=${DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL:-false}
+      - API_SECRET
     volumes:
       - backend_data:/app/data
       - backend_output:/app/output

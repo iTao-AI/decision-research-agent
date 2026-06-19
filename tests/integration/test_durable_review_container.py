@@ -24,6 +24,8 @@ def _ensure_compose_env_file(root: Path):
                 with env_path.open("x", encoding="utf-8") as env_file:
                     env_file.write(
                         "# Created temporarily by the Docker integration test.\n"
+                        "OPENAI_API_KEY=durable-hitl-container-test-only\n"
+                        "LANGSMITH_TRACING=false\n"
                     )
                 created = True
             except FileExistsError:

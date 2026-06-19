@@ -10,9 +10,10 @@ def test_compose_env_file_is_created_and_removed_when_missing(tmp_path):
     env_path = tmp_path / ".env"
 
     with _ensure_compose_env_file(tmp_path):
-        assert env_path.read_text(encoding="utf-8").startswith(
-            "# Created temporarily"
-        )
+        content = env_path.read_text(encoding="utf-8")
+        assert content.startswith("# Created temporarily")
+        assert "OPENAI_API_KEY=durable-hitl-container-test-only" in content
+        assert "LANGSMITH_TRACING=false" in content
 
     assert not env_path.exists()
 

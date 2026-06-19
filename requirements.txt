@@ -23,7 +23,7 @@ langgraph-checkpoint-sqlite>=3.1.0
 
 # --- 文件处理 (File Processing - upload_file_read_tool) ---
 python-docx>=1.0.0          # Word (.docx) 读取
-pypdf>=6.13.2                # [修正] PDF 读取 (代码用的是 pypdf)
+pypdf>=6.13.3                # [修正] PDF 读取 (代码用的是 pypdf)
 pandas>=3.0.3               # Excel 数据处理
 openpyxl>=3.1.0             # Excel 读取引擎 (Pandas 依赖)
 aiofiles>=23.0.0            # 异步文件操作

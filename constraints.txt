@@ -20,7 +20,7 @@ openai==2.41.1
 openpyxl==3.1.5
 pandas==3.0.3
 pydantic==2.13.4
-pypdf==6.13.2
+pypdf==6.13.3
 # RAGFlow 0.13.0 requires pytest 8.x on the Python 3.11 CI/Docker runtime.
 pytest==8.4.2; python_version < "3.12"
 pytest==9.1.0; python_version >= "3.12"

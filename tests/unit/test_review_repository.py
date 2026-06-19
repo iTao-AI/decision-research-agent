@@ -22,7 +22,10 @@ from api.review_repository import (
     ReviewConflict,
     _connect,
     accept_review_decision,
+    claim_review_workflow,
+    complete_checkpoint_creation,
     get_review_projection,
+    release_workflow_for_retry,
     resolve_review,
 )
 from api.run_repository import (
@@ -184,6 +187,39 @@ class ResumableReviewRun:
     artifacts: ReviewedArtifactResult
 
 
+@dataclass
+class MutableClock:
+    value: datetime
+
+    def now(self) -> datetime:
+        return self.value
+
+    def advance(self, *, seconds: int) -> None:
+        self.value += timedelta(seconds=seconds)
+
+
+@pytest.fixture
+def clock() -> MutableClock:
+    return MutableClock(datetime(2026, 6, 19, tzinfo=timezone.utc))
+
+
+@pytest.fixture
+def claimable_review_run(required_review_run) -> RequiredReviewRun:
+    accept_review_decision(
+        db_path=required_review_run.db_path,
+        run_id=required_review_run.run_id,
+        review_id=required_review_run.review_id,
+        request=ReviewDecisionRequest(
+            decision_id="decision_claim",
+            review_revision=1,
+            action="approve",
+            expected_state_version=2,
+        ),
+        actor_fingerprint="actor_hash",
+    )
+    return required_review_run
+
+
 def _make_resumable_review_run(
     required: RequiredReviewRun,
     *,
@@ -214,7 +250,7 @@ def _make_resumable_review_run(
             connection.execute(
                 """
                 UPDATE review_workflows_v2
-                SET status = 'resuming',
+                SET status = 'resolution_pending',
                     lease_owner = 'worker_a',
                     lease_expires_at = ?,
                     attempt_count = 1
@@ -452,3 +488,86 @@ def test_stale_worker_cannot_resolve_after_another_worker(
             expected_run_state_version=3,
             result=fixture.artifacts,
         )
+
+
+def test_expired_lease_is_reclaimed_without_new_segment(
+    claimable_review_run,
+    clock,
+):
+    first = claim_review_workflow(
+        db_path=claimable_review_run.db_path,
+        worker_id="worker_a",
+        lease_seconds=10,
+        now=clock.now(),
+    )
+    clock.advance(seconds=11)
+    second = claim_review_workflow(
+        db_path=claimable_review_run.db_path,
+        worker_id="worker_b",
+        lease_seconds=10,
+        now=clock.now(),
+    )
+
+    assert first is not None
+    assert second is not None
+    assert second.workflow_id == first.workflow_id
+    assert second.post_review_segment_id == first.post_review_segment_id
+    assert second.attempt == first.attempt + 1
+    run = get_run(
+        db_path=claimable_review_run.db_path,
+        run_id=claimable_review_run.run_id,
+    )
+    assert run["state_version"] == 3
+    assert [
+        segment["kind"] for segment in run["segments"]
+    ].count("post_review") == 1
+
+
+def test_stale_worker_cannot_complete_reclaimed_attempt(
+    claimable_review_run,
+    clock,
+):
+    first = claim_review_workflow(
+        db_path=claimable_review_run.db_path,
+        worker_id="worker_a",
+        lease_seconds=10,
+        now=clock.now(),
+    )
+    clock.advance(seconds=11)
+    second = claim_review_workflow(
+        db_path=claimable_review_run.db_path,
+        worker_id="worker_b",
+        lease_seconds=10,
+        now=clock.now(),
+    )
+
+    assert first is not None
+    assert second is not None
+    assert second.attempt == first.attempt + 1
+    with pytest.raises(ReviewConflict, match="lease_not_owned"):
+        complete_checkpoint_creation(
+            db_path=claimable_review_run.db_path,
+            workflow_id=first.workflow_id,
+            worker_id="worker_a",
+        )
+
+
+def test_resolution_pending_retry_never_returns_to_resume_pending(
+    resumable_approved_review_run,
+):
+    fixture = resumable_approved_review_run
+
+    release_workflow_for_retry(
+        db_path=fixture.required.db_path,
+        workflow_id=fixture.required.workflow_id,
+        worker_id="worker_a",
+        error_code="review_worker_failed",
+        max_attempts=3,
+    )
+
+    workflow = get_review_projection(
+        db_path=fixture.required.db_path,
+        run_id=fixture.required.run_id,
+    )["workflow"]
+    assert workflow["status"] == "resolution_pending"
+    assert workflow["last_error_code"] == "review_worker_failed"

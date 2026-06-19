@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import sqlite3
 from typing import Any
@@ -36,6 +36,19 @@ class ReviewResolution:
     action: str
     artifact_ids: tuple[str, ...]
     created_at: str
+
+
+@dataclass(frozen=True)
+class ReviewWorkflowClaim:
+    workflow_id: str
+    run_id: str
+    review_id: str
+    review_revision: int
+    checkpoint_thread_id: str
+    decision_id: str | None
+    post_review_segment_id: str
+    original_status: str
+    attempt: int
 
 
 class ReviewConflict(RuntimeError):
@@ -380,6 +393,413 @@ def get_review_projection(
         connection.close()
 
 
+def _claim_time(now: datetime | None) -> datetime:
+    value = now or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        raise ValueError("review workflow time must be timezone-aware")
+    return value.astimezone(timezone.utc)
+
+
+def claim_review_workflow(
+    *,
+    worker_id: str,
+    lease_seconds: int,
+    db_path: str | None = None,
+    now: datetime | None = None,
+) -> ReviewWorkflowClaim | None:
+    """Claim one due workflow without changing ResearchRun state_version."""
+    if lease_seconds <= 0:
+        raise ValueError("lease_seconds must be positive")
+    init_review_schema(db_path)
+    claimed_at = _claim_time(now)
+    claimed_at_text = claimed_at.isoformat()
+    lease_expires_at = (
+        claimed_at + timedelta(seconds=lease_seconds)
+    ).isoformat()
+    connection = _connect(db_path)
+    try:
+        with connection:
+            connection.execute("BEGIN IMMEDIATE")
+            workflow = connection.execute(
+                """
+                SELECT *
+                FROM review_workflows_v2
+                WHERE status IN (
+                    'checkpoint_pending',
+                    'resume_pending',
+                    'resuming',
+                    'resolution_pending'
+                )
+                  AND (
+                    lease_owner IS NULL
+                    OR lease_expires_at IS NULL
+                    OR lease_expires_at <= ?
+                  )
+                ORDER BY created_at, workflow_id
+                LIMIT 1
+                """,
+                (claimed_at_text,),
+            ).fetchone()
+            if workflow is None:
+                return None
+
+            original_status = workflow["status"]
+            claimed_status = (
+                "resuming"
+                if original_status in {"resume_pending", "resuming"}
+                else original_status
+            )
+            attempt = workflow["attempt_count"] + 1
+            cursor = connection.execute(
+                """
+                UPDATE review_workflows_v2
+                SET status = ?, lease_owner = ?, lease_expires_at = ?,
+                    attempt_count = ?, updated_at = ?
+                WHERE workflow_id = ?
+                  AND status = ?
+                  AND lease_owner IS ?
+                  AND lease_expires_at IS ?
+                """,
+                (
+                    claimed_status,
+                    worker_id,
+                    lease_expires_at,
+                    attempt,
+                    claimed_at_text,
+                    workflow["workflow_id"],
+                    original_status,
+                    workflow["lease_owner"],
+                    workflow["lease_expires_at"],
+                ),
+            )
+            if cursor.rowcount != 1:
+                return None
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO run_segments (
+                    segment_id, run_id, kind, sequence, attempt, status,
+                    created_at, updated_at
+                ) VALUES (?, ?, 'post_review', 1, 1, 'pending', ?, ?)
+                """,
+                (
+                    workflow["post_review_segment_id"],
+                    workflow["run_id"],
+                    claimed_at_text,
+                    claimed_at_text,
+                ),
+            )
+            segment = connection.execute(
+                """
+                SELECT segment_id FROM run_segments
+                WHERE run_id = ? AND sequence = 1
+                """,
+                (workflow["run_id"],),
+            ).fetchone()
+            if (
+                segment is None
+                or segment["segment_id"] != workflow["post_review_segment_id"]
+            ):
+                raise ReviewConflict("post_review_segment_conflict")
+            connection.execute(
+                """
+                INSERT INTO review_resume_attempts_v2 (
+                    workflow_id, attempt, worker_id, started_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    workflow["workflow_id"],
+                    attempt,
+                    worker_id,
+                    claimed_at_text,
+                ),
+            )
+            return ReviewWorkflowClaim(
+                workflow_id=workflow["workflow_id"],
+                run_id=workflow["run_id"],
+                review_id=workflow["review_id"],
+                review_revision=workflow["review_revision"],
+                checkpoint_thread_id=workflow["checkpoint_thread_id"],
+                decision_id=workflow["decision_id"],
+                post_review_segment_id=workflow["post_review_segment_id"],
+                original_status=original_status,
+                attempt=attempt,
+            )
+    finally:
+        connection.close()
+
+
+def _owned_workflow(
+    connection: sqlite3.Connection,
+    *,
+    workflow_id: str,
+    worker_id: str,
+) -> sqlite3.Row:
+    workflow = connection.execute(
+        "SELECT * FROM review_workflows_v2 WHERE workflow_id = ?",
+        (workflow_id,),
+    ).fetchone()
+    if workflow is None:
+        raise ReviewConflict("review_not_found")
+    if (
+        workflow["lease_owner"] != worker_id
+        or not _lease_is_active(workflow["lease_expires_at"])
+    ):
+        raise ReviewConflict("lease_not_owned")
+    return workflow
+
+
+def _complete_attempt(
+    connection: sqlite3.Connection,
+    *,
+    workflow: sqlite3.Row,
+    worker_id: str,
+    now: str,
+    outcome: str,
+    error_code: str | None = None,
+) -> None:
+    cursor = connection.execute(
+        """
+        UPDATE review_resume_attempts_v2
+        SET completed_at = ?, outcome = ?, error_code = ?
+        WHERE workflow_id = ? AND attempt = ? AND worker_id = ?
+          AND completed_at IS NULL
+        """,
+        (
+            now,
+            outcome,
+            error_code,
+            workflow["workflow_id"],
+            workflow["attempt_count"],
+            worker_id,
+        ),
+    )
+    if cursor.rowcount != 1:
+        raise ReviewConflict("resume_attempt_not_found")
+
+
+def complete_checkpoint_creation(
+    *,
+    workflow_id: str,
+    worker_id: str,
+    db_path: str | None = None,
+) -> None:
+    init_review_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        with connection:
+            connection.execute("BEGIN IMMEDIATE")
+            workflow = _owned_workflow(
+                connection,
+                workflow_id=workflow_id,
+                worker_id=worker_id,
+            )
+            if workflow["status"] != "checkpoint_pending":
+                raise ReviewConflict("checkpoint_not_pending")
+            now = _now()
+            cursor = connection.execute(
+                """
+                UPDATE review_workflows_v2
+                SET status = 'waiting_decision', lease_owner = NULL,
+                    lease_expires_at = NULL, last_error_code = NULL,
+                    updated_at = ?
+                WHERE workflow_id = ? AND status = 'checkpoint_pending'
+                  AND lease_owner = ?
+                """,
+                (now, workflow_id, worker_id),
+            )
+            if cursor.rowcount != 1:
+                raise ReviewConflict("lease_not_owned")
+            _complete_attempt(
+                connection,
+                workflow=workflow,
+                worker_id=worker_id,
+                now=now,
+                outcome="checkpoint_created",
+            )
+    finally:
+        connection.close()
+
+
+def get_decision(
+    *,
+    decision_id: str,
+    db_path: str | None = None,
+) -> ReviewDecisionRecord | None:
+    init_review_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        row = connection.execute(
+            "SELECT * FROM review_decisions_v2 WHERE decision_id = ?",
+            (decision_id,),
+        ).fetchone()
+        return _decision_record(row) if row is not None else None
+    finally:
+        connection.close()
+
+
+def get_original_decision_brief(
+    *,
+    run_id: str,
+    db_path: str | None = None,
+) -> str:
+    init_review_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        row = connection.execute(
+            """
+            SELECT content FROM run_artifacts_v2
+            WHERE run_id = ? AND artifact_id = 'decision-brief.json'
+            """,
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            raise ReviewConflict("decision_brief_not_found")
+        return row["content"]
+    finally:
+        connection.close()
+
+
+def mark_resolution_pending(
+    *,
+    workflow_id: str,
+    worker_id: str,
+    decision_id: str,
+    db_path: str | None = None,
+) -> None:
+    init_review_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        with connection:
+            connection.execute("BEGIN IMMEDIATE")
+            workflow = _owned_workflow(
+                connection,
+                workflow_id=workflow_id,
+                worker_id=worker_id,
+            )
+            if (
+                workflow["status"] != "resuming"
+                or workflow["decision_id"] != decision_id
+            ):
+                raise ReviewConflict("checkpoint_decision_mismatch")
+            cursor = connection.execute(
+                """
+                UPDATE review_workflows_v2
+                SET status = 'resolution_pending', updated_at = ?
+                WHERE workflow_id = ? AND status = 'resuming'
+                  AND lease_owner = ? AND decision_id = ?
+                """,
+                (_now(), workflow_id, worker_id, decision_id),
+            )
+            if cursor.rowcount != 1:
+                raise ReviewConflict("lease_not_owned")
+    finally:
+        connection.close()
+
+
+def mark_manual_recovery(
+    *,
+    workflow_id: str,
+    worker_id: str,
+    error_code: str,
+    db_path: str | None = None,
+) -> None:
+    init_review_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        with connection:
+            connection.execute("BEGIN IMMEDIATE")
+            workflow = _owned_workflow(
+                connection,
+                workflow_id=workflow_id,
+                worker_id=worker_id,
+            )
+            now = _now()
+            cursor = connection.execute(
+                """
+                UPDATE review_workflows_v2
+                SET status = 'manual_recovery', lease_owner = NULL,
+                    lease_expires_at = NULL, last_error_code = ?,
+                    updated_at = ?
+                WHERE workflow_id = ? AND lease_owner = ?
+                """,
+                (error_code, now, workflow_id, worker_id),
+            )
+            if cursor.rowcount != 1:
+                raise ReviewConflict("lease_not_owned")
+            _complete_attempt(
+                connection,
+                workflow=workflow,
+                worker_id=worker_id,
+                now=now,
+                outcome="manual_recovery",
+                error_code=error_code,
+            )
+    finally:
+        connection.close()
+
+
+def release_workflow_for_retry(
+    *,
+    workflow_id: str,
+    worker_id: str,
+    error_code: str,
+    max_attempts: int,
+    db_path: str | None = None,
+) -> None:
+    init_review_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        with connection:
+            connection.execute("BEGIN IMMEDIATE")
+            workflow = _owned_workflow(
+                connection,
+                workflow_id=workflow_id,
+                worker_id=worker_id,
+            )
+            now = _now()
+            if workflow["attempt_count"] >= max_attempts:
+                next_status = "manual_recovery"
+                outcome = "manual_recovery"
+            elif workflow["status"] == "resuming":
+                next_status = "resume_pending"
+                outcome = "retry"
+            elif workflow["status"] in {
+                "checkpoint_pending",
+                "resolution_pending",
+            }:
+                next_status = workflow["status"]
+                outcome = "retry"
+            else:
+                raise ReviewConflict("review_not_retryable")
+            cursor = connection.execute(
+                """
+                UPDATE review_workflows_v2
+                SET status = ?, lease_owner = NULL, lease_expires_at = NULL,
+                    last_error_code = ?, updated_at = ?
+                WHERE workflow_id = ? AND lease_owner = ?
+                """,
+                (
+                    next_status,
+                    error_code,
+                    now,
+                    workflow_id,
+                    worker_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ReviewConflict("lease_not_owned")
+            _complete_attempt(
+                connection,
+                workflow=workflow,
+                worker_id=worker_id,
+                now=now,
+                outcome=outcome,
+                error_code=error_code,
+            )
+    finally:
+        connection.close()
+
+
 def _resolution_record(row: sqlite3.Row) -> ReviewResolution:
     return ReviewResolution(
         resolution_id=row["resolution_id"],
@@ -433,7 +853,7 @@ def resolve_review(
                 return _resolution_record(existing)
 
             if (
-                workflow["status"] != "resuming"
+                workflow["status"] != "resolution_pending"
                 or workflow["lease_owner"] != worker_id
                 or not _lease_is_active(workflow["lease_expires_at"])
             ):
@@ -552,7 +972,7 @@ def resolve_review(
                 UPDATE review_workflows_v2
                 SET status = ?, lease_owner = NULL, lease_expires_at = NULL,
                     updated_at = ?
-                WHERE workflow_id = ? AND status = 'resuming'
+                WHERE workflow_id = ? AND status = 'resolution_pending'
                   AND lease_owner = ?
                 """,
                 (terminal_status, now, workflow_id, worker_id),

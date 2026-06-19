@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import logging
 import sqlite3
 import uuid
@@ -13,8 +14,11 @@ from api.review_repository import (
     complete_checkpoint_creation,
     get_decision,
     get_original_decision_brief,
+    list_reconcilable_workflows,
     mark_manual_recovery,
     mark_resolution_pending,
+    mark_waiting_decision,
+    release_expired_lease,
     release_workflow_for_retry,
     resolve_review,
 )
@@ -43,6 +47,64 @@ def bounded_worker_error_code(exc: Exception) -> str:
     return "review_worker_failed"
 
 
+def reconcile_review_workflows(
+    *,
+    db_path: str | None,
+    gate: ReviewGate,
+    now: datetime,
+) -> int:
+    """Reconcile application workflow state against opaque checkpoint position."""
+    reconciled = 0
+    for workflow in list_reconcilable_workflows(db_path=db_path, now=now):
+        try:
+            checkpoint = gate.inspect(workflow.checkpoint_thread_id)
+        except Exception:
+            mark_manual_recovery(
+                db_path=db_path,
+                workflow_id=workflow.workflow_id,
+                worker_id=None,
+                error_code="checkpoint_corrupt",
+            )
+            reconciled += 1
+            continue
+
+        if workflow.status == "checkpoint_pending":
+            if checkpoint.status == "interrupted":
+                mark_waiting_decision(
+                    db_path=db_path,
+                    workflow_id=workflow.workflow_id,
+                )
+                reconciled += 1
+            continue
+
+        if workflow.status == "resuming" and workflow.lease_expired(now):
+            if (
+                checkpoint.status == "completed"
+                and workflow.decision_id is not None
+                and checkpoint.decision_id == workflow.decision_id
+            ):
+                mark_resolution_pending(
+                    db_path=db_path,
+                    workflow_id=workflow.workflow_id,
+                    worker_id=None,
+                    decision_id=workflow.decision_id,
+                )
+            elif checkpoint.status == "interrupted":
+                release_expired_lease(
+                    db_path=db_path,
+                    workflow_id=workflow.workflow_id,
+                )
+            else:
+                mark_manual_recovery(
+                    db_path=db_path,
+                    workflow_id=workflow.workflow_id,
+                    worker_id=None,
+                    error_code="checkpoint_decision_mismatch",
+                )
+            reconciled += 1
+    return reconciled
+
+
 class ReviewWorker:
     def __init__(
         self,
@@ -61,8 +123,24 @@ class ReviewWorker:
         self.poll_seconds = poll_seconds
         self.stage_hook = stage_hook or (lambda stage, workflow: None)
         self._stop = asyncio.Event()
+        self._reconciled = False
 
     async def run_once(self) -> bool:
+        gate = ReviewGate(
+            self.checkpoint_path,
+            lambda decision_id: get_decision(
+                db_path=self.db_path,
+                decision_id=decision_id,
+            ),
+        )
+        if not self._reconciled:
+            await asyncio.to_thread(
+                reconcile_review_workflows,
+                db_path=self.db_path,
+                gate=gate,
+                now=datetime.now(timezone.utc),
+            )
+            self._reconciled = True
         claim = await asyncio.to_thread(
             claim_review_workflow,
             db_path=self.db_path,
@@ -73,13 +151,6 @@ class ReviewWorker:
             return False
         if claim.original_status != "checkpoint_pending":
             self.stage_hook("lease_acquired", claim)
-        gate = ReviewGate(
-            self.checkpoint_path,
-            lambda decision_id: get_decision(
-                db_path=self.db_path,
-                decision_id=decision_id,
-            ),
-        )
         try:
             if claim.original_status == "checkpoint_pending":
                 await asyncio.to_thread(

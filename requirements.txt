@@ -18,6 +18,7 @@ python-multipart>=0.0.32     # 文件上传支持
 
 # --- 数据库与存储 (Database) ---
 mysql-connector-python>=8.0.0 # [修正] MySQL 官方驱动 (用于 mysql_tools)
+langgraph-checkpoint-sqlite>=3.1.0
 # 注意：代码中使用的是 mysql.connector，对应这个包，而非 pymysql
 
 # --- 文件处理 (File Processing - upload_file_read_tool) ---

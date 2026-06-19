@@ -55,6 +55,17 @@ def test_talent_artifacts_are_deterministic_and_require_review_for_unknown_evide
     assert "missing_evidence_ref:finding-1:ev_missing" in first[0].triggers
     assert "missing_evidence_ref:claim-1:ev_missing" in first[0].triggers
     assert first[2] == second[2]
+    assert first[1].renderer_version == "2"
+    assert first[1].schema_version == "1"
+    assert first[1].canonicalization_version == "1"
+    assert [artifact["artifact_id"] for artifact in first[2]] == [
+        "decision-brief.json",
+        "decision-brief.md",
+    ]
+    assert [artifact["media_type"] for artifact in first[2]] == [
+        "application/json",
+        "text/markdown",
+    ]
 
 
 def test_talent_artifacts_require_review_for_findings_and_claims_without_evidence():

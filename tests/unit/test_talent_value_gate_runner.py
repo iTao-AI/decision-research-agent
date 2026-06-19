@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import argparse
 from dataclasses import replace
+from copy import deepcopy
 import json
 from datetime import datetime, timezone
 import os
@@ -162,16 +164,19 @@ def _outcome(
 
 def _paired_results(inputs, *, talent_outcome=None, generic_outcome=None):
     source_url = next(iter(inputs.source_urls))
+    talent_outcome = talent_outcome or _outcome(
+        "talent-hiring-signal", source_url=source_url
+    )
     talent = runner.serialize_outcome(
-        talent_outcome
-        or _outcome("talent-hiring-signal", source_url=source_url),
+        talent_outcome,
         elapsed_seconds=2.5,
     )
-    talent["review_bundle"] = {"run_id": talent["run_id"]}
-    talent["artifacts"] = [
-        {"artifact_id": "decision-brief.json"},
-        {"artifact_id": "decision-brief.md"},
-    ]
+    if talent_outcome.research_packets and talent_outcome.failure_kind is None:
+        talent = runner._enrich_with_talent_artifacts(
+            talent,
+            outcome=talent_outcome,
+            scope=inputs.scope.model_dump(mode="json"),
+        )
     return [
         {
             "repetition": 1,
@@ -268,6 +273,7 @@ def test_build_benchmark_bundle_marks_complete_pairs_ready_for_human_review():
         },
         "input_mismatch_count": 0,
         "artifact_failure_count": 0,
+        "renderer_contract_failure_count": 0,
         "disallowed_tool_failure_count": 0,
         "timeout_failure_count": 0,
         "recursion_limit_failure_count": 0,
@@ -510,6 +516,149 @@ def test_build_benchmark_bundle_allows_additional_talent_artifacts():
 
     assert bundle["completion"]["artifact_failure_count"] == 0
     assert bundle["benchmark_status"] == "ready_for_human_review"
+
+
+def _talent_artifacts(pairs):
+    return pairs[0]["runs"]["talent-hiring-signal"]["artifacts"]
+
+
+def _artifact(artifacts, artifact_id):
+    return next(item for item in artifacts if item["artifact_id"] == artifact_id)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda artifacts: artifacts.pop(0),
+        lambda artifacts: artifacts.pop(1),
+        lambda artifacts: artifacts.append(deepcopy(artifacts[0])),
+        lambda artifacts: _artifact(artifacts, "decision-brief.json").update(
+            kind="wrong"
+        ),
+        lambda artifacts: _artifact(artifacts, "decision-brief.md").update(
+            media_type="text/plain"
+        ),
+        lambda artifacts: _artifact(artifacts, "decision-brief.md").update(
+            content=""
+        ),
+        lambda artifacts: _artifact(artifacts, "decision-brief.json").update(
+            content="{not-json"
+        ),
+        lambda artifacts: _mutate_brief_json(
+            artifacts, renderer_version="1"
+        ),
+        lambda artifacts: _mutate_brief_json(
+            artifacts, content_hash="wrong-hash"
+        ),
+        lambda artifacts: _mutate_open_status_with_valid_hash(artifacts),
+        lambda artifacts: _artifact(artifacts, "decision-brief.md").update(
+            content="# mismatched markdown\n"
+        ),
+    ],
+    ids=(
+        "missing-json",
+        "missing-markdown",
+        "duplicate-json",
+        "wrong-kind",
+        "wrong-media-type",
+        "empty-content",
+        "malformed-json",
+        "renderer-v1",
+        "wrong-semantic-hash",
+        "unhashable-open-status",
+        "markdown-mismatch",
+    ),
+)
+def test_build_benchmark_bundle_fails_closed_for_renderer_contract(mutate):
+    inputs = runner.load_benchmark_inputs(SCOPE_PATH, FIXTURE_PATH)
+    pairs = _paired_results(inputs)
+    mutate(_talent_artifacts(pairs))
+
+    bundle = runner.build_benchmark_bundle(
+        inputs=inputs,
+        repetitions=1,
+        paired_results=pairs,
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
+    )
+
+    assert bundle["benchmark_status"] == "incomplete"
+    assert bundle["completion"]["renderer_contract_failure_count"] == 1
+    assert bundle["completion"]["ready_for_human_review"] is False
+
+
+def _mutate_brief_json(artifacts, **updates):
+    artifact = _artifact(artifacts, "decision-brief.json")
+    payload = json.loads(artifact["content"])
+    payload.update(updates)
+    artifact["content"] = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _mutate_open_status_with_valid_hash(artifacts):
+    from agent.talent_contracts import DecisionBrief
+    from api.decision_brief import with_content_hash
+
+    json_artifact = _artifact(artifacts, "decision-brief.json")
+    payload = json.loads(json_artifact["content"])
+    payload["evidence_summary"][0]["verification_status"] = []
+    brief = with_content_hash(DecisionBrief.model_validate(payload))
+    json_artifact["content"] = json.dumps(
+        brief.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    for artifact in artifacts:
+        artifact["content_hash"] = brief.content_hash
+
+
+@pytest.mark.parametrize(
+    ("benchmark_status", "expected_exit"),
+    [("ready_for_human_review", 0), ("incomplete", 1)],
+)
+def test_cli_writes_bundle_prints_path_and_uses_status_exit_code(
+    tmp_path,
+    monkeypatch,
+    capsys,
+    benchmark_status,
+    expected_exit,
+):
+    output = tmp_path / "bundle.json"
+    monkeypatch.setattr(
+        runner,
+        "parse_args",
+        lambda: argparse.Namespace(
+            scope=SCOPE_PATH,
+            fixture=FIXTURE_PATH,
+            repetitions=1,
+            per_run_timeout_seconds=600.0,
+            output=output,
+        ),
+    )
+
+    async def fake_run_value_gate(**kwargs):
+        return {
+            "benchmark_status": benchmark_status,
+            "completion": {"ready_for_human_review": expected_exit == 0},
+        }
+
+    monkeypatch.setattr(runner, "run_value_gate", fake_run_value_gate)
+
+    if expected_exit:
+        with pytest.raises(SystemExit) as exc_info:
+            runner.main()
+        assert exc_info.value.code == expected_exit
+    else:
+        assert runner.main() is None
+
+    assert json.loads(output.read_text(encoding="utf-8"))["benchmark_status"] == (
+        benchmark_status
+    )
+    assert str(output) in capsys.readouterr().out
 
 
 def test_build_benchmark_bundle_rejects_profile_mismatch_and_identity_collision():

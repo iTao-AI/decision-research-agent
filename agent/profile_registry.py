@@ -67,7 +67,7 @@ TALENT_PROFILE = ProfileSpec(
     claim_policy="candidate-claims-v1",
     review_policy="deterministic-v1",
     brief_schema_version="1",
-    renderer_version="1",
+    renderer_version="2",
     canonicalization_version="1",
 )
 

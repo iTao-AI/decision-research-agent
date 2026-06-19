@@ -21,6 +21,18 @@ def test_talent_profile_manifest_has_restricted_direct_researcher_policy():
     assert "convert_md_to_pdf" not in manifest["harness_policy"]["allowed_tools"]
 
 
+def test_talent_profile_uses_renderer_v2_without_changing_other_versions():
+    from agent.profile_registry import profile_registry
+
+    profile = profile_registry.get("talent-hiring-signal")
+
+    assert profile.renderer_version == "2"
+    assert profile.version == "1"
+    assert profile.brief_schema_version == "1"
+    assert profile.canonicalization_version == "1"
+    assert profile.harness_policy_id == "talent-restricted-v1"
+
+
 def test_agent_factory_compiles_each_immutable_profile_policy_once():
     from agent.profile_registry import AgentFactory, profile_registry
 

@@ -189,9 +189,17 @@ def test_finalize_run_transaction_persists_talent_artifacts_atomically(tmp_path)
     run = get_run(db_path=db_path, run_id=created["run_id"])
     assert run["research_packets"][0]["packet_id"] == "packet-1"
     assert run["review_bundle"]["review_id"] == review.review_id
-    assert get_artifact(
-        db_path=db_path, run_id=created["run_id"], artifact_id="decision-brief.json"
-    )["content_hash"] == artifacts[0]["content_hash"]
+    for expected in artifacts:
+        stored = get_artifact(
+            db_path=db_path,
+            run_id=created["run_id"],
+            artifact_id=expected["artifact_id"],
+        )
+        assert stored["artifact_id"] == expected["artifact_id"]
+        assert stored["kind"] == expected["kind"]
+        assert stored["media_type"] == expected["media_type"]
+        assert stored["content"] == expected["content"]
+        assert stored["content_hash"] == expected["content_hash"]
 
 
 def test_same_evidence_can_be_persisted_in_two_runs_without_id_collision(tmp_path):

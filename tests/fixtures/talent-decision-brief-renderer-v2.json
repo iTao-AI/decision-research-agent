@@ -1,0 +1,218 @@
+{
+  "schema_version": "1",
+  "run_id": "run-renderer-v2",
+  "profile_id": "talent-hiring-signal",
+  "profile_version": "1",
+  "input_snapshot_hash": "input-snapshot-hash",
+  "renderer_version": "2",
+  "canonicalization_version": "1",
+  "scope": {
+    "target_roles": [
+      "AI Agent Engineer",
+      "RAG Engineer"
+    ],
+    "target_companies": [
+      "Example Company"
+    ],
+    "time_window": {
+      "start": "2026-06-01",
+      "end": "2026-06-09"
+    },
+    "declared_samples": [
+      {
+        "sample_id": "sample-1",
+        "source_type": "provided_aggregate",
+        "reference": "talent-hiring-signal-v1"
+      }
+    ],
+    "allowed_source_types": [
+      "provided_aggregate"
+    ],
+    "research_questions": [
+      "Which capabilities recur?"
+    ],
+    "requested_outputs": [
+      "decision_brief"
+    ]
+  },
+  "executive_summary": "Declared-scope research produced 6 findings and 2 candidate claims.",
+  "findings": [
+    {
+      "finding_id": "finding-a",
+      "research_question_id": "question-1",
+      "statement": "Agents need Python | orchestration <script>alert(1)</script>\n# forged heading",
+      "evidence_refs": [
+        "ev-a"
+      ],
+      "sample_scope": "Declared sample A",
+      "confidence": 0.91,
+      "evidence_gaps": [],
+      "contradictions": [],
+      "limitations": [
+        "One bounded snapshot."
+      ]
+    },
+    {
+      "finding_id": "finding-missing",
+      "research_question_id": "question-1",
+      "statement": "A missing evidence reference must fail closed.",
+      "evidence_refs": [
+        "ev-missing"
+      ],
+      "sample_scope": "Declared sample B",
+      "confidence": 0.99,
+      "evidence_gaps": [
+        "The referenced record is absent."
+      ],
+      "contradictions": [
+        "Another posting uses a different title."
+      ],
+      "limitations": []
+    },
+    {
+      "finding_id": "finding-b",
+      "research_question_id": "question-1",
+      "statement": "Tool governance appears in the declared sample.",
+      "evidence_refs": [
+        "ev-b"
+      ],
+      "sample_scope": "Declared sample C",
+      "confidence": 0.72,
+      "evidence_gaps": [],
+      "contradictions": [],
+      "limitations": []
+    },
+    {
+      "finding_id": "finding-unverified",
+      "research_question_id": "question-1",
+      "statement": "An unverified source cannot enter the snapshot.",
+      "evidence_refs": [
+        "ev-u"
+      ],
+      "sample_scope": "Declared sample D",
+      "confidence": 0.98,
+      "evidence_gaps": [
+        "Source verification is pending."
+      ],
+      "contradictions": [],
+      "limitations": []
+    },
+    {
+      "finding_id": "finding-c",
+      "research_question_id": "question-1",
+      "statement": "Evaluation discipline is explicitly requested.",
+      "evidence_refs": [
+        "ev-c"
+      ],
+      "sample_scope": "Declared sample E",
+      "confidence": 0.66,
+      "evidence_gaps": [],
+      "contradictions": [],
+      "limitations": []
+    },
+    {
+      "finding_id": "finding-d",
+      "research_question_id": "question-1",
+      "statement": "This fourth eligible finding remains appendix-only.",
+      "evidence_refs": [
+        "ev-d"
+      ],
+      "sample_scope": "Declared sample F",
+      "confidence": 0.95,
+      "evidence_gaps": [],
+      "contradictions": [],
+      "limitations": []
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "claim-pending",
+      "text": "Candidate claim ![image](https://evil.example/x) <b>pending</b>",
+      "claim_type": "hiring_signal",
+      "finding_refs": [
+        "finding-a"
+      ],
+      "evidence_refs": [
+        "ev-a"
+      ],
+      "confidence": 0.88,
+      "citation_status": "cited",
+      "verification_status": "unverified",
+      "review_status": "pending",
+      "conflict_status": "none",
+      "limitations": [
+        "Candidate status only."
+      ]
+    },
+    {
+      "claim_id": "claim-conflicting",
+      "text": "Candidate claim remains separate even when its evidence is verified.",
+      "claim_type": "hiring_signal",
+      "finding_refs": [
+        "finding-b"
+      ],
+      "evidence_refs": [
+        "ev-b"
+      ],
+      "confidence": 0.77,
+      "citation_status": "cited",
+      "verification_status": "verified",
+      "review_status": "required",
+      "conflict_status": "conflicting",
+      "limitations": []
+    }
+  ],
+  "evidence_summary": [
+    {
+      "evidence_id": "ev-a",
+      "source_url": "https://example.com/a",
+      "snippet": "Python and orchestration",
+      "verification_status": "verified"
+    },
+    {
+      "evidence_id": "ev-b",
+      "source_url": "https://example.com/b",
+      "snippet": "Tool governance",
+      "verification_status": "verified"
+    },
+    {
+      "evidence_id": "ev-c",
+      "source_url": "https://example.com/c",
+      "snippet": "Evaluation discipline",
+      "verification_status": "verified"
+    },
+    {
+      "evidence_id": "ev-d",
+      "source_url": "https://example.com/d",
+      "snippet": "A fourth verified record",
+      "verification_status": "verified"
+    },
+    {
+      "evidence_id": "ev-u",
+      "source_url": "https://example.com/unverified",
+      "snippet": "Pending verification",
+      "verification_status": "unverified"
+    }
+  ],
+  "conflicts": [],
+  "limitations": [
+    "Five evidence snapshots only.",
+    "Do not extrapolate to the full hiring market."
+  ],
+  "recommendations": [],
+  "review_summary": {
+    "status": "required",
+    "required_before_delivery": true,
+    "triggers": [
+      "missing_evidence_ref:finding-missing:ev-missing",
+      "conflicting_sources:claim-conflicting"
+    ]
+  },
+  "quality_summary": {
+    "finding_count": 999,
+    "claim_count": "invalid",
+    "evidence_count": null
+  },
+  "generated_at": "2026-06-18T12:00:00Z",
+  "content_hash": ""
+}

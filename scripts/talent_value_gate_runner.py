@@ -22,7 +22,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from agent.run_result import AgentRunResult
-from agent.talent_contracts import ResearchScope
+from agent.talent_contracts import DecisionBrief, ResearchScope
+from api.decision_brief import render_markdown, with_content_hash
 
 
 _TALENT_PROFILE_ID = "talent-hiring-signal"
@@ -268,6 +269,55 @@ def _run_has_disallowed_talent_tool(run: dict[str, Any]) -> bool:
     )
 
 
+def _run_has_valid_renderer_contract(run: dict[str, Any]) -> bool:
+    artifacts = run.get("artifacts")
+    if not isinstance(artifacts, list):
+        return False
+    expected = {
+        "decision-brief.json": ("decision_brief_json", "application/json"),
+        "decision-brief.md": ("decision_brief_markdown", "text/markdown"),
+    }
+    selected: dict[str, dict[str, Any]] = {}
+    for artifact_id, (kind, media_type) in expected.items():
+        matches = [
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, dict)
+            and artifact.get("artifact_id") == artifact_id
+        ]
+        if len(matches) != 1:
+            return False
+        artifact = matches[0]
+        if artifact.get("kind") != kind or artifact.get("media_type") != media_type:
+            return False
+        if not isinstance(artifact.get("content"), str) or not artifact["content"]:
+            return False
+        if (
+            not isinstance(artifact.get("content_hash"), str)
+            or not artifact["content_hash"]
+        ):
+            return False
+        selected[artifact_id] = artifact
+
+    try:
+        brief = DecisionBrief.model_validate_json(
+            selected["decision-brief.json"]["content"]
+        )
+        if brief.renderer_version != "2":
+            return False
+        expected_hash = with_content_hash(brief).content_hash
+        if brief.content_hash != expected_hash:
+            return False
+        if any(
+            artifact["content_hash"] != expected_hash
+            for artifact in selected.values()
+        ):
+            return False
+        return selected["decision-brief.md"]["content"] == render_markdown(brief)
+    except (TypeError, ValueError):
+        return False
+
+
 def build_benchmark_bundle(
     *,
     inputs: BenchmarkInputs,
@@ -332,6 +382,10 @@ def build_benchmark_bundle(
         )
         for run in runs
     )
+    renderer_contract_failure_count = sum(
+        _is_talent_run(run) and not _run_has_valid_renderer_contract(run)
+        for run in runs
+    )
     disallowed_tool_failure_count = sum(
         _run_has_disallowed_talent_tool(run) for run in runs
     )
@@ -366,6 +420,7 @@ def build_benchmark_bundle(
         and evidence_ref_failure_count == 0
         and input_mismatch_count == 0
         and artifact_failure_count == 0
+        and renderer_contract_failure_count == 0
         and disallowed_tool_failure_count == 0
         and timeout_failure_count == 0
         and recursion_limit_failure_count == 0
@@ -403,6 +458,7 @@ def build_benchmark_bundle(
             "out_of_scope_evidence_by_profile": out_of_scope_evidence_by_profile,
             "input_mismatch_count": input_mismatch_count,
             "artifact_failure_count": artifact_failure_count,
+            "renderer_contract_failure_count": renderer_contract_failure_count,
             "disallowed_tool_failure_count": disallowed_tool_failure_count,
             "timeout_failure_count": timeout_failure_count,
             "recursion_limit_failure_count": recursion_limit_failure_count,
@@ -632,7 +688,10 @@ def main() -> None:
         json.dumps(bundle, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    print(f"Output: {args.output}")
     print(json.dumps(bundle["completion"], ensure_ascii=False, indent=2))
+    if bundle["benchmark_status"] != "ready_for_human_review":
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -212,7 +212,9 @@ def _run_row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def get_run(*, run_id: str, db_path: str | None = None) -> dict[str, Any] | None:
-    init_run_schema(db_path)
+    from api.review_repository import get_review_projection, init_review_schema
+
+    init_review_schema(db_path)
     conn = _connect(db_path)
     try:
         row = conn.execute(
@@ -252,6 +254,10 @@ def get_run(*, run_id: str, db_path: str | None = None) -> dict[str, Any] | None
             (run_id,),
         ).fetchall()
         result["artifacts"] = [dict(item) for item in artifacts]
+        review_projection = get_review_projection(db_path=db_path, run_id=run_id)
+        result["review_workflow"] = review_projection["workflow"]
+        result["review_decision"] = review_projection["decision"]
+        result["review_resolution"] = review_projection["resolution"]
         return result
     finally:
         conn.close()
@@ -271,6 +277,7 @@ def finalize_run_transaction(
     research_packets: list[Any] | None = None,
     review_bundle: Any | None = None,
     artifacts: list[dict[str, Any]] | None = None,
+    review_workflow: dict[str, str] | None = None,
 ) -> bool:
     """Atomically persist terminal run, segment, and evidence state."""
     if execution_status not in EXECUTION_STATUSES:
@@ -282,7 +289,9 @@ def finalize_run_transaction(
     if not allowed_previous_statuses:
         raise ValueError("allowed_previous_statuses must not be empty")
 
-    init_run_schema(db_path)
+    from api.review_repository import init_review_schema
+
+    init_review_schema(db_path)
     conn = _connect(db_path)
     now = _now()
     placeholders = ", ".join("?" for _ in allowed_previous_statuses)
@@ -382,6 +391,33 @@ def finalize_run_transaction(
                         review_bundle.revision,
                         review_bundle.status,
                         review_bundle.model_dump_json(),
+                        now,
+                    ),
+                )
+            if review_workflow is not None:
+                if (
+                    review_bundle is None
+                    or not review_bundle.required_before_delivery
+                ):
+                    raise ValueError(
+                        "review_workflow requires a required review_bundle"
+                    )
+                conn.execute(
+                    """
+                    INSERT INTO review_workflows_v2 (
+                        workflow_id, run_id, review_id, review_revision,
+                        checkpoint_thread_id, status, post_review_segment_id,
+                        attempt_count, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 'checkpoint_pending', ?, 0, ?, ?)
+                    """,
+                    (
+                        review_workflow["workflow_id"],
+                        run_id,
+                        review_bundle.review_id,
+                        review_bundle.revision,
+                        review_workflow["checkpoint_thread_id"],
+                        review_workflow["post_review_segment_id"],
+                        now,
                         now,
                     ),
                 )

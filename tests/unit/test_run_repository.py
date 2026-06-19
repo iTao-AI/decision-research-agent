@@ -202,6 +202,138 @@ def test_finalize_run_transaction_persists_talent_artifacts_atomically(tmp_path)
         assert stored["content_hash"] == expected["content_hash"]
 
 
+def test_required_review_finalization_seeds_workflow_atomically(tmp_path):
+    from agent.talent_contracts import ReviewBundle
+    from api.review_models import (
+        checkpoint_thread_id,
+        post_review_segment_id,
+        review_workflow_id,
+    )
+    from api.run_repository import (
+        create_run,
+        finalize_run_transaction,
+        get_run,
+        transition_run,
+    )
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(
+        db_path=db_path,
+        thread_id="thread-1",
+        query="query",
+        profile_id="talent-hiring-signal",
+    )
+    assert transition_run(
+        db_path=db_path,
+        run_id=created["run_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="running",
+    )
+    review = ReviewBundle(
+        review_id="review_1",
+        run_id=created["run_id"],
+        revision=1,
+        status="required",
+        claim_snapshots=[],
+        evidence_snapshots=[],
+        triggers=["manual_review_required"],
+        recommended_actions=[],
+        required_before_delivery=True,
+    )
+    workflow_id = review_workflow_id(
+        created["run_id"],
+        review.review_id,
+        review.revision,
+    )
+
+    assert finalize_run_transaction(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=1,
+        allowed_previous_statuses={"running"},
+        execution_status="completed",
+        review_status="required",
+        delivery_status="review_required",
+        evidence_entries=[],
+        review_bundle=review,
+        review_workflow={
+            "workflow_id": workflow_id,
+            "checkpoint_thread_id": checkpoint_thread_id(workflow_id),
+            "post_review_segment_id": post_review_segment_id(
+                created["run_id"],
+                review.review_id,
+                review.revision,
+            ),
+        },
+    )
+
+    run = get_run(db_path=db_path, run_id=created["run_id"])
+    assert run["state_version"] == 2
+    assert run["review_workflow"]["status"] == "checkpoint_pending"
+
+
+def test_review_workflow_seed_failure_rolls_back_finalization(tmp_path):
+    from agent.talent_contracts import ReviewBundle
+    from api.run_repository import (
+        create_run,
+        finalize_run_transaction,
+        get_run,
+        transition_run,
+    )
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(
+        db_path=db_path,
+        thread_id="thread-1",
+        query="query",
+        profile_id="talent-hiring-signal",
+    )
+    assert transition_run(
+        db_path=db_path,
+        run_id=created["run_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="running",
+    )
+    review = ReviewBundle(
+        review_id="review_1",
+        run_id=created["run_id"],
+        revision=1,
+        status="required",
+        claim_snapshots=[],
+        evidence_snapshots=[],
+        triggers=["manual_review_required"],
+        recommended_actions=[],
+        required_before_delivery=True,
+    )
+
+    with pytest.raises(KeyError, match="checkpoint_thread_id"):
+        finalize_run_transaction(
+            db_path=db_path,
+            run_id=created["run_id"],
+            segment_id=created["segment_id"],
+            expected_state_version=1,
+            allowed_previous_statuses={"running"},
+            execution_status="completed",
+            review_status="required",
+            delivery_status="review_required",
+            evidence_entries=[],
+            review_bundle=review,
+            review_workflow={
+                "workflow_id": "rwf_broken",
+                "post_review_segment_id": "segment_broken",
+            },
+        )
+
+    run = get_run(db_path=db_path, run_id=created["run_id"])
+    assert run["execution_status"] == "running"
+    assert run["state_version"] == 1
+    assert run["review_bundle"] is None
+    assert run["review_workflow"] is None
+
+
 def test_same_evidence_can_be_persisted_in_two_runs_without_id_collision(tmp_path):
     from agent.research import EvidenceEntry
     from api.run_repository import create_run, finalize_run_transaction, get_run

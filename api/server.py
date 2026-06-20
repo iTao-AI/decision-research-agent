@@ -68,6 +68,13 @@ from api.review_config import (
 from api.review_worker import ReviewWorker
 
 
+def _is_review_api_path(path: str) -> bool:
+    return path == "/api/reviews" or path.startswith("/api/reviews/") or (
+        path.startswith("/api/runs/")
+        and "/reviews/" in path
+    )
+
+
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Middleware that checks X-API-Key header against API_SECRET in .env.
 
@@ -80,12 +87,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if (
-            request.method == "POST"
-            and path.startswith("/api/runs/")
-            and "/reviews/" in path
-            and path.endswith("/decisions")
-        ):
+        if _is_review_api_path(path):
             return await call_next(request)
 
         # Skip auth for docs and health endpoints

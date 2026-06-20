@@ -4,26 +4,26 @@
 aiofiles==25.1.0
 # Intentional CI/Docker compatibility baseline. Runtime adoption of available
 # capabilities such as skills and AsyncSubAgent remains behind the P2 value gate.
-deepagents==0.6.10
-fastapi==0.137.0
-langchain==1.3.9
+deepagents==0.6.11
+fastapi==0.138.0
+langchain==1.3.10
 langchain-community==0.4.2
-langchain-core==1.4.7
+langchain-core==1.4.8
 langchain-openai==1.3.2
-langgraph==1.2.5
+langgraph==1.2.6
 langgraph-checkpoint==4.1.1
 langgraph-checkpoint-sqlite==3.1.0
-langsmith==0.8.15
+langsmith==0.8.18
 Markdown==3.10.2
 mysql-connector-python==9.7.0
-openai==2.41.1
+openai==2.43.0
 openpyxl==3.1.5
 pandas==3.0.3
 pydantic==2.13.4
 pypdf==6.13.3
 # RAGFlow 0.13.0 requires pytest 8.x on the Python 3.11 CI/Docker runtime.
 pytest==8.4.2; python_version < "3.12"
-pytest==9.1.0; python_version >= "3.12"
+pytest==9.1.1; python_version >= "3.12"
 pytest-asyncio==1.4.0
 python-docx==1.2.0
 python-dotenv==1.2.2

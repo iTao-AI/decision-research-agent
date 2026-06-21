@@ -34,6 +34,7 @@ COPY prompt/ prompt/
 COPY tools/ tools/
 COPY utils/ utils/
 COPY scripts/ scripts/
+COPY docs/evidence/durable-hitl-gate-report.json docs/evidence/durable-hitl-gate-report.json
 
 EXPOSE 8000
 

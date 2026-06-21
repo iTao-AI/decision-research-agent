@@ -15,10 +15,12 @@ readability milestone. They require separate evidence, design, and approval.
 
 - Evaluate JD recommendations, interview verification questions, and candidate
   evaluation only with a separately approved evidence and review policy.
-- Keep P1B durable HITL disabled by default after the bounded feasibility gate.
-  Production enablement still requires a separately approved rollout,
-  authorization, operations, and user-facing workflow decision.
-- Do not begin P1C unless the recorded thirteen-gate report is `PASS`.
+- [x] Controlled single-node review API and CLI workflow.
+- [ ] React frontend migration and review UI.
+- [ ] Multi-user identity/RBAC.
+- [ ] Shared database and multi-instance worker coordination.
+- Keep durable HITL disabled by default. Enable P1C only inside the documented
+  controlled single-node boundary after `doctor` and all thirteen gates pass.
 
 ## Delivery Channels
 

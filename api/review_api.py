@@ -1,21 +1,34 @@
 from __future__ import annotations
 
 import asyncio
+from email.message import Message
 import hashlib
 import hmac
 import os
-from typing import Any
 import uuid
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
+from starlette.requests import ClientDisconnect
 
-from api.review_models import ReviewDecisionRequest, durable_hitl_enabled
-from api.review_repository import ReviewConflict, accept_review_decision
+from api.review_models import (
+    BoundedId,
+    ReviewDecisionRequest,
+    ReviewListQuery,
+    decode_review_cursor,
+    durable_hitl_enabled,
+)
+from api.review_repository import (
+    ReviewConflict,
+    accept_review_decision,
+    get_review_detail,
+    list_review_workflows,
+)
 
 
 router = APIRouter()
+_BOUNDED_ID_ADAPTER = TypeAdapter(BoundedId)
 
 
 def _error(
@@ -42,14 +55,18 @@ def _error(
     )
 
 
-def _authenticate(request: Request, *, run_id: str):
+def authenticate_review_request(
+    request: Request,
+    *,
+    run_id: str | None = None,
+):
     if not durable_hitl_enabled():
         return None, _error(
             404,
             code="durable_hitl_disabled",
-            problem="Durable review decisions are disabled.",
-            cause="The P1B feature flag is false.",
-            fix="Use the existing non-interrupt review bundle.",
+            problem="Durable review is disabled.",
+            cause="The feature flag is false.",
+            fix="Enable the controlled single-node review configuration first.",
             retryable=False,
             run_id=run_id,
         )
@@ -59,8 +76,8 @@ def _authenticate(request: Request, *, run_id: str):
             503,
             code="review_auth_not_configured",
             problem="Durable review authentication is not configured.",
-            cause="API_SECRET is empty.",
-            fix="Configure API_SECRET before enabling durable HITL.",
+            cause="API_SECRET is empty after startup.",
+            fix="Disable the feature and restart with API_SECRET configured.",
             retryable=False,
             run_id=run_id,
         )
@@ -79,6 +96,125 @@ def _authenticate(request: Request, *, run_id: str):
         f"decision-research-agent-review:{secret}".encode()
     ).hexdigest()
     return fingerprint, None
+
+
+def _is_json_content_type(value: str | None) -> bool:
+    if value is None:
+        return True
+    if not value:
+        return False
+    message = Message()
+    message["content-type"] = value
+    if message.get_content_maintype() != "application":
+        return False
+    subtype = message.get_content_subtype()
+    return subtype == "json" or subtype.endswith("+json")
+
+
+def _validate_review_identity(
+    *,
+    run_id: str,
+    review_id: str,
+):
+    try:
+        return (
+            _BOUNDED_ID_ADAPTER.validate_python(run_id),
+            _BOUNDED_ID_ADAPTER.validate_python(review_id),
+        ), None
+    except ValidationError:
+        return None, _error(
+            422,
+            code="invalid_review_identity",
+            problem="The review identity is invalid.",
+            cause="The run or review ID failed the bounded identity contract.",
+            fix="Use bounded run and review IDs from the review API.",
+            retryable=False,
+        )
+
+
+@router.get("/api/reviews")
+async def list_reviews(request: Request):
+    _, error = authenticate_review_request(request)
+    if error is not None:
+        return error
+    try:
+        query = ReviewListQuery.model_validate(dict(request.query_params))
+        cursor = (
+            decode_review_cursor(query.cursor)
+            if query.cursor is not None
+            else None
+        )
+    except (ValidationError, ValueError):
+        return _error(
+            422,
+            code="invalid_review_query",
+            problem="The review query is invalid.",
+            cause="Status, limit, or cursor failed the bounded contract.",
+            fix="Use a documented workflow status, limit 1-100, and returned cursor.",
+            retryable=False,
+        )
+    return await asyncio.to_thread(
+        list_review_workflows,
+        status=query.status,
+        limit=query.limit,
+        cursor=cursor,
+    )
+
+
+@router.get("/api/reviews/health")
+async def review_health(request: Request):
+    _, error = authenticate_review_request(request)
+    if error is not None:
+        return error
+    readiness = getattr(request.app.state, "review_runtime_readiness", None)
+    task = getattr(request.app.state, "review_worker_task", None)
+    worker_running = task is not None and not task.done()
+    if readiness is None or not readiness.ready or not worker_running:
+        return _error(
+            503,
+            code="review_runtime_not_ready",
+            problem="The controlled review runtime is not ready.",
+            cause="A required worker, schema, checkpoint, or release gate is unavailable.",
+            fix="Disable the feature, run doctor, and correct the reported readiness check.",
+            retryable=True,
+        )
+    return {
+        "status": "ok",
+        "feature_enabled": True,
+        "worker_running": worker_running,
+        "application_schema_ready": readiness.application_schema_ready,
+        "checkpoint_compatible": readiness.checkpoint_compatible,
+        "gate_report_status": readiness.gate_report_status,
+    }
+
+
+@router.get("/api/runs/{run_id}/reviews/{review_id}")
+async def show_review(run_id: str, review_id: str, request: Request):
+    _, error = authenticate_review_request(request, run_id=run_id)
+    if error is not None:
+        return error
+    identity, error = _validate_review_identity(
+        run_id=run_id,
+        review_id=review_id,
+    )
+    if error is not None:
+        return error
+    run_id, review_id = identity
+    detail = await asyncio.to_thread(
+        get_review_detail,
+        run_id=run_id,
+        review_id=review_id,
+    )
+    if detail is None:
+        return _conflict_response("review_not_found", run_id=run_id)
+    if detail["workflow"]["status"] == "manual_recovery":
+        detail["operator_guidance"] = {
+            "code": detail["workflow"]["last_error_code"],
+            "docs_url": (
+                "/docs/operations/controlled-review-workflow#manual-recovery"
+            ),
+        }
+    return detail
 
 
 def _conflict_response(code: str, *, run_id: str) -> JSONResponse:
@@ -157,20 +293,38 @@ def _conflict_response(code: str, *, run_id: str) -> JSONResponse:
     "/api/runs/{run_id}/reviews/{review_id}/decisions",
     status_code=202,
     include_in_schema=True,
-    deprecated=True,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"title": "Body"},
+                },
+            },
+        },
+    },
 )
 async def submit_review_decision(
     run_id: str,
     review_id: str,
     request: Request,
-    body: Any = Body(...),
 ):
-    actor, error = _authenticate(request, run_id=run_id)
+    actor, error = authenticate_review_request(request, run_id=run_id)
     if error is not None:
         return error
+    identity, error = _validate_review_identity(
+        run_id=run_id,
+        review_id=review_id,
+    )
+    if error is not None:
+        return error
+    run_id, review_id = identity
     try:
+        if not _is_json_content_type(request.headers.get("content-type")):
+            raise ValueError("invalid_review_content_type")
+        body = await request.json()
         validated = ReviewDecisionRequest.model_validate(body)
-    except ValidationError:
+    except (ClientDisconnect, RuntimeError, ValueError):
         return _error(
             422,
             code="invalid_review_decision",

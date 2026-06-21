@@ -1,170 +1,242 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file defines the execution rules for Codex in this repository.
 
-## Project Overview
+## Project Purpose
 
-Decision Research Agent (compatibility service ID: `deep-search-agent`) is an autonomous planning agent built on LangGraph. Users ask open-ended questions in natural language; the main agent autonomously plans, delegates to specialized sub-agents (network search, database query, knowledge base retrieval), synthesizes results, and generates reports in Markdown/PDF format.
+Decision Research Agent is an evidence-driven research service built on
+LangGraph and DeepAgents. It turns open-ended questions into source-backed
+findings, auditable research runs, and deterministic decision briefs.
 
-## Commands
+Current verified slices include:
 
-### Backend (Python 3.11+)
+- Run-scoped execution using `thread_id`, `run_id`, and `segment_id`.
+- Evidence preservation across completion, timeout, and cancellation paths.
+- Application-owned `ResearchRun` and `EvidenceLedger` persistence.
+- A restricted `talent-hiring-signal` profile with deterministic artifacts.
+- A fixed-sample Talent benchmark whose P1A value gate passed.
+- A default-disabled single-node SQLite durable HITL feasibility path whose
+  13 durability and safety gates passed.
+
+The canonical repository and technical identifier are
+`decision-research-agent`. The exact `/health` service value
+`deep-search-agent` and documented legacy aliases remain compatibility
+contracts.
+
+## Source Of Truth
+
+Use this priority order:
+
+1. Actual code, tests, migrations, configuration, and command output.
+2. Accepted decisions in `docs/decisions/`.
+3. Current contracts in `spec/`.
+4. Current public specs and plans in `docs/superpowers/`.
+5. Operations and evidence documents.
+6. Issues, PR descriptions, historical plans, and external artifacts.
+
+If sources conflict, report the conflict and follow current implementation
+unless the task explicitly changes it. Do not silently apply an older plan.
+
+`docs/evidence/run-log.md` is the truth source for partial-versus-complete
+runtime evidence. A cited Evidence entry is not independently verified unless
+its verification state explicitly says so.
+
+## Read Only What The Change Needs
+
+Start with `AGENTS.md`, `git status`, the affected code, and relevant tests.
+Then read the smallest applicable set:
+
+| Change | Additional reading |
+|---|---|
+| LangGraph, DeepAgents, model binding, structured output | `agent/main_agent.py`, `agent/profile_agents.py`, `agent/llm.py`, `langchain-dev-guide`, current official docs through Context7 |
+| Run identity, persistence, concurrency | `docs/decisions/run-identity-boundaries.md` and affected repositories/tests |
+| Evidence or finalization | `agent/run_result.py`, `api/task_finalizer.py`, lifecycle tests |
+| Talent profile or benchmark | profile/contracts/artifact/review modules and benchmark tests |
+| Durable review or HITL | `docs/operations/durable-hitl-feasibility.md`, gate report, affected review modules/tests |
+| REST, WebSocket, Tool Client | `spec/api-contract.md`, `docs/AGENT_INTEGRATION.md`, contract tests |
+| Frontend | `frontend/README.md`, affected API contract, current Vue code |
+| Public metric or claim | producing command/artifact and its evidence boundary |
+
+Do not load every listed document for an unrelated or local change. If a
+document is missing or stale, inspect implementation and tests instead.
+
+## Architecture Boundaries
+
+- The application database is authoritative for research runs, evidence,
+  review workflow, decisions, leases, resolution state, and artifact metadata.
+- The LangGraph checkpointer stores review-gate execution position. It is not
+  the business ledger.
+- LangSmith is privacy-first diagnostic tracing. It does not decide business
+  readiness, Evidence authority, or delivery.
+- `thread_id` groups caller conversation and remains a compatibility identity.
+  `run_id` owns one isolated execution. Do not mechanically rename them.
+- Run-scoped workspace, SharedContext, tokens, telemetry, monitor routing, and
+  search cache must not leak across concurrent runs.
+- Timeout, cancellation, completion, and stale writers must use fenced atomic
+  finalization without losing frozen Evidence.
+- Talent execution stays limited to approved tools and declared Evidence. It
+  must not gain upload or arbitrary filesystem access.
+- Talent findings and claims require non-empty Evidence references resolving
+  to the current run. Missing or invented references fail closed.
+- Canonical Talent artifacts remain deterministic for equivalent accepted
+  inputs.
+- Durable HITL remains disabled by default. The current gate proves bounded
+  single-node SQLite feasibility, not production readiness.
+- Approval permits delivery but does not verify Evidence. Rejection blocks
+  delivery and does not automatically start new research.
+- Do not treat LangSmith as a ledger, introduce runtime Skills or Async
+  Subagents, migrate Vue to React, or expand to multi-tenant infrastructure
+  unless the task explicitly approves that scope.
+- Do not rename compatibility identifiers, API paths, persisted identities,
+  profile IDs, or benchmark IDs as incidental cleanup.
+
+Changing these boundaries requires an ADR or an explicit update to an existing
+decision document in the same PR.
+
+## Risk-Based Execution
+
+Use the lightest workflow that gives enough confidence.
+
+### Level 1: Local Change
+
+Examples: wording, comments, narrow tests, dependency metadata, local refactor
+with no behavior change.
+
+- Inspect the affected files.
+- Make the smallest change.
+- Run focused checks and `git diff --check`.
+- No worktree, design document, TDD cycle, full suite, Autoplan, or GStack
+  review is required unless the change reveals wider risk.
+
+### Level 2: Behavior Change
+
+Examples: bug fix, API behavior, persistence logic, Agent/tool behavior.
+
+- Add a failing regression or behavior test first.
+- Implement the smallest fix.
+- Run focused tests, then broader tests matching the blast radius.
+- Update affected documentation in the same change.
+- Use an isolated worktree when the change is substantial or the checkout is
+  not clean.
+
+### Level 3: Contract Or Architecture Change
+
+Examples: public API/schema, identity model, evidence lifecycle, durable HITL,
+cross-module behavior, multiple planned PRs.
+
+- Confirm or write an approved spec/plan.
+- Use an isolated worktree and TDD.
+- Update ADRs or public contracts.
+- Run full relevant verification.
+- Use Autoplan, `gstack-review`, documentation audit, or an independent second
+  view only when their expected value justifies their cost or the user requests
+  them.
+
+Do not force small work through Level 3. If scope grows, explicitly raise the
+level instead of silently expanding the process.
+
+## Subagent Policy
+
+Coding-workflow subagents are disabled by default because they add token,
+context, and latency cost.
+
+- Do not invoke implementation, research, testing, review, or documentation
+  subagents.
+- Do not invoke `superpowers:subagent-driven-development`.
+- Do not delegate merely because work could be parallelized.
+- Do not automatically request a second-model review.
+- Execute sequentially in the current Agent and keep context focused.
+
+Use a subagent only when the user explicitly authorizes it for the current
+task. Approval does not carry forward. Parallel read-only tool calls by the
+current Agent are allowed and are not subagent delegation.
+
+This policy governs development workflow. It does not remove the product's
+existing runtime research sub-agent architecture.
+
+## Working Rules
+
+- Codex owns planning, implementation, testing, documentation, PR preparation,
+  and final verification.
+- Complete safe, obvious steps without asking the user to remember the process.
+- Ask only when missing information creates meaningful implementation risk or
+  an action requires authorization.
+- Investigate root cause before fixing unexplained failures.
+- Do not over-plan or continue expanding after acceptance criteria are met.
+- Do not overwrite, revert, or delete unrelated user changes.
+- Never claim a test, review, benchmark, build, push, PR, merge, or deployment
+  without actual evidence.
+
+## Testing And Verification
+
+- Behavior changes require TDD; bug fixes require a regression test.
+- Use unit tests for deterministic behavior, contract tests for schemas, and
+  integration tests for persistence, concurrency, API, and worker boundaries.
+- Mock remote providers in required CI. Keep real-provider and benchmark runs
+  explicit and separate.
+- Run focused tests during implementation. Run the full suite when shared
+  behavior or multiple modules are affected.
+
+Common commands:
 
 ```bash
-# Install dependencies
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python -m pytest -q
 
-# Start the backend server (FastAPI + Uvicorn on port 8000)
-python api/server.py
-```
-
-### Frontend (Node.js 20.19+ or 22.12+)
-
-```bash
 cd frontend
-npm install
-npm run dev          # Start Vite dev server
-npm run build        # Type-check + production build
+npm ci
+npm run build
+
+python scripts/durable_hitl_gate_runner.py \
+  --output docs/evidence/durable-hitl-gate-report.json
+
+git diff --check
 ```
 
-### API Endpoints
+Run the frontend build only when frontend or its contract is affected. Run the
+durable HITL gate only when that contract is affected and Docker is available.
+If a check cannot run, state the exact reason.
 
-- `POST /api/task` — Start an async agent task (returns thread_id)
-- `POST /api/upload` — Upload files for analysis
-- `GET /api/files?path=...` — List files in output directory
-- `GET /api/download?path=...` — Download a generated file
-- `WebSocket /ws/{thread_id}` — Real-time reasoning stream
+## Documentation
 
-## Architecture
+Ship documentation with the behavior it describes:
 
-### Core Layers
+- Public API, Tool Client, configuration, or errors: update reference docs and
+  contract tests.
+- Architecture, identity, Evidence, or review lifecycle: update the relevant
+  decision and explanation.
+- Benchmark or public metric: update the evidence source and limits.
+- Installation or operator workflow: update the relevant guide.
+- Internal refactor with no behavior change: record `No documentation impact`
+  in the PR.
 
-```
-agent/main_agent.py        — LangGraph agent creation + async entry point (run_deep_agent)
-agent/llm.py               — LLM initialization (DeepSeek official API via OpenAI-compatible client)
-agent/prompts.py           — YAML prompt config loader (prompt/prompts.yml)
-agent/sub_agents/          — Three sub-agents: network_search, database_query, knowledge_base
+Persist Superpowers specs and plans only for architecture, public contracts,
+multi-module work, or multiple PRs. Use the Issue or PR body for small changes.
+Long-lived architecture belongs in `docs/decisions/`.
 
-tools/                     — All agent tools: tavily, mysql, ragflow, markdown, pdf, file_read
-api/server.py              — FastAPI server (REST + WebSocket)
-api/monitor.py             — ToolMonitor singleton + ConnectionManager for WebSocket events
-api/context.py             — ContextVar-based session isolation (async-safe)
-```
+Do not commit raw GStack artifacts, private planning notes, personal paths, or
+job-search context.
 
-### Key Design Patterns
+## Git, Security, And Completion
 
-1. **ContextVar Session Isolation**: `api/context.py` uses `ContextVar` to isolate per-request workspace directories. Prevents data races when multiple requests run concurrently in the same event loop. Always set context before agent execution and reset in `finally`.
+- Inspect `git status` before editing.
+- Use a short `codex/<scope>-<slug>` branch and route intended changes through
+  a PR.
+- Stage only intentional files; do not use `git add -A` or `git add .`.
+- Do not push, create a PR, merge, release, deploy, install tools, or publish
+  without explicit user authorization.
+- Never commit secrets, tokens, cookies, `.env`, private configuration, or
+  private source material.
+- Treat uploads, model output, tool output, and external responses as
+  untrusted.
+- Do not expose absolute paths, credentials, raw exceptions, or stack traces in
+  public responses.
+- Public claims require repository-visible tests, benchmarks, or referenced
+  evidence.
 
-2. **Singleton ToolMonitor**: `api/monitor.py` provides a global `monitor` singleton. Tools report progress via `monitor.report_start()`, `monitor.report_running()`, `monitor.report_end()`. Events are emitted via WebSocket (if connected) or fallback to console.
+A task is complete when the requested behavior matches scope, appropriate
+verification actually passed, required documentation is current, the diff is
+clean and intentional, and remaining risks or skipped checks are reported.
 
-3. **YAML Prompt Config**: Agent system prompts live in `prompt/prompts.yml`, not hardcoded. Loaded by `agent/prompts.py` into `main_agent_config` and `sub_agents_config`.
-
-4. **Async Task Execution**: Agent tasks are launched via `asyncio.create_task()` in `api/server.py`. Progress is pushed through WebSocket using `monitor` events.
-
-### Data Flow
-
-1. User submits query → `POST /api/task` → `asyncio.create_task(run_deep_agent())`
-2. `run_deep_agent()` creates session workspace, sets ContextVar, invokes LangGraph `main_agent.astream()`
-3. Main agent decomposes tasks → delegates to sub-agents via `task` tool
-4. Stream chunks processed by `_process_stream_chunk()` → events reported to frontend via WebSocket
-5. Results written as Markdown/PDF in session workspace
-
-## Environment Variables
-
-Required in `.env` (copy from `.env.example`):
-
-- `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `LLM_MODEL`, `LLM_FALLBACK_MODEL`, `LLM_REASONING_EFFORT`, `LLM_THINKING_MODE` — DeepSeek official API config
-- `LLM_QWEN_MAX` — Legacy model variable, used only when `LLM_MODEL` is not set
-- `TAVILY_API_KEY` — Network search
-- `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_PORT` — Database
-- `RAGFLOW_API_URL`, `RAGFLOW_API_KEY` — Knowledge base
-
-## Frontend
-
-Vue 3 + TypeScript + Vite. Entry: `frontend/src/main.ts` → `frontend/src/App.vue`. Connects to backend via WebSocket for real-time agent reasoning display and REST for file management.
-
-## Working Model
-
-Codex is the primary project Agent and owns direction, design, planning, implementation, testing, documentation, PR preparation, and final verification.
-
-- Complete safe, discoverable workflow steps proactively instead of asking the user to remember them.
-- Use TDD for behavior changes and regression tests for bug fixes.
-- Do not claim tests, builds, QA, performance, or review passed unless actual command output supports the claim.
-- Do not push, create PRs, merge, ship, deploy, install tools, or modify user-level agent files unless the user explicitly asks.
-- Recommend an independent second view only for major architecture decisions, high-risk cross-module changes, important milestones, or unresolved uncertainty.
-
-## Skill Trigger Naming
-
-- Codex Superpowers skills use namespaced handles such as `superpowers:brainstorming`, `superpowers:writing-plans`, and `superpowers:verification-before-completion`.
-- Codex GStack skills use `gstack-<skill-name>` handles such as `gstack-office-hours`, `gstack-autoplan`, `gstack-review`, `gstack-qa-only`, `gstack-investigate`, and `gstack-ship`.
-
-## Task Start And Handoff
-
-- Before making decisions, inspect the current repository, relevant specs, tests, open PR context, and actual command output.
-- Use an isolated worktree for implementation plans or changes that should not share state with the current checkout.
-- Do not overwrite or revert unrelated user changes.
-- At task completion, report the branch and PR, actual verification results, documentation impact, remaining risks, and any deferred Issue.
-- Treat direct user requests, PR review findings, CI failures, and bugs within the current PR scope as work to handle directly. Create an Issue only for deferred, out-of-scope, cross-PR, or continued-investigation work.
-
-## Planning Flow
-
-When planning is required, use this Codex-facing sequence:
-
-```text
-gstack-office-hours
-superpowers:brainstorming
-superpowers:writing-plans
-gstack-autoplan
-Codex locks the plan
-```
-
-`gstack-office-hours` 只用于方向不清或产品取舍。小任务可跳过。
-
-`superpowers:writing-plans` 在 `gstack-autoplan` 之前；`gstack-autoplan` 审查已有 plan。
-
-## Final Acceptance Flow
-
-Before final acceptance, Codex must review:
-
-- Source spec
-- Implementation plan
-- Git diff
-- Actual command output
-
-Recommended Codex-facing sequence:
-
-```text
-gstack-review
-gstack-qa-only or gstack-qa when needed
-superpowers:verification-before-completion
-gstack-investigate only when failure or ambiguity remains
-gstack-ship only when the user explicitly asks to ship
-superpowers:finishing-a-development-branch when integration guidance is needed
-```
-
-## PR Body 格式
-
-PR body 按以下结构编写。核心原则是先给 reviewer 明确完成状态，再展开实现和验证；不要把未完成项藏在 Test plan 末尾。
-
-**Summary** — 必写，用 1 段说明这次 PR 改了什么、为什么改、带来什么价值。
-
-**Completion status** — 必写，用 checkbox 明确完成 / 未完成状态：
-- `[x]` 已完成的核心任务、文档同步和验证。
-- `[ ] Not completed: ...` 尚未完成但和 PR 范围相关的工作，并说明原因。
-
-**Implementation details** — 必写，列出关键文件变更，每条 1 句。
-
-**Verification** — 必写，列出实际运行的检查和结果；未运行的检查写 `Not run: <check>` 并说明原因。
-
-**Risk / Impact** — 涉及 API、数据结构、持久化、兼容性或用户行为变化时必写：
-- User impact
-- System impact
-- Compatibility impact
-- Rollback plan
-
-**Design choices** — 涉及技术选型时写，格式：Option | Decision | Reason。
-
-**Review focus** — 推荐写，列出希望 reviewer 重点看的 2-4 个问题。
-
-**Breaking Changes** — 仅当有破坏性变更时写，说明影响和迁移方式。
+PR descriptions default to Simplified Chinese and use a result-first structure:
+`Summary`, `Completion`, `Verification`, then optional `Scope`,
+`Risk / Impact`, migration, rollback, and documentation impact.

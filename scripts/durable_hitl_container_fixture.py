@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import time
+import uuid
 
 
 project_root = Path(__file__).resolve().parents[1]
@@ -15,17 +16,19 @@ if str(project_root) not in sys.path:
 
 from api.review_gate import ReviewGate
 from api.review_models import checkpoint_thread_id
-from api.review_repository import accept_review_decision, get_decision
+from api.review_repository import get_decision
 from api.run_repository import get_run
 from scripts.durable_hitl_fixture import create_required_review_fixture
 
 
 def seed() -> dict:
+    fixture_suffix = uuid.uuid4().hex[:12]
     fixture = create_required_review_fixture(
         db_path=os.environ["TASKS_DB_PATH"],
         checkpoint_path=os.environ[
             "DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH"
         ],
+        fixture_suffix=fixture_suffix,
     )
 
     async def ensure_waiting():
@@ -38,16 +41,9 @@ def seed() -> dict:
         raise RuntimeError("container_checkpoint_creation_timeout")
 
     asyncio.run(ensure_waiting())
-    acceptance = accept_review_decision(
-        db_path=fixture.db_path,
-        run_id=fixture.run_id,
-        review_id=fixture.review_id,
-        request=fixture.approve_request,
-        actor_fingerprint="container_fixture",
-    )
     return {
         "run_id": fixture.run_id,
-        "decision_id": acceptance.decision.decision_id,
+        "review_id": fixture.review_id,
     }
 
 

@@ -78,7 +78,7 @@ User: "调研 AI 在医疗诊断中的应用趋势，生成 PDF 报告"
 | Fallback reports | Implemented (Phase 9) | `api/task_finalizer.py`, deterministic terminal states |
 | Task timeout handling | Implemented (Phase 9) | `api/server.py`, `_mark_task_timeout` callback |
 | ResearchRun + EvidenceLedger | Implemented (Phase 10) | `agent/research.py`, `GET /api/research/runs/{thread_id}` |
-| Durable HITL feasibility | 13/13 gates passed; disabled by default | [Gate report](docs/evidence/durable-hitl-gate-report.json) |
+| Controlled durable review | P1B 13/13 gates passed; P1C backend/CLI workflow available when explicitly enabled; disabled by default | [Operator guide](docs/operations/controlled-review-workflow.md) |
 
 > All metrics above are from actual command runs on this machine. Token/cost benchmark data and P95 latency are pending dedicated benchmark runs.
 
@@ -154,7 +154,9 @@ API endpoints:
 - **GET /api/research/runs/{thread_id}** — View ResearchRun and EvidenceLedger for a thread
 - **GET /api/research/runs** — List recent ResearchRun records
 - **POST /api/runs** / **GET /api/runs/{run_id}** — Start and inspect isolated research runs
-- **POST /api/runs/{run_id}/reviews/{review_id}/decisions** — Experimental, feature-flagged Talent review decision
+- **GET /api/reviews** / **GET /api/reviews/health** — Authenticated controlled review queue and runtime readiness
+- **GET /api/runs/{run_id}/reviews/{review_id}** — Authenticated immutable review detail
+- **POST /api/runs/{run_id}/reviews/{review_id}/decisions** — Authenticated approve/reject decision
 - **GET /api/telemetry/runs/{run_id}** / **GET /api/token-usage/runs/{run_id}** — View run-scoped observability
 - **WebSocket /ws/runs/{run_id}** — Run-scoped real-time event stream
 - **WebSocket /ws/{thread_id}** — Real-time reasoning stream
@@ -181,21 +183,28 @@ explicit benchmark or development runs. The Talent model cites declared sample
 IDs or source URLs; the service normalizes those aliases to run-scoped evidence
 IDs before review.
 
-### Durable HITL Feasibility
+### Controlled Durable Review
 
 The bounded P1B review path passed all 13 durability and safety gates, including
-container restart and SIGKILL crash windows. It remains experimental and
-disabled by default:
+container restart and SIGKILL crash windows. P1C adds an authenticated
+first-party backend and CLI workflow for list, show, approve, reject, wait, and
+doctor operations. The feature remains disabled by default:
 
 ```dotenv
 DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL=false
 ```
 
-An `approve` decision permits delivery but does not verify evidence. A `reject`
-decision blocks delivery and does not start new research. See the
-[operator guide](docs/operations/durable-hitl-feasibility.md) and
+The supported boundary is one backend replica with persistent, separate
+application and checkpoint SQLite databases plus persistent output storage.
+The existing Vue frontend does not expose review controls. An `approve`
+decision permits delivery but does not verify evidence. A `reject` decision
+blocks delivery and does not start new research.
+
+See the [controlled review operator guide](docs/operations/controlled-review-workflow.md),
+[P1B feasibility notes](docs/operations/durable-hitl-feasibility.md), and
 [gate report](docs/evidence/durable-hitl-gate-report.json). A PASS report does
-not automatically authorize production enablement.
+not establish multi-instance, multi-user, or public-internet production
+readiness.
 
 ## Project Structure
 
@@ -255,13 +264,13 @@ decision-research-agent/
 
 - **WeasyPrint dependency**: PDF conversion tests require WeasyPrint system libraries (cairo, pango, gobject). On machines with dependencies available, tests run for real. On machines without them, conversion tests are skipped via `pytest.mark.skipif`, and the missing-dependency error path is tested via import-stage `OSError` simulation. Docker 环境已包含这些依赖。
 - **Frontend build**: Verified (`cd frontend && npm run build` succeeded, built in 357ms).
-- **API Key auth**: All `/api/*` endpoints are protected by `APIKeyMiddleware`. Requests without `X-API-Key` header get 401. Set `API_SECRET=your-key` in `.env` to enable; if unset, a warning is logged but all requests pass through (dev mode).
+- **API Key auth**: All `/api/*` endpoints are protected by `APIKeyMiddleware`. Requests without `X-API-Key` header get 401. Inject `API_SECRET` through the deployment environment to enable; if unset, a warning is logged but all requests pass through (dev mode).
 - **WebSocket auth**: Browser clients pass the key via the `api_key` query parameter because native WebSocket constructors cannot set custom headers. Production logs should avoid recording full WebSocket URLs.
 - **Task state persistence**: Tasks are persisted to SQLite (`data/tasks.db`) through `api/persistence.py`. Server restart does not lose completed task records. Query by `GET /api/tasks/{thread_id}`.
 - **Research evidence persistence**: Terminal tasks also persist ResearchRun metadata and EvidenceLedger entries. Query by `GET /api/research/runs/{thread_id}`. Evidence entries are source-like observations from tool messages, not independently verified facts.
 - **CI/CD**: GitHub Actions runs backend tests and frontend build on push/PR to `main`. API keys must be configured in GitHub Secrets.
 - **Benchmark data**: A repeated benchmark runner exists at `scripts/benchmark_runner.py`, but new median/P95 numbers should only be reported after a real multi-run benchmark is executed and archived. The existing 5-query data remains a single snapshot.
-- **Durable HITL**: The P1B feasibility gate is PASS, but the endpoint remains experimental and disabled by default. Production enablement requires a separate rollout decision; P1C is not included.
+- **Durable HITL**: P1B durability evidence is PASS and P1C provides a controlled backend/CLI workflow, but the feature remains disabled by default and supported only for a controlled single-node deployment. The Vue frontend has no review controls.
 
 ## License
 

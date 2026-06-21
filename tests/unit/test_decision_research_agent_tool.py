@@ -1,4 +1,5 @@
 import argparse
+import io
 import json
 import re
 import warnings
@@ -148,6 +149,105 @@ def test_http_failure_raises_structured_error(monkeypatch):
 
     with pytest.raises(tool.ToolClientError, match="HTTP 400"):
         tool.healthcheck(tool.ToolConfig())
+
+
+def test_http_error_preserves_structured_review_envelope(monkeypatch):
+    body = io.BytesIO(
+        json.dumps(
+            {
+                "code": "durable_hitl_disabled",
+                "problem": "Durable review is disabled.",
+                "retryable": False,
+            }
+        ).encode("utf-8")
+    )
+    http_error = tool.error.HTTPError(
+        "http://127.0.0.1:8000/api/reviews",
+        404,
+        "Not Found",
+        {},
+        body,
+    )
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: (_ for _ in ()).throw(http_error),
+    )
+
+    with pytest.raises(tool.ToolClientHTTPError) as captured:
+        tool.list_reviews(tool.ToolConfig())
+
+    assert captured.value.status == 404
+    assert captured.value.payload["code"] == "durable_hitl_disabled"
+
+
+def test_review_list_and_show_encode_requests(monkeypatch):
+    urls = []
+
+    def fake_urlopen(req, timeout):
+        urls.append(req.full_url)
+        if req.full_url.endswith("/api/runs/run%2F1"):
+            return FakeResponse(
+                {"review_workflow": {"review_id": "review/1"}}
+            )
+        if "/reviews/" in req.full_url:
+            return FakeResponse({"review_id": "review/1"})
+        return FakeResponse({"reviews": [], "next_cursor": None})
+
+    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
+    config = tool.ToolConfig(base_url="http://127.0.0.1:9000")
+
+    tool.list_reviews(
+        config,
+        status="waiting_decision",
+        limit=20,
+        cursor="cursor/value",
+    )
+    detail = tool.show_review(
+        run_id="run/1",
+        review_id=None,
+        config=config,
+    )
+
+    assert detail["review_id"] == "review/1"
+    assert urls == [
+        (
+            "http://127.0.0.1:9000/api/reviews"
+            "?status=waiting_decision&limit=20&cursor=cursor%2Fvalue"
+        ),
+        "http://127.0.0.1:9000/api/runs/run%2F1",
+        "http://127.0.0.1:9000/api/runs/run%2F1/reviews/review%2F1",
+    ]
+
+
+def test_review_show_fails_when_run_has_no_durable_review(monkeypatch):
+    monkeypatch.setattr(
+        tool,
+        "get_run",
+        lambda run_id, config: {"review_workflow": None},
+    )
+
+    with pytest.raises(tool.ToolClientError, match="run_has_no_durable_review"):
+        tool.show_review(
+            run_id="run_1",
+            review_id=None,
+            config=tool.ToolConfig(),
+        )
+
+
+def test_review_read_parser_commands():
+    parser = tool._build_parser()
+
+    listed = parser.parse_args(["review", "list"])
+    shown = parser.parse_args(["review", "show", "--run-id", "run_1"])
+
+    assert listed.command == "review"
+    assert listed.review_command == "list"
+    assert listed.status == "waiting_decision"
+    assert listed.limit == 20
+    assert shown.review_command == "show"
+    assert shown.run_id == "run_1"
+    assert shown.review_id is None
 
 
 def test_cli_does_not_print_api_key(monkeypatch, capsys):

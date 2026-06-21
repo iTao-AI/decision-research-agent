@@ -21,6 +21,15 @@ class ToolClientError(RuntimeError):
     """Raised when the Decision Research Agent client cannot complete a request."""
 
 
+class ToolClientHTTPError(ToolClientError):
+    """Raised when the server returns a structured non-success response."""
+
+    def __init__(self, status: int, payload: dict[str, Any]):
+        self.status = status
+        self.payload = payload
+        super().__init__(payload.get("code") or f"http_{status}")
+
+
 @dataclass(frozen=True)
 class ToolConfig:
     base_url: str = "http://127.0.0.1:8000"
@@ -63,6 +72,16 @@ def _request_json(
         with request.urlopen(req, timeout=config.timeout_seconds) as response:
             status = response.getcode()
             parsed = _read_json(response)
+    except error.HTTPError as exc:
+        try:
+            parsed = _read_json(exc)
+        except ToolClientError:
+            parsed = {
+                "code": f"http_{exc.code}",
+                "problem": "The server returned a non-JSON error.",
+                "retryable": False,
+            }
+        raise ToolClientHTTPError(exc.code, parsed) from exc
     except ToolClientError:
         raise
     except (OSError, error.URLError, TimeoutError) as exc:
@@ -161,6 +180,52 @@ def get_run(run_id: str, config: ToolConfig) -> dict[str, Any]:
     encoded_run_id = parse.quote(run_id, safe="")
     return _request_json(
         "GET", _join_url(config.base_url, f"/api/runs/{encoded_run_id}"), config=config
+    )
+
+
+def list_reviews(
+    config: ToolConfig,
+    *,
+    status: str = "waiting_decision",
+    limit: int = 20,
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    query = {"status": status, "limit": str(limit)}
+    if cursor:
+        query["cursor"] = cursor
+    return _request_json(
+        "GET",
+        _join_url(
+            config.base_url,
+            f"/api/reviews?{parse.urlencode(query)}",
+        ),
+        config=config,
+    )
+
+
+def show_review(
+    *,
+    run_id: str,
+    review_id: str | None,
+    config: ToolConfig,
+) -> dict[str, Any]:
+    resolved_review_id = review_id
+    if resolved_review_id is None:
+        run = get_run(run_id, config)
+        workflow = run.get("review_workflow") or {}
+        resolved_review_id = workflow.get("review_id")
+        if not resolved_review_id:
+            raise ToolClientError("run_has_no_durable_review")
+    return _request_json(
+        "GET",
+        _join_url(
+            config.base_url,
+            (
+                f"/api/runs/{parse.quote(run_id, safe='')}"
+                f"/reviews/{parse.quote(resolved_review_id, safe='')}"
+            ),
+        ),
+        config=config,
     )
 
 
@@ -289,6 +354,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
     result = subparsers.add_parser("result")
     result.add_argument("--run-id", required=True)
+
+    review = subparsers.add_parser("review")
+    review_subparsers = review.add_subparsers(
+        dest="review_command",
+        required=True,
+    )
+    review_list = review_subparsers.add_parser("list")
+    review_list.add_argument("--status", default="waiting_decision")
+    review_list.add_argument("--limit", type=int, default=20)
+    review_list.add_argument("--cursor")
+
+    review_show = review_subparsers.add_parser("show")
+    review_show.add_argument("--run-id", required=True)
+    review_show.add_argument("--review-id")
     return parser
 
 
@@ -326,11 +405,27 @@ def main(argv: list[str] | None = None) -> int:
                 result = wait_for_run(result["run_id"], config)
         elif args.command == "result":
             result = get_run(args.run_id, config)
+        elif args.command == "review" and args.review_command == "list":
+            result = list_reviews(
+                config,
+                status=args.status,
+                limit=args.limit,
+                cursor=args.cursor,
+            )
+        elif args.command == "review" and args.review_command == "show":
+            result = show_review(
+                run_id=args.run_id,
+                review_id=args.review_id,
+                config=config,
+            )
         else:
             parser.error(f"unknown command: {args.command}")
             return 1
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
+    except ToolClientHTTPError as exc:
+        print(json.dumps(exc.payload, ensure_ascii=False, indent=2))
+        return 1
     except ToolClientError as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False, indent=2))
         return 1

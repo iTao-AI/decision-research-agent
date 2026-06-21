@@ -370,8 +370,8 @@ class _RecordingTextIO(io.StringIO):
         return super().read(size)
 
 
-def test_rejection_reason_reads_at_most_1001_characters_from_stdin():
-    stdin = _RecordingTextIO("x" * 1002)
+def test_rejection_reason_reads_bounded_overflow_sentinel_from_stdin():
+    stdin = _RecordingTextIO("x" * 1003)
 
     with pytest.raises(
         tool.ToolClientError,
@@ -383,13 +383,13 @@ def test_rejection_reason_reads_at_most_1001_characters_from_stdin():
             stdin=stdin,
         )
 
-    assert stdin.read_sizes == [1001]
+    assert stdin.read_sizes == [1002]
 
 
-def test_rejection_reason_reads_at_most_1001_characters_from_file(
+def test_rejection_reason_reads_bounded_overflow_sentinel_from_file(
     monkeypatch,
 ):
-    reason_stream = _RecordingTextIO("x" * 1002)
+    reason_stream = _RecordingTextIO("x" * 1003)
     monkeypatch.setattr(
         Path,
         "open",
@@ -406,7 +406,23 @@ def test_rejection_reason_reads_at_most_1001_characters_from_file(
             stdin=io.StringIO(""),
         )
 
-    assert reason_stream.read_sizes == [1001]
+    assert reason_stream.read_sizes == [1002]
+
+
+def test_rejection_reason_rejects_text_after_allowed_trailing_newline():
+    stdin = _RecordingTextIO("x" * 1000 + "\n" + "DO_NOT_DROP")
+
+    with pytest.raises(
+        tool.ToolClientError,
+        match="rejection_reason_must_be_1_to_1000_characters",
+    ):
+        tool.read_rejection_reason(
+            reason_file=None,
+            reason_stdin=True,
+            stdin=stdin,
+        )
+
+    assert stdin.read_sizes == [1002]
 
 
 @pytest.mark.parametrize("reason", ["", "x" * 1001])

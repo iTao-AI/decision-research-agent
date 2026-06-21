@@ -274,6 +274,20 @@ def stable_decision_id(
     return f"decision_{uuid.uuid5(uuid.NAMESPACE_URL, semantic).hex}"
 
 
+def _read_bounded_rejection_reason(stream) -> str:
+    value = stream.read(1002)
+    if len(value) > 1001:
+        raise ToolClientError(
+            "rejection_reason_must_be_1_to_1000_characters"
+        )
+    value = value.strip()
+    if not 1 <= len(value) <= 1000:
+        raise ToolClientError(
+            "rejection_reason_must_be_1_to_1000_characters"
+        )
+    return value
+
+
 def read_rejection_reason(
     *,
     reason_file: Path | None,
@@ -285,17 +299,11 @@ def read_rejection_reason(
     try:
         if reason_file is not None:
             with reason_file.open("r", encoding="utf-8") as handle:
-                value = handle.read(1001)
+                return _read_bounded_rejection_reason(handle)
         else:
-            value = stdin.read(1001)
+            return _read_bounded_rejection_reason(stdin)
     except (OSError, UnicodeError) as exc:
         raise ToolClientError("rejection_reason_unreadable") from exc
-    value = value.strip()
-    if not 1 <= len(value) <= 1000:
-        raise ToolClientError(
-            "rejection_reason_must_be_1_to_1000_characters"
-        )
-    return value
 
 
 def submit_review_decision(

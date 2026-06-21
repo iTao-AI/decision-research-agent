@@ -15,6 +15,7 @@ from api.review_artifacts import ReviewedArtifactResult, build_reviewed_artifact
 from api.review_models import (
     ReviewDecisionRequest,
     checkpoint_thread_id,
+    decode_review_cursor,
     post_review_segment_id,
     review_workflow_id,
 )
@@ -24,7 +25,9 @@ from api.review_repository import (
     accept_review_decision,
     claim_review_workflow,
     complete_checkpoint_creation,
+    get_review_detail,
     get_review_projection,
+    list_review_workflows,
     release_workflow_for_retry,
     resolve_review,
 )
@@ -46,11 +49,16 @@ class RequiredReviewRun:
     brief_json: str
 
 
-def _required_review_run(tmp_path, *, suffix: str) -> RequiredReviewRun:
-    db_path = str(tmp_path / f"runs-{suffix}.db")
+def _required_review_run(
+    tmp_path,
+    *,
+    suffix: str,
+    db_path: str | None = None,
+) -> RequiredReviewRun:
+    db_path = db_path or str(tmp_path / f"runs-{suffix}.db")
     created = create_run(
         db_path=db_path,
-        thread_id="thread-1",
+        thread_id=f"thread-{suffix}",
         query="query",
         profile_id="talent-hiring-signal",
     )
@@ -68,7 +76,7 @@ def _required_review_run(tmp_path, *, suffix: str) -> RequiredReviewRun:
         verification_status="unverified",
     )
     review = ReviewBundle(
-        review_id="review_1",
+        review_id=f"review_{suffix}",
         run_id=created["run_id"],
         revision=1,
         status="required",
@@ -420,6 +428,74 @@ def test_run_projection_does_not_expose_sensitive_decision_fields(
     assert "reason" not in projection["decision"]
     assert "actor_fingerprint" not in projection["decision"]
     assert "lease_owner" not in projection["workflow"]
+
+
+def test_review_queue_defaults_to_waiting_and_uses_stable_cursor(tmp_path):
+    db_path = str(tmp_path / "queue.db")
+    _required_review_run(
+        tmp_path,
+        suffix="queue-a",
+        db_path=db_path,
+    )
+    _required_review_run(
+        tmp_path,
+        suffix="queue-b",
+        db_path=db_path,
+    )
+    page = list_review_workflows(
+        db_path=db_path,
+        status="waiting_decision",
+        limit=1,
+        cursor=None,
+    )
+
+    assert len(page["reviews"]) == 1
+    assert page["reviews"][0]["workflow_status"] == "waiting_decision"
+    assert page["next_cursor"] is not None
+    assert "lease_owner" not in page["reviews"][0]
+    second_page = list_review_workflows(
+        db_path=db_path,
+        status="waiting_decision",
+        limit=1,
+        cursor=decode_review_cursor(page["next_cursor"]),
+    )
+    assert len(second_page["reviews"]) == 1
+    assert (
+        second_page["reviews"][0]["workflow_id"]
+        != page["reviews"][0]["workflow_id"]
+    )
+
+
+def test_review_detail_includes_bundle_and_reason_but_excludes_audit_secrets(
+    required_review_run,
+):
+    request = ReviewDecisionRequest(
+        decision_id="decision_reject",
+        review_revision=1,
+        action="reject",
+        reason="Evidence boundary was not accepted.",
+        expected_state_version=2,
+    )
+    accept_review_decision(
+        db_path=required_review_run.db_path,
+        run_id=required_review_run.run_id,
+        review_id=required_review_run.review_id,
+        request=request,
+        actor_fingerprint="actor_hash",
+    )
+
+    detail = get_review_detail(
+        db_path=required_review_run.db_path,
+        run_id=required_review_run.run_id,
+        review_id=required_review_run.review_id,
+    )
+
+    assert detail["review_bundle"]["review_id"] == required_review_run.review_id
+    assert detail["decision"]["reason"] == "Evidence boundary was not accepted."
+    encoded = json.dumps(detail)
+    assert "actor_hash" not in encoded
+    assert "checkpoint_thread_id" not in encoded
+    assert "lease_owner" not in encoded
 
 
 def test_approval_resolution_is_exactly_once(resumable_approved_review_run):

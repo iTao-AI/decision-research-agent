@@ -70,9 +70,61 @@
 响应只包含有界投影。决策原始 `reason`、`actor_fingerprint`、lease owner、
 checkpoint 路径和 checkpoint payload 不会返回。
 
+### GET /api/reviews
+
+严格认证的 durable review 队列。Feature flag 关闭返回
+`404 durable_hitl_disabled`；启用后缺少 `API_SECRET` 返回
+`503 review_auth_not_configured`；缺少或错误的 `X-API-Key` 返回
+`401 invalid_api_key`。
+
+**查询参数：**
+
+- `status`：精确 workflow 状态，默认 `waiting_decision`；可选值为
+  `checkpoint_pending | waiting_decision | resume_pending | resuming |
+  resolution_pending | approved | rejected | manual_recovery`。
+- `limit`：`1..100`，默认 20。
+- `cursor`：可选的不透明分页游标；调用方只能原样回传服务端返回的值。
+
+结果按 `created_at DESC, workflow_id DESC` 确定性排序。顶层响应结构明确为
+`{"reviews": [...], "next_cursor": "opaque-or-null"}`。`reviews` 中每一项仅包含
+`workflow_id`、`run_id`、`review_id`、`review_revision`、`profile_id`、
+`workflow_status`、`review_status`、`delivery_status`、`state_version`、
+`created_at`、`updated_at` 和 `last_error_code`；`next_cursor` 只属于顶层分页
+envelope，不属于单条 review metadata。
+队列不返回 query、claim、evidence、decision reason、artifact、lease 或
+checkpoint 内部信息。无效状态、越界 limit 或无效 cursor 返回
+`422 invalid_review_query`。
+
+### GET /api/runs/{run_id}/reviews/{review_id}
+
+严格认证的 review 详情只读投影。返回不可变 `ReviewBundle`、有界 workflow、
+当前 `state_version`、review/delivery 状态、已接受决策（包括有界 `reason`）
+和已有 resolution/artifact ID。`manual_recovery` 时还返回
+`operator_guidance.code` 和稳定的
+`operator_guidance.docs_url=/docs/operations/controlled-review-workflow#manual-recovery`。
+目标 runbook `docs/operations/controlled-review-workflow.md` 由 PR2 交付，PR1
+仅冻结该稳定链接契约，不声明当前文档已经存在。
+
+该接口不返回 `actor_fingerprint`、幂等 request hash、lease owner、
+checkpoint identity/path/payload、secret-bearing metadata 或原始 exception。
+不存在的 run/review 组合返回 `404 review_not_found`。认证和 feature flag
+行为与 `GET /api/reviews` 相同。
+
+### GET /api/reviews/health
+
+供第一方 Tool Client 使用的严格认证 readiness 接口。Feature flag 关闭返回
+`404 durable_hitl_disabled`；启用但 worker、application schema、checkpoint
+兼容性或 13-gate report 任一未就绪时返回
+`503 review_runtime_not_ready`。
+
+就绪时返回有界字段 `status`、`feature_enabled`、`worker_running`、
+`application_schema_ready`、`checkpoint_compatible` 和
+`gate_report_status`。不返回文件系统路径、secret、worker/checkpoint ID 或原始
+exception。认证行为与 `GET /api/reviews` 相同。
+
 ### POST /api/runs/{run_id}/reviews/{review_id}/decisions
 
-实验性 P1B durable HITL 路径，仅支持 Talent Hiring Signal profile，默认关闭。
+受控 P1C durable review 决策路径，仅支持 Talent Hiring Signal profile，默认关闭。
 必须同时设置 `DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL=true`、
 非空 `API_SECRET`，并通过 `X-API-Key` 认证。
 
@@ -118,7 +170,8 @@ envelope：
 
 Feature flag 关闭返回 `404 durable_hitl_disabled`；已启用但未配置
 `API_SECRET` 返回 `503 review_auth_not_configured`；无效凭证返回
-`401 invalid_api_key`。该 endpoint 标记为 experimental/deprecated，不代表已对外启用。
+`401 invalid_api_key`。P1C 仅移除该 endpoint 的 OpenAPI deprecated 标记；
+请求体、幂等语义、冲突处理和异步 `202` 响应保持不变。
 
 ### GET /api/tasks/{thread_id}
 

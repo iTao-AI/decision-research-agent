@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime
 import hashlib
 import json
@@ -7,7 +8,14 @@ import os
 from typing import Annotated, Literal
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    TypeAdapter,
+    model_validator,
+)
 
 
 BoundedId = Annotated[
@@ -34,10 +42,26 @@ WorkflowStatus = Literal[
     "rejected",
     "manual_recovery",
 ]
+ReviewListStatus = Literal[
+    "checkpoint_pending",
+    "waiting_decision",
+    "resume_pending",
+    "resuming",
+    "resolution_pending",
+    "approved",
+    "rejected",
+    "manual_recovery",
+]
 
 
 class FrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class ReviewListQuery(FrozenModel):
+    status: ReviewListStatus = "waiting_decision"
+    limit: int = Field(default=20, ge=1, le=100)
+    cursor: str | None = Field(default=None, max_length=512)
 
 
 class ReviewDecisionRequest(FrozenModel):
@@ -65,6 +89,29 @@ class ReviewDecisionRecord(FrozenModel):
     request_hash: str
     accepted_state_version: int = Field(ge=0)
     created_at: datetime
+
+
+_BOUNDED_ID_ADAPTER = TypeAdapter(BoundedId)
+
+
+def encode_review_cursor(*, created_at: str, workflow_id: str) -> str:
+    raw = json.dumps(
+        [created_at, workflow_id],
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def decode_review_cursor(cursor: str) -> tuple[str, str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        value = json.loads(urlsafe_b64decode(padded).decode("utf-8"))
+        created_at, workflow_id = value
+        _BOUNDED_ID_ADAPTER.validate_python(workflow_id)
+        datetime.fromisoformat(created_at)
+    except Exception as exc:
+        raise ValueError("invalid_review_cursor") from exc
+    return created_at, workflow_id
 
 
 def durable_hitl_enabled() -> bool:

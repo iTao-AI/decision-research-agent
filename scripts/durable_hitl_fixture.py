@@ -54,6 +54,7 @@ def create_required_review_fixture(
     db_path: str,
     checkpoint_path: str,
     stage_hook=None,
+    fixture_suffix: str = "fixture",
 ) -> DurableReviewFixture:
     scope = {
         "target_roles": ["AI Agent Engineer"],
@@ -66,7 +67,7 @@ def create_required_review_fixture(
     }
     created = create_run(
         db_path=db_path,
-        thread_id="durable-review-fixture",
+        thread_id=f"durable-review-{fixture_suffix}",
         query="fixture query",
         profile_id="talent-hiring-signal",
         scope=scope,
@@ -80,7 +81,7 @@ def create_required_review_fixture(
     )
     packet = ResearchPacket.model_validate(
         {
-            "packet_id": "packet-fixture",
+            "packet_id": f"packet-{fixture_suffix}",
             "scope_id": "scope-fixture",
             "findings": [
                 {

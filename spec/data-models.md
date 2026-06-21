@@ -176,9 +176,18 @@ Run 的 `delivery_status` 包含：
 checkpoint 路径或 checkpoint payload。`approve` 只允许交付，不改变 EvidenceLedger
 验证状态；`reject` 不触发新的研究。
 
+`approve` 和 `reject` 是一个 review revision 的不可变终态决策，接受后不能撤回、
+改写或替换。纠正请求或重复研究必须创建新的 `run_id`；可保留相同 `thread_id`
+用于分组，但不得改写旧 run，旧 run 继续作为不可变审计记录。
+
+`GET /api/reviews` 队列和 review detail 都只是 application ledger 的只读投影，
+不创建新的事实源或决策权威。application DB 仍是 review、decision、workflow 和
+resolution 的业务权威；checkpoint DB 仍只负责 LangGraph 恢复位置。
+
 ## 变更记录
 
 | 日期 | 变更 |
 |------|------|
+| 2026-06-20 | 明确 P1C 队列/详情为只读投影，以及 review revision 决策与新 run 纠正语义 |
 | 2026-06-19 | 增加 P1B durable review 双数据库权威边界、四表模型、状态机和 blocked delivery |
 | 2026-05-19 | 初始数据模型文档 |

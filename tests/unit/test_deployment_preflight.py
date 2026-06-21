@@ -13,9 +13,9 @@ def test_verified_constraints_are_used_by_docker_and_ci():
     dockerfile = (PROJECT_ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
     ci = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "deepagents==0.6.10" in constraints
-    assert "langgraph==1.2.5" in constraints
-    assert "langsmith==0.8.15" in constraints
+    assert "deepagents==0.6.11" in constraints
+    assert "langgraph==1.2.6" in constraints
+    assert "langsmith==0.8.18" in constraints
     assert "COPY requirements.txt constraints.txt ./" in dockerfile
     assert "--mount=type=cache,target=/root/.cache/pip" in dockerfile
     assert "for i in $(seq 1 3)" in dockerfile
@@ -79,8 +79,8 @@ def test_python_version_constraints_match_supported_dependency_sets():
     assert active_versions("ragflow-sdk", "3.12") == ["==0.26.0"]
     assert active_versions("ragflow-sdk", "3.13") == ["==0.26.0"]
     assert active_versions("pytest==", "3.11") == ["==8.4.2"]
-    assert active_versions("pytest==", "3.12") == ["==9.1.0"]
-    assert active_versions("pytest==", "3.13") == ["==9.1.0"]
+    assert active_versions("pytest==", "3.12") == ["==9.1.1"]
+    assert active_versions("pytest==", "3.13") == ["==9.1.1"]
 
 
 def test_backend_data_and_output_use_named_volumes():

@@ -36,6 +36,9 @@ tests/
 openspec/
 
 # Documentation
-docs/
+docs/*
+!docs/evidence/
+docs/evidence/*
+!docs/evidence/durable-hitl-gate-report.json
 *.md
 !README.md

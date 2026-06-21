@@ -1,5 +1,5 @@
 import asyncio
-import logging
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -147,13 +147,19 @@ class FakeWorker:
         self.stopped.set()
 
 
-def test_app_lifespan_starts_worker_only_when_enabled(monkeypatch):
+class FailingWorker(FakeWorker):
+    async def run_forever(self):
+        self.starts.append("started")
+        raise RuntimeError("worker_start_failed")
+
+
+def test_app_lifespan_starts_worker_only_when_enabled(tmp_path, monkeypatch):
     starts = []
     stops = []
     monkeypatch.setattr(
         server,
         "create_review_worker",
-        lambda: FakeWorker(starts, stops),
+        lambda **kwargs: FakeWorker(starts, stops),
         raising=False,
     )
 
@@ -165,30 +171,115 @@ def test_app_lifespan_starts_worker_only_when_enabled(monkeypatch):
 
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "true")
     monkeypatch.setenv("API_SECRET", "configured")
+    monkeypatch.setenv("TASKS_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH",
+        str(tmp_path / "review-checkpoints.db"),
+    )
     with TestClient(server.app):
         assert starts == ["started"]
     assert stops == ["stopped"]
 
 
-def test_app_lifespan_refuses_worker_without_api_secret(
+def test_app_lifespan_hands_normalized_runtime_paths_to_worker(
+    tmp_path,
     monkeypatch,
-    caplog,
 ):
     starts = []
+    stops = []
+    received_paths = []
+
+    def capture_worker(*, application_db_path, checkpoint_db_path):
+        received_paths.append((application_db_path, checkpoint_db_path))
+        return FakeWorker(starts, stops)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(server, "create_review_worker", capture_worker)
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "true")
+    monkeypatch.setenv("API_SECRET", "configured")
+    monkeypatch.setenv("TASKS_DB_PATH", "data/../tasks.db")
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH",
+        "./review-checkpoints.db",
+    )
+
+    with TestClient(server.app):
+        pass
+
+    assert received_paths == [
+        (
+            (tmp_path / "tasks.db").resolve(),
+            (tmp_path / "review-checkpoints.db").resolve(),
+        )
+    ]
+
+
+def test_app_lifespan_cleans_up_when_worker_fails_during_startup(
+    tmp_path,
+    monkeypatch,
+):
+    starts = []
+    stops = []
     monkeypatch.setattr(
         server,
         "create_review_worker",
-        lambda: FakeWorker(starts, []),
+        lambda **kwargs: FailingWorker(starts, stops),
     )
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "true")
-    monkeypatch.delenv("API_SECRET", raising=False)
+    monkeypatch.setenv("API_SECRET", "configured")
+    monkeypatch.setenv("TASKS_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH",
+        str(tmp_path / "review-checkpoints.db"),
+    )
 
-    with caplog.at_level(logging.ERROR):
+    with pytest.raises(RuntimeError, match="worker_start_failed"):
         with TestClient(server.app):
             pass
 
-    assert starts == []
-    assert (
-        "durable_hitl_worker_not_started:review_auth_not_configured"
-        in caplog.messages
+    assert starts == ["started"]
+    assert stops == ["stopped"]
+    assert server.app.state.review_worker_task is None
+    assert server.app.state.review_runtime_readiness is None
+
+
+def test_app_lifespan_fails_startup_without_api_secret(monkeypatch):
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "true")
+    monkeypatch.delenv("API_SECRET", raising=False)
+
+    with pytest.raises(RuntimeError, match="review_auth_not_configured"):
+        with TestClient(server.app):
+            pass
+
+
+def test_app_lifespan_fails_startup_with_incomplete_review_schema(
+    tmp_path,
+    monkeypatch,
+):
+    tasks_path = tmp_path / "tasks.db"
+    connection = sqlite3.connect(tasks_path)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE review_workflows_v2 (
+                status TEXT,
+                lease_expires_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "true")
+    monkeypatch.setenv("API_SECRET", "configured")
+    monkeypatch.setenv("TASKS_DB_PATH", str(tasks_path))
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH",
+        str(tmp_path / "review-checkpoints.db"),
     )
+
+    with pytest.raises(RuntimeError, match="review_runtime_not_ready"):
+        with TestClient(server.app):
+            pass

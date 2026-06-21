@@ -23,6 +23,28 @@ def test_verified_constraints_are_used_by_docker_and_ci():
     assert "pip install -r requirements.txt -c constraints.txt" in ci
 
 
+def test_backend_image_packages_durable_hitl_gate_report():
+    dockerfile = (PROJECT_ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+    dockerignore = (PROJECT_ROOT / ".dockerignore").read_text(encoding="utf-8")
+    ignore_rules = dockerignore.splitlines()
+    required_ignore_rules = [
+        "docs/*",
+        "!docs/evidence/",
+        "docs/evidence/*",
+        "!docs/evidence/durable-hitl-gate-report.json",
+    ]
+
+    assert all(rule in ignore_rules for rule in required_ignore_rules)
+    rule_positions = [ignore_rules.index(rule) for rule in required_ignore_rules]
+
+    assert rule_positions == sorted(rule_positions)
+    assert (
+        "COPY docs/evidence/durable-hitl-gate-report.json "
+        "docs/evidence/durable-hitl-gate-report.json"
+    ) in dockerfile
+    assert "DURABLE_HITL_GATE_REPORT" not in dockerfile
+
+
 def test_deepagents_compatibility_baseline_exposes_selected_capability_surface():
     from deepagents import create_deep_agent
 

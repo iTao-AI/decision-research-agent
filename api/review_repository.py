@@ -11,6 +11,7 @@ from api.review_models import (
     ReviewDecisionRecord,
     ReviewDecisionRequest,
     decision_request_hash,
+    encode_review_cursor,
     review_resolution_id,
 )
 from api.run_repository import _connect, _now, init_run_schema
@@ -366,6 +367,23 @@ def _decision_projection(row: sqlite3.Row | None) -> dict[str, Any] | None:
     }
 
 
+def _decision_detail_projection(
+    row: sqlite3.Row | None,
+) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "decision_id": row["decision_id"],
+        "run_id": row["run_id"],
+        "review_id": row["review_id"],
+        "review_revision": row["review_revision"],
+        "action": row["action"],
+        "reason": row["reason"],
+        "accepted_state_version": row["accepted_state_version"],
+        "created_at": row["created_at"],
+    }
+
+
 def _resolution_projection(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if row is None:
         return None
@@ -378,6 +396,125 @@ def _resolution_projection(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "artifact_ids": json.loads(row["artifact_ids_json"]),
         "created_at": row["created_at"],
     }
+
+
+def list_review_workflows(
+    *,
+    status: str,
+    limit: int,
+    cursor: tuple[str, str] | None,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    init_review_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        params: list[Any] = [status]
+        cursor_sql = ""
+        if cursor is not None:
+            created_at, workflow_id = cursor
+            cursor_sql = """
+              AND (
+                workflow.created_at < ?
+                OR (
+                  workflow.created_at = ?
+                  AND workflow.workflow_id < ?
+                )
+              )
+            """
+            params.extend([created_at, created_at, workflow_id])
+        params.append(limit + 1)
+        rows = connection.execute(
+            f"""
+            SELECT
+              workflow.workflow_id,
+              workflow.run_id,
+              workflow.review_id,
+              workflow.review_revision,
+              workflow.status AS workflow_status,
+              workflow.last_error_code,
+              workflow.created_at,
+              workflow.updated_at,
+              run.profile_id,
+              run.review_status,
+              run.delivery_status,
+              run.state_version
+            FROM review_workflows_v2 AS workflow
+            JOIN research_runs_v2 AS run ON run.run_id = workflow.run_id
+            WHERE workflow.status = ?
+            {cursor_sql}
+            ORDER BY workflow.created_at DESC, workflow.workflow_id DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        page = rows[:limit]
+        next_cursor = None
+        if len(rows) > limit:
+            last = page[-1]
+            next_cursor = encode_review_cursor(
+                created_at=last["created_at"],
+                workflow_id=last["workflow_id"],
+            )
+        return {
+            "reviews": [dict(row) for row in page],
+            "next_cursor": next_cursor,
+        }
+    finally:
+        connection.close()
+
+
+def get_review_detail(
+    *,
+    run_id: str,
+    review_id: str,
+    db_path: str | None = None,
+) -> dict[str, Any] | None:
+    init_review_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        connection.execute("BEGIN")
+        row = connection.execute(
+            """
+            SELECT
+              workflow.*,
+              run.profile_id,
+              run.review_status,
+              run.delivery_status,
+              run.state_version,
+              bundle.bundle_json
+            FROM review_workflows_v2 AS workflow
+            JOIN research_runs_v2 AS run ON run.run_id = workflow.run_id
+            JOIN review_bundles_v2 AS bundle
+              ON bundle.review_id = workflow.review_id
+            WHERE workflow.run_id = ? AND workflow.review_id = ?
+            """,
+            (run_id, review_id),
+        ).fetchone()
+        if row is None:
+            return None
+        decision = connection.execute(
+            "SELECT * FROM review_decisions_v2 WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        resolution = connection.execute(
+            "SELECT * FROM review_resolutions_v2 WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        return {
+            "run_id": run_id,
+            "review_id": review_id,
+            "review_revision": row["review_revision"],
+            "profile_id": row["profile_id"],
+            "state_version": row["state_version"],
+            "review_status": row["review_status"],
+            "delivery_status": row["delivery_status"],
+            "workflow": _workflow_projection(row),
+            "review_bundle": json.loads(row["bundle_json"]),
+            "decision": _decision_detail_projection(decision),
+            "resolution": _resolution_projection(resolution),
+        }
+    finally:
+        connection.close()
 
 
 def get_review_projection(

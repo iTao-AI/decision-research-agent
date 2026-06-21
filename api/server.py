@@ -60,7 +60,19 @@ from api.review_models import (
     post_review_segment_id,
     review_workflow_id,
 )
+from api.review_config import (
+    ReviewConfigurationError,
+    check_review_readiness,
+    validate_review_runtime,
+)
 from api.review_worker import ReviewWorker
+
+
+def _is_review_api_path(path: str) -> bool:
+    return path == "/api/reviews" or path.startswith("/api/reviews/") or (
+        path.startswith("/api/runs/")
+        and "/reviews/" in path
+    )
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -75,12 +87,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if (
-            request.method == "POST"
-            and path.startswith("/api/runs/")
-            and "/reviews/" in path
-            and path.endswith("/decisions")
-        ):
+        if _is_review_api_path(path):
             return await call_next(request)
 
         # Skip auth for docs and health endpoints
@@ -105,14 +112,14 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def create_review_worker() -> ReviewWorker:
-    checkpoint_path = os.getenv(
-        "DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH",
-        str(project_root / "data" / "review_checkpoints.db"),
-    )
+def create_review_worker(
+    *,
+    application_db_path: Path,
+    checkpoint_db_path: Path,
+) -> ReviewWorker:
     return ReviewWorker(
-        db_path=os.getenv("TASKS_DB_PATH"),
-        checkpoint_path=checkpoint_path,
+        db_path=str(application_db_path),
+        checkpoint_path=str(checkpoint_db_path),
     )
 
 
@@ -120,22 +127,44 @@ def create_review_worker() -> ReviewWorker:
 async def lifespan(app: FastAPI):
     task = None
     worker = None
-    if durable_hitl_enabled():
-        if not os.getenv("API_SECRET", ""):
-            logging.error(
-                "durable_hitl_worker_not_started:review_auth_not_configured"
+    app.state.review_worker_task = None
+    app.state.review_runtime_readiness = None
+    try:
+        runtime = validate_review_runtime(output_dir=output_dir)
+        if runtime.enabled:
+            readiness = check_review_readiness(
+                runtime=runtime,
+                gate_report_path=(
+                    project_root
+                    / "docs"
+                    / "evidence"
+                    / "durable-hitl-gate-report.json"
+                ),
             )
-        else:
-            worker = create_review_worker()
+            if not readiness.ready:
+                raise ReviewConfigurationError("review_runtime_not_ready")
+            app.state.review_runtime_readiness = readiness
+            worker = create_review_worker(
+                application_db_path=runtime.application_db_path,
+                checkpoint_db_path=runtime.checkpoint_db_path,
+            )
             task = asyncio.create_task(worker.run_forever())
             await asyncio.sleep(0)
-    try:
+            if task.done():
+                task.result()
+            app.state.review_worker_task = task
         yield
     finally:
+        app.state.review_worker_task = None
+        app.state.review_runtime_readiness = None
         if worker is not None:
             worker.stop()
         if task is not None:
-            await task
+            if task.done():
+                if not task.cancelled():
+                    task.exception()
+            else:
+                await task
 
 
 app = FastAPI(

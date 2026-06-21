@@ -21,6 +21,7 @@ Superpowers 文档用于沉淀设计输入和实施计划，供后续 writing pl
 
 | 文档 | 说明 |
 |------|------|
+| [P2A Evidence Verification Design](superpowers/specs/2026-06-21-p2a-evidence-verification-design.md) | 追加式人工核验账本、确定性预检、版本化 DecisionBrief / ReviewBundle 与真实来源产品证据 |
 | [Technical Identifier Migration Design](superpowers/specs/2026-06-18-technical-identifier-migration-design.md) | 仓库改名后的 runtime env、health、Tool Client、LangSmith 与历史兼容边界 |
 | [Technical Identifier Migration Plan](superpowers/plans/2026-06-18-technical-identifier-migration.md) | canonical-first 标识迁移、回滚和验证步骤 |
 | [Verification Evidence Design](superpowers/specs/2026-06-01-deep-search-agent-verification-evidence-design.md) | 验证收口设计 — 后端测试、前端构建、真实端到端运行证据和职业展示材料时机 |

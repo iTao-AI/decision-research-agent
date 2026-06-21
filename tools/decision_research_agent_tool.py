@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 from threading import RLock
 import time
 from dataclasses import dataclass
 from typing import Any
 from urllib import error, parse, request
+import uuid
 import warnings
 
 
@@ -19,6 +22,15 @@ _WARNING_LOCK = RLock()
 
 class ToolClientError(RuntimeError):
     """Raised when the Decision Research Agent client cannot complete a request."""
+
+
+class ToolClientHTTPError(ToolClientError):
+    """Raised when the server returns a structured non-success response."""
+
+    def __init__(self, status: int, payload: dict[str, Any]):
+        self.status = status
+        self.payload = payload
+        super().__init__(payload.get("code") or f"http_{status}")
 
 
 @dataclass(frozen=True)
@@ -63,6 +75,16 @@ def _request_json(
         with request.urlopen(req, timeout=config.timeout_seconds) as response:
             status = response.getcode()
             parsed = _read_json(response)
+    except error.HTTPError as exc:
+        try:
+            parsed = _read_json(exc)
+        except ToolClientError:
+            parsed = {
+                "code": f"http_{exc.code}",
+                "problem": "The server returned a non-JSON error.",
+                "retryable": False,
+            }
+        raise ToolClientHTTPError(exc.code, parsed) from exc
     except ToolClientError:
         raise
     except (OSError, error.URLError, TimeoutError) as exc:
@@ -112,6 +134,14 @@ def profile_manifest(profile_id: str, config: ToolConfig) -> dict[str, Any]:
     )
 
 
+def review_health(config: ToolConfig) -> dict[str, Any]:
+    return _request_json(
+        "GET",
+        _join_url(config.base_url, "/api/reviews/health"),
+        config=config,
+    )
+
+
 def doctor(config: ToolConfig) -> dict[str, Any]:
     """Check the backend and the compiled Talent profile contract."""
     checks: dict[str, dict[str, Any]] = {}
@@ -129,9 +159,28 @@ def doctor(config: ToolConfig) -> dict[str, Any]:
         ),
         "allowed_tools": manifest.get("harness_policy", {}).get("allowed_tools", []),
     }
+    try:
+        review = review_health(config)
+    except ToolClientHTTPError as exc:
+        if (
+            exc.status == 404
+            and exc.payload.get("code") == "durable_hitl_disabled"
+        ):
+            checks["durable_review"] = {"status": "disabled"}
+        else:
+            raise
+    else:
+        checks["durable_review"] = {
+            "status": "ok" if review.get("status") == "ok" else "failed",
+            "worker_running": review.get("worker_running"),
+            "gate_report_status": review.get("gate_report_status"),
+        }
     return {
         "status": "ok"
-        if all(check["status"] == "ok" for check in checks.values())
+        if all(
+            check["status"] in {"ok", "disabled"}
+            for check in checks.values()
+        )
         else "failed",
         "checks": checks,
     }
@@ -164,6 +213,144 @@ def get_run(run_id: str, config: ToolConfig) -> dict[str, Any]:
     )
 
 
+def list_reviews(
+    config: ToolConfig,
+    *,
+    status: str = "waiting_decision",
+    limit: int = 20,
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    query = {"status": status, "limit": str(limit)}
+    if cursor:
+        query["cursor"] = cursor
+    return _request_json(
+        "GET",
+        _join_url(
+            config.base_url,
+            f"/api/reviews?{parse.urlencode(query)}",
+        ),
+        config=config,
+    )
+
+
+def show_review(
+    *,
+    run_id: str,
+    review_id: str | None,
+    config: ToolConfig,
+) -> dict[str, Any]:
+    resolved_review_id = review_id
+    if resolved_review_id is None:
+        run = get_run(run_id, config)
+        workflow = run.get("review_workflow") or {}
+        resolved_review_id = workflow.get("review_id")
+        if not resolved_review_id:
+            raise ToolClientError("run_has_no_durable_review")
+    return _request_json(
+        "GET",
+        _join_url(
+            config.base_url,
+            (
+                f"/api/runs/{parse.quote(run_id, safe='')}"
+                f"/reviews/{parse.quote(resolved_review_id, safe='')}"
+            ),
+        ),
+        config=config,
+    )
+
+
+def stable_decision_id(
+    *,
+    run_id: str,
+    review_id: str,
+    revision: int,
+    action: str,
+    reason: str | None,
+) -> str:
+    reason_hash = hashlib.sha256((reason or "").encode("utf-8")).hexdigest()
+    semantic = "\n".join(
+        [run_id, review_id, str(revision), action, reason_hash]
+    )
+    return f"decision_{uuid.uuid5(uuid.NAMESPACE_URL, semantic).hex}"
+
+
+def _read_bounded_rejection_reason(stream) -> str:
+    value = stream.read(1002)
+    if len(value) > 1001:
+        raise ToolClientError(
+            "rejection_reason_must_be_1_to_1000_characters"
+        )
+    value = value.strip()
+    if not 1 <= len(value) <= 1000:
+        raise ToolClientError(
+            "rejection_reason_must_be_1_to_1000_characters"
+        )
+    return value
+
+
+def read_rejection_reason(
+    *,
+    reason_file: Path | None,
+    reason_stdin: bool,
+    stdin,
+) -> str:
+    if (reason_file is None) == (not reason_stdin):
+        raise ToolClientError("exactly_one_reason_source_required")
+    try:
+        if reason_file is not None:
+            with reason_file.open("r", encoding="utf-8") as handle:
+                return _read_bounded_rejection_reason(handle)
+        else:
+            return _read_bounded_rejection_reason(stdin)
+    except (OSError, UnicodeError) as exc:
+        raise ToolClientError("rejection_reason_unreadable") from exc
+
+
+def submit_review_decision(
+    *,
+    run_id: str,
+    review_id: str | None,
+    decision_id: str | None,
+    action: str,
+    reason: str | None,
+    config: ToolConfig,
+) -> dict[str, Any]:
+    detail = show_review(
+        run_id=run_id,
+        review_id=review_id,
+        config=config,
+    )
+    resolved_review_id = detail["review_id"]
+    resolved_decision_id = decision_id or stable_decision_id(
+        run_id=run_id,
+        review_id=resolved_review_id,
+        revision=detail["review_revision"],
+        action=action,
+        reason=reason,
+    )
+    payload = {
+        "decision_id": resolved_decision_id,
+        "review_revision": detail["review_revision"],
+        "action": action,
+        "reason": reason,
+        "expected_state_version": detail["state_version"],
+    }
+    result = _request_json(
+        "POST",
+        _join_url(
+            config.base_url,
+            (
+                f"/api/runs/{parse.quote(run_id, safe='')}"
+                f"/reviews/{parse.quote(resolved_review_id, safe='')}"
+                "/decisions"
+            ),
+        ),
+        config=config,
+        payload=payload,
+    )
+    return {key: value for key, value in result.items() if key != "reason"}
+
+
 def wait_for_run(
     run_id: str,
     config: ToolConfig,
@@ -179,6 +366,38 @@ def wait_for_run(
         }:
             return result
         time.sleep(poll_seconds)
+
+
+def wait_for_review(
+    *,
+    run_id: str,
+    review_id: str | None,
+    config: ToolConfig,
+    poll_seconds: float = 1.0,
+    timeout_seconds: float = 120.0,
+) -> dict[str, Any]:
+    if poll_seconds <= 0:
+        raise ToolClientError("review_poll_seconds_must_be_positive")
+    if timeout_seconds <= 0:
+        raise ToolClientError(
+            "review_wait_timeout_seconds_must_be_positive"
+        )
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        result = show_review(
+            run_id=run_id,
+            review_id=review_id,
+            config=config,
+        )
+        status = result["workflow"]["status"]
+        if status in {"approved", "rejected"}:
+            return result
+        if status == "manual_recovery":
+            code = result["workflow"].get("last_error_code") or "unknown"
+            raise ToolClientError(f"manual_recovery:{code}")
+        remaining = max(0.0, deadline - time.monotonic())
+        time.sleep(min(poll_seconds, remaining))
+    raise ToolClientError("review_wait_timeout")
 
 
 def _resolve_env(
@@ -289,6 +508,45 @@ def _build_parser() -> argparse.ArgumentParser:
 
     result = subparsers.add_parser("result")
     result.add_argument("--run-id", required=True)
+
+    review = subparsers.add_parser("review")
+    review_subparsers = review.add_subparsers(
+        dest="review_command",
+        required=True,
+    )
+    review_list = review_subparsers.add_parser("list")
+    review_list.add_argument("--status", default="waiting_decision")
+    review_list.add_argument("--limit", type=int, default=20)
+    review_list.add_argument("--cursor")
+
+    review_show = review_subparsers.add_parser("show")
+    review_show.add_argument("--run-id", required=True)
+    review_show.add_argument("--review-id")
+
+    review_approve = review_subparsers.add_parser("approve")
+    review_approve.add_argument("--run-id", required=True)
+    review_approve.add_argument("--review-id")
+    review_approve.add_argument("--decision-id")
+    review_approve.add_argument("--wait", action="store_true")
+
+    review_reject = review_subparsers.add_parser("reject")
+    review_reject.add_argument("--run-id", required=True)
+    review_reject.add_argument("--review-id")
+    review_reject.add_argument("--decision-id")
+    reason = review_reject.add_mutually_exclusive_group(required=True)
+    reason.add_argument("--reason-file", type=Path)
+    reason.add_argument("--reason-stdin", action="store_true")
+    review_reject.add_argument("--wait", action="store_true")
+
+    review_wait = review_subparsers.add_parser("wait")
+    review_wait.add_argument("--run-id", required=True)
+    review_wait.add_argument("--review-id")
+    review_wait.add_argument("--poll-seconds", type=float, default=1)
+    review_wait.add_argument(
+        "--wait-timeout-seconds",
+        type=float,
+        default=120,
+    )
     return parser
 
 
@@ -326,11 +584,70 @@ def main(argv: list[str] | None = None) -> int:
                 result = wait_for_run(result["run_id"], config)
         elif args.command == "result":
             result = get_run(args.run_id, config)
+        elif args.command == "review" and args.review_command == "list":
+            result = list_reviews(
+                config,
+                status=args.status,
+                limit=args.limit,
+                cursor=args.cursor,
+            )
+        elif args.command == "review" and args.review_command == "show":
+            result = show_review(
+                run_id=args.run_id,
+                review_id=args.review_id,
+                config=config,
+            )
+        elif args.command == "review" and args.review_command == "approve":
+            result = submit_review_decision(
+                run_id=args.run_id,
+                review_id=args.review_id,
+                decision_id=args.decision_id,
+                action="approve",
+                reason=None,
+                config=config,
+            )
+            if args.wait:
+                result = wait_for_review(
+                    run_id=args.run_id,
+                    review_id=result["review_id"],
+                    config=config,
+                )
+        elif args.command == "review" and args.review_command == "reject":
+            reason = read_rejection_reason(
+                reason_file=args.reason_file,
+                reason_stdin=args.reason_stdin,
+                stdin=sys.stdin,
+            )
+            result = submit_review_decision(
+                run_id=args.run_id,
+                review_id=args.review_id,
+                decision_id=args.decision_id,
+                action="reject",
+                reason=reason,
+                config=config,
+            )
+            if args.wait:
+                result = wait_for_review(
+                    run_id=args.run_id,
+                    review_id=result["review_id"],
+                    config=config,
+                )
+        elif args.command == "review" and args.review_command == "wait":
+            result = wait_for_review(
+                run_id=args.run_id,
+                review_id=args.review_id,
+                config=config,
+                poll_seconds=args.poll_seconds,
+                timeout_seconds=args.wait_timeout_seconds,
+            )
         else:
             parser.error(f"unknown command: {args.command}")
             return 1
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
+    except ToolClientHTTPError as exc:
+        print(json.dumps(exc.payload, ensure_ascii=False, indent=2))
+        return 1
     except ToolClientError as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False, indent=2))
         return 1

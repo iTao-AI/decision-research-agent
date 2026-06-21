@@ -42,7 +42,12 @@ class DockerProject:
         self.project_name = project_name
         self.env = env
 
-    def _compose(self, *args: str, timeout: int = 600):
+    def _compose(
+        self,
+        *args: str,
+        timeout: int = 600,
+        input_text: str | None = None,
+    ):
         return subprocess.run(
             [
                 "docker",
@@ -57,18 +62,26 @@ class DockerProject:
             capture_output=True,
             check=True,
             timeout=timeout,
+            input=input_text,
         )
 
-    def exec_json(self, command: list[str]) -> dict:
+    def exec_json(
+        self,
+        command: list[str],
+        *,
+        input_text: str | None = None,
+        environment: dict[str, str] | None = None,
+    ) -> dict:
+        args = ["exec", "-T"]
+        for key, value in sorted((environment or {}).items()):
+            args.extend(["-e", f"{key}={value}"])
+        args.extend(["backend", *command])
         completed = self._compose(
-            "exec",
-            "-T",
-            "backend",
-            *command,
+            *args,
             timeout=120,
+            input_text=input_text,
         )
-        lines = [line for line in completed.stdout.splitlines() if line.strip()]
-        return json.loads(lines[-1])
+        return json.loads(completed.stdout)
 
     def wait_until_ready(
         self,
@@ -168,6 +181,21 @@ def test_backend_container_restart_preserves_review_state(docker_project):
     seeded = docker_project.exec_json(
         ["python", "scripts/durable_hitl_container_fixture.py", "seed"]
     )
+    accepted = docker_project.exec_json(
+        [
+            "python",
+            "tools/decision_research_agent_tool.py",
+            "review",
+            "approve",
+            "--run-id",
+            seeded["run_id"],
+        ],
+        environment={
+            "DECISION_RESEARCH_AGENT_API_KEY":
+                "durable-hitl-container-test-only",
+        },
+    )
+    assert accepted["status"] == "resume_pending"
     docker_project.restart("backend")
     recovered = docker_project.exec_json(
         [
@@ -185,3 +213,53 @@ def test_backend_container_restart_preserves_review_state(docker_project):
     assert recovered["checkpoint_db_preserved"] is True
     assert recovered["decision_preserved"] is True
     assert recovered["reviewed_artifact_preserved"] is True
+
+
+def test_controlled_review_cli_approve_and_reject_canary(docker_project):
+    approve = docker_project.exec_json(
+        ["python", "scripts/durable_hitl_container_fixture.py", "seed"]
+    )
+    approved = docker_project.exec_json(
+        [
+            "python",
+            "tools/decision_research_agent_tool.py",
+            "review",
+            "approve",
+            "--run-id",
+            approve["run_id"],
+            "--wait",
+        ],
+        environment={
+            "DECISION_RESEARCH_AGENT_API_KEY":
+                "durable-hitl-container-test-only",
+        },
+    )
+    assert approved["workflow"]["status"] == "approved"
+    assert approved["delivery_status"] == "ready"
+
+    reject = docker_project.exec_json(
+        ["python", "scripts/durable_hitl_container_fixture.py", "seed"]
+    )
+    rejected = docker_project.exec_json(
+        [
+            "python",
+            "tools/decision_research_agent_tool.py",
+            "review",
+            "reject",
+            "--run-id",
+            reject["run_id"],
+            "--reason-stdin",
+            "--wait",
+        ],
+        input_text="Evidence boundary was not accepted.\n",
+        environment={
+            "DECISION_RESEARCH_AGENT_API_KEY":
+                "durable-hitl-container-test-only",
+        },
+    )
+    assert rejected["workflow"]["status"] == "rejected"
+    assert rejected["delivery_status"] == "blocked"
+    assert not any(
+        artifact_id.startswith("decision-brief.reviewed")
+        for artifact_id in rejected["resolution"]["artifact_ids"]
+    )

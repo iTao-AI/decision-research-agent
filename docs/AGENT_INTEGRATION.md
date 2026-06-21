@@ -63,6 +63,11 @@ successful canonical migration is demonstrated by using the canonical script
 and environment keys and receiving a passing response; the compatibility
 service ID is not product discovery.
 
+`doctor` also checks the controlled durable review runtime. When the feature is
+disabled, the durable review check reports `disabled` and the overall command
+can still succeed. When enabled, worker, schema, checkpoint compatibility, and
+the recorded gate report must be ready.
+
 ## Common Commands
 
 ```bash
@@ -85,6 +90,52 @@ python tools/decision_research_agent_tool.py research-runs --limit 20
 Terminal task statuses are `completed`, `completed_with_fallback`, and
 `failed`. ResearchRun responses include task status, token usage, quality gate
 output, diagnostics, and EvidenceLedger entries.
+
+## Controlled Review Commands
+
+The backend requires its controlled review configuration separately. The Tool
+Client reads only canonical connection settings:
+
+```bash
+export DECISION_RESEARCH_AGENT_URL
+export DECISION_RESEARCH_AGENT_API_KEY
+export DECISION_RESEARCH_AGENT_TIMEOUT_SECONDS
+```
+
+Do not pass an API key on the command line.
+
+```bash
+python tools/decision_research_agent_tool.py review list \
+  --status waiting_decision \
+  --limit 20
+
+python tools/decision_research_agent_tool.py review show \
+  --run-id "$RUN_ID"
+
+python tools/decision_research_agent_tool.py review approve \
+  --run-id "$RUN_ID" \
+  --wait
+
+python tools/decision_research_agent_tool.py review reject \
+  --run-id "$RUN_ID" \
+  --reason-file "$REJECTION_REASON_FILE" \
+  --wait
+
+python tools/decision_research_agent_tool.py review wait \
+  --run-id "$RUN_ID" \
+  --poll-seconds 1 \
+  --wait-timeout-seconds 120
+
+python tools/decision_research_agent_tool.py result \
+  --run-id "$RUN_ID"
+```
+
+`review show`, `review approve`, `review reject`, and `review wait` accept an
+optional `--review-id`. When omitted, the client resolves the current review ID
+from the run projection. `review reject` accepts exactly one of
+`--reason-file` or `--reason-stdin`; there is no plain `--reason` argument.
+`approve` and `reject` derive a deterministic decision ID unless
+`--decision-id` is provided.
 
 ## Existing Deployment Upgrade
 
@@ -129,10 +180,16 @@ value after success, timeout, or exception.
 ## Error And Security Behavior
 
 The client exits non-zero and prints structured JSON for connection errors,
-timeouts, non-2xx responses, and malformed JSON.
+timeouts, non-2xx responses, malformed JSON, `manual_recovery`, and review wait
+timeouts. Structured server error envelopes retain their stable `code`,
+`problem`, `fix`, and `retryable` fields.
 
 - The API key is never printed.
 - The CLI rejects API keys on the command line.
+- Rejection reasons are read only from a file or standard input and are not
+  echoed by the immediate decision response.
+- Actor fingerprints, lease owners, checkpoint paths, and raw tracebacks are
+  not printed.
 - Use loopback binding unless remote access is intentional.
 - The standalone Tool Client reads process environment variables directly; it
   does not load the repository `.env`.

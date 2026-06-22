@@ -14,6 +14,7 @@
 | [Durable HITL 运维说明](operations/durable-hitl-feasibility.md) | 实验性 P1B 启用边界、决策语义、恢复边界和 13 项 gate 命令 |
 | [Run Log](evidence/run-log.md) | E2E、ResearchRun 和 benchmark 证据记录 |
 | [技术决策说明](evidence/technical-decisions.md) | 关键工程决策 — 记录为什么选择 A 而不是 B |
+| [Evidence Verification Authority](decisions/evidence-verification-authority.md) | P2A PR1 的不可变 Evidence、确定性 preflight、追加式 human decision 与 review 权威边界 |
 
 ## Superpowers 规划文档
 

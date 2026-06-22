@@ -184,10 +184,38 @@ checkpoint 路径或 checkpoint payload。`approve` 只允许交付，不改变 
 不创建新的事实源或决策权威。application DB 仍是 review、decision、workflow 和
 resolution 的业务权威；checkpoint DB 仍只负责 LangGraph 恢复位置。
 
+## Evidence Verification Authority
+
+P2A PR1 keeps `evidence_entries_v2` immutable and adds:
+
+| Storage | Authority |
+|---|---|
+| `baseline_verification_origin` | Immutable collection-time origin: `none` or `declared_fixture` |
+| `evidence_verification_preflights_v2` | Versioned deterministic, no-network eligibility checks |
+| `evidence_verification_decisions_v2` | Append-only human `verify` / `reject` revisions |
+| `evidence_verification_snapshots_v2` | Deterministic effective-state snapshots |
+
+Effective public semantics are derived:
+
+| Origin | State | Compatibility status |
+|---|---|---|
+| `none` | `unverified` | `unverified` |
+| `declared_fixture` | `verified` | `verified` |
+| `human` + `verify` | `verified` | `verified` |
+| `human` + `reject` | `rejected` | `unverified` |
+
+The baseline origin column never stores `human`. Human state comes only from
+the latest accepted decision for the exact Evidence fingerprint. Review
+approval remains independent and does not write these tables.
+
+PR1 exposes only internal repository operations. It adds no HTTP/CLI mutation
+surface and does not rebuild artifacts.
+
 ## 变更记录
 
 | 日期 | 变更 |
 |------|------|
+| 2026-06-22 | 增加 P2A PR1 Evidence Verification Ledger schema、不可变 baseline origin 与独立 verification authority 边界 |
 | 2026-06-20 | 明确 P1C 队列/详情为只读投影，以及 review revision 决策与新 run 纠正语义 |
 | 2026-06-19 | 增加 P1B durable review 双数据库权威边界、四表模型、状态机和 blocked delivery |
 | 2026-05-19 | 初始数据模型文档 |

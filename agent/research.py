@@ -37,6 +37,7 @@ class EvidenceEntry:
     tool_call_id: str | None = None
     citation_status: str = "uncited"
     verification_status: str = "unverified"
+    baseline_verification_origin: str = "none"
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -45,8 +46,10 @@ class EvidenceEntry:
         return asdict(self)
 
     def __post_init__(self) -> None:
-        source_identity = self.source_identity or _source_identity(self.source_url)
-        fingerprint = self.evidence_fingerprint or _evidence_fingerprint(
+        if self.baseline_verification_origin not in {"none", "declared_fixture"}:
+            raise ValueError("invalid baseline_verification_origin")
+        source_identity = self.source_identity or source_identity_for(self.source_url)
+        fingerprint = self.evidence_fingerprint or evidence_fingerprint_for(
             source_identity, self.snippet
         )
         object.__setattr__(self, "source_identity", source_identity)
@@ -97,22 +100,25 @@ def _normalize_url(url: str) -> str:
     return url.rstrip(_URL_TRAILING_PUNCTUATION)
 
 
-def _source_identity(source_url: str | None) -> str:
+def source_identity_for(source_url: str | None) -> str:
     return _normalize_url(source_url.strip()) if source_url else "source:unknown"
 
 
-def _normalize_evidence_content(content: str) -> str:
+def normalize_evidence_content(content: str) -> str:
     return " ".join(str(content).split())
 
 
-def _evidence_fingerprint(source_identity: str, content: str) -> str:
-    payload = f"{source_identity}\n{_normalize_evidence_content(content)}"
+def evidence_fingerprint_for(source_identity: str, content: str) -> str:
+    payload = f"{source_identity}\n{normalize_evidence_content(content)}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def evidence_id_for(source_url: str | None, content: str, *, run_id: str) -> str:
     """Return the stable ledger identity exposed to structured researchers."""
-    fingerprint = _evidence_fingerprint(_source_identity(source_url), _truncate(content))
+    fingerprint = evidence_fingerprint_for(
+        source_identity_for(source_url),
+        _truncate(content),
+    )
     return f"ev_{run_id}_{fingerprint}"
 
 

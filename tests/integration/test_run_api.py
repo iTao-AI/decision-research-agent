@@ -344,6 +344,50 @@ def test_run_artifact_api_resolves_by_run_and_artifact_id(tmp_path, monkeypatch)
     assert response.text == "# Brief"
 
 
+def test_run_projection_exposes_current_publication_and_artifacts(
+    tmp_path,
+    monkeypatch,
+):
+    from tests.unit.test_publication_repository import (
+        _accept_verification,
+        _seed_talent_run,
+    )
+    from api.publication_repository import finalize_verification_publication
+    from api.run_repository import get_run
+
+    seeded = _seed_talent_run(tmp_path, migrate=True)
+    _accept_verification(seeded)
+    finalize_verification_publication(
+        db_path=seeded.db_path,
+        run_id=seeded.run_id,
+        expected_state_version=get_run(
+            db_path=seeded.db_path,
+            run_id=seeded.run_id,
+        )["state_version"],
+    )
+    monkeypatch.setenv("TASKS_DB_PATH", seeded.db_path)
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+
+    response = TestClient(app).get(
+        f"/api/runs/{seeded.run_id}",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current_publication"]["revision"] == 2
+    assert {
+        item["artifact_id"]
+        for item in body["current_artifacts"]
+    } == {
+        "decision-brief.r2.json",
+        "decision-brief.r2.md",
+    }
+    assert body["verification_summary"]["state_counts"] == {
+        "verified": 1
+    }
+
+
 @pytest.mark.asyncio
 async def test_mark_run_timeout_finalizes_nonterminal_run_with_frozen_evidence(
     tmp_path, monkeypatch

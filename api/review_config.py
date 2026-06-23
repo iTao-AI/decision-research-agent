@@ -10,6 +10,7 @@ from api.review_gate import ReviewGate
 from api.review_models import durable_hitl_enabled
 from api.review_repository import init_review_schema
 from api.run_migrations import verify_run_schema
+from api.publication_repository import evidence_verification_enabled
 
 
 class ReviewConfigurationError(RuntimeError):
@@ -39,6 +40,23 @@ class ReviewRuntimeReadiness:
             and self.checkpoint_compatible
             and self.gate_report_status == "PASS"
         )
+
+
+@dataclass(frozen=True)
+class EvidenceVerificationRuntimeConfig:
+    enabled: bool
+    review_runtime: ReviewRuntimeConfig | None = None
+    output_dir: Path | None = None
+
+
+@dataclass(frozen=True)
+class EvidenceVerificationRuntimeReadiness:
+    application_schema_ready: bool
+    review_runtime_ready: bool
+
+    @property
+    def ready(self) -> bool:
+        return self.application_schema_ready and self.review_runtime_ready
 
 
 def _persistent_path(raw: str | None, *, missing_code: str, memory_code: str) -> Path:
@@ -97,6 +115,28 @@ def validate_review_runtime(*, output_dir: Path) -> ReviewRuntimeConfig:
     )
 
 
+def validate_evidence_verification_runtime(
+    *,
+    review_runtime: ReviewRuntimeConfig,
+    output_dir: Path,
+) -> EvidenceVerificationRuntimeConfig:
+    if not evidence_verification_enabled():
+        return EvidenceVerificationRuntimeConfig(enabled=False)
+    if not review_runtime.enabled:
+        raise ReviewConfigurationError(
+            "verification_review_runtime_required"
+        )
+    if not os.getenv("API_SECRET", ""):
+        raise ReviewConfigurationError(
+            "evidence_verification_auth_not_configured"
+        )
+    return EvidenceVerificationRuntimeConfig(
+        enabled=True,
+        review_runtime=review_runtime,
+        output_dir=output_dir.resolve(),
+    )
+
+
 def check_review_readiness(
     *,
     runtime: ReviewRuntimeConfig,
@@ -137,4 +177,27 @@ def check_review_readiness(
         application_schema_ready=application_schema_ready,
         checkpoint_compatible=checkpoint_compatible,
         gate_report_status=gate_report_status,
+    )
+
+
+def check_evidence_verification_readiness(
+    *,
+    runtime: EvidenceVerificationRuntimeConfig,
+    review_readiness: ReviewRuntimeReadiness,
+) -> EvidenceVerificationRuntimeReadiness:
+    if not runtime.enabled or runtime.review_runtime is None:
+        return EvidenceVerificationRuntimeReadiness(False, False)
+    application_schema_ready = False
+    try:
+        verify_run_schema(
+            db_path=str(runtime.review_runtime.application_db_path),
+            include_evidence_verification=True,
+            include_publication=True,
+        )
+        application_schema_ready = True
+    except Exception:
+        pass
+    return EvidenceVerificationRuntimeReadiness(
+        application_schema_ready=application_schema_ready,
+        review_runtime_ready=review_readiness.ready,
     )

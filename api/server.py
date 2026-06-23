@@ -54,6 +54,9 @@ from agent.profile_registry import profile_registry
 from agent.talent_contracts import ResearchScope
 from api.talent_artifacts import build_talent_artifacts
 from api.review_api import router as review_router
+from api.evidence_verification_api import (
+    router as evidence_verification_router,
+)
 from api.review_models import (
     checkpoint_thread_id,
     durable_hitl_enabled,
@@ -62,16 +65,28 @@ from api.review_models import (
 )
 from api.review_config import (
     ReviewConfigurationError,
+    check_evidence_verification_readiness,
     check_review_readiness,
+    validate_evidence_verification_runtime,
     validate_review_runtime,
 )
 from api.review_worker import ReviewWorker
+from api.run_migrations import migrate_with_backup
 
 
 def _is_review_api_path(path: str) -> bool:
-    return path == "/api/reviews" or path.startswith("/api/reviews/") or (
+    return (
+        path == "/api/reviews"
+        or path.startswith("/api/reviews/")
+        or path == "/api/evidence-verifications/health"
+        or (
+            path.startswith("/api/runs/")
+            and "/evidence/" in path
+        )
+        or (
         path.startswith("/api/runs/")
         and "/reviews/" in path
+        )
     )
 
 
@@ -129,9 +144,20 @@ async def lifespan(app: FastAPI):
     worker = None
     app.state.review_worker_task = None
     app.state.review_runtime_readiness = None
+    app.state.evidence_verification_runtime_readiness = None
     try:
         runtime = validate_review_runtime(output_dir=output_dir)
+        verification_runtime = validate_evidence_verification_runtime(
+            review_runtime=runtime,
+            output_dir=output_dir,
+        )
         if runtime.enabled:
+            if verification_runtime.enabled:
+                application_db_path = str(runtime.application_db_path)
+                migrate_with_backup(
+                    db_path=application_db_path,
+                    backup_path=f"{application_db_path}.pre-p2a-pr2.bak",
+                )
             readiness = check_review_readiness(
                 runtime=runtime,
                 gate_report_path=(
@@ -144,6 +170,24 @@ async def lifespan(app: FastAPI):
             if not readiness.ready:
                 raise ReviewConfigurationError("review_runtime_not_ready")
             app.state.review_runtime_readiness = readiness
+            verification_readiness = (
+                check_evidence_verification_readiness(
+                    runtime=verification_runtime,
+                    review_readiness=readiness,
+                )
+            )
+            if (
+                verification_runtime.enabled
+                and not verification_readiness.ready
+            ):
+                raise ReviewConfigurationError(
+                    "verification_runtime_not_ready"
+                )
+            app.state.evidence_verification_runtime_readiness = (
+                verification_readiness
+                if verification_runtime.enabled
+                else None
+            )
             worker = create_review_worker(
                 application_db_path=runtime.application_db_path,
                 checkpoint_db_path=runtime.checkpoint_db_path,
@@ -157,6 +201,7 @@ async def lifespan(app: FastAPI):
     finally:
         app.state.review_worker_task = None
         app.state.review_runtime_readiness = None
+        app.state.evidence_verification_runtime_readiness = None
         if worker is not None:
             worker.stop()
         if task is not None:
@@ -205,6 +250,7 @@ app.add_middleware(
 
 app.add_middleware(APIKeyMiddleware)
 app.include_router(review_router)
+app.include_router(evidence_verification_router)
 
 
 @app.get("/health")

@@ -662,6 +662,91 @@ def list_effective_verifications(
         connection.close()
 
 
+def get_evidence_verification_detail(
+    *,
+    db_path: str,
+    run_id: str,
+    evidence_id: str,
+) -> dict | None:
+    init_evidence_verification_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        evidence = connection.execute(
+            """
+            SELECT *
+            FROM evidence_entries_v2
+            WHERE run_id = ? AND evidence_id = ?
+            """,
+            (run_id, evidence_id),
+        ).fetchone()
+        if evidence is None:
+            return None
+        decision = connection.execute(
+            """
+            SELECT *
+            FROM evidence_verification_decisions_v2
+            WHERE run_id = ?
+              AND evidence_id = ?
+              AND evidence_fingerprint = ?
+            ORDER BY revision DESC
+            LIMIT 1
+            """,
+            (
+                run_id,
+                evidence_id,
+                evidence["evidence_fingerprint"],
+            ),
+        ).fetchone()
+        preflight = connection.execute(
+            """
+            SELECT *
+            FROM evidence_verification_preflights_v2
+            WHERE run_id = ?
+              AND evidence_id = ?
+              AND evidence_fingerprint = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (
+                run_id,
+                evidence_id,
+                evidence["evidence_fingerprint"],
+            ),
+        ).fetchone()
+        decisions = connection.execute(
+            """
+            SELECT *
+            FROM evidence_verification_decisions_v2
+            WHERE run_id = ?
+              AND evidence_id = ?
+              AND evidence_fingerprint = ?
+            ORDER BY revision
+            """,
+            (
+                run_id,
+                evidence_id,
+                evidence["evidence_fingerprint"],
+            ),
+        ).fetchall()
+        return {
+            "effective": _effective_projection(
+                evidence=evidence,
+                decision=decision,
+            ).model_dump(mode="json"),
+            "preflight": (
+                _preflight_record(preflight).model_dump(mode="json")
+                if preflight is not None
+                else None
+            ),
+            "decisions": [
+                _decision_record(row).model_dump(mode="json")
+                for row in decisions
+            ],
+        }
+    finally:
+        connection.close()
+
+
 def finalize_verification_snapshot(
     *,
     db_path: str,

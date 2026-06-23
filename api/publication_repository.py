@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+from pathlib import Path
 import sqlite3
 from typing import Any
 
@@ -384,6 +385,11 @@ def _publication_status(
 ) -> tuple[str, int, str | None, str | None]:
     if has_human_decisions:
         return "stale", 0, None, row["updated_at"]
+    if (
+        row["bundle_status"] == "not_required"
+        and row["delivery_status"] == "ready"
+    ):
+        return "ready", 1, row["updated_at"], None
     if row["resolution_action"] == "approve" and row["delivery_status"] == "ready":
         return "ready", 1, row["resolution_created_at"] or row["updated_at"], None
     if row["resolution_action"] == "reject" or row["delivery_status"] == "blocked":
@@ -399,6 +405,7 @@ def _backfill_publications(connection: sqlite3.Connection) -> None:
             run.delivery_status,
             run.updated_at,
             bundle.review_id,
+            bundle.status AS bundle_status,
             bundle.created_at AS review_created_at,
             resolution.action AS resolution_action,
             resolution.created_at AS resolution_created_at,
@@ -482,6 +489,36 @@ def _backfill_publications(connection: sqlite3.Connection) -> None:
                 staled_at,
             ),
         )
+        if human_decision is not None:
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET review_status = 'required',
+                    delivery_status = 'review_required',
+                    state_version = state_version + 1,
+                    updated_at = ?
+                WHERE run_id = ?
+                """,
+                (row["updated_at"], row["run_id"]),
+            )
+            connection.execute(
+                """
+                UPDATE review_workflows_v2
+                SET status = 'superseded',
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = ?
+                WHERE run_id = ? AND review_id = ?
+                  AND status IN (
+                    'checkpoint_pending',
+                    'waiting_decision',
+                    'resume_pending',
+                    'resuming',
+                    'resolution_pending'
+                  )
+                """,
+                (row["updated_at"], row["run_id"], row["review_id"]),
+            )
 
 
 def _publication_record(row: sqlite3.Row) -> PublicationRecord:
@@ -619,6 +656,7 @@ def adopt_baseline_publication(
             run.delivery_status,
             run.updated_at,
             bundle.review_id,
+            bundle.status AS bundle_status,
             bundle.created_at AS review_created_at,
             resolution.action AS resolution_action,
             resolution.created_at AS resolution_created_at,
@@ -1269,6 +1307,34 @@ def migrate_publication_with_backup(
     backup_path: str,
 ) -> dict[str, Any]:
     from api.run_migrations import backup_database, restore_database
+
+    connection = _connect_for_migration(db_path)
+    try:
+        has_migration_table = connection.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'schema_migrations'
+            """
+        ).fetchone()
+        marker = (
+            connection.execute(
+                """
+                SELECT checksum FROM schema_migrations
+                WHERE version = ?
+                """,
+                (PUBLICATION_MIGRATION_VERSION,),
+            ).fetchone()
+            if has_migration_table is not None
+            else None
+        )
+    finally:
+        connection.close()
+    if marker is not None:
+        if marker["checksum"] != PUBLICATION_MIGRATION_CHECKSUM:
+            raise RuntimeError("publication_migration_checksum_mismatch")
+        return verify_publication_schema(db_path=db_path)
+    if Path(backup_path).exists():
+        raise RuntimeError("publication_migration_backup_already_exists")
 
     backup_database(db_path=db_path, backup_path=backup_path)
     try:

@@ -315,6 +315,32 @@ def verify_run_schema(
 
 def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
     """Back up, apply, and verify; restore the original DB on any failure."""
+    backup_existed = Path(backup_path).exists()
+    connection = sqlite3.connect(_get_db_path(db_path))
+    try:
+        has_migration_table = connection.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'schema_migrations'
+            """
+        ).fetchone()
+        marker_was_applied = (
+            connection.execute(
+                """
+                SELECT 1 FROM schema_migrations
+                WHERE version = ? AND checksum = ?
+                """,
+                (
+                    PUBLICATION_MIGRATION_VERSION,
+                    PUBLICATION_MIGRATION_CHECKSUM,
+                ),
+            ).fetchone()
+            is not None
+            if has_migration_table is not None
+            else False
+        )
+    finally:
+        connection.close()
     try:
         migrate_publication_with_backup(
             db_path=db_path,
@@ -326,5 +352,10 @@ def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
             include_publication=True,
         )
     except Exception:
-        restore_database(backup_path=backup_path, db_path=db_path)
+        if (
+            not marker_was_applied
+            and not backup_existed
+            and Path(backup_path).exists()
+        ):
+            restore_database(backup_path=backup_path, db_path=db_path)
         raise

@@ -136,6 +136,27 @@ class EvidenceSnapshot(ContractModel):
     source_url: BoundedString | None = None
     snippet: BoundedString
     verification_status: Literal["verified", "unverified"]
+    verification_state: Literal[
+        "unverified",
+        "verified",
+        "rejected",
+    ] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    verification_origin: Literal[
+        "none",
+        "declared_fixture",
+        "human",
+    ] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    verification_revision: int | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class ReviewBundle(ContractModel):

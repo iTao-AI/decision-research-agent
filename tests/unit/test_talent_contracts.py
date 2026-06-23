@@ -142,6 +142,56 @@ def test_deterministic_review_does_not_invent_claims():
     assert bundle.status == "not_required"
 
 
+def test_changed_snapshot_forces_fresh_review():
+    from api.review_service import build_review_bundle
+
+    bundle = build_review_bundle(
+        run_id="run-1",
+        claims=[],
+        evidence=[],
+        confidence_threshold=0.6,
+        revision=2,
+        mandatory_triggers=("verification_snapshot_changed",),
+    )
+
+    assert bundle.required_before_delivery is True
+    assert "verification_snapshot_changed" in bundle.triggers
+
+
+def test_evidence_snapshot_exposes_origin_state_and_revision():
+    from agent.talent_contracts import EvidenceSnapshot
+
+    snapshot = EvidenceSnapshot(
+        evidence_id="ev_1",
+        snippet="text",
+        verification_status="unverified",
+        verification_state="rejected",
+        verification_origin="human",
+        verification_revision=2,
+    )
+
+    assert snapshot.verification_state == "rejected"
+    assert snapshot.verification_origin == "human"
+    assert snapshot.verification_revision == 2
+
+
+def test_evidence_snapshot_omits_unset_verification_projection_fields():
+    from agent.talent_contracts import EvidenceSnapshot
+
+    snapshot = EvidenceSnapshot(
+        evidence_id="ev_1",
+        snippet="text",
+        verification_status="unverified",
+    )
+
+    assert snapshot.model_dump(mode="json") == {
+        "evidence_id": "ev_1",
+        "source_url": None,
+        "snippet": "text",
+        "verification_status": "unverified",
+    }
+
+
 def _research_packet_payload():
     return {
         "packet_id": "packet-1",

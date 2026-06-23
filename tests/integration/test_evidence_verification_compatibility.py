@@ -158,3 +158,30 @@ def test_authority_adr_states_exact_legacy_backfill_boundary():
 
     assert "aggregate-only Talent scope" in adr
     assert "legacy `verification_status=verified`" in adr
+
+
+def test_pr2_public_contract_docs_cover_supersession_and_operator_cli():
+    root = Path(__file__).resolve().parents[2]
+    api_contract = (root / "spec/api-contract.md").read_text(encoding="utf-8")
+    data_models = (root / "spec/data-models.md").read_text(encoding="utf-8")
+    integration = (root / "docs/AGENT_INTEGRATION.md").read_text(
+        encoding="utf-8"
+    )
+    runbook = (
+        root / "docs/operations/evidence-verification-workflow.md"
+    ).read_text(encoding="utf-8")
+    docs_index = (root / "docs/README.md").read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+
+    assert "approved | rejected | manual_recovery | superseded" in api_contract
+    assert "`superseded`" in data_models
+    assert "同一 `run_id` 内创建新的 publication revision" in data_models
+    assert "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION" in integration
+    assert "evidence_verification.status" in integration
+    assert "evidence list" in integration
+    assert "evidence finalize" in integration
+    assert "publication_migration_backup_already_exists" in runbook
+    assert "decision_history" in runbook
+    assert "P2A Controlled Publication Design" in docs_index
+    assert "P2A Controlled Publication Plan" in docs_index
+    assert "Controlled Evidence Verification" in readme

@@ -79,6 +79,7 @@ User: "调研 AI 在医疗诊断中的应用趋势，生成 PDF 报告"
 | Task timeout handling | Implemented (Phase 9) | `api/server.py`, `_mark_task_timeout` callback |
 | ResearchRun + EvidenceLedger | Implemented (Phase 10) | `agent/research.py`, `GET /api/research/runs/{thread_id}` |
 | Controlled durable review | P1B 13/13 gates passed; P1C backend/CLI workflow available when explicitly enabled; disabled by default | [Operator guide](docs/operations/controlled-review-workflow.md) |
+| Controlled Evidence Verification | P2A revisioned verification/publication backend and CLI available when explicitly enabled; disabled by default | [Operator guide](docs/operations/evidence-verification-workflow.md) |
 
 > All metrics above are from actual command runs on this machine. Token/cost benchmark data and P95 latency are pending dedicated benchmark runs.
 
@@ -157,6 +158,8 @@ API endpoints:
 - **GET /api/reviews** / **GET /api/reviews/health** — Authenticated controlled review queue and runtime readiness
 - **GET /api/runs/{run_id}/reviews/{review_id}** — Authenticated immutable review detail
 - **POST /api/runs/{run_id}/reviews/{review_id}/decisions** — Authenticated approve/reject decision
+- **GET /api/runs/{run_id}/evidence/verifications** — Authenticated, paginated effective Evidence verification state
+- **POST /api/runs/{run_id}/evidence/verification-snapshots** — Finalize a revisioned verification snapshot and publication
 - **GET /api/telemetry/runs/{run_id}** / **GET /api/token-usage/runs/{run_id}** — View run-scoped observability
 - **WebSocket /ws/runs/{run_id}** — Run-scoped real-time event stream
 - **WebSocket /ws/{thread_id}** — Real-time reasoning stream
@@ -205,6 +208,21 @@ See the [controlled review operator guide](docs/operations/controlled-review-wor
 [gate report](docs/evidence/durable-hitl-gate-report.json). A PASS report does
 not establish multi-instance, multi-user, or public-internet production
 readiness.
+
+### Controlled Evidence Verification
+
+P2A adds append-only human Evidence verification decisions, deterministic
+snapshots, revisioned publications, fresh-review enforcement, and canonical
+CLI commands. It remains disabled by default:
+
+```dotenv
+DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false
+```
+
+The supported boundary is the existing single-replica SQLite durable review
+runtime. It does not add UI, RBAC, automatic source retrieval, LLM verification,
+multi-instance operation, runtime Skills, Async Subagents, or real-source
+proof. See the [Evidence verification operator guide](docs/operations/evidence-verification-workflow.md).
 
 ## Project Structure
 

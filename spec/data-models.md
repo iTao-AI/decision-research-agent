@@ -163,6 +163,7 @@ checkpoint_pending -> waiting_decision -> resume_pending -> resuming
     -> resolution_pending -> approved | rejected
 
 ambiguous state or exhausted retries -> manual_recovery
+verification revision replaces active publication -> superseded
 ```
 
 Run 的 `delivery_status` 包含：
@@ -177,8 +178,10 @@ checkpoint 路径或 checkpoint payload。`approve` 只允许交付，不改变 
 验证状态；`reject` 不触发新的研究。
 
 `approve` 和 `reject` 是一个 review revision 的不可变终态决策，接受后不能撤回、
-改写或替换。纠正请求或重复研究必须创建新的 `run_id`；可保留相同 `thread_id`
-用于分组，但不得改写旧 run，旧 run 继续作为不可变审计记录。
+改写或替换。重复研究或改变 research input/scope 必须创建新的 `run_id`；对同一
+run 已持久化 Evidence fingerprint 的人工 verification 纠正，使用 append-only
+decision revision，并在同一 `run_id` 内创建新的 publication revision。旧
+publication、review 和 decision 继续作为不可变审计记录。
 
 `GET /api/reviews` 队列和 review detail 都只是 application ledger 的只读投影，
 不创建新的事实源或决策权威。application DB 仍是 review、decision、workflow 和

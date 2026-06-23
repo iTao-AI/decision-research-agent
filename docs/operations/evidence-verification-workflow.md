@@ -23,10 +23,14 @@ TASKS_DB_PATH=/app/data/tasks.db
 DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH=/app/data/review_checkpoints.db
 ```
 
-The two SQLite paths must be persistent, distinct, and writable. Startup creates
-a transactionally consistent application-database backup before applying the
-revisioned publication migration. Keep the backup, checkpoint database, and
-output storage together for recovery.
+The two SQLite paths must be persistent, distinct, and writable. Before the
+publication migration, startup creates one transactionally consistent,
+immutable application-database backup. Once the migration marker exists,
+restart only verifies schema and never overwrites that backup. If the marker is
+missing while the configured backup already exists, startup fails closed with
+`publication_migration_backup_already_exists`; an operator must determine which
+database/backup pair is authoritative instead of allowing automatic overwrite.
+Keep the backup, checkpoint database, and output storage together for recovery.
 
 Verify readiness:
 
@@ -48,6 +52,11 @@ python tools/decision_research_agent_tool.py evidence show \
   --run-id "$RUN_ID" \
   --evidence-id "$EVIDENCE_ID"
 ```
+
+Evidence list uses SQL keyset pagination. Evidence detail returns at most the
+latest 100 human decisions in the compatible `decisions` field and includes
+`decision_history` metadata with the fixed limit, returned count, truncation
+flag, and returned revision boundary.
 
 Verify an exact persisted fingerprint only after comparing it to the identified
 source:
@@ -87,6 +96,11 @@ python tools/decision_research_agent_tool.py evidence finalize \
 Finalization creates or reuses one immutable snapshot. A changed snapshot
 creates revisioned DecisionBrief artifacts and a fresh durable review. Approve
 that review through the existing `review approve` command.
+
+If persisted packet or snapshot JSON is invalid, finalization fails with a
+bounded JSON error such as `publication_packet_state_invalid` or
+`verification_snapshot_invalid`. The response does not expose traceback,
+database paths, or raw exception text.
 
 ## States and Recovery
 

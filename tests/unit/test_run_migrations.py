@@ -71,6 +71,7 @@ def test_migration_verification_failure_restores_backup(tmp_path, monkeypatch):
         *,
         db_path,
         include_evidence_verification=False,
+        include_publication=False,
     ):
         raise RuntimeError("verification failed")
 
@@ -79,3 +80,41 @@ def test_migration_verification_failure_restores_backup(tmp_path, monkeypatch):
         migrate_with_backup(db_path=db_path, backup_path=backup_path)
 
     assert _table_names(db_path) == original_tables
+
+
+def test_full_migration_includes_revisioned_publication_schema(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    backup_path = str(tmp_path / "tasks.pre-publication.db")
+    init_db(db_path).close()
+
+    result = migrate_with_backup(
+        db_path=db_path,
+        backup_path=backup_path,
+    )
+
+    assert "006_revisioned_publication" in result["migration_versions"]
+    assert "run_publications_v2" in result["tables"]
+
+
+def test_restart_verification_failure_preserves_migrated_db_and_backup(
+    tmp_path,
+    monkeypatch,
+):
+    import api.run_migrations as migrations
+
+    db_path = str(tmp_path / "tasks.db")
+    backup_path = str(tmp_path / "tasks.pre-publication.db")
+    init_db(db_path).close()
+    migrate_with_backup(db_path=db_path, backup_path=backup_path)
+    backup_tables = _table_names(backup_path)
+
+    monkeypatch.setattr(
+        migrations,
+        "verify_run_schema",
+        lambda **_: (_ for _ in ()).throw(RuntimeError("verification failed")),
+    )
+    with pytest.raises(RuntimeError, match="verification failed"):
+        migrate_with_backup(db_path=db_path, backup_path=backup_path)
+
+    assert "run_publications_v2" in _table_names(db_path)
+    assert _table_names(backup_path) == backup_tables

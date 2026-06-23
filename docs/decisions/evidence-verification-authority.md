@@ -37,8 +37,23 @@ Existing Talent benchmark fixtures remain effectively `verified` with origin
 unless the migration also proves an aggregate-only Talent scope and the row has
 legacy `verification_status=verified`.
 
-PR1 adds no API, CLI, publication pointer, artifact revision, or new review
-workflow. Those changes require the separately approved P2A PR2.
+P2A PR2 exposes the authority through strictly authenticated API and canonical
+Tool Client operations. It adds an explicit revisioned publication head:
+
+- a new accepted human decision atomically stales the current publication;
+- the changed effective snapshot deterministically rebuilds immutable artifacts;
+- every changed snapshot requires a fresh durable review;
+- an earlier review decision cannot approve a later publication;
+- only `is_current=1 AND status=ready` is deliverable.
+
+Collected Evidence and ResearchPackets remain immutable. A correction that only
+changes verification authority and derived delivery does not require a new
+`run_id`. Review approval remains delivery permission and never grants Evidence
+verification.
+
+The controlled boundary remains default-disabled, single-node SQLite, and one
+backend replica. PR2 adds no source retrieval, LLM verification, UI, RBAC,
+Skills, Async Subagents, multi-instance behavior, or real-source proof.
 
 ## Rejected Alternatives
 

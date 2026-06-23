@@ -56,7 +56,7 @@
     "workflow_id": "rwf_...",
     "review_id": "review_...",
     "review_revision": 1,
-    "status": "waiting_decision | resume_pending | resuming | resolution_pending | approved | rejected | manual_recovery",
+    "status": "waiting_decision | resume_pending | resuming | resolution_pending | approved | rejected | manual_recovery | superseded",
     "decision_id": null,
     "post_review_segment_id": "run_..._seg_review_...",
     "attempt_count": 0,
@@ -81,7 +81,7 @@ checkpoint 路径和 checkpoint payload 不会返回。
 
 - `status`：精确 workflow 状态，默认 `waiting_decision`；可选值为
   `checkpoint_pending | waiting_decision | resume_pending | resuming |
-  resolution_pending | approved | rejected | manual_recovery`。
+  resolution_pending | approved | rejected | manual_recovery | superseded`。
 - `limit`：`1..100`，默认 20。
 - `cursor`：可选的不透明分页游标；调用方只能原样回传服务端返回的值。
 
@@ -172,6 +172,57 @@ Feature flag 关闭返回 `404 durable_hitl_disabled`；已启用但未配置
 `API_SECRET` 返回 `503 review_auth_not_configured`；无效凭证返回
 `401 invalid_api_key`。P1C 仅移除该 endpoint 的 OpenAPI deprecated 标记；
 请求体、幂等语义、冲突处理和异步 `202` 响应保持不变。
+
+### Evidence verification endpoints
+
+以下 P2A endpoints 同时要求：
+
+- `DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=true`；
+- durable review runtime 就绪；
+- 非空 `API_SECRET`；
+- 正确 `X-API-Key`；
+- 完整 PR1/PR2 application schema。
+
+认证在 path/query/body validation 和 resource lookup 之前执行。稳定 endpoints：
+
+```text
+GET  /api/evidence-verifications/health
+GET  /api/runs/{run_id}/evidence/verifications
+GET  /api/runs/{run_id}/evidence/{evidence_id}/verification
+POST /api/runs/{run_id}/evidence/{evidence_id}/verification-decisions
+POST /api/runs/{run_id}/evidence/verification-snapshots
+```
+
+list 使用 `evidence_id` keyset pagination，`limit=1..100`，cursor 不透明。
+cursor 和 limit 直接约束 repository SQL；latest decision 使用 bounded batch
+读取，不逐条查询。detail 的 `decisions` 兼容字段最多返回最新 100 条，并通过
+`decision_history` 返回 `limit`、`returned`、`truncated` 及返回 revision
+边界。list/detail 不返回 `actor_fingerprint`、request hash 或其他私有 audit
+字段。
+
+verify request 必须设置 `confirm_source_match=true`。reject request 必须提供
+`reason_code`，`reason_note` 最长 1000 字符。相同 deterministic
+`verification_id` 和相同内容安全 replay；不同内容冲突。
+
+finalization body：
+
+```json
+{"expected_state_version": 4}
+```
+
+stale state 返回 `409 stale_state_version` 且不提交部分 snapshot、artifact、
+review、workflow 或 publication row。
+损坏的 persisted packet、snapshot 或 artifact build state 返回稳定、有界的
+JSON conflict code，例如 `publication_packet_state_invalid` 或
+`verification_snapshot_invalid`；响应不包含 traceback、数据库路径或原始异常。
+
+当 publication 存在时，`GET /api/runs/{run_id}` 额外返回
+`current_publication`、`current_artifacts` 和 `verification_summary`。历史
+`artifacts` 列表继续保留；current delivery 只能由
+`current_publication.artifact_ids` 解析。
+
+Feature flag 关闭返回 `404 evidence_verification_disabled`。该接口没有
+`DEEP_SEARCH_AGENT_*` 环境变量或 legacy Tool Client alias。
 
 ### GET /api/tasks/{thread_id}
 

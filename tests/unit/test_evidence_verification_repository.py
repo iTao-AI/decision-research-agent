@@ -7,9 +7,11 @@ import pytest
 from agent.research import EvidenceEntry
 from api.evidence_verification_models import VerificationDecisionRequest
 from api.evidence_verification_repository import (
+    DECISION_HISTORY_LIMIT,
     VerificationConflict,
     accept_verification_decision,
     finalize_verification_snapshot,
+    get_evidence_verification_detail,
     get_or_create_evidence_preflight,
     get_effective_verification,
     init_evidence_verification_schema,
@@ -418,6 +420,111 @@ def test_list_projection_is_stable_and_sorted_by_evidence_id(tmp_path):
         projections,
         key=lambda item: item.evidence_id,
     )
+
+
+def test_list_projection_applies_cursor_and_limit_in_repository(tmp_path):
+    db_path, run_id, evidence_id, _ = _persisted_evidence(tmp_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        segment_id = connection.execute(
+            "SELECT segment_id FROM run_segments WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()[0]
+        with connection:
+            for suffix in ("b", "c"):
+                connection.execute(
+                    """
+                    INSERT INTO evidence_entries_v2(
+                        evidence_id, run_id, segment_id, query_text,
+                        subagent_name, tool_name, source_url,
+                        source_identity, snippet, evidence_fingerprint,
+                        retrieved_at, tool_call_id, citation_status,
+                        verification_status, baseline_verification_origin,
+                        created_at
+                    ) VALUES (?, ?, ?, 'query', 'agent', 'tool', ?, ?,
+                              'snippet', ?, NULL, NULL, 'cited',
+                              'unverified', 'none', ?)
+                    """,
+                    (
+                        f"{evidence_id}_{suffix}",
+                        run_id,
+                        segment_id,
+                        f"https://example.com/{suffix}",
+                        f"https://example.com/{suffix}",
+                        suffix * 64,
+                        f"2026-06-12T00:00:0{suffix == 'c'}+00:00",
+                    ),
+                )
+    finally:
+        connection.close()
+
+    first = list_effective_verifications(
+        db_path=db_path,
+        run_id=run_id,
+        limit=1,
+    )
+    second = list_effective_verifications(
+        db_path=db_path,
+        run_id=run_id,
+        after=first[0].evidence_id,
+        limit=1,
+    )
+
+    assert len(first) == len(second) == 1
+    assert second[0].evidence_id > first[0].evidence_id
+
+
+def test_detail_bounds_decision_history_with_truncation_metadata(tmp_path):
+    db_path, run_id, evidence_id, fingerprint = _persisted_evidence(tmp_path)
+    preflight = get_or_create_evidence_preflight(
+        db_path=db_path,
+        run_id=run_id,
+        evidence_id=evidence_id,
+    )
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            for revision in range(1, DECISION_HISTORY_LIMIT + 6):
+                connection.execute(
+                    """
+                    INSERT INTO evidence_verification_decisions_v2(
+                        verification_id, run_id, evidence_id,
+                        evidence_fingerprint, revision, action,
+                        reason_code, reason_note, preflight_id,
+                        actor_fingerprint, request_hash, created_at
+                    ) VALUES (?, ?, ?, ?, ?, 'verify', NULL, NULL, ?,
+                              'actor', ?, ?)
+                    """,
+                    (
+                        f"verification-{revision}",
+                        run_id,
+                        evidence_id,
+                        fingerprint,
+                        revision,
+                        preflight.preflight_id,
+                        f"request-{revision}",
+                        f"2026-06-12T00:00:{revision:02d}+00:00",
+                    ),
+                )
+    finally:
+        connection.close()
+
+    detail = get_evidence_verification_detail(
+        db_path=db_path,
+        run_id=run_id,
+        evidence_id=evidence_id,
+    )
+
+    assert len(detail["decisions"]) == DECISION_HISTORY_LIMIT
+    assert detail["decisions"][0]["revision"] == 6
+    assert detail["decisions"][-1]["revision"] == 105
+    assert detail["decision_history"] == {
+        "limit": DECISION_HISTORY_LIMIT,
+        "returned": DECISION_HISTORY_LIMIT,
+        "truncated": True,
+        "oldest_returned_revision": 6,
+        "newest_returned_revision": 105,
+    }
 
 
 def test_same_effective_state_reuses_snapshot_identity(tmp_path):

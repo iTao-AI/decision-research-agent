@@ -163,6 +163,7 @@ checkpoint_pending -> waiting_decision -> resume_pending -> resuming
     -> resolution_pending -> approved | rejected
 
 ambiguous state or exhausted retries -> manual_recovery
+verification revision replaces active publication -> superseded
 ```
 
 Run 的 `delivery_status` 包含：
@@ -177,8 +178,10 @@ checkpoint 路径或 checkpoint payload。`approve` 只允许交付，不改变 
 验证状态；`reject` 不触发新的研究。
 
 `approve` 和 `reject` 是一个 review revision 的不可变终态决策，接受后不能撤回、
-改写或替换。纠正请求或重复研究必须创建新的 `run_id`；可保留相同 `thread_id`
-用于分组，但不得改写旧 run，旧 run 继续作为不可变审计记录。
+改写或替换。重复研究或改变 research input/scope 必须创建新的 `run_id`；对同一
+run 已持久化 Evidence fingerprint 的人工 verification 纠正，使用 append-only
+decision revision，并在同一 `run_id` 内创建新的 publication revision。旧
+publication、review 和 decision 继续作为不可变审计记录。
 
 `GET /api/reviews` 队列和 review detail 都只是 application ledger 的只读投影，
 不创建新的事实源或决策权威。application DB 仍是 review、decision、workflow 和
@@ -208,14 +211,40 @@ The baseline origin column never stores `human`. Human state comes only from
 the latest accepted decision for the exact Evidence fingerprint. Review
 approval remains independent and does not write these tables.
 
-PR1 exposes only internal repository operations. It adds no HTTP/CLI mutation
-surface and does not rebuild artifacts.
+P2A PR2 adds revisioned delivery state:
+
+| Storage | Contract |
+|---|---|
+| `review_bundles_v2` | `UNIQUE(run_id, revision)`; immutable bundle per publication revision |
+| `review_workflows_v2` | `UNIQUE(run_id, review_revision)`; active workflows may terminate as `superseded` |
+| `review_resolutions_v2` | `UNIQUE(run_id, review_id)`; exact review resolution |
+| `run_publications_v2` | Explicit publication revision, snapshot, review, artifacts, status, and current pointer |
+
+`run_publications_v2` has a unique partial index on `run_id WHERE is_current=1`.
+Publication, ReviewBundle, and post-review segment revision are equal. Snapshot
+revision is independent.
+
+```text
+review_required -> ready | blocked | stale
+ready -> stale
+blocked -> stale
+```
+
+An accepted non-idempotent verification decision atomically stales the current
+publication and supersedes its non-terminal workflow. Finalization is fenced by
+`research_runs_v2.state_version`; a changed snapshot creates immutable
+revisioned artifacts and a fresh review. Historical review decisions remain
+queryable but cannot resolve a later publication.
+
+Only a current publication with `status=ready` is deliverable. Review approval
+still does not write Evidence verification decisions.
 
 ## 变更记录
 
 | 日期 | 变更 |
 |------|------|
 | 2026-06-22 | 增加 P2A PR1 Evidence Verification Ledger schema、不可变 baseline origin 与独立 verification authority 边界 |
+| 2026-06-23 | 增加 P2A PR2 revisioned publication、fresh review、authenticated API/CLI 与 current delivery 语义 |
 | 2026-06-20 | 明确 P1C 队列/详情为只读投影，以及 review revision 决策与新 run 纠正语义 |
 | 2026-06-19 | 增加 P1B durable review 双数据库权威边界、四表模型、状态机和 blocked delivery |
 | 2026-05-19 | 初始数据模型文档 |

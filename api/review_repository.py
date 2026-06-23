@@ -6,6 +6,8 @@ import json
 import sqlite3
 from typing import Any
 
+from agent.talent_contracts import DecisionBrief
+from api.decision_brief import with_content_hash
 from api.review_artifacts import ReviewedArtifactResult
 from api.review_models import (
     ReviewDecisionRecord,
@@ -197,6 +199,59 @@ def _decision_acceptance(
     )
 
 
+def _table_exists(
+    connection: sqlite3.Connection,
+    table_name: str,
+) -> bool:
+    return (
+        connection.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            """,
+            (table_name,),
+        ).fetchone()
+        is not None
+    )
+
+
+def _publication_for_review(
+    connection: sqlite3.Connection,
+    *,
+    run_id: str,
+    review_id: str,
+) -> sqlite3.Row | None:
+    if not _table_exists(connection, "run_publications_v2"):
+        return None
+    return connection.execute(
+        """
+        SELECT *
+        FROM run_publications_v2
+        WHERE run_id = ? AND review_id = ?
+        """,
+        (run_id, review_id),
+    ).fetchone()
+
+
+def _require_active_publication_review(
+    connection: sqlite3.Connection,
+    *,
+    run_id: str,
+    review_id: str,
+) -> None:
+    publication = _publication_for_review(
+        connection,
+        run_id=run_id,
+        review_id=review_id,
+    )
+    if publication is None:
+        return
+    if not publication["is_current"] or publication["status"] == "stale":
+        raise ReviewConflict("review_superseded")
+    if publication["status"] != "review_required":
+        raise ReviewConflict("review_not_waiting")
+
+
 def accept_review_decision(
     *,
     run_id: str,
@@ -256,6 +311,13 @@ def accept_review_decision(
             ).fetchone()
             if run is None or workflow is None:
                 raise ReviewConflict("review_not_found")
+            if workflow["status"] == "superseded":
+                raise ReviewConflict("review_superseded")
+            _require_active_publication_review(
+                connection,
+                run_id=run_id,
+                review_id=review_id,
+            )
             if run["profile_id"] != "talent-hiring-signal":
                 raise ReviewConflict("unsupported_review_profile")
             if (
@@ -493,12 +555,12 @@ def get_review_detail(
         if row is None:
             return None
         decision = connection.execute(
-            "SELECT * FROM review_decisions_v2 WHERE run_id = ?",
-            (run_id,),
+            "SELECT * FROM review_decisions_v2 WHERE review_id = ?",
+            (review_id,),
         ).fetchone()
         resolution = connection.execute(
-            "SELECT * FROM review_resolutions_v2 WHERE run_id = ?",
-            (run_id,),
+            "SELECT * FROM review_resolutions_v2 WHERE review_id = ?",
+            (review_id,),
         ).fetchone()
         return {
             "run_id": run_id,
@@ -526,21 +588,70 @@ def get_review_projection(
     init_review_schema(db_path)
     connection = _connect(db_path)
     try:
-        workflow = connection.execute(
-            "SELECT * FROM review_workflows_v2 WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
-        decision = connection.execute(
-            """
-            SELECT * FROM review_decisions_v2
-            WHERE run_id = ? ORDER BY created_at DESC LIMIT 1
-            """,
-            (run_id,),
-        ).fetchone()
-        resolution = connection.execute(
-            "SELECT * FROM review_resolutions_v2 WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
+        review_id = None
+        has_publications = False
+        if _table_exists(connection, "run_publications_v2"):
+            has_publications = (
+                connection.execute(
+                    """
+                    SELECT 1 FROM run_publications_v2
+                    WHERE run_id = ? LIMIT 1
+                    """,
+                    (run_id,),
+                ).fetchone()
+                is not None
+            )
+            publication = connection.execute(
+                """
+                SELECT review_id FROM run_publications_v2
+                WHERE run_id = ? AND is_current = 1
+                """,
+                (run_id,),
+            ).fetchone()
+            review_id = publication["review_id"] if publication else None
+        if review_id is not None:
+            workflow = connection.execute(
+                """
+                SELECT * FROM review_workflows_v2
+                WHERE run_id = ? AND review_id = ?
+                """,
+                (run_id, review_id),
+            ).fetchone()
+            decision = connection.execute(
+                """
+                SELECT * FROM review_decisions_v2
+                WHERE review_id = ?
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (review_id,),
+            ).fetchone()
+            resolution = connection.execute(
+                """
+                SELECT * FROM review_resolutions_v2
+                WHERE review_id = ?
+                """,
+                (review_id,),
+            ).fetchone()
+        elif has_publications:
+            workflow = None
+            decision = None
+            resolution = None
+        else:
+            workflow = connection.execute(
+                "SELECT * FROM review_workflows_v2 WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            decision = connection.execute(
+                """
+                SELECT * FROM review_decisions_v2
+                WHERE run_id = ? ORDER BY created_at DESC LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+            resolution = connection.execute(
+                "SELECT * FROM review_resolutions_v2 WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
         return {
             "workflow": _workflow_projection(workflow),
             "decision": _decision_projection(decision),
@@ -636,11 +747,12 @@ def claim_review_workflow(
                 INSERT OR IGNORE INTO run_segments (
                     segment_id, run_id, kind, sequence, attempt, status,
                     created_at, updated_at
-                ) VALUES (?, ?, 'post_review', 1, 1, 'pending', ?, ?)
+                ) VALUES (?, ?, 'post_review', ?, 1, 'pending', ?, ?)
                 """,
                 (
                     workflow["post_review_segment_id"],
                     workflow["run_id"],
+                    workflow["review_revision"],
                     claimed_at_text,
                     claimed_at_text,
                 ),
@@ -648,9 +760,9 @@ def claim_review_workflow(
             segment = connection.execute(
                 """
                 SELECT segment_id FROM run_segments
-                WHERE run_id = ? AND sequence = 1
+                WHERE run_id = ? AND sequence = ?
                 """,
-                (workflow["run_id"],),
+                (workflow["run_id"], workflow["review_revision"]),
             ).fetchone()
             if (
                 segment is None
@@ -891,18 +1003,63 @@ def get_decision(
 def get_original_decision_brief(
     *,
     run_id: str,
+    review_id: str | None = None,
     db_path: str | None = None,
 ) -> str:
     init_review_schema(db_path)
     connection = _connect(db_path)
     try:
-        row = connection.execute(
-            """
-            SELECT content FROM run_artifacts_v2
-            WHERE run_id = ? AND artifact_id = 'decision-brief.json'
-            """,
-            (run_id,),
-        ).fetchone()
+        row = None
+        publication_rows_exist = False
+        publication_table_exists = _table_exists(
+            connection,
+            "run_publications_v2",
+        )
+        if publication_table_exists:
+            publication_rows_exist = (
+                connection.execute(
+                    """
+                    SELECT 1 FROM run_publications_v2
+                    WHERE run_id = ? LIMIT 1
+                    """,
+                    (run_id,),
+                ).fetchone()
+                is not None
+            )
+        if review_id is not None and publication_table_exists:
+            publication = connection.execute(
+                """
+                SELECT artifact_ids_json
+                FROM run_publications_v2
+                WHERE run_id = ? AND review_id = ?
+                """,
+                (run_id, review_id),
+            ).fetchone()
+            if publication is not None:
+                artifact_ids = json.loads(publication["artifact_ids_json"])
+                placeholders = ", ".join("?" for _ in artifact_ids)
+                if artifact_ids:
+                    row = connection.execute(
+                        f"""
+                        SELECT content FROM run_artifacts_v2
+                        WHERE run_id = ?
+                          AND artifact_id IN ({placeholders})
+                          AND kind = 'decision_brief_json'
+                        ORDER BY artifact_id
+                        LIMIT 1
+                        """,
+                        (run_id, *artifact_ids),
+                    ).fetchone()
+        if row is None and (
+            review_id is None or not publication_rows_exist
+        ):
+            row = connection.execute(
+                """
+                SELECT content FROM run_artifacts_v2
+                WHERE run_id = ? AND artifact_id = 'decision-brief.json'
+                """,
+                (run_id,),
+            ).fetchone()
         if row is None:
             raise ReviewConflict("decision_brief_not_found")
         return row["content"]
@@ -991,6 +1148,8 @@ def mark_manual_recovery(
             ).fetchone()
             if workflow is None:
                 raise ReviewConflict("review_not_found")
+            if workflow["status"] == "superseded":
+                raise ReviewConflict("review_superseded")
             if worker_id is not None:
                 workflow = _owned_workflow(
                     connection,
@@ -1006,7 +1165,12 @@ def mark_manual_recovery(
                         lease_expires_at = NULL, last_error_code = ?,
                         updated_at = ?
                     WHERE workflow_id = ?
-                      AND status NOT IN ('approved', 'rejected', 'manual_recovery')
+                      AND status NOT IN (
+                        'approved',
+                        'rejected',
+                        'manual_recovery',
+                        'superseded'
+                      )
                     """,
                     (error_code, now, workflow_id),
                 )
@@ -1198,10 +1362,17 @@ def resolve_review(
             ).fetchone()
             if workflow is None:
                 raise ReviewConflict("review_not_found")
+            if workflow["status"] == "superseded":
+                raise ReviewConflict("review_superseded")
+            _require_active_publication_review(
+                connection,
+                run_id=workflow["run_id"],
+                review_id=workflow["review_id"],
+            )
 
             existing = connection.execute(
-                "SELECT * FROM review_resolutions_v2 WHERE run_id = ?",
-                (workflow["run_id"],),
+                "SELECT * FROM review_resolutions_v2 WHERE review_id = ?",
+                (workflow["review_id"],),
             ).fetchone()
             if existing is not None:
                 return _resolution_record(existing)
@@ -1240,6 +1411,46 @@ def resolve_review(
                 raise ReviewConflict("resolution_result_mismatch")
             if decision["action"] == "reject" and result.artifacts:
                 raise ReviewConflict("resolution_result_mismatch")
+            reviewed_content_hash = None
+            if decision["action"] == "approve":
+                if result.brief is None:
+                    raise ReviewConflict("resolution_result_mismatch")
+                reviewed_content_hash = with_content_hash(
+                    result.brief
+                ).content_hash
+                if result.brief.content_hash != reviewed_content_hash:
+                    raise ReviewConflict("resolution_result_mismatch")
+                json_artifacts = [
+                    artifact
+                    for artifact in result.artifacts
+                    if artifact["media_type"] == "application/json"
+                ]
+                markdown_artifacts = [
+                    artifact
+                    for artifact in result.artifacts
+                    if artifact["media_type"] == "text/markdown"
+                ]
+                if len(json_artifacts) != 1 or len(markdown_artifacts) != 1:
+                    raise ReviewConflict("resolution_result_mismatch")
+                if any(
+                    artifact["content_hash"] != reviewed_content_hash
+                    for artifact in result.artifacts
+                ):
+                    raise ReviewConflict("resolution_result_mismatch")
+                try:
+                    stored_brief = DecisionBrief.model_validate_json(
+                        json_artifacts[0]["content"]
+                    )
+                except ValueError as exc:
+                    raise ReviewConflict(
+                        "resolution_result_mismatch"
+                    ) from exc
+                if (
+                    stored_brief.content_hash != reviewed_content_hash
+                    or with_content_hash(stored_brief).content_hash
+                    != reviewed_content_hash
+                ):
+                    raise ReviewConflict("resolution_result_mismatch")
 
             now = _now()
             artifact_ids = tuple(
@@ -1300,6 +1511,49 @@ def resolve_review(
             delivery_status = (
                 "ready" if decision["action"] == "approve" else "blocked"
             )
+            publication = _publication_for_review(
+                connection,
+                run_id=workflow["run_id"],
+                review_id=workflow["review_id"],
+            )
+            if publication is not None:
+                publication_artifact_ids = (
+                    artifact_ids
+                    if decision["action"] == "approve"
+                    else tuple(
+                        json.loads(
+                            publication["artifact_ids_json"]
+                        )
+                    )
+                )
+                publication_cursor = connection.execute(
+                    """
+                    UPDATE run_publications_v2
+                    SET status = ?,
+                        artifact_ids_json = ?,
+                        content_hash = ?,
+                        resolved_at = ?
+                    WHERE publication_id = ?
+                      AND is_current = 1
+                      AND status = 'review_required'
+                    """,
+                    (
+                        delivery_status,
+                        json.dumps(
+                            publication_artifact_ids,
+                            separators=(",", ":"),
+                        ),
+                        (
+                            reviewed_content_hash
+                            if decision["action"] == "approve"
+                            else publication["content_hash"]
+                        ),
+                        now,
+                        publication["publication_id"],
+                    ),
+                )
+                if publication_cursor.rowcount != 1:
+                    raise ReviewConflict("review_superseded")
             run_cursor = connection.execute(
                 """
                 UPDATE research_runs_v2

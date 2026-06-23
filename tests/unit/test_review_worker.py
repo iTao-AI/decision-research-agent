@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 import logging
 import sqlite3
 
@@ -15,6 +16,7 @@ from api.review_repository import (
     get_review_projection,
 )
 from api.review_worker import ReviewWorker
+from api.review_worker import reconcile_review_workflows
 from api.run_repository import get_run
 from tests.unit.test_review_repository import _required_review_run
 
@@ -178,6 +180,40 @@ async def test_worker_marks_manual_recovery_on_mismatched_checkpoint(
     )
 
 
+def test_reconcile_does_not_overwrite_concurrently_superseded_workflow(
+    checkpoint_pending_run,
+):
+    class SupersedingGate:
+        def inspect(self, checkpoint_thread_id):
+            connection = _connect(checkpoint_pending_run.db_path)
+            try:
+                with connection:
+                    connection.execute(
+                        """
+                        UPDATE review_workflows_v2
+                        SET status = 'superseded',
+                            lease_owner = NULL,
+                            lease_expires_at = NULL
+                        WHERE workflow_id = ?
+                        """,
+                        (checkpoint_pending_run.required.workflow_id,),
+                    )
+            finally:
+                connection.close()
+            raise sqlite3.OperationalError("checkpoint unavailable")
+
+    reconciled = reconcile_review_workflows(
+        db_path=checkpoint_pending_run.db_path,
+        gate=SupersedingGate(),
+        now=datetime.now(timezone.utc),
+    )
+
+    assert reconciled == 0
+    assert checkpoint_pending_run.projection()["workflow"]["status"] == (
+        "superseded"
+    )
+
+
 @pytest.mark.asyncio
 async def test_two_workers_do_not_resolve_the_same_workflow_twice(
     resume_pending_run,
@@ -285,7 +321,7 @@ async def test_worker_logs_bounded_error_code_without_sensitive_exception_text(
     monkeypatch,
     caplog,
 ):
-    def fail_artifact_build(*, original_brief_json, decision):
+    def fail_artifact_build(*, original_brief_json, decision, revision):
         raise ValueError("sensitive claim text")
 
     monkeypatch.setattr(
@@ -300,3 +336,46 @@ async def test_worker_logs_bounded_error_code_without_sensitive_exception_text(
 
     assert "review_payload_invalid" in caplog.text
     assert "sensitive claim text" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_worker_loads_brief_and_builds_artifacts_for_claimed_revision(
+    resume_pending_run,
+    monkeypatch,
+):
+    loaded = {}
+    original_loader = review_worker_module.get_original_decision_brief
+    original_builder = review_worker_module.build_reviewed_artifacts
+
+    def recording_loader(*, db_path, run_id, review_id):
+        loaded["review_id"] = review_id
+        return original_loader(
+            db_path=db_path,
+            run_id=run_id,
+            review_id=review_id,
+        )
+
+    def recording_builder(*, original_brief_json, decision, revision):
+        loaded["revision"] = revision
+        return original_builder(
+            original_brief_json=original_brief_json,
+            decision=decision,
+            revision=revision,
+        )
+
+    monkeypatch.setattr(
+        review_worker_module,
+        "get_original_decision_brief",
+        recording_loader,
+    )
+    monkeypatch.setattr(
+        review_worker_module,
+        "build_reviewed_artifacts",
+        recording_builder,
+    )
+
+    assert await resume_pending_run.worker(worker_id="worker_a").run_once()
+    assert loaded == {
+        "review_id": resume_pending_run.required.review_id,
+        "revision": 1,
+    }

@@ -28,6 +28,7 @@ from api.review_repository import (
     get_review_detail,
     get_review_projection,
     list_review_workflows,
+    mark_manual_recovery,
     release_workflow_for_retry,
     resolve_review,
 )
@@ -526,6 +527,64 @@ def test_approval_resolution_is_exactly_once(resumable_approved_review_run):
     assert [item["artifact_id"] for item in run["artifacts"]].count(
         "decision-brief.reviewed.json"
     ) == 1
+
+
+def test_approval_rejects_mismatched_reviewed_artifact_hash(
+    resumable_approved_review_run,
+):
+    fixture = resumable_approved_review_run
+    mismatched = ReviewedArtifactResult(
+        brief=fixture.artifacts.brief,
+        resolved_review=fixture.artifacts.resolved_review,
+        artifacts=[
+            (
+                {**artifact, "content_hash": "f" * 64}
+                if artifact["media_type"] == "text/markdown"
+                else artifact
+            )
+            for artifact in fixture.artifacts.artifacts
+        ],
+    )
+
+    with pytest.raises(ReviewConflict, match="resolution_result_mismatch"):
+        resolve_review(
+            db_path=fixture.required.db_path,
+            workflow_id=fixture.required.workflow_id,
+            worker_id="worker_a",
+            expected_run_state_version=3,
+            result=mismatched,
+        )
+
+
+def test_manual_recovery_cannot_overwrite_superseded_workflow(
+    required_review_run,
+):
+    connection = _connect(required_review_run.db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                UPDATE review_workflows_v2
+                SET status = 'superseded'
+                WHERE workflow_id = ?
+                """,
+                (required_review_run.workflow_id,),
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(ReviewConflict, match="review_superseded"):
+        mark_manual_recovery(
+            db_path=required_review_run.db_path,
+            workflow_id=required_review_run.workflow_id,
+            worker_id=None,
+            error_code="checkpoint_corrupt",
+        )
+
+    assert get_review_projection(
+        db_path=required_review_run.db_path,
+        run_id=required_review_run.run_id,
+    )["workflow"]["status"] == "superseded"
 
 
 def test_rejection_resolution_blocks_delivery(resumable_rejected_review_run):

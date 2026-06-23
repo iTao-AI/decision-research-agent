@@ -5,7 +5,9 @@ import pytest
 
 from api.review_config import (
     ReviewConfigurationError,
+    ReviewRuntimeConfig,
     check_review_readiness,
+    validate_evidence_verification_runtime,
     validate_review_runtime,
 )
 
@@ -97,6 +99,40 @@ def test_disabled_review_needs_no_runtime_configuration(tmp_path, monkeypatch):
     monkeypatch.delenv("API_SECRET", raising=False)
 
     result = validate_review_runtime(output_dir=tmp_path / "output")
+
+    assert result.enabled is False
+
+
+def test_verification_requires_durable_review_runtime(monkeypatch, tmp_path):
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION",
+        "true",
+    )
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL",
+        "false",
+    )
+
+    with pytest.raises(
+        ReviewConfigurationError,
+        match="verification_review_runtime_required",
+    ):
+        validate_evidence_verification_runtime(
+            review_runtime=ReviewRuntimeConfig(enabled=False),
+            output_dir=tmp_path / "output",
+        )
+
+
+def test_verification_is_disabled_by_default(monkeypatch, tmp_path):
+    monkeypatch.delenv(
+        "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION",
+        raising=False,
+    )
+
+    result = validate_evidence_verification_runtime(
+        review_runtime=ReviewRuntimeConfig(enabled=False),
+        output_dir=tmp_path / "output",
+    )
 
     assert result.enabled is False
 

@@ -282,9 +282,57 @@ def get_run(*, run_id: str, db_path: str | None = None) -> dict[str, Any] | None
             (run_id,),
         ).fetchall()
         result["research_packets"] = [json.loads(item["packet_json"]) for item in packets]
-        review = conn.execute(
-            "SELECT bundle_json FROM review_bundles_v2 WHERE run_id = ?", (run_id,)
-        ).fetchone()
+        publication_table_exists = (
+            conn.execute(
+                """
+                SELECT 1 FROM sqlite_master
+                WHERE type = 'table' AND name = 'run_publications_v2'
+                """
+            ).fetchone()
+            is not None
+        )
+        current_publication = (
+            conn.execute(
+                """
+                SELECT * FROM run_publications_v2
+                WHERE run_id = ? AND is_current = 1
+                """,
+                (run_id,),
+            ).fetchone()
+            if publication_table_exists
+            else None
+        )
+        if current_publication is not None:
+            review = conn.execute(
+                """
+                SELECT bundle_json FROM review_bundles_v2
+                WHERE review_id = ?
+                """,
+                (current_publication["review_id"],),
+            ).fetchone()
+        else:
+            publication_rows_exist = (
+                publication_table_exists
+                and conn.execute(
+                    """
+                    SELECT 1 FROM run_publications_v2
+                    WHERE run_id = ? LIMIT 1
+                    """,
+                    (run_id,),
+                ).fetchone()
+                is not None
+            )
+            review = (
+                None
+                if publication_rows_exist
+                else conn.execute(
+                    """
+                    SELECT bundle_json FROM review_bundles_v2
+                    WHERE run_id = ?
+                    """,
+                    (run_id,),
+                ).fetchone()
+            )
         result["review_bundle"] = json.loads(review["bundle_json"]) if review else None
         artifacts = conn.execute(
             """
@@ -294,6 +342,65 @@ def get_run(*, run_id: str, db_path: str | None = None) -> dict[str, Any] | None
             (run_id,),
         ).fetchall()
         result["artifacts"] = [dict(item) for item in artifacts]
+        if current_publication is not None:
+            artifact_ids = json.loads(
+                current_publication["artifact_ids_json"]
+            )
+            current_artifact_rows = []
+            if artifact_ids:
+                placeholders = ", ".join("?" for _ in artifact_ids)
+                rows = conn.execute(
+                    f"""
+                    SELECT artifact_id, kind, media_type, content_hash,
+                           created_at
+                    FROM run_artifacts_v2
+                    WHERE run_id = ?
+                      AND artifact_id IN ({placeholders})
+                    """,
+                    (run_id, *artifact_ids),
+                ).fetchall()
+                by_id = {row["artifact_id"]: dict(row) for row in rows}
+                current_artifact_rows = [
+                    by_id[artifact_id]
+                    for artifact_id in artifact_ids
+                    if artifact_id in by_id
+                ]
+            snapshot = conn.execute(
+                """
+                SELECT snapshot_json, snapshot_hash
+                FROM evidence_verification_snapshots_v2
+                WHERE snapshot_id = ?
+                """,
+                (current_publication["verification_snapshot_id"],),
+            ).fetchone()
+            snapshot_items = (
+                json.loads(snapshot["snapshot_json"])
+                if snapshot is not None
+                else []
+            )
+            state_counts: dict[str, int] = {}
+            origin_counts: dict[str, int] = {}
+            for item in snapshot_items:
+                state = item["verification_state"]
+                origin = item["verification_origin"]
+                state_counts[state] = state_counts.get(state, 0) + 1
+                origin_counts[origin] = origin_counts.get(origin, 0) + 1
+            result["current_publication"] = {
+                "publication_id": current_publication["publication_id"],
+                "revision": current_publication["revision"],
+                "status": current_publication["status"],
+                "artifact_ids": artifact_ids,
+            }
+            result["current_artifacts"] = current_artifact_rows
+            result["verification_summary"] = {
+                "state_counts": dict(sorted(state_counts.items())),
+                "origin_counts": dict(sorted(origin_counts.items())),
+                "snapshot_hash": (
+                    snapshot["snapshot_hash"]
+                    if snapshot is not None
+                    else None
+                ),
+            }
         review_projection = get_review_projection(db_path=db_path, run_id=run_id)
         result["review_workflow"] = review_projection["workflow"]
         result["review_decision"] = review_projection["decision"]
@@ -329,10 +436,19 @@ def finalize_run_transaction(
     if not allowed_previous_statuses:
         raise ValueError("allowed_previous_statuses must not be empty")
 
+    from api.publication_repository import (
+        adopt_baseline_publication,
+        evidence_verification_enabled,
+        publication_schema_exists,
+    )
     from api.review_repository import init_review_schema
 
+    publication_enabled = evidence_verification_enabled()
     init_review_schema(db_path)
     conn = _connect(db_path)
+    if publication_enabled and not publication_schema_exists(conn):
+        conn.close()
+        raise RuntimeError("verification_schema_not_ready")
     now = _now()
     placeholders = ", ".join("?" for _ in allowed_previous_statuses)
     try:
@@ -482,6 +598,11 @@ def finalize_run_transaction(
                     for artifact in (artifacts or [])
                 ],
             )
+            if publication_enabled:
+                adopt_baseline_publication(
+                    conn,
+                    run_id=run_id,
+                )
             return True
     finally:
         conn.close()

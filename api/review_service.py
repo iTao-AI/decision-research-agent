@@ -14,10 +14,15 @@ def build_review_bundle(
     evidence: list[EvidenceSnapshot],
     confidence_threshold: float,
     revision: int = 1,
+    mandatory_triggers: tuple[str, ...] = (),
 ) -> ReviewBundle:
     evidence_by_id = {item.evidence_id: item for item in evidence}
-    triggers: list[str] = []
-    actions: list[str] = []
+    triggers: list[str] = list(mandatory_triggers)
+    actions: list[str] = [
+        "Review the changed verification snapshot before delivery."
+        for trigger in mandatory_triggers
+        if trigger == "verification_snapshot_changed"
+    ]
 
     for finding in findings or []:
         if not finding.evidence_refs:
@@ -52,6 +57,8 @@ def build_review_bundle(
             triggers.append(f"unverified_evidence:{claim.claim_id}")
             actions.append(f"Verify evidence for claim {claim.claim_id}.")
 
+    triggers = list(dict.fromkeys(triggers))
+    actions = list(dict.fromkeys(actions))
     status = "required" if triggers else "not_required"
     review_identity = "\n".join([run_id, str(revision), *triggers])
     return ReviewBundle(

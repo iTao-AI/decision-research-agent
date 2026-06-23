@@ -9,6 +9,11 @@ import time
 import pytest
 
 from scripts.durable_hitl_fixture import run_recovery
+from api.publication_repository import (
+    count_current_publications,
+    finalize_verification_publication,
+)
+from api.run_repository import get_run
 
 
 CRASH_STAGES = [
@@ -123,3 +128,100 @@ def test_sigkill_window_converges_without_duplicate_state(tmp_path, stage):
         tmp_path,
         expected=EXPECTED_OUTCOMES[stage],
     )
+
+
+def test_sigkill_after_publication_supersession_never_revives_stale_review(
+    tmp_path,
+):
+    marker = tmp_path / "publication_superseded.marker"
+    code = """
+from pathlib import Path
+import sys
+import time
+from tests.unit.test_publication_repository import (
+    _accept_verification,
+    _seed_talent_run,
+)
+
+root = Path(sys.argv[1])
+marker = Path(sys.argv[2])
+seeded = _seed_talent_run(root, migrate=True)
+_accept_verification(seeded)
+marker.write_text(seeded.run_id, encoding="utf-8")
+while True:
+    time.sleep(1)
+"""
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(tmp_path),
+            str(marker),
+        ]
+    )
+    try:
+        _wait_for_marker(marker, timeout=10)
+        os.kill(process.pid, signal.SIGKILL)
+        process.wait(timeout=10)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=10)
+
+    run_id = marker.read_text(encoding="utf-8")
+    state_version = get_run(
+        db_path=str(tmp_path / "tasks.db"),
+        run_id=run_id,
+    )["state_version"]
+    finalized = finalize_verification_publication(
+        db_path=str(tmp_path / "tasks.db"),
+        run_id=run_id,
+        expected_state_version=state_version,
+    )
+    run_recovery(tmp_path)
+
+    assert finalized.publication.revision == 2
+    assert count_current_publications(
+        db_path=str(tmp_path / "tasks.db"),
+        run_id=run_id,
+    ) == 1
+    connection = sqlite3.connect(tmp_path / "tasks.db")
+    try:
+        publications = connection.execute(
+            """
+            SELECT revision, status, is_current
+            FROM run_publications_v2
+            WHERE run_id = ?
+            ORDER BY revision
+            """,
+            (run_id,),
+        ).fetchall()
+        workflows = connection.execute(
+            """
+            SELECT review_revision, status
+            FROM review_workflows_v2
+            WHERE run_id = ?
+            ORDER BY review_revision
+            """,
+            (run_id,),
+        ).fetchall()
+        decision_count = connection.execute(
+            """
+            SELECT COUNT(*) FROM evidence_verification_decisions_v2
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+    assert publications == [
+        (1, "stale", 0),
+        (2, "review_required", 1),
+    ]
+    assert workflows == [
+        (1, "superseded"),
+        (2, "waiting_decision"),
+    ]
+    assert decision_count == 1

@@ -68,6 +68,15 @@ disabled, the durable review check reports `disabled` and the overall command
 can still succeed. When enabled, worker, schema, checkpoint compatibility, and
 the recorded gate report must be ready.
 
+`doctor` also reports `evidence_verification.status` as `disabled`, `ok`, or
+`failed`. The server-side feature remains off unless both controlled runtimes
+are explicitly enabled:
+
+```dotenv
+DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL=true
+DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=true
+```
+
 ## Common Commands
 
 ```bash
@@ -136,6 +145,39 @@ from the run projection. `review reject` accepts exactly one of
 `--reason-file` or `--reason-stdin`; there is no plain `--reason` argument.
 `approve` and `reject` derive a deterministic decision ID unless
 `--decision-id` is provided.
+
+## Controlled Evidence Verification Commands
+
+These commands use the same canonical URL, API key, and timeout settings. They
+do not retrieve sources or perform LLM verification.
+
+```bash
+python tools/decision_research_agent_tool.py evidence list \
+  --run-id "$RUN_ID" \
+  --limit 20
+
+python tools/decision_research_agent_tool.py evidence show \
+  --run-id "$RUN_ID" \
+  --evidence-id "$EVIDENCE_ID"
+
+python tools/decision_research_agent_tool.py evidence verify \
+  --run-id "$RUN_ID" \
+  --evidence-id "$EVIDENCE_ID" \
+  --confirm-source-match
+
+python tools/decision_research_agent_tool.py evidence reject \
+  --run-id "$RUN_ID" \
+  --evidence-id "$EVIDENCE_ID" \
+  --reason-code content_mismatch \
+  --reason-file "$REASON_FILE"
+
+python tools/decision_research_agent_tool.py evidence finalize \
+  --run-id "$RUN_ID"
+```
+
+`evidence reject` also accepts `--reason-stdin`. `evidence finalize` reads the
+current run state version and creates or reuses a revisioned verification
+snapshot/publication before the fresh review workflow.
 
 ## Existing Deployment Upgrade
 

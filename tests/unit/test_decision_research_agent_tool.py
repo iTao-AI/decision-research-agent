@@ -546,6 +546,13 @@ def test_doctor_checks_health_and_profile_manifest(monkeypatch):
 
     def fake_urlopen(req, timeout):
         urls.append(req.full_url)
+        if req.full_url.endswith("/api/evidence-verifications/health"):
+            return FakeResponse(
+                {
+                    "status": "ok",
+                    "worker_running": True,
+                }
+            )
         if req.full_url.endswith("/api/reviews/health"):
             return FakeResponse(
                 {
@@ -576,10 +583,18 @@ def test_doctor_checks_health_and_profile_manifest(monkeypatch):
         "worker_running": True,
         "gate_report_status": "PASS",
     }
+    assert result["checks"]["evidence_verification"] == {
+        "status": "ok",
+        "worker_running": True,
+    }
     assert urls == [
         "http://127.0.0.1:9000/health",
         "http://127.0.0.1:9000/api/profiles/talent-hiring-signal",
         "http://127.0.0.1:9000/api/reviews/health",
+        (
+            "http://127.0.0.1:9000/api/"
+            "evidence-verifications/health"
+        ),
     ]
 
 
@@ -603,11 +618,24 @@ def test_doctor_treats_disabled_review_as_optional(monkeypatch):
             )
         ),
     )
+    monkeypatch.setattr(
+        tool,
+        "evidence_verification_health",
+        lambda config: (_ for _ in ()).throw(
+            tool.ToolClientHTTPError(
+                404,
+                {"code": "evidence_verification_disabled"},
+            )
+        ),
+    )
 
     result = tool.doctor(tool.ToolConfig())
 
     assert result["status"] == "ok"
     assert result["checks"]["durable_review"]["status"] == "disabled"
+    assert result["checks"]["evidence_verification"]["status"] == (
+        "disabled"
+    )
 
 
 def test_doctor_fails_when_enabled_review_is_not_ready(monkeypatch):
@@ -628,6 +656,16 @@ def test_doctor_fails_when_enabled_review_is_not_ready(monkeypatch):
             "worker_running": False,
             "gate_report_status": "PASS",
         },
+    )
+    monkeypatch.setattr(
+        tool,
+        "evidence_verification_health",
+        lambda config: (_ for _ in ()).throw(
+            tool.ToolClientHTTPError(
+                404,
+                {"code": "evidence_verification_disabled"},
+            )
+        ),
     )
 
     result = tool.doctor(tool.ToolConfig())
@@ -873,3 +911,146 @@ def test_cli_flags_override_environment(monkeypatch):
 
     assert config.base_url == "https://cli.example"
     assert config.timeout_seconds == 29
+
+
+def test_evidence_verify_requires_explicit_confirmation(capsys):
+    assert tool.main(
+        [
+            "evidence",
+            "verify",
+            "--run-id",
+            "run_1",
+            "--evidence-id",
+            "ev_1",
+        ]
+    ) == 1
+    assert json.loads(capsys.readouterr().out)["error"] == (
+        "confirm_source_match_required"
+    )
+
+
+def test_evidence_reject_reason_file_is_bounded_and_not_truncated(
+    tmp_path,
+    capsys,
+):
+    path = tmp_path / "reason.txt"
+    path.write_text("x" * 1000 + "\nextra", encoding="utf-8")
+
+    assert tool.main(
+        [
+            "evidence",
+            "reject",
+            "--run-id",
+            "run_1",
+            "--evidence-id",
+            "ev_1",
+            "--reason-code",
+            "content_mismatch",
+            "--reason-file",
+            str(path),
+        ]
+    ) == 1
+    assert json.loads(capsys.readouterr().out)["error"] == (
+        "verification_reason_must_be_1_to_1000_characters"
+    )
+
+
+def test_verification_id_is_stable_and_content_scoped():
+    first = tool.stable_verification_id(
+        run_id="run_1",
+        evidence_id="ev_1",
+        evidence_fingerprint="a" * 64,
+        expected_revision=0,
+        action="verify",
+        reason_code=None,
+        reason_note=None,
+    )
+
+    assert first == tool.stable_verification_id(
+        run_id="run_1",
+        evidence_id="ev_1",
+        evidence_fingerprint="a" * 64,
+        expected_revision=0,
+        action="verify",
+        reason_code=None,
+        reason_note=None,
+    )
+    assert first != tool.stable_verification_id(
+        run_id="run_1",
+        evidence_id="ev_1",
+        evidence_fingerprint="a" * 64,
+        expected_revision=0,
+        action="reject",
+        reason_code="content_mismatch",
+        reason_note="mismatch",
+    )
+
+
+def test_evidence_finalize_uses_current_run_state_version(monkeypatch):
+    requests = []
+
+    def fake_request(method, url, *, config, payload=None):
+        requests.append((method, url, payload))
+        if method == "GET":
+            return {"run_id": "run_1", "state_version": 5}
+        return {"publication_id": "publication_2"}
+
+    monkeypatch.setattr(tool, "_request_json", fake_request)
+    result = tool.finalize_evidence_verification(
+        run_id="run_1",
+        config=tool.ToolConfig(base_url="http://127.0.0.1:9000"),
+    )
+
+    assert requests[-1] == (
+        "POST",
+        (
+            "http://127.0.0.1:9000/api/runs/run_1/evidence/"
+            "verification-snapshots"
+        ),
+        {"expected_state_version": 5},
+    )
+    assert result["publication_id"] == "publication_2"
+
+
+def test_evidence_list_and_show_encode_requests(monkeypatch):
+    requests = []
+
+    def fake_request(method, url, *, config, payload=None):
+        requests.append((method, url, payload))
+        return {"items": []} if "verifications?" in url else {
+            "effective": {"evidence_id": "ev/1"}
+        }
+
+    monkeypatch.setattr(tool, "_request_json", fake_request)
+    config = tool.ToolConfig(base_url="http://127.0.0.1:9000")
+
+    tool.list_evidence_verifications(
+        run_id="run/1",
+        limit=10,
+        cursor="cursor/value",
+        config=config,
+    )
+    tool.show_evidence_verification(
+        run_id="run/1",
+        evidence_id="ev/1",
+        config=config,
+    )
+
+    assert requests == [
+        (
+            "GET",
+            (
+                "http://127.0.0.1:9000/api/runs/run%2F1/evidence/"
+                "verifications?limit=10&cursor=cursor%2Fvalue"
+            ),
+            None,
+        ),
+        (
+            "GET",
+            (
+                "http://127.0.0.1:9000/api/runs/run%2F1/evidence/"
+                "ev%2F1/verification"
+            ),
+            None,
+        ),
+    ]

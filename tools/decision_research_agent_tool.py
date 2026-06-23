@@ -142,6 +142,17 @@ def review_health(config: ToolConfig) -> dict[str, Any]:
     )
 
 
+def evidence_verification_health(config: ToolConfig) -> dict[str, Any]:
+    return _request_json(
+        "GET",
+        _join_url(
+            config.base_url,
+            "/api/evidence-verifications/health",
+        ),
+        config=config,
+    )
+
+
 def doctor(config: ToolConfig) -> dict[str, Any]:
     """Check the backend and the compiled Talent profile contract."""
     checks: dict[str, dict[str, Any]] = {}
@@ -174,6 +185,29 @@ def doctor(config: ToolConfig) -> dict[str, Any]:
             "status": "ok" if review.get("status") == "ok" else "failed",
             "worker_running": review.get("worker_running"),
             "gate_report_status": review.get("gate_report_status"),
+        }
+    try:
+        verification = evidence_verification_health(config)
+    except ToolClientHTTPError as exc:
+        if (
+            exc.status == 404
+            and exc.payload.get("code")
+            == "evidence_verification_disabled"
+        ):
+            checks["evidence_verification"] = {"status": "disabled"}
+        else:
+            checks["evidence_verification"] = {
+                "status": "failed",
+                "code": exc.payload.get("code"),
+            }
+    else:
+        checks["evidence_verification"] = {
+            "status": (
+                "ok"
+                if verification.get("status") == "ok"
+                else "failed"
+            ),
+            "worker_running": verification.get("worker_running"),
         }
     return {
         "status": "ok"
@@ -259,6 +293,148 @@ def show_review(
     )
 
 
+def list_evidence_verifications(
+    *,
+    run_id: str,
+    limit: int,
+    cursor: str | None,
+    config: ToolConfig,
+) -> dict[str, Any]:
+    query = {"limit": str(limit)}
+    if cursor:
+        query["cursor"] = cursor
+    return _request_json(
+        "GET",
+        _join_url(
+            config.base_url,
+            (
+                f"/api/runs/{parse.quote(run_id, safe='')}"
+                f"/evidence/verifications?{parse.urlencode(query)}"
+            ),
+        ),
+        config=config,
+    )
+
+
+def show_evidence_verification(
+    *,
+    run_id: str,
+    evidence_id: str,
+    config: ToolConfig,
+) -> dict[str, Any]:
+    return _request_json(
+        "GET",
+        _join_url(
+            config.base_url,
+            (
+                f"/api/runs/{parse.quote(run_id, safe='')}"
+                f"/evidence/{parse.quote(evidence_id, safe='')}"
+                "/verification"
+            ),
+        ),
+        config=config,
+    )
+
+
+def stable_verification_id(
+    *,
+    run_id: str,
+    evidence_id: str,
+    evidence_fingerprint: str,
+    expected_revision: int,
+    action: str,
+    reason_code: str | None,
+    reason_note: str | None,
+) -> str:
+    note_hash = hashlib.sha256(
+        (reason_note or "").encode("utf-8")
+    ).hexdigest()
+    semantic = "\n".join(
+        [
+            run_id,
+            evidence_id,
+            evidence_fingerprint,
+            str(expected_revision),
+            action,
+            reason_code or "",
+            note_hash,
+        ]
+    )
+    return f"verification_{uuid.uuid5(uuid.NAMESPACE_URL, semantic).hex}"
+
+
+def submit_evidence_verification_decision(
+    *,
+    run_id: str,
+    evidence_id: str,
+    action: str,
+    confirm_source_match: bool,
+    reason_code: str | None,
+    reason_note: str | None,
+    config: ToolConfig,
+) -> dict[str, Any]:
+    if action == "verify" and not confirm_source_match:
+        raise ToolClientError("confirm_source_match_required")
+    detail = show_evidence_verification(
+        run_id=run_id,
+        evidence_id=evidence_id,
+        config=config,
+    )
+    effective = detail["effective"]
+    expected_revision = effective["verification_revision"]
+    fingerprint = effective["evidence_fingerprint"]
+    payload = {
+        "verification_id": stable_verification_id(
+            run_id=run_id,
+            evidence_id=evidence_id,
+            evidence_fingerprint=fingerprint,
+            expected_revision=expected_revision,
+            action=action,
+            reason_code=reason_code,
+            reason_note=reason_note,
+        ),
+        "evidence_fingerprint": fingerprint,
+        "expected_revision": expected_revision,
+        "action": action,
+        "confirm_source_match": confirm_source_match,
+        "reason_code": reason_code,
+        "reason_note": reason_note,
+    }
+    return _request_json(
+        "POST",
+        _join_url(
+            config.base_url,
+            (
+                f"/api/runs/{parse.quote(run_id, safe='')}"
+                f"/evidence/{parse.quote(evidence_id, safe='')}"
+                "/verification-decisions"
+            ),
+        ),
+        config=config,
+        payload=payload,
+    )
+
+
+def finalize_evidence_verification(
+    *,
+    run_id: str,
+    config: ToolConfig,
+) -> dict[str, Any]:
+    run = get_run(run_id, config)
+    return _request_json(
+        "POST",
+        _join_url(
+            config.base_url,
+            (
+                f"/api/runs/{parse.quote(run_id, safe='')}"
+                "/evidence/verification-snapshots"
+            ),
+        ),
+        config=config,
+        payload={"expected_state_version": run["state_version"]},
+    )
+
+
 def stable_decision_id(
     *,
     run_id: str,
@@ -274,18 +450,21 @@ def stable_decision_id(
     return f"decision_{uuid.uuid5(uuid.NAMESPACE_URL, semantic).hex}"
 
 
-def _read_bounded_rejection_reason(stream) -> str:
+def _read_bounded_text(stream, *, error_code: str) -> str:
     value = stream.read(1002)
     if len(value) > 1001:
-        raise ToolClientError(
-            "rejection_reason_must_be_1_to_1000_characters"
-        )
+        raise ToolClientError(error_code)
     value = value.strip()
     if not 1 <= len(value) <= 1000:
-        raise ToolClientError(
-            "rejection_reason_must_be_1_to_1000_characters"
-        )
+        raise ToolClientError(error_code)
     return value
+
+
+def _read_bounded_rejection_reason(stream) -> str:
+    return _read_bounded_text(
+        stream,
+        error_code="rejection_reason_must_be_1_to_1000_characters",
+    )
 
 
 def read_rejection_reason(
@@ -304,6 +483,31 @@ def read_rejection_reason(
             return _read_bounded_rejection_reason(stdin)
     except (OSError, UnicodeError) as exc:
         raise ToolClientError("rejection_reason_unreadable") from exc
+
+
+def read_verification_reason(
+    *,
+    reason_file: Path | None,
+    reason_stdin: bool,
+    stdin,
+) -> str:
+    if (reason_file is None) == (not reason_stdin):
+        raise ToolClientError("exactly_one_reason_source_required")
+    try:
+        if reason_file is not None:
+            with reason_file.open("r", encoding="utf-8") as handle:
+                return _read_bounded_text(
+                    handle,
+                    error_code=(
+                        "verification_reason_must_be_1_to_1000_characters"
+                    ),
+                )
+        return _read_bounded_text(
+            stdin,
+            error_code="verification_reason_must_be_1_to_1000_characters",
+        )
+    except (OSError, UnicodeError) as exc:
+        raise ToolClientError("verification_reason_unreadable") from exc
 
 
 def submit_review_decision(
@@ -547,6 +751,44 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=120,
     )
+
+    evidence = subparsers.add_parser("evidence")
+    evidence_subparsers = evidence.add_subparsers(
+        dest="evidence_command",
+        required=True,
+    )
+    evidence_list = evidence_subparsers.add_parser("list")
+    evidence_list.add_argument("--run-id", required=True)
+    evidence_list.add_argument("--limit", type=int, default=20)
+    evidence_list.add_argument("--cursor")
+
+    evidence_show = evidence_subparsers.add_parser("show")
+    evidence_show.add_argument("--run-id", required=True)
+    evidence_show.add_argument("--evidence-id", required=True)
+
+    evidence_verify = evidence_subparsers.add_parser("verify")
+    evidence_verify.add_argument("--run-id", required=True)
+    evidence_verify.add_argument("--evidence-id", required=True)
+    evidence_verify.add_argument(
+        "--confirm-source-match",
+        action="store_true",
+    )
+
+    evidence_reject = evidence_subparsers.add_parser("reject")
+    evidence_reject.add_argument("--run-id", required=True)
+    evidence_reject.add_argument("--evidence-id", required=True)
+    evidence_reject.add_argument("--reason-code", required=True)
+    verification_reason = evidence_reject.add_mutually_exclusive_group(
+        required=True
+    )
+    verification_reason.add_argument("--reason-file", type=Path)
+    verification_reason.add_argument(
+        "--reason-stdin",
+        action="store_true",
+    )
+
+    evidence_finalize = evidence_subparsers.add_parser("finalize")
+    evidence_finalize.add_argument("--run-id", required=True)
     return parser
 
 
@@ -639,6 +881,49 @@ def main(argv: list[str] | None = None) -> int:
                 config=config,
                 poll_seconds=args.poll_seconds,
                 timeout_seconds=args.wait_timeout_seconds,
+            )
+        elif args.command == "evidence" and args.evidence_command == "list":
+            result = list_evidence_verifications(
+                run_id=args.run_id,
+                limit=args.limit,
+                cursor=args.cursor,
+                config=config,
+            )
+        elif args.command == "evidence" and args.evidence_command == "show":
+            result = show_evidence_verification(
+                run_id=args.run_id,
+                evidence_id=args.evidence_id,
+                config=config,
+            )
+        elif args.command == "evidence" and args.evidence_command == "verify":
+            result = submit_evidence_verification_decision(
+                run_id=args.run_id,
+                evidence_id=args.evidence_id,
+                action="verify",
+                confirm_source_match=args.confirm_source_match,
+                reason_code=None,
+                reason_note=None,
+                config=config,
+            )
+        elif args.command == "evidence" and args.evidence_command == "reject":
+            reason_note = read_verification_reason(
+                reason_file=args.reason_file,
+                reason_stdin=args.reason_stdin,
+                stdin=sys.stdin,
+            )
+            result = submit_evidence_verification_decision(
+                run_id=args.run_id,
+                evidence_id=args.evidence_id,
+                action="reject",
+                confirm_source_match=False,
+                reason_code=args.reason_code,
+                reason_note=reason_note,
+                config=config,
+            )
+        elif args.command == "evidence" and args.evidence_command == "finalize":
+            result = finalize_evidence_verification(
+                run_id=args.run_id,
+                config=config,
             )
         else:
             parser.error(f"unknown command: {args.command}")

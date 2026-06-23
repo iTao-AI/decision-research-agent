@@ -1,0 +1,61 @@
+{
+  "manifest_id": "talent-agent-hiring-signals-v1",
+  "manifest_version": 1,
+  "question": "What hiring signals appear in AI Agent roles?",
+  "records": [
+    {
+      "sample_id": "real_source_001",
+      "source_url": "https://openai.com/careers/software-engineer-agent-infrastructure-san-francisco/",
+      "source_title": "Software Engineer, Agent Infrastructure",
+      "organization": "OpenAI",
+      "observed_at": "2026-06-23T00:00:00Z",
+      "observation": "The role emphasizes infrastructure for training and production deployment of AI agents, including orchestration, APIs, and large-scale systems.",
+      "source_type": "public_job_posting"
+    },
+    {
+      "sample_id": "real_source_002",
+      "source_url": "https://openai.com/careers/applied-ai-engineer-codex-core-agent-san-francisco/",
+      "source_title": "Applied AI Engineer, Codex Core Agent",
+      "organization": "OpenAI",
+      "observed_at": "2026-06-23T00:00:00Z",
+      "observation": "The role asks for improving agent performance on real software engineering tasks, evals, tool-use strategies, and production reliability.",
+      "source_type": "public_job_posting"
+    },
+    {
+      "sample_id": "real_source_003",
+      "source_url": "https://openai.com/careers/software-engineer-cloud-agents-san-francisco/",
+      "source_title": "Software Engineer, Cloud Agents",
+      "organization": "OpenAI",
+      "observed_at": "2026-06-23T00:00:00Z",
+      "observation": "The role highlights orchestration, sandboxing, secure connectivity, observability, reliability, and cost controls for long-running cloud agents.",
+      "source_type": "public_job_posting"
+    },
+    {
+      "sample_id": "real_source_004",
+      "source_url": "https://jobs.ashbyhq.com/langchain/c75915ba-a32b-4e17-873d-19b47564170d",
+      "source_title": "Fullstack Software Engineer, Applied AI",
+      "organization": "LangChain",
+      "observed_at": "2026-06-23T00:00:00Z",
+      "observation": "The role centers on building AI agents for internal and external use cases, pairing fullstack product work with applied AI systems.",
+      "source_type": "public_job_posting"
+    },
+    {
+      "sample_id": "real_source_005",
+      "source_url": "https://www.google.com/about/careers/applications/jobs/results/138036920247558854-software-engineer-aiml-agentic-ai-systems-cloud-security",
+      "source_title": "Software Engineer, Agentic AI Systems, Cloud Security",
+      "organization": "Google",
+      "observed_at": "2026-06-23T00:00:00Z",
+      "observation": "The role calls for GenAI or ML platform experience, agentic AI systems, and development of next-generation security agentic features.",
+      "source_type": "public_job_posting"
+    },
+    {
+      "sample_id": "real_source_006",
+      "source_url": "https://www.google.com/about/careers/applications/jobs/results/106025468234212038-senior-software-engineer-agentic-ai-systems-cloud-security",
+      "source_title": "Senior Software Engineer, Agentic AI Systems, Cloud Security",
+      "organization": "Google",
+      "observed_at": "2026-06-23T00:00:00Z",
+      "observation": "The role emphasizes research, design, development, and operational excellence for agentic platforms and autonomous security operations.",
+      "source_type": "public_job_posting"
+    }
+  ]
+}

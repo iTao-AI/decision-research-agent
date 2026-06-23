@@ -111,6 +111,10 @@ def test_review_list_query_rejects_unknown_status_and_unbounded_limit():
         ReviewListQuery(limit=101)
 
 
+def test_review_list_query_accepts_superseded_status():
+    assert ReviewListQuery(status="superseded").status == "superseded"
+
+
 def test_durable_hitl_is_disabled_by_default(monkeypatch):
     monkeypatch.delenv(
         "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL",

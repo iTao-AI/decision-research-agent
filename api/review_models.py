@@ -40,6 +40,7 @@ WorkflowStatus = Literal[
     "resolution_pending",
     "approved",
     "rejected",
+    "superseded",
     "manual_recovery",
 ]
 ReviewListStatus = Literal[
@@ -50,6 +51,7 @@ ReviewListStatus = Literal[
     "resolution_pending",
     "approved",
     "rejected",
+    "superseded",
     "manual_recovery",
 ]
 

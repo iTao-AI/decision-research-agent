@@ -285,7 +285,7 @@ async def test_worker_logs_bounded_error_code_without_sensitive_exception_text(
     monkeypatch,
     caplog,
 ):
-    def fail_artifact_build(*, original_brief_json, decision):
+    def fail_artifact_build(*, original_brief_json, decision, revision):
         raise ValueError("sensitive claim text")
 
     monkeypatch.setattr(
@@ -300,3 +300,46 @@ async def test_worker_logs_bounded_error_code_without_sensitive_exception_text(
 
     assert "review_payload_invalid" in caplog.text
     assert "sensitive claim text" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_worker_loads_brief_and_builds_artifacts_for_claimed_revision(
+    resume_pending_run,
+    monkeypatch,
+):
+    loaded = {}
+    original_loader = review_worker_module.get_original_decision_brief
+    original_builder = review_worker_module.build_reviewed_artifacts
+
+    def recording_loader(*, db_path, run_id, review_id):
+        loaded["review_id"] = review_id
+        return original_loader(
+            db_path=db_path,
+            run_id=run_id,
+            review_id=review_id,
+        )
+
+    def recording_builder(*, original_brief_json, decision, revision):
+        loaded["revision"] = revision
+        return original_builder(
+            original_brief_json=original_brief_json,
+            decision=decision,
+            revision=revision,
+        )
+
+    monkeypatch.setattr(
+        review_worker_module,
+        "get_original_decision_brief",
+        recording_loader,
+    )
+    monkeypatch.setattr(
+        review_worker_module,
+        "build_reviewed_artifacts",
+        recording_builder,
+    )
+
+    assert await resume_pending_run.worker(worker_id="worker_a").run_once()
+    assert loaded == {
+        "review_id": resume_pending_run.required.review_id,
+        "revision": 1,
+    }

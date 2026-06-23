@@ -116,3 +116,21 @@ def test_rejection_creates_no_reviewed_delivery_artifacts():
     assert result.resolved_review["decision"]["reason_recorded"] is True
     assert "reason" not in result.resolved_review["decision"]
     assert result.artifacts == []
+
+
+def test_revision_two_uses_revisioned_reviewed_artifact_ids():
+    result = build_reviewed_artifacts(
+        original_brief_json=_brief_json(),
+        decision=_decision("approve").model_copy(
+            update={
+                "review_id": "review_2",
+                "review_revision": 2,
+            }
+        ),
+        revision=2,
+    )
+
+    assert {item["artifact_id"] for item in result.artifacts} == {
+        "decision-brief.r2.reviewed.json",
+        "decision-brief.r2.reviewed.md",
+    }

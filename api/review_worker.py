@@ -32,6 +32,7 @@ _PASSTHROUGH_ERROR_CODES = {
     "resume_attempt_not_found",
     "review_decision_missing",
     "review_not_found",
+    "review_superseded",
     "stale_state_version",
 }
 
@@ -197,10 +198,12 @@ class ReviewWorker:
                 get_original_decision_brief,
                 db_path=self.db_path,
                 run_id=claim.run_id,
+                review_id=claim.review_id,
             )
             artifacts = build_reviewed_artifacts(
                 original_brief_json=original_brief_json,
                 decision=decision,
+                revision=claim.review_revision,
             )
             await asyncio.to_thread(
                 resolve_review,

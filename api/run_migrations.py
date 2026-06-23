@@ -8,12 +8,16 @@ from api.persistence import _get_db_path
 from api.evidence_verification_repository import (
     VERIFICATION_MIGRATION_CHECKSUM,
     VERIFICATION_MIGRATION_VERSION,
-    init_evidence_verification_schema,
 )
 from api.review_repository import (
     REVIEW_MIGRATION_CHECKSUM,
     REVIEW_MIGRATION_VERSION,
-    init_review_schema,
+)
+from api.publication_repository import (
+    PUBLICATION_MIGRATION_CHECKSUM,
+    PUBLICATION_MIGRATION_VERSION,
+    migrate_publication_with_backup,
+    verify_publication_schema,
 )
 from api.run_repository import MIGRATION_VERSION
 
@@ -184,6 +188,7 @@ def verify_run_schema(
     *,
     db_path: str,
     include_evidence_verification: bool = False,
+    include_publication: bool = False,
 ) -> dict:
     """Fail closed unless the run identity schema is complete and consistent."""
     required_tables = set(REQUIRED_TABLES)
@@ -200,6 +205,32 @@ def verify_run_schema(
             required_columns.setdefault(table, set()).update(columns)
         expected_migrations[VERIFICATION_MIGRATION_VERSION] = (
             VERIFICATION_MIGRATION_CHECKSUM
+        )
+    if include_publication:
+        required_tables.add("run_publications_v2")
+        required_indexes.update(
+            {
+                "idx_run_publications_current",
+                "idx_run_publications_review",
+            }
+        )
+        required_columns["run_publications_v2"] = {
+            "publication_id",
+            "run_id",
+            "revision",
+            "verification_snapshot_id",
+            "review_id",
+            "status",
+            "is_current",
+            "artifact_ids_json",
+            "content_hash",
+            "supersedes_publication_id",
+            "created_at",
+            "resolved_at",
+            "staled_at",
+        }
+        expected_migrations[PUBLICATION_MIGRATION_VERSION] = (
+            PUBLICATION_MIGRATION_CHECKSUM
         )
     conn = sqlite3.connect(_get_db_path(db_path))
     try:
@@ -266,6 +297,8 @@ def verify_run_schema(
                 f"migrations={invalid_migrations},"
                 f"foreign_keys={foreign_key_errors}"
             )
+        if include_publication:
+            verify_publication_schema(db_path=db_path)
         return {
             "migration_version": MIGRATION_VERSION,
             "migration_versions": sorted(expected_migrations),
@@ -282,12 +315,15 @@ def verify_run_schema(
 
 def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
     """Back up, apply, and verify; restore the original DB on any failure."""
-    backup_database(db_path=db_path, backup_path=backup_path)
     try:
-        init_evidence_verification_schema(db_path)
+        migrate_publication_with_backup(
+            db_path=db_path,
+            backup_path=backup_path,
+        )
         return verify_run_schema(
             db_path=db_path,
             include_evidence_verification=True,
+            include_publication=True,
         )
     except Exception:
         restore_database(backup_path=backup_path, db_path=db_path)

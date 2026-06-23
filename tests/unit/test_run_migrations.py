@@ -71,6 +71,7 @@ def test_migration_verification_failure_restores_backup(tmp_path, monkeypatch):
         *,
         db_path,
         include_evidence_verification=False,
+        include_publication=False,
     ):
         raise RuntimeError("verification failed")
 
@@ -79,3 +80,17 @@ def test_migration_verification_failure_restores_backup(tmp_path, monkeypatch):
         migrate_with_backup(db_path=db_path, backup_path=backup_path)
 
     assert _table_names(db_path) == original_tables
+
+
+def test_full_migration_includes_revisioned_publication_schema(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    backup_path = str(tmp_path / "tasks.pre-publication.db")
+    init_db(db_path).close()
+
+    result = migrate_with_backup(
+        db_path=db_path,
+        backup_path=backup_path,
+    )
+
+    assert "006_revisioned_publication" in result["migration_versions"]
+    assert "run_publications_v2" in result["tables"]

@@ -33,9 +33,28 @@ class ProfileSpec:
 
 GENERIC_POLICY = AgentHarnessPolicy(
     policy_id="generic-current-v1",
-    backend="current",
-    allowed_tools=("generate_markdown", "convert_md_to_pdf", "read_file_content"),
-    subagents=("knowledge_base", "database_query", "network_search", "general-purpose"),
+    backend="composite-state-skills-v1",
+    allowed_tools=(
+        "write_todos",
+        "ls",
+        "read_file",
+        "glob",
+        "grep",
+        "write_file",
+        "edit_file",
+        "task",
+    ),
+    subagents=("knowledge_base", "database_query", "network_search"),
+    skills=(
+        "/skills/research-planning/",
+        "/skills/evidence-synthesis-and-reporting/",
+    ),
+    filesystem_permissions=(
+        "deny:write:/skills/**",
+        "allow:read:/skills/**",
+        "allow:read,write:/workspace/**",
+        "deny:read,write:/**",
+    ),
 )
 TALENT_POLICY = AgentHarnessPolicy(
     policy_id="talent-restricted-v1",

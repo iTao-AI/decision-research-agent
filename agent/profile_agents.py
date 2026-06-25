@@ -7,6 +7,7 @@ from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 
 from agent.profile_registry import AgentHarnessPolicy, ProfileSpec
+from agent.profile_middleware import build_profile_middleware
 from agent.structured_output_recovery import pair_invalid_structured_tool_calls
 from agent.talent_contracts import ResearchPacket
 from agent.talent_runtime import talent_recursion_limit
@@ -55,6 +56,12 @@ def compile_profile_agent(
         tools=[],
         system_prompt=TALENT_RESEARCHER_PROMPT,
         response_format=ToolStrategy(ResearchPacket),
-        middleware=[pair_invalid_structured_tool_calls],
+        middleware=[
+            pair_invalid_structured_tool_calls,
+            *build_profile_middleware(
+                "talent-hiring-signal",
+                role="researcher",
+            ),
+        ],
         name="talent-hiring-signal-researcher",
     ).with_config({"recursion_limit": talent_recursion_limit()})

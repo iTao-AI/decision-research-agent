@@ -8,6 +8,57 @@ def test_unknown_profile_fails_closed():
         profile_registry.get("unknown")
 
 
+def test_generic_manifest_uses_deepagents_native_harness_policy():
+    from agent.profile_registry import profile_registry
+
+    manifest = profile_registry.manifest("generic")["harness_policy"]
+
+    assert manifest["backend"] == "composite-state-skills-v1"
+    assert manifest["allowed_tools"] == [
+        "write_todos",
+        "ls",
+        "read_file",
+        "glob",
+        "grep",
+        "write_file",
+        "edit_file",
+        "task",
+    ]
+    assert manifest["subagents"] == [
+        "knowledge_base",
+        "database_query",
+        "network_search",
+    ]
+    assert manifest["skills"] == [
+        "/skills/research-planning/",
+        "/skills/evidence-synthesis-and-reporting/",
+    ]
+    assert manifest["filesystem_permissions"] == [
+        "deny:write:/skills/**",
+        "allow:read:/skills/**",
+        "allow:read,write:/workspace/**",
+        "deny:read,write:/**",
+    ]
+
+
+def test_generic_manifest_removes_host_tools_and_general_purpose():
+    from agent.profile_registry import profile_registry
+
+    manifest = profile_registry.manifest("generic")["harness_policy"]
+
+    assert "generate_markdown" not in manifest["allowed_tools"]
+    assert "convert_md_to_pdf" not in manifest["allowed_tools"]
+    assert "read_file_content" not in manifest["allowed_tools"]
+    assert "general-purpose" not in manifest["subagents"]
+
+
+def test_unknown_profile_fails_at_registry_boundary():
+    from agent.profile_registry import profile_registry
+
+    with pytest.raises(KeyError, match="unknown profile"):
+        profile_registry.get("missing-profile")
+
+
 def test_talent_profile_manifest_has_restricted_direct_researcher_policy():
     from agent.profile_registry import profile_registry
 
@@ -82,6 +133,14 @@ def test_talent_agent_compiler_enforces_restricted_harness(monkeypatch):
     assert isinstance(captured_researcher["response_format"], ToolStrategy)
     assert captured_researcher["response_format"].schema is ResearchPacket
     assert captured_researcher["tools"] == []
+    from agent.profile_middleware import middleware_contract
+
+    assert middleware_contract(captured_researcher["middleware"]) == {
+        "model_run_limit": 12,
+        "global_tool_run_limit": None,
+        "task_run_limit": None,
+        "exit_behavior": "error",
+    }
 
 
 def test_talent_compiled_researcher_binds_recursion_budget(monkeypatch):

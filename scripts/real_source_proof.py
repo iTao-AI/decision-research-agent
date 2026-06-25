@@ -125,6 +125,35 @@ def canonical_manifest_hash(manifest: RealSourceManifest) -> str:
     return hashlib.sha256(canonical_manifest_json(manifest).encode("utf-8")).hexdigest()
 
 
+def assert_complete_proof_report(report: dict) -> None:
+    required = {
+        "manifest_id",
+        "manifest_hash",
+        "run_id",
+        "source_count",
+        "decision_mode",
+        "verification_summary",
+        "publication",
+        "review",
+        "artifact_hashes",
+        "limits",
+    }
+    missing = required - set(report)
+    if missing:
+        raise ValueError(f"proof_report_missing:{','.join(sorted(missing))}")
+    if report["decision_mode"] != "human_operator":
+        raise ValueError("proof_decision_mode_not_human")
+    if report["verification_summary"].get("unresolved_count") != 0:
+        raise ValueError("proof_unresolved_verifications")
+    if report["publication"].get("status") != "ready":
+        raise ValueError("proof_publication_not_ready")
+    encoded = json.dumps(report, ensure_ascii=False)
+    disallowed = ("API_SECRET", "actor_fingerprint", "request_hash", "/Users/")
+    for token in disallowed:
+        if token in encoded:
+            raise ValueError(f"proof_report_leaks:{token}")
+
+
 def evidence_entries_for_manifest(
     manifest: RealSourceManifest,
     *,

@@ -41,6 +41,9 @@
   `baseline_verification_origin=none` 进入现有核验流程。
 - 每条 Evidence 由本地 operator 打开公开来源后做 `verify` 或 `reject`
   决策；approval 只许可交付，不替代 Evidence verification。
+- 2026-06-25 实际 proof：6 条来源均经人工核验为 `human_verified`，
+  unresolved 0；publication revision 2 为 `ready`，fresh review revision 2
+  为 `approved`。
 - 报告只证明小样本工作流执行，不是来源归档、抓取能力、市场覆盖率或招聘结果声明。
 
 ## 已有截图

@@ -1,0 +1,85 @@
+{
+  "artifact_hashes": {
+    "decision-brief.r2.reviewed.json": "5d5b061de2bf30159b64b64e75c78a0582868a0a038f85730f289d0d9cadbb13",
+    "decision-brief.r2.reviewed.md": "5d5b061de2bf30159b64b64e75c78a0582868a0a038f85730f289d0d9cadbb13"
+  },
+  "decision_mode": "human_operator",
+  "executed_at": "2026-06-25T02:45:15.271283+00:00",
+  "limits": [
+    "This proves one fixed six-record public sample workflow only.",
+    "Verification means the persisted observation matched the source at decision time.",
+    "It is not a crawler, source archive, or market-coverage benchmark.",
+    "It does not prove future source availability, hiring outcomes, or production readiness."
+  ],
+  "manifest_hash": "6eef614ee58f65c10980ed48d43ad6ee52129402ad3879a678c3627b34fc7281",
+  "manifest_id": "talent-agent-hiring-signals-v1",
+  "publication": {
+    "content_hash": "5d5b061de2bf30159b64b64e75c78a0582868a0a038f85730f289d0d9cadbb13",
+    "is_current": true,
+    "publication_id": "publication_3d8b60dcad20dcccf58e336b38948a48ffdd8370b6b70e495857d01a897e6f8c",
+    "revision": 2,
+    "status": "ready"
+  },
+  "review": {
+    "delivery_status": "ready",
+    "review_id": "review_c92023ec64835d56ba883975909a6ae7",
+    "revision": 2,
+    "status": "approved"
+  },
+  "run_id": "run_3f0cd851906141fa8edff985736b7883",
+  "source_count": 6,
+  "source_decisions": [
+    {
+      "decision": "verify",
+      "sample_id": "real_source_001",
+      "source_url": "https://openai.com/careers/software-engineer-agent-infrastructure-san-francisco/",
+      "verification_origin": "human",
+      "verification_revision": 1
+    },
+    {
+      "decision": "verify",
+      "sample_id": "real_source_002",
+      "source_url": "https://openai.com/careers/applied-ai-engineer-codex-core-agent-san-francisco/",
+      "verification_origin": "human",
+      "verification_revision": 1
+    },
+    {
+      "decision": "verify",
+      "sample_id": "real_source_003",
+      "source_url": "https://openai.com/careers/software-engineer-cloud-agents-san-francisco/",
+      "verification_origin": "human",
+      "verification_revision": 1
+    },
+    {
+      "decision": "verify",
+      "sample_id": "real_source_004",
+      "source_url": "https://jobs.ashbyhq.com/langchain/c75915ba-a32b-4e17-873d-19b47564170d",
+      "verification_origin": "human",
+      "verification_revision": 1
+    },
+    {
+      "decision": "verify",
+      "sample_id": "real_source_005",
+      "source_url": "https://www.google.com/about/careers/applications/jobs/results/138036920247558854-software-engineer-aiml-agentic-ai-systems-cloud-security",
+      "verification_origin": "human",
+      "verification_revision": 1
+    },
+    {
+      "decision": "verify",
+      "sample_id": "real_source_006",
+      "source_url": "https://www.google.com/about/careers/applications/jobs/results/106025468234212038-senior-software-engineer-agentic-ai-systems-cloud-security",
+      "verification_origin": "human",
+      "verification_revision": 1
+    }
+  ],
+  "verification_summary": {
+    "origin_counts": {
+      "human": 6
+    },
+    "snapshot_hash": "bd38a4fe4aeca3e0068a951cdbece15ce17a036ccc8f9000d825246597ef49a3",
+    "state_counts": {
+      "verified": 6
+    },
+    "unresolved_count": 0
+  }
+}

@@ -406,3 +406,18 @@ def test_main_redacts_absolute_path_from_error(tmp_path, capsys):
     error = capsys.readouterr().err
     assert str(missing) not in error
     assert json.loads(error) == {"error": "input_unavailable"}
+
+
+def test_main_rejects_non_object_manifest_with_bounded_json(tmp_path, capsys):
+    from scripts.real_source_proof import main
+
+    manifest_path = tmp_path / "private" / "manifest.json"
+    manifest_path.parent.mkdir()
+    manifest_path.write_text("[]", encoding="utf-8")
+
+    assert main(["manifest-hash", "--manifest", str(manifest_path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(manifest_path) not in captured.err
+    assert "Traceback" not in captured.err
+    assert json.loads(captured.err) == {"error": "manifest_root_invalid"}

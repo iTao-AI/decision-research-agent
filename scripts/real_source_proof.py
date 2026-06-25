@@ -94,6 +94,8 @@ def _validate_observed_at(value: str) -> str:
 
 def load_manifest(path: Path) -> RealSourceManifest:
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("manifest_root_invalid")
     if payload.get("manifest_version") != 1 or isinstance(
         payload.get("manifest_version"), bool
     ):

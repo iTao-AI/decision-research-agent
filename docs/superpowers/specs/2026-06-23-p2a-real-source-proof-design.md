@@ -220,7 +220,6 @@ Commit a generated JSON report and concise Markdown explanation under
 
 - manifest hash and source count;
 - organization and source-type counts;
-- capture and execution timestamps;
 - opaque run, snapshot, publication, review, and decision IDs;
 - per-record verification action, revision, fingerprint, and bounded reason
   code;
@@ -228,10 +227,14 @@ Commit a generated JSON report and concise Markdown explanation under
 - publication and review revisions;
 - deterministic artifact hashes;
 - byte-stability and idempotent replay results;
-- command versions and git commit;
-- elapsed time for each workflow stage;
-- skipped or failed checks; and
 - explicit sample and generalization limits.
+
+The machine-readable report is deterministic for one persisted proof state. It
+does not include capture or execution timestamps, git commit, command versions,
+per-stage elapsed time, or skipped checks because those values describe the
+operator session rather than the persisted proof state. Record them separately
+in the Markdown evidence narrative, PR verification, or command output when
+they are relevant to review.
 
 The report excludes API keys, actor fingerprints, request hashes, local
 absolute paths, raw exceptions, SQLite files, checkpoint payloads, and full

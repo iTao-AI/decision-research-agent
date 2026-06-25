@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import sys
 from urllib.parse import urlparse
+
+project_root = Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from agent.research import EvidenceEntry, evidence_id_for
 from agent.talent_contracts import ResearchPacket
@@ -152,6 +158,16 @@ def assert_complete_proof_report(report: dict) -> None:
     for token in disallowed:
         if token in encoded:
             raise ValueError(f"proof_report_leaks:{token}")
+
+
+def write_atomic_report(path: Path, report: dict) -> None:
+    assert_complete_proof_report(report)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
 
 
 def evidence_entries_for_manifest(
@@ -311,3 +327,62 @@ def seed_real_source_run(*, manifest_path: Path, db_path: str | None = None) -> 
         "review_id": review.review_id,
         "evidence_count": len(entries),
     }
+
+
+def _print_json(payload: dict, *, stream=None) -> None:
+    print(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        file=stream,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="real_source_proof")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    manifest_hash_parser = subparsers.add_parser("manifest-hash")
+    manifest_hash_parser.add_argument("--manifest", type=Path, required=True)
+
+    seed_parser = subparsers.add_parser("seed")
+    seed_parser.add_argument("--manifest", type=Path, required=True)
+    seed_parser.add_argument("--db-path", required=True)
+
+    check_report_parser = subparsers.add_parser("check-report")
+    check_report_parser.add_argument("--report", type=Path, required=True)
+
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "manifest-hash":
+            manifest = load_manifest(args.manifest)
+            _print_json(
+                {
+                    "manifest_id": manifest.manifest_id,
+                    "manifest_hash": canonical_manifest_hash(manifest),
+                    "source_count": len(manifest.records),
+                }
+            )
+        elif args.command == "seed":
+            _print_json(
+                seed_real_source_run(
+                    manifest_path=args.manifest,
+                    db_path=args.db_path,
+                )
+            )
+        else:
+            report = json.loads(args.report.read_text(encoding="utf-8"))
+            assert_complete_proof_report(report)
+            _print_json(
+                {
+                    "manifest_id": report["manifest_id"],
+                    "run_id": report["run_id"],
+                    "status": "valid",
+                }
+            )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        _print_json({"error": str(exc)}, stream=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

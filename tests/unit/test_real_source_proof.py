@@ -1,5 +1,8 @@
 from pathlib import Path
 import json
+import re
+import subprocess
+import sys
 
 import pytest
 
@@ -135,3 +138,71 @@ def test_research_packet_references_real_evidence_ids(tmp_path):
         for evidence_ref in finding.evidence_refs
     }
     assert actual_ids == expected_ids
+
+
+def test_report_writer_rejects_private_fields(tmp_path):
+    from scripts.real_source_proof import write_atomic_report
+
+    with pytest.raises(ValueError, match="proof_report_leaks"):
+        write_atomic_report(
+            tmp_path / "proof.json",
+            {
+                "manifest_id": "x",
+                "manifest_hash": "h",
+                "run_id": "run",
+                "source_count": 5,
+                "decision_mode": "human_operator",
+                "verification_summary": {"unresolved_count": 0},
+                "publication": {"status": "ready"},
+                "review": {"status": "approved"},
+                "artifact_hashes": {},
+                "limits": ["sample only"],
+                "actor_fingerprint": "secret",
+            },
+        )
+
+
+def test_main_manifest_hash_outputs_bounded_json(tmp_path, capsys):
+    manifest_path = _write_manifest(
+        tmp_path,
+        [
+            _record(f"real_source_00{i}", f"https://example.com/careers/{i}")
+            for i in range(1, 6)
+        ],
+    )
+    from scripts.real_source_proof import main
+
+    assert main(["manifest-hash", "--manifest", str(manifest_path)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["manifest_id"] == "talent-agent-hiring-signals-v1"
+    assert re.fullmatch(r"[0-9a-f]{64}", payload["manifest_hash"])
+
+
+def test_script_entrypoint_runs_from_repository_root(tmp_path):
+    manifest_path = _write_manifest(
+        tmp_path,
+        [
+            _record(f"real_source_00{i}", f"https://example.com/careers/{i}")
+            for i in range(1, 6)
+        ],
+    )
+    repository_root = Path(__file__).resolve().parents[2]
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/real_source_proof.py",
+            "manifest-hash",
+            "--manifest",
+            str(manifest_path),
+        ],
+        cwd=repository_root,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["manifest_id"] == (
+        "talent-agent-hiring-signals-v1"
+    )

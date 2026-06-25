@@ -166,6 +166,7 @@ Primary official references:
 ## Non-Goals
 
 - Build the React frontend.
+- Preserve or redesign the legacy thread-scoped upload/download API.
 - Add persistent long-term Agent memory, Async Subagents, or LLM review.
 - Add ContextSeek, OceanBase, SeekDB, AgentSeek, or AgentSeek API as runtime
   dependencies.
@@ -277,7 +278,6 @@ ResearchExecutionService.execute(ExecutionRequest)
 - `thread_id`, `run_id`, and `segment_id`;
 - selected profile ID;
 - server-owned source and aggregate policy;
-- bounded upload/workspace references when the profile permits them; and
 - tracing metadata that contains no private payload by default.
 
 `ExecutionOutcome` remains application-owned and carries:
@@ -389,15 +389,10 @@ surface for `v0.1.0`; the canonical deliverable is Markdown. A future PDF
 export, if required, is a deterministic application service over a ready
 artifact, not an autonomous Agent side effect.
 
-Generic uploads are ingested before graph execution:
-
-1. the application validates the upload identity and filename;
-2. bounded parsers extract supported content without exposing a host path;
-3. the adapter seeds normalized content under `/workspace/uploads/`; and
-4. the Agent reads it with the built-in filesystem tools.
-
-The host-reading `read_file_content` Agent tool is removed after equivalent
-Markdown, text, PDF, Word, and spreadsheet ingest tests pass. Talent continues
+The host-reading `read_file_content` Agent tool and the thread-scoped
+upload/download API are removed. `v0.1.0` does not expose file ingestion.
+Future React/API work may add a run-scoped upload contract through a separate
+design; it must seed VFS content without exposing host paths. Talent continues
 to receive no uploads.
 
 No persistent `StoreBackend` is introduced in `v0.1.0`. Cross-run memory,
@@ -612,7 +607,9 @@ Remove:
 - `GET /api/research/runs/{thread_id}`;
 - `GET /api/telemetry/{thread_id}`;
 - `GET /api/token-usage/{thread_id}`; and
-- `WS /ws/{thread_id}`.
+- `WS /ws/{thread_id}`;
+- `POST /api/upload`; and
+- `GET /api/download`.
 
 Removed routes return normal `404`; there is no forwarding route or
 compatibility error endpoint.
@@ -913,7 +910,7 @@ Key changes:
 - add the two read-only generic Skills;
 - disable the injected general-purpose subagent;
 - replace `SharedContext`, host report writes, and the upload-reading Agent tool
-  with VFS task results, built-in filesystem tools, and bounded upload ingest;
+  with VFS task results and built-in filesystem tools;
 - keep Talent on its direct bounded LangChain path;
 - prove output, Evidence, timeout, cancellation, telemetry, and tool-boundary
   parity; and
@@ -1047,7 +1044,6 @@ test a removed contract or a still-authoritative run contract.
 | `agent/profile_middleware.py` | construct profile-owned framework Middleware, with no API imports |
 | `agent/research_agents.py` | compile LangChain researchers and DeepAgents `CompiledSubAgent` registrations |
 | `api/research_execution_service.py` | own run execution orchestration through `AgentHarness` |
-| `api/upload_ingest.py` | validate and extract approved uploads into bounded VFS seed content |
 | `api/database.py` | resolve the single canonical application database path |
 | `api/run_result_service.py` | build generic artifacts and resolve deliverable results without HTTP concerns |
 | `scripts/retire_legacy_database.py` | verify, back up, export, optionally drop, and restore legacy database tables |
@@ -1147,9 +1143,6 @@ dual-write or alias behavior.
 | VFS report creation | built-in filesystem tools create the report candidate without host writes |
 | Skill loading | both generic Skills load from real checked-in files |
 | Skill immutability | writes to `/skills/**` fail closed |
-| upload ingest | supported files seed bounded `/workspace/uploads/` content |
-| upload path privacy | Agent messages, outcome and telemetry contain no host path |
-| unsupported or malformed upload | bounded failure, no partial VFS seed |
 | Talent Skill/VFS boundary | no Skills, filesystem tools, memory or subagent dispatch |
 | runtime context | correct identity/policy through `context_schema` and `ToolRuntime` |
 | runtime context concurrency | no cross-run policy or identity leakage |
@@ -1257,8 +1250,8 @@ No frontend build is required because the frontend is intentionally removed.
 7. every successful run has one resolvable canonical result artifact.
 8. generic and Talent delivery behavior is explicitly tested.
 9. task persistence and task finalization code are absent.
-10. thread-scoped execution, telemetry, token, research, and WebSocket routes
-   are absent.
+10. thread-scoped execution, telemetry, token, research, WebSocket, upload, and
+    download routes are absent.
 11. the Vue frontend and its build/deployment pipeline are absent.
 12. active runtime and current docs contain no unapproved former identity.
 13. canonical Tool Client and first-party consumer smoke pass.

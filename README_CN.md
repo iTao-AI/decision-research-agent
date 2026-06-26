@@ -50,9 +50,9 @@ healthcheck、doctor、创建 run 并读取 canonical result。
 git clone https://github.com/iTao-AI/decision-research-agent.git
 cd decision-research-agent
 cp .env.example .env
-python -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt -c constraints.txt
+pip install --no-deps -r constraints.txt
 python api/server.py
 ```
 

@@ -2,14 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install the declared dependencies using the verified compatible versions.
+# Install the complete release lock. The lock is authoritative for this image;
+# using --no-deps avoids transitive package metadata pulling test dependencies
+# below patched security floors.
 # Avoid pip's HTTP cache in this release image: interrupted Simple API responses
 # can poison retry attempts with incomplete index metadata.
 COPY requirements.txt constraints.txt ./
 RUN python -m pip install --no-cache-dir --default-timeout=60 --retries=5 --upgrade pip && \
     for i in $(seq 1 3); do \
-      pip install --no-cache-dir --default-timeout=60 --retries=5 \
-        -r requirements.txt -c constraints.txt && break; \
+      pip install --no-deps --no-cache-dir --default-timeout=60 --retries=5 \
+        -r constraints.txt && break; \
       if [ "$i" -eq 3 ]; then exit 1; fi; \
       echo "pip install attempt $i failed, retrying..." >&2; \
       sleep 5; \

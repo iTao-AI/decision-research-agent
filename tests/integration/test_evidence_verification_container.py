@@ -27,12 +27,15 @@ def verification_docker_project(tmp_path):
         .lower()
         == "true"
     )
-    available = subprocess.run(
-        ["docker", "info"],
-        text=True,
-        capture_output=True,
-        check=False,
-    ).returncode == 0
+    try:
+        available = subprocess.run(
+            ["docker", "info"],
+            text=True,
+            capture_output=True,
+            check=False,
+        ).returncode == 0
+    except FileNotFoundError:
+        available = False
     if not available:
         if required:
             pytest.fail("docker_required_but_unavailable")

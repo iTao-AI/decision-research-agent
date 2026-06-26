@@ -28,22 +28,11 @@
 | [技术决策说明](evidence/technical-decisions.md) | 关键工程决策 — 记录为什么选择 A 而不是 B |
 | [Evidence Verification Authority](decisions/evidence-verification-authority.md) | P2A 的不可变 Evidence、追加式 human decision、revisioned publication 与 review 权威边界 |
 
-## Superpowers 规划文档
+## 历史规划文档
 
-Superpowers 文档用于沉淀设计输入和实施计划，供后续 writing plan 或实现阶段读取。
-
-| 文档 | 说明 |
-|------|------|
-| [P2A Evidence Verification Design](superpowers/specs/2026-06-21-p2a-evidence-verification-design.md) | 追加式人工核验账本、确定性预检、版本化 DecisionBrief / ReviewBundle 与真实来源产品证据 |
-| [P2A Verification Authority Plan](superpowers/plans/2026-06-22-p2a-verification-authority.md) | PR1 的不可变 baseline origin、确定性 preflight、追加式 decision ledger 与 snapshot 实施步骤 |
-| [P2A Controlled Publication Design](superpowers/specs/2026-06-23-p2a-controlled-publication-design.md) | PR2 的 revisioned publication、fresh review、current delivery 与受控 API/CLI 边界 |
-| [P2A Controlled Publication Plan](superpowers/plans/2026-06-23-p2a-controlled-publication.md) | PR2 的 schema migration、artifact rebuild、freshness state machine、API/CLI 与验证步骤 |
-| [P2A Real-Source Proof Design](superpowers/specs/2026-06-23-p2a-real-source-proof-design.md) | PR3 的真实公开来源样本、人工核验、确定性重建与受控交付证明边界 |
-| [P2A Real-Source Proof Plan](superpowers/plans/2026-06-23-p2a-real-source-proof.md) | PR3 的固定 manifest、deterministic seed、人工核验、proof report 与验证步骤 |
-| [Technical Identifier Migration Design](superpowers/specs/2026-06-18-technical-identifier-migration-design.md) | 仓库改名后的 runtime env、health、Tool Client、LangSmith 与历史兼容边界 |
-| [Technical Identifier Migration Plan](superpowers/plans/2026-06-18-technical-identifier-migration.md) | canonical-first 标识迁移、回滚和验证步骤 |
-| [Evidence Readiness Plan](superpowers/plans/2026-06-01-evidence-readiness.md) | 证据化文档改造实施计划 — README 重写、Evidence Pack 目录、验证 |
-| [Phase 7b Tool Resilience Plan](superpowers/plans/2026-05-31-phase-7b-tool-resilience.md) | 工具韧性增强实施计划 — 超时、重试、降级和任务级超时 |
+历史规划记录保留为项目过程资料，不作为 v0.1.0 当前公共入口。当前
+release review 应优先读取上方文档索引、`spec/` 当前技术快照和 release
+notes。
 
 ## Evidence Pack
 
@@ -75,4 +64,4 @@ Superpowers 文档用于沉淀设计输入和实施计划，供后续 writing pl
 
 - **`docs/`** — 产品意图和架构决策（为什么）
 - **`spec/`** — 系统当前技术状态的快照（现在是什么）
-- **`openspec/`** — 变更过程管理（这次改了什么），由 OpenSpec 工具自动管理
+- **`openspec/`** — 历史变更过程管理资料，由 OpenSpec 工具自动管理

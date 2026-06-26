@@ -170,7 +170,7 @@ def test_pr2_public_contract_docs_cover_supersession_and_operator_cli():
     runbook = (
         root / "docs/operations/evidence-verification-workflow.md"
     ).read_text(encoding="utf-8")
-    docs_index = (root / "docs/README.md").read_text(encoding="utf-8")
+    release_notes = (root / "docs/releases/v0.1.0.md").read_text(encoding="utf-8")
     readme = (root / "README.md").read_text(encoding="utf-8")
 
     assert "approved | rejected | manual_recovery | superseded" in api_contract
@@ -182,6 +182,6 @@ def test_pr2_public_contract_docs_cover_supersession_and_operator_cli():
     assert "evidence finalize" in integration
     assert "publication_migration_backup_already_exists" in runbook
     assert "decision_history" in runbook
-    assert "P2A Controlled Publication Design" in docs_index
-    assert "P2A Controlled Publication Plan" in docs_index
+    assert "controlled durable review and evidence verification workflows" in release_notes
+    assert "Application DB = business authority" in release_notes
     assert "Controlled Evidence Verification" in readme

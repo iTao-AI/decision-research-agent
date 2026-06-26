@@ -18,10 +18,10 @@ def test_verified_constraints_are_used_by_docker_and_ci():
     assert "langsmith==0.8.18" in constraints
     assert "COPY requirements.txt constraints.txt ./" in dockerfile
     assert "python -m pip install --no-cache-dir --default-timeout=60 --retries=5 --upgrade pip" in dockerfile
-    assert "--no-cache-dir --default-timeout=60 --retries=5" in dockerfile
+    assert "--no-deps --no-cache-dir --default-timeout=60 --retries=5" in dockerfile
     assert "for i in $(seq 1 3)" in dockerfile
-    assert "-r requirements.txt -c constraints.txt" in dockerfile
-    assert "pip install -r requirements.txt -c constraints.txt" in ci
+    assert "-r constraints.txt" in dockerfile
+    assert "pip install --no-deps -r constraints.txt" in ci
 
 
 def test_backend_image_packages_durable_hitl_gate_report():
@@ -80,11 +80,11 @@ def test_python_version_constraints_match_supported_dependency_sets():
     assert active_versions("ragflow-sdk", "3.11") == [">=0.13.0"]
     assert active_versions("ragflow-sdk", "3.12") == [">=0.26.0"]
     assert active_versions("ragflow-sdk", "3.13") == [">=0.26.0"]
-    assert active_versions("pytest", "3.11") == [">=8.4.2"]
-    assert active_versions("pytest", "3.12") == [">=9.1.1"]
-    assert active_versions("pytest", "3.13") == [">=9.1.1"]
+    assert active_versions("pytest", "3.11") == [">=9.0.3"]
+    assert active_versions("pytest", "3.12") == [">=9.0.3"]
+    assert active_versions("pytest", "3.13") == [">=9.0.3"]
     assert "ragflow-sdk==0.13.0" in constraints
-    assert "pytest==8.4.2" in constraints
+    assert "pytest==9.0.3" in constraints
 
 
 def test_backend_data_and_output_use_named_volumes():

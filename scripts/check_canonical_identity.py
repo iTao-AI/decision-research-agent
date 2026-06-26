@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -36,17 +37,25 @@ HISTORICAL_FILES = {
 
 NEGATIVE_CONTRACT_FILES = {
     "scripts/check_canonical_identity.py",
+    "tests/unit/test_canonical_identity.py",
     "tests/integration/test_legacy_runtime_removed.py",
 }
 
 SKIP_DIRS = {
+    ".agents",
     ".git",
+    ".gstack",
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
     ".venv",
+    ".worktrees",
     "__pycache__",
     "htmlcov",
+}
+
+SKIP_FILES = {
+    ".env",
 }
 
 SKIP_SUFFIXES = {
@@ -67,6 +76,8 @@ def _relative(path: Path, root: Path) -> str:
 
 
 def _is_skipped(relative_path: str) -> bool:
+    if relative_path in SKIP_FILES:
+        return True
     if relative_path in HISTORICAL_FILES:
         return True
     if relative_path in NEGATIVE_CONTRACT_FILES:
@@ -76,8 +87,29 @@ def _is_skipped(relative_path: str) -> bool:
     return False
 
 
+def _tracked_files(root: Path) -> list[str] | None:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
+    if completed.returncode != 0:
+        return None
+    return [path for path in completed.stdout.split("\0") if path]
+
+
 def _iter_files(root: Path):
-    for path in sorted(root.rglob("*")):
+    tracked_files = _tracked_files(root)
+    if tracked_files is not None:
+        candidates = (root / relative_path for relative_path in sorted(tracked_files))
+    else:
+        candidates = sorted(root.rglob("*"))
+
+    for path in candidates:
         if path.is_dir():
             continue
         relative_path = _relative(path, root)

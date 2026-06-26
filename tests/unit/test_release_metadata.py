@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from packaging.markers import default_environment
+from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.0.md"
+PYTEST_FIXED_FLOOR = "9.0.3"
 
 
 def _read(path: Path) -> str:
@@ -77,3 +82,45 @@ def test_release_notes_do_not_claim_unrun_final_gate() -> None:
     ]
     for phrase in forbidden:
         assert phrase not in notes
+
+
+def test_pytest_dependency_declaration_uses_security_fixed_floor() -> None:
+    pytest_requirements = []
+    for raw_line in _read(PROJECT_ROOT / "requirements.txt").splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        requirement = Requirement(line)
+        if requirement.name == "pytest":
+            pytest_requirements.append(requirement)
+
+    assert pytest_requirements
+    for python_version in ("3.11", "3.12", "3.13"):
+        environment = default_environment()
+        environment["python_version"] = python_version
+        applicable = [
+            requirement
+            for requirement in pytest_requirements
+            if requirement.marker is None or requirement.marker.evaluate(environment)
+        ]
+        assert len(applicable) == 1, python_version
+        assert PYTEST_FIXED_FLOOR in applicable[0].specifier
+
+
+def test_python_3_11_release_constraints_pin_security_fixed_pytest() -> None:
+    constraints = {}
+    for raw_line in _read(PROJECT_ROOT / "constraints.txt").splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        requirement = Requirement(line)
+        pins = [
+            specifier.version
+            for specifier in requirement.specifier
+            if specifier.operator == "=="
+        ]
+        if pins:
+            constraints[requirement.name] = pins[-1]
+
+    assert constraints["pytest"] == PYTEST_FIXED_FLOOR
+    assert PYTEST_FIXED_FLOOR in SpecifierSet(f"=={constraints['pytest']}")

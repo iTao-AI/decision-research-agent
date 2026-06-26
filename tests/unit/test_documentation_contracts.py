@@ -25,6 +25,14 @@ CURRENT_DOCS = [
     PROJECT_ROOT / "spec" / "tool-registry.md",
 ]
 
+PUBLIC_PRESENTATION_DOCS = [
+    PROJECT_ROOT / "README.md",
+    PROJECT_ROOT / "README_CN.md",
+    PROJECT_ROOT / "docs" / "README.md",
+    PROJECT_ROOT / "docs" / "releases" / "v0.1.0.md",
+    PROJECT_ROOT / "spec" / "README.md",
+]
+
 
 def _combined_docs() -> str:
     return "\n\n".join(path.read_text(encoding="utf-8") for path in CURRENT_DOCS)
@@ -70,13 +78,38 @@ def test_current_docs_do_not_advertise_removed_or_legacy_surfaces() -> None:
         assert phrase not in docs
 
 
+def test_public_presentation_docs_do_not_expose_private_or_job_search_context() -> None:
+    forbidden_phrases = [
+        "求职",
+        "面试",
+        "简历",
+        "投递",
+        "Career",
+        "/Users/mac",
+        ".gstack/projects",
+        "/autoplan restore point",
+    ]
+
+    for path in PUBLIC_PRESENTATION_DOCS:
+        text = path.read_text(encoding="utf-8")
+        for phrase in forbidden_phrases:
+            assert phrase not in text, f"{phrase} leaked in {path.relative_to(PROJECT_ROOT)}"
+
+
+def test_docs_index_keeps_historical_plans_out_of_current_public_entrypoints() -> None:
+    docs_index = (PROJECT_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+
+    assert "docs/superpowers/" not in docs_index
+    assert "(superpowers/" not in docs_index
+
+
 def test_readme_first_run_flow_is_canonical_and_copy_pasteable() -> None:
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
 
     expected_flow = [
         "git clone",
         "cp .env.example .env",
-        "pip install -r requirements.txt -c constraints.txt",
+        "pip install --no-deps -r constraints.txt",
         "python api/server.py",
         "curl --fail --silent http://127.0.0.1:8000/health",
         "python tools/decision_research_agent_tool.py doctor",

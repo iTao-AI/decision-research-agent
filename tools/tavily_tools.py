@@ -77,42 +77,6 @@ async def _cached_search_with_resilience(
     )
 
 
-def _publish_search_evidence(results: dict, *, thread_id: str) -> None:
-    """Publish URL+snippet evidence from Tavily search results into SharedContext.
-
-    SharedContext facts with topic ``"search_evidence"`` are later collected
-    during task finalization and merged into the EvidenceLedger alongside
-    stream-based evidence entries.
-
-    Only URL-backed results are published; error strings and non-dict outputs
-    are silently skipped.
-    """
-    if not isinstance(results, dict):
-        return
-    items = results.get("results", [])
-    if not isinstance(items, list) or not items:
-        return
-    try:
-        from tools.shared_context_tools import _get_context
-
-        ctx = _get_context()
-    except Exception:
-        return
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        url = item.get("url")
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-            continue
-        content = item.get("content") or item.get("title") or ""
-        ctx.publish_fact(
-            thread_id=thread_id,
-            fact=str(content).strip(),
-            source=url,
-            topic="search_evidence",
-        )
-
-
 @tool
 def internet_search(
     query: str,
@@ -130,7 +94,6 @@ def internet_search(
         topic=topic,
         include_raw_content=include_raw_content,
     )
-    _publish_search_evidence(result, thread_id=thread_id)
     return result
 
 

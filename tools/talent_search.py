@@ -10,7 +10,6 @@ from api.context import get_allowed_source_domains_context, get_run_context
 from agent.research import evidence_id_for
 from tools.tavily_tools import (
     _internet_search_impl,
-    _publish_search_evidence,
     search_with_dedup,
 )
 
@@ -72,5 +71,4 @@ def talent_public_search(
         }
         for item in results
     ]
-    _publish_search_evidence({"results": results}, thread_id=execution_id)
     return {"status": "ok", "results": results}

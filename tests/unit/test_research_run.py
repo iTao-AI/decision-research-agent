@@ -5,10 +5,9 @@ import pytest
 
 
 class TestResearchEvidence:
-    def test_shared_context_snapshot_converts_and_merges_by_content_fingerprint(self):
+    def test_stream_evidence_merges_by_content_fingerprint(self):
         from agent.research import (
             EvidenceEntry,
-            evidence_from_shared_context_snapshot,
             merge_evidence_entries,
         )
 
@@ -20,26 +19,26 @@ class TestResearchEvidence:
             source_url="https://example.com/source",
             snippet="Same   content",
         )
-        snapshot_entries = evidence_from_shared_context_snapshot(
-            thread_id="thread-001",
-            query_text="query",
-            snapshot=[
-                {
-                    "fact": "Same content",
-                    "source": "https://example.com/source",
-                    "topic": "search_evidence",
-                    "timestamp": 1.0,
-                },
-                {
-                    "fact": "Changed content",
-                    "source": "https://example.com/source",
-                    "topic": "search_evidence",
-                    "timestamp": 2.0,
-                },
-            ],
-        )
+        stream_entries = [
+            EvidenceEntry(
+                thread_id="thread-001",
+                query_text="query",
+                subagent_name="network_search",
+                tool_name="internet_search",
+                source_url="https://example.com/source",
+                snippet="Same content",
+            ),
+            EvidenceEntry(
+                thread_id="thread-001",
+                query_text="query",
+                subagent_name="network_search",
+                tool_name="internet_search",
+                source_url="https://example.com/source",
+                snippet="Changed content",
+            ),
+        ]
 
-        merged = merge_evidence_entries([stream_entry], snapshot_entries)
+        merged = merge_evidence_entries([stream_entry], stream_entries)
 
         assert len(merged) == 2
         assert {entry.snippet for entry in merged} == {"Same   content", "Changed content"}

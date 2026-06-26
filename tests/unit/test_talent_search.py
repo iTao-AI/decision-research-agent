@@ -17,7 +17,6 @@ def test_talent_public_search_scopes_query_and_filters_results(monkeypatch):
     from tools import talent_search
 
     captured = {}
-    published = {}
 
     def fake_search(query, **kwargs):
         captured["query"] = query
@@ -29,12 +28,7 @@ def test_talent_public_search_scopes_query_and_filters_results(monkeypatch):
             ]
         }
 
-    def fake_publish(results, *, thread_id):
-        published["results"] = results
-        published["thread_id"] = thread_id
-
     monkeypatch.setattr(talent_search, "_internet_search_impl", fake_search)
-    monkeypatch.setattr(talent_search, "_publish_search_evidence", fake_publish)
     domains_token = set_allowed_source_domains_context(("jobs.example.com",))
     run_token = set_run_context("run-talent")
     try:
@@ -58,15 +52,3 @@ def test_talent_public_search_scopes_query_and_filters_results(monkeypatch):
         ],
     }
     assert result["results"][0]["evidence_id"].startswith("ev_")
-    assert published == {
-        "results": {
-            "results": [
-                {
-                    "url": "https://jobs.example.com/role",
-                    "content": "allowed",
-                    "evidence_id": result["results"][0]["evidence_id"],
-                }
-            ]
-        },
-        "thread_id": "run-talent",
-    }

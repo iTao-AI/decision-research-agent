@@ -122,29 +122,6 @@ def evidence_id_for(source_url: str | None, content: str, *, run_id: str) -> str
     return f"ev_{run_id}_{fingerprint}"
 
 
-def evidence_from_shared_context_snapshot(
-    *, thread_id: str, query_text: str, snapshot: list[dict[str, Any]]
-) -> list[EvidenceEntry]:
-    """Convert an execution-boundary SharedContext snapshot into evidence."""
-    entries: list[EvidenceEntry] = []
-    for fact in snapshot:
-        url = fact.get("source")
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-            continue
-        entries.append(
-            EvidenceEntry(
-                thread_id=thread_id,
-                query_text=query_text,
-                subagent_name="network_search",
-                tool_name="internet_search",
-                source_url=url,
-                snippet=_truncate(fact.get("fact", "")),
-                retrieved_at=str(fact.get("timestamp")) if fact.get("timestamp") else None,
-            )
-        )
-    return entries
-
-
 def merge_evidence_entries(*entry_groups: list[EvidenceEntry]) -> list[EvidenceEntry]:
     """Merge evidence using normalized source plus normalized content identity."""
     merged: list[EvidenceEntry] = []

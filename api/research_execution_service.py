@@ -22,7 +22,6 @@ from agent.harness_contracts import (
     ReportCandidate,
 )
 from agent.research import (
-    evidence_from_shared_context_snapshot,
     extract_evidence_entries,
     merge_evidence_entries,
 )
@@ -175,12 +174,10 @@ class ResearchExecutionService:
         harness: AgentHarness,
         project_root: Path,
         clear_run_cache: Callable[[str], None] = clear_search_cache,
-        legacy_evidence_source: Any | None = None,
     ):
         self.harness = harness
         self.project_root = project_root
         self.clear_run_cache = clear_run_cache
-        self.legacy_evidence_source = legacy_evidence_source
 
     async def _preload_declared_aggregate_evidence(
         self,
@@ -288,28 +285,6 @@ class ResearchExecutionService:
         accumulator = observer.accumulator
         execution_id = accumulator.run_id or accumulator.thread_id
         evidence_entries = list(accumulator.evidence_entries)
-        if self.legacy_evidence_source is not None:
-            accumulator.diagnostics.extend(
-                self.legacy_evidence_source.get_diagnostics(execution_id)
-            )
-            try:
-                snapshot = self.legacy_evidence_source.snapshot_facts(
-                    execution_id,
-                    topic="search_evidence",
-                )
-                evidence_entries = merge_evidence_entries(
-                    evidence_entries,
-                    evidence_from_shared_context_snapshot(
-                        thread_id=accumulator.thread_id,
-                        query_text=accumulator.query,
-                        snapshot=snapshot,
-                    ),
-                )
-            except Exception as exc:
-                accumulator.diagnostics.append(
-                    f"evidence_snapshot_failed:{type(exc).__name__}"
-                )
-                failure_kind = failure_kind or "evidence_snapshot_failed"
         evidence_entries = _mark_declared_fixture_evidence(
             evidence_entries,
             execution_id=execution_id,
@@ -444,6 +419,4 @@ class ResearchExecutionService:
                 allowed_source_domains_token=domains_token,
                 allowed_aggregate_ids_token=aggregates_token,
             )
-            if self.legacy_evidence_source is not None:
-                self.legacy_evidence_source.clear_facts(execution_id)
             self.clear_run_cache(execution_id)

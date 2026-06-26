@@ -10,7 +10,6 @@ from langchain_core.tools import tool
 from agent.research import evidence_id_for
 from agent.runtime_env import resolve_env
 from api.context import get_allowed_aggregate_ids_context, get_run_context
-from tools.tavily_tools import _publish_search_evidence
 
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "benchmarks" / "fixtures"
@@ -91,5 +90,4 @@ def provided_aggregate(aggregate_id: str) -> dict:
             "invalid_provided_aggregate_fixture",
             "The declared aggregate fixture contains no valid samples.",
         )
-    _publish_search_evidence({"results": results}, thread_id=execution_id)
     return {"status": "ok", "aggregate_id": aggregate_id, "results": results}

@@ -231,9 +231,6 @@ def test_three_concurrent_runs_isolate_runtime_state_and_workspace(tmp_path):
         class FakeAgent:
             async def astream(self, *args, **kwargs):
                 run_id = get_run_context()
-                main_agent.shared_context.publish_fact(
-                    run_id, f"fact:{{run_id}}", "test", "runtime"
-                )
                 search_with_dedup(
                     "same-query",
                     search_fn=lambda query: f"result:{{run_id}}",
@@ -246,7 +243,6 @@ def test_three_concurrent_runs_isolate_runtime_state_and_workspace(tmp_path):
                     "thread_id": get_thread_context(),
                     "session_dir": get_session_context(),
                     "runtime_run_id": kwargs["context"].run_id,
-                    "facts": main_agent.shared_context.snapshot_facts(run_id),
                     "cache": dict(_search_cache[run_id]),
                 }}
                 if len(snapshots) == 3:
@@ -278,13 +274,11 @@ def test_three_concurrent_runs_isolate_runtime_state_and_workspace(tmp_path):
             }}
             assert {{item["session_dir"] for item in snapshots.values()}} == {{None}}
             for _, run_id, _ in runs:
-                assert snapshots[run_id]["facts"][0]["fact"] == f"fact:{{run_id}}"
                 assert list(snapshots[run_id]["cache"].values()) == [f"result:{{run_id}}"]
                 assert token_collector.get_summary(run_id)["call_count"] == 1
             release.set()
             await asyncio.gather(*tasks)
             for _, run_id, _ in runs:
-                assert main_agent.shared_context.snapshot_facts(run_id) == []
                 assert run_id not in _search_cache
 
         asyncio.run(verify())

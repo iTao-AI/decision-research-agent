@@ -46,7 +46,7 @@ os.environ["OPENAI_BASE_URL"] = "https://dashscope.aliyuncs.com/compatible-mode/
 os.environ["OPENAI_API_KEY"] = "test"
 os.environ["LLM_QWEN_MAX"] = "qwen-max"
 from unittest.mock import patch, MagicMock
-with patch('agent.main_agent.create_deep_agent', return_value=MagicMock()):
+with patch('agent.deepagents_harness.create_deep_agent', return_value=MagicMock()):
     with patch('tavily.TavilyClient', return_value=MagicMock()):
         with patch('ragflow_sdk.RAGFlow', return_value=MagicMock()):
             from api import server

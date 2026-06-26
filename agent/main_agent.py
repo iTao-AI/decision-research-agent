@@ -14,7 +14,6 @@ from agent.run_result import (
     AgentRunResult,
     OutcomeBox,
 )
-from agent.shared_context import SharedContext
 from api.research_execution_service import (
     AccumulatorExecutionObserver,
     ResearchExecutionService,
@@ -34,11 +33,6 @@ agent_factory = AgentFactory(
     ),
 )
 
-# Temporary compatibility source until Task 5 removes the superseded harness
-# modules and their tests. New researcher graphs do not receive these tools.
-shared_context = SharedContext()
-
-
 def _selected_harness(profile_id: str):
     harness = _generic_harness.with_profile_graph("generic", main_agent)
     if profile_id != "generic":
@@ -53,7 +47,6 @@ def _execution_service(profile_id: str) -> ResearchExecutionService:
     return ResearchExecutionService(
         harness=_selected_harness(profile_id),
         project_root=project_root,
-        legacy_evidence_source=shared_context,
     )
 
 

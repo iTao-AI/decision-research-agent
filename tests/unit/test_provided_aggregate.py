@@ -61,7 +61,7 @@ def test_provided_aggregate_rejects_undeclared_aggregate(tmp_path, monkeypatch):
     assert result["error"]["code"] == "undeclared_provided_aggregate"
 
 
-def test_provided_aggregate_reads_only_declared_fixed_fixture_and_publishes_evidence(
+def test_provided_aggregate_reads_only_declared_fixed_fixture(
     tmp_path, monkeypatch
 ):
     from api.context import (
@@ -74,16 +74,8 @@ def test_provided_aggregate_reads_only_declared_fixed_fixture_and_publishes_evid
 
     fixtures = tmp_path / "fixtures"
     _write_fixture(fixtures)
-    published = {}
     monkeypatch.setenv("DEEP_SEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES", "true")
     monkeypatch.setattr(aggregate_tool, "FIXTURE_ROOT", fixtures)
-    monkeypatch.setattr(
-        aggregate_tool,
-        "_publish_search_evidence",
-        lambda results, thread_id: published.update(
-            {"results": results, "thread_id": thread_id}
-        ),
-    )
     aggregate_token = set_allowed_aggregate_ids_context(("aggregate-v1",))
     run_token = set_run_context("run-talent")
     try:
@@ -97,7 +89,6 @@ def test_provided_aggregate_reads_only_declared_fixed_fixture_and_publishes_evid
     assert result["status"] == "ok"
     assert result["aggregate_id"] == "aggregate-v1"
     assert result["results"][0]["evidence_id"].startswith("ev_run-talent_")
-    assert published["thread_id"] == "run-talent"
 
 
 def test_provided_aggregate_rejects_path_like_identifier(monkeypatch):

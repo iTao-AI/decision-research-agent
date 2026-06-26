@@ -8,7 +8,7 @@ from api.evidence_verification_repository import (
     VERIFICATION_MIGRATION_VERSION,
     init_evidence_verification_schema,
 )
-from api.persistence import init_db
+from tests.legacy_db import init_legacy_db
 from api.run_migrations import (
     backup_database,
     restore_database,
@@ -39,7 +39,7 @@ def _tables(path: str) -> set[str]:
 
 def test_verification_schema_is_idempotent_and_optionally_verified(tmp_path):
     path = str(tmp_path / "tasks.db")
-    init_db(path).close()
+    init_legacy_db(path).close()
 
     init_evidence_verification_schema(path)
     init_evidence_verification_schema(path)
@@ -64,7 +64,7 @@ def test_verification_schema_is_idempotent_and_optionally_verified(tmp_path):
 def test_verification_schema_backup_restore_removes_additive_state(tmp_path):
     path = str(tmp_path / "tasks.db")
     backup = str(tmp_path / "tasks.pre-verification.db")
-    init_db(path).close()
+    init_legacy_db(path).close()
     before = _tables(path)
 
     backup_database(db_path=path, backup_path=backup)

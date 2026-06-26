@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from api.persistence import init_db
+from tests.legacy_db import init_legacy_db
 from api.run_migrations import (
     backup_database,
     migrate_with_backup,
@@ -27,7 +27,7 @@ def _table_names(db_path):
 
 def test_run_identity_migration_applies_twice_and_verifies(tmp_path):
     db_path = str(tmp_path / "tasks.db")
-    init_db(db_path).close()
+    init_legacy_db(db_path).close()
 
     init_review_schema(db_path)
     init_review_schema(db_path)
@@ -48,7 +48,7 @@ def test_run_identity_migration_applies_twice_and_verifies(tmp_path):
 def test_backup_and_restore_recovers_pre_migration_database(tmp_path):
     db_path = str(tmp_path / "tasks.db")
     backup_path = str(tmp_path / "tasks.pre-run-identity.db")
-    init_db(db_path).close()
+    init_legacy_db(db_path).close()
     original_tables = _table_names(db_path)
 
     backup_database(db_path=db_path, backup_path=backup_path)
@@ -64,7 +64,7 @@ def test_migration_verification_failure_restores_backup(tmp_path, monkeypatch):
 
     db_path = str(tmp_path / "tasks.db")
     backup_path = str(tmp_path / "tasks.pre-run-identity.db")
-    init_db(db_path).close()
+    init_legacy_db(db_path).close()
     original_tables = _table_names(db_path)
 
     def fail_verification(
@@ -85,7 +85,7 @@ def test_migration_verification_failure_restores_backup(tmp_path, monkeypatch):
 def test_full_migration_includes_revisioned_publication_schema(tmp_path):
     db_path = str(tmp_path / "tasks.db")
     backup_path = str(tmp_path / "tasks.pre-publication.db")
-    init_db(db_path).close()
+    init_legacy_db(db_path).close()
 
     result = migrate_with_backup(
         db_path=db_path,
@@ -104,7 +104,7 @@ def test_restart_verification_failure_preserves_migrated_db_and_backup(
 
     db_path = str(tmp_path / "tasks.db")
     backup_path = str(tmp_path / "tasks.pre-publication.db")
-    init_db(db_path).close()
+    init_legacy_db(db_path).close()
     migrate_with_backup(db_path=db_path, backup_path=backup_path)
     backup_tables = _table_names(backup_path)
 

@@ -18,7 +18,6 @@ TIMEOUTS = {
     "mysql_connect": 10,   # Database connection
     "mysql_query": 30,     # SQL query
     "llm": 120,            # DeepSeek generation
-    "pdf_convert": 60,     # weasyprint / word conversion
 }
 
 # Default retryable exceptions

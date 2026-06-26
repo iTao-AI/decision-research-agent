@@ -23,7 +23,7 @@ class TestTimeoutsConfig:
 
     def test_has_all_required_keys(self):
         """TIMEOUTS should contain all expected service keys."""
-        required_keys = {"tavily", "ragflow", "mysql_connect", "mysql_query", "llm", "pdf_convert"}
+        required_keys = {"tavily", "ragflow", "mysql_connect", "mysql_query", "llm"}
         assert required_keys.issubset(TIMEOUTS.keys())
 
     def test_tavily_timeout(self):
@@ -40,9 +40,6 @@ class TestTimeoutsConfig:
 
     def test_llm_timeout(self):
         assert TIMEOUTS["llm"] == 120
-
-    def test_pdf_convert_timeout(self):
-        assert TIMEOUTS["pdf_convert"] == 60
 
     def test_all_values_positive(self):
         """All timeout values should be positive integers."""

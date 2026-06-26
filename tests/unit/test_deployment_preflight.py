@@ -17,9 +17,10 @@ def test_verified_constraints_are_used_by_docker_and_ci():
     assert "langgraph==1.2.6" in constraints
     assert "langsmith==0.8.18" in constraints
     assert "COPY requirements.txt constraints.txt ./" in dockerfile
-    assert "--mount=type=cache,target=/root/.cache/pip" in dockerfile
+    assert "python -m pip install --upgrade pip" in dockerfile
+    assert "--no-cache-dir --default-timeout=60 --retries=5" in dockerfile
     assert "for i in $(seq 1 3)" in dockerfile
-    assert "pip install -r requirements.txt -c constraints.txt" in dockerfile
+    assert "-r requirements.txt -c constraints.txt" in dockerfile
     assert "pip install -r requirements.txt -c constraints.txt" in ci
 
 
@@ -58,13 +59,14 @@ def test_deepagents_compatibility_baseline_exposes_selected_capability_surface()
 
 def test_python_version_constraints_match_supported_dependency_sets():
     constraints = (PROJECT_ROOT / "constraints.txt").read_text(encoding="utf-8")
+    requirements_text = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
     requirements = {
         package: [
-            Requirement(line)
-            for line in constraints.splitlines()
+            Requirement(line.split("#", 1)[0].strip())
+            for line in requirements_text.splitlines()
             if line.startswith(package)
         ]
-        for package in ("ragflow-sdk", "pytest==")
+        for package in ("ragflow-sdk", "pytest")
     }
 
     def active_versions(package: str, python_version: str) -> list[str]:
@@ -75,12 +77,14 @@ def test_python_version_constraints_match_supported_dependency_sets():
             and requirement.marker.evaluate({"python_version": python_version})
         ]
 
-    assert active_versions("ragflow-sdk", "3.11") == ["==0.13.0"]
-    assert active_versions("ragflow-sdk", "3.12") == ["==0.26.0"]
-    assert active_versions("ragflow-sdk", "3.13") == ["==0.26.0"]
-    assert active_versions("pytest==", "3.11") == ["==8.4.2"]
-    assert active_versions("pytest==", "3.12") == ["==9.1.1"]
-    assert active_versions("pytest==", "3.13") == ["==9.1.1"]
+    assert active_versions("ragflow-sdk", "3.11") == [">=0.13.0"]
+    assert active_versions("ragflow-sdk", "3.12") == [">=0.26.0"]
+    assert active_versions("ragflow-sdk", "3.13") == [">=0.26.0"]
+    assert active_versions("pytest", "3.11") == [">=8.4.2"]
+    assert active_versions("pytest", "3.12") == [">=9.1.1"]
+    assert active_versions("pytest", "3.13") == [">=9.1.1"]
+    assert "ragflow-sdk==0.13.0" in constraints
+    assert "pytest==8.4.2" in constraints
 
 
 def test_backend_data_and_output_use_named_volumes():

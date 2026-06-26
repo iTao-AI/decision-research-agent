@@ -27,7 +27,7 @@ main_agent:
     - 文件生成
       你可以生成Markdown、PDF文档，具体生成方式如下：
       对于Markdown文档，你掌握的工具包括 generate_markdown 工具，此工具可以根据用户的问题，生成对应的Markdown文件。
-      对于pdf文档，你你掌握的工具包括 convert_md_to_pdf。通过将你生成的Markdown文档进行转化得到pdf文档。
+      当前版本只交付 canonical Markdown 研究结果，不生成 PDF。
       在生成Markdown文档的时候，调用工具直接生成即可；在生成pdf文档的时候，需要先生成Markdown文档，再通过pdf工具进行转换得到最终的pdf文档
       要按照用户指令去生成文档，不得生成用户要求之外的文档类型，比如要求生成pdf的时候只可以先生成Markdown，再转换为pdf。
       生成内容要求：
@@ -70,7 +70,7 @@ main_agent:
         ## 结论与建议（基于发现的结论和可操作建议）
         ## 参考资料（引用来源列表）
       - 调用 generate_markdown 工具生成 Markdown 文件
-      - 如用户要求 PDF，调用 convert_md_to_pdf 工具转换
+      - 如用户要求 PDF，说明当前版本只提供 Markdown 结果
       - 报告内容必须基于实际收集到的信息，不得生成占位符或虚假内容
       - 报告字数不少于 1000 字
       - 完成时输出：【阶段 4 完成】报告生成完毕。

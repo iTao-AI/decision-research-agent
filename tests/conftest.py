@@ -1,29 +1,5 @@
 """Shared fixtures for all tests (unit + integration)."""
-import os
-import platform
 import sys
-
-
-def _configure_weasyprint_library_path():
-    """Make Homebrew-installed cairo/pango/gobject visible before test collection."""
-    if platform.system() == "Darwin":
-        homebrew_lib = "/opt/homebrew/lib"
-        if os.path.isdir(homebrew_lib):
-            current = os.environ.get("DYLD_LIBRARY_PATH", "")
-            if homebrew_lib not in current:
-                os.environ["DYLD_LIBRARY_PATH"] = f"{homebrew_lib}:{current}" if current else homebrew_lib
-
-
-_configure_weasyprint_library_path()
-
-
-def weasyprint_available():
-    """Check if weasyprint can actually import (system deps present)."""
-    try:
-        from weasyprint import HTML
-        return True
-    except (OSError, ImportError):
-        return False
 
 
 # Stub heavy imports before any test module imports them.

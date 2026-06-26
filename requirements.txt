@@ -21,17 +21,6 @@ mysql-connector-python>=8.0.0 # [修正] MySQL 官方驱动 (用于 mysql_tools)
 langgraph-checkpoint-sqlite>=3.1.0
 # 注意：代码中使用的是 mysql.connector，对应这个包，而非 pymysql
 
-# --- 文件处理 (File Processing - upload_file_read_tool) ---
-python-docx>=1.0.0          # Word (.docx) 读取
-pypdf>=6.13.3                # [修正] PDF 读取 (代码用的是 pypdf)
-pandas>=3.0.3               # Excel 数据处理
-openpyxl>=3.1.0             # Excel 读取引擎 (Pandas 依赖)
-aiofiles>=23.0.0            # 异步文件操作
-
-# --- PDF 生成 (跨平台, 替代 pywin32) ---
-markdown>=3.4.0             # Markdown → HTML 转换
-weasyprint>=69.0            # HTML → PDF 跨平台引擎
-
 # --- 外部工具集成 (Integrations) ---
 tavily-python>=0.7.26        # 联网搜索 API
 ragflow-sdk>=0.13.0; python_version < "3.12"          # 知识库 SDK

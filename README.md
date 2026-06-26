@@ -103,11 +103,15 @@ Controlled review and evidence verification endpoints are documented in
 
 ## Controlled Features
 
+### Controlled Durable Review
+
 Durable review is disabled by default:
 
 ```dotenv
 DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL=false
 ```
+
+### Controlled Evidence Verification
 
 Evidence verification is disabled by default:
 

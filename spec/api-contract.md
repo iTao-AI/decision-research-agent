@@ -110,6 +110,9 @@ Review list responses are bounded queue projections and do not include query
 text, claims, evidence bodies, decision reason, artifacts, lease data, or
 checkpoint internals.
 
+Workflow terminal and operator states include
+`approved | rejected | manual_recovery | superseded`.
+
 Decision requests support `approve` and `reject`; repeated identical
 `decision_id` submissions are idempotent replays, while conflicting content is
 rejected with a stable error envelope.

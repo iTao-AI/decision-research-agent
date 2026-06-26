@@ -154,6 +154,7 @@ python tools/decision_research_agent_tool.py doctor
 - [Agent Integration](docs/AGENT_INTEGRATION.md)
 - [API Contract](spec/api-contract.md)
 - [Data Models](spec/data-models.md)
+- [v0.1.0 Release Notes](docs/releases/v0.1.0.md)
 - [Controlled Review Workflow](docs/operations/controlled-review-workflow.md)
 - [Evidence Verification Workflow](docs/operations/evidence-verification-workflow.md)
 

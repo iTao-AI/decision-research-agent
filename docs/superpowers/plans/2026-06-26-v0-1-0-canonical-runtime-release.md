@@ -35,9 +35,9 @@ AgentSeek, or public deployment.
 | Order | Plan | Required base | Terminal condition |
 |---|---|---|---|
 | PR1 | `2026-06-26-v0-1-0-pr1-deepagents-native-harness.md` | current `main` after this design lands | Agent execution uses `AgentHarness`; generic harness is DeepAgents-native; public API/schema unchanged |
-| PR2 | `2026-06-26-v0-1-0-pr2-canonical-run-delivery.md` | merged PR1 | generic runs persist canonical result artifacts; Tool Client and first-party consumer use run/result |
-| PR3 | `2026-06-26-v0-1-0-pr3-legacy-runtime-removal.md` | merged PR2 plus successful consumer smoke | task/thread runtime, old identifiers, Vue, aliases, and active compatibility code are absent |
-| PR4 | `2026-06-26-v0-1-0-pr4-release-hardening.md` | merged PR3 | clean install, full gates, current docs, `VERSION=0.1.0`, release-ready repository |
+| PR2 | Runtime contracts convergence | merged PR1 | DeepAgents/LangChain middleware and runtime ownership boundaries are explicit; duplicate framework glue is compressed; public API/schema/canonical delivery behavior unchanged |
+| PR3 | `2026-06-26-v0-1-0-pr2-canonical-run-delivery.md` carried forward as the next PR plan | merged PR2 | generic runs persist canonical result artifacts; Tool Client and first-party consumer use run/result |
+| PR4 | `2026-06-26-v0-1-0-pr3-legacy-runtime-removal.md` plus `2026-06-26-v0-1-0-pr4-release-hardening.md` sequencing refresh | merged PR3 plus successful consumer smoke | legacy runtime removal, clean install gates, full docs sync, `VERSION=0.1.0`, and release readiness remain deferred to PR4 planning |
 
 Do not stack implementation branches. Each PR starts from the updated `main`
 after the prior PR is reviewed, merged, and cleaned up.

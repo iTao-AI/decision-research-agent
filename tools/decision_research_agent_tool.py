@@ -247,6 +247,15 @@ def get_run(run_id: str, config: ToolConfig) -> dict[str, Any]:
     )
 
 
+def result(run_id: str, config: ToolConfig) -> dict[str, Any]:
+    encoded_run_id = parse.quote(run_id, safe="")
+    return _request_json(
+        "GET",
+        _join_url(config.base_url, f"/api/runs/{encoded_run_id}/result"),
+        config=config,
+    )
+
+
 def list_reviews(
     config: ToolConfig,
     *,
@@ -825,7 +834,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.wait:
                 result = wait_for_run(result["run_id"], config)
         elif args.command == "result":
-            result = get_run(args.run_id, config)
+            result = globals()["result"](args.run_id, config)
         elif args.command == "review" and args.review_command == "list":
             result = list_reviews(
                 config,

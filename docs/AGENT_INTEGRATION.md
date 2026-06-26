@@ -79,6 +79,25 @@ DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=true
 
 ## Common Commands
 
+Canonical run-scoped execution uses `run_id`:
+
+```bash
+python tools/decision_research_agent_tool.py run \
+  --query "Research question" \
+  --thread-id "demo-thread-001" \
+  --wait
+
+python tools/decision_research_agent_tool.py result \
+  --run-id "$RUN_ID"
+```
+
+`run --wait` polls `GET /api/runs/{run_id}` until `execution_status` is
+terminal. `result --run-id` calls `GET /api/runs/{run_id}/result` and returns
+the bounded canonical artifact payload. For generic runs the artifact ID is
+`research-report.md`.
+
+Legacy task/thread commands remain available during the rollback window:
+
 ```bash
 python tools/decision_research_agent_tool.py start-task \
   --query "Research question" \

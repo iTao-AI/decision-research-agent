@@ -236,6 +236,87 @@ def test_review_show_fails_when_run_has_no_durable_review(monkeypatch):
         )
 
 
+def test_result_requests_canonical_result_endpoint(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        return FakeResponse(
+            {"artifact": {"artifact_id": "research-report.md"}}
+        )
+
+    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
+
+    value = tool.result(
+        "run/1",
+        config=tool.ToolConfig(base_url="http://127.0.0.1:9000"),
+    )
+
+    assert value["artifact"]["artifact_id"] == "research-report.md"
+    assert captured["url"] == "http://127.0.0.1:9000/api/runs/run%2F1/result"
+
+
+def test_cli_result_prints_canonical_result(monkeypatch, capsys):
+    urls = []
+
+    def fake_urlopen(req, timeout):
+        urls.append(req.full_url)
+        return FakeResponse(
+            {
+                "run_id": "run_1",
+                "artifact": {"artifact_id": "research-report.md"},
+            }
+        )
+
+    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
+
+    exit_code = tool.main(
+        [
+            "--base-url",
+            "http://127.0.0.1:9000",
+            "result",
+            "--run-id",
+            "run_1",
+        ]
+    )
+
+    assert exit_code == 0
+    assert urls == ["http://127.0.0.1:9000/api/runs/run_1/result"]
+    assert json.loads(capsys.readouterr().out)["artifact"]["artifact_id"] == (
+        "research-report.md"
+    )
+
+
+def test_result_preserves_structured_http_error(monkeypatch):
+    body = io.BytesIO(
+        json.dumps(
+            {
+                "code": "run_review_required",
+                "problem": "Review required.",
+                "fix": "Approve or reject review.",
+            }
+        ).encode("utf-8")
+    )
+    http_error = tool.error.HTTPError(
+        "http://127.0.0.1:8000/api/runs/run_1/result",
+        409,
+        "Conflict",
+        {},
+        body,
+    )
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: (_ for _ in ()).throw(http_error),
+    )
+
+    with pytest.raises(tool.ToolClientHTTPError) as captured:
+        tool.result("run_1", tool.ToolConfig())
+
+    assert captured.value.status == 409
+    assert captured.value.payload["code"] == "run_review_required"
+
+
 def test_review_read_parser_commands():
     parser = tool._build_parser()
 

@@ -103,6 +103,7 @@ def test_talent_agent_compiler_enforces_restricted_harness(monkeypatch):
     import agent.profile_agents as profile_agents
     from langchain.agents.structured_output import ToolStrategy
     from agent.profile_registry import profile_registry
+    from agent.runtime_context import ResearchRuntimeContext
     from agent.talent_contracts import ResearchPacket
 
     captured_researcher = {}
@@ -129,6 +130,7 @@ def test_talent_agent_compiler_enforces_restricted_harness(monkeypatch):
     assert captured_researcher["name"] == "talent-hiring-signal-researcher"
     assert isinstance(captured_researcher["response_format"], ToolStrategy)
     assert captured_researcher["response_format"].schema is ResearchPacket
+    assert captured_researcher["context_schema"] is ResearchRuntimeContext
     assert captured_researcher["tools"] == []
     from agent.profile_middleware import middleware_contract
 

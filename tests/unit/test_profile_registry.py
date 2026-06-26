@@ -103,6 +103,7 @@ def test_talent_agent_compiler_enforces_restricted_harness(monkeypatch):
     import agent.profile_agents as profile_agents
     from langchain.agents.structured_output import ToolStrategy
     from agent.profile_registry import profile_registry
+    from agent.runtime_context import ResearchRuntimeContext
     from agent.talent_contracts import ResearchPacket
 
     captured_researcher = {}
@@ -129,6 +130,7 @@ def test_talent_agent_compiler_enforces_restricted_harness(monkeypatch):
     assert captured_researcher["name"] == "talent-hiring-signal-researcher"
     assert isinstance(captured_researcher["response_format"], ToolStrategy)
     assert captured_researcher["response_format"].schema is ResearchPacket
+    assert captured_researcher["context_schema"] is ResearchRuntimeContext
     assert captured_researcher["tools"] == []
     from agent.profile_middleware import middleware_contract
 
@@ -140,13 +142,17 @@ def test_talent_agent_compiler_enforces_restricted_harness(monkeypatch):
     }
 
 
-def test_talent_compiled_researcher_binds_recursion_budget(monkeypatch):
+def test_talent_compiler_leaves_recursion_budget_to_runtime_adapter(monkeypatch):
     import agent.profile_agents as profile_agents
     from agent.profile_registry import profile_registry
 
     class FakeResearcher:
+        def __init__(self):
+            self.bound_configs = []
+
         def with_config(self, config):
-            return {"compiled": "researcher", "bound_config": config}
+            self.bound_configs.append(config)
+            return self
 
     def capture_create_agent(**kwargs):
         return FakeResearcher()
@@ -163,7 +169,7 @@ def test_talent_compiled_researcher_binds_recursion_budget(monkeypatch):
         generic_agent=object(),
     )
 
-    assert compiled["bound_config"]["recursion_limit"] == 37
+    assert compiled.bound_configs == []
 
 
 def test_canonical_talent_recursion_limit_overrides_legacy(monkeypatch):

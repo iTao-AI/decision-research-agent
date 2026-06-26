@@ -24,3 +24,13 @@ def test_active_python_has_no_superseded_harness_symbols():
                     )
 
     assert violations == []
+
+
+def test_research_execution_service_uses_application_owned_harness_errors():
+    root = Path(__file__).parents[2]
+    service = root / "api" / "research_execution_service.py"
+    content = service.read_text(encoding="utf-8")
+
+    assert "langchain.agents.middleware" not in content
+    assert "langgraph.errors" not in content
+    assert "HarnessExecutionError" in content

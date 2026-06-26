@@ -255,3 +255,84 @@ def test_pinned_deepagents_middleware_stack_and_subagents(monkeypatch):
         "knowledge_base",
     }
     assert "general-purpose" not in subagent_middleware.subagent_names
+
+
+@pytest.mark.asyncio
+async def test_runtime_config_is_owned_by_adapter(monkeypatch):
+    from agent.deepagents_harness import DeepAgentsHarness
+    from agent.harness_contracts import HarnessRequest
+    from agent.runtime_context import ResearchRuntimeContext
+
+    class CapturingGraph:
+        def __init__(self):
+            self.config = None
+
+        async def astream(self, _input, *, config, context):
+            self.config = config
+            self.context = context
+            if False:
+                yield {}
+
+    class Observer:
+        def callbacks(self):
+            return ["callback"]
+
+        def on_stream_chunk(self, _chunk):
+            raise AssertionError("no chunks expected")
+
+        def snapshot_outcome(self):
+            return "outcome"
+
+    generic_graph = CapturingGraph()
+    talent_graph = CapturingGraph()
+    harness = DeepAgentsHarness(
+        graph=generic_graph,
+        backend=object(),
+        permissions=(),
+        skills=(),
+        profile_graphs={
+            "generic": generic_graph,
+            "talent-hiring-signal": talent_graph,
+        },
+    )
+    context = ResearchRuntimeContext(
+        thread_id="thread-1",
+        run_id="run-1",
+        segment_id="segment-1",
+        profile_id="generic",
+    )
+
+    await harness.execute(
+        HarnessRequest(
+            query="query",
+            thread_id="thread-1",
+            run_id="run-1",
+            segment_id="segment-1",
+            profile_id="generic",
+            scope={},
+            trace_metadata={"profile_id": "generic"},
+        ),
+        runtime_context=context,
+        observer=Observer(),
+    )
+    assert generic_graph.config == {
+        "configurable": {"thread_id": "thread-1"},
+        "callbacks": ["callback"],
+        "metadata": {"profile_id": "generic"},
+    }
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_TALENT_RECURSION_LIMIT", "37")
+    await harness.execute(
+        HarnessRequest(
+            query="query",
+            thread_id="thread-1",
+            run_id="run-1",
+            segment_id="segment-1",
+            profile_id="talent-hiring-signal",
+            scope={},
+            trace_metadata={"profile_id": "talent-hiring-signal"},
+        ),
+        runtime_context=context,
+        observer=Observer(),
+    )
+    assert talent_graph.config["recursion_limit"] == 37

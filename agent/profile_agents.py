@@ -8,9 +8,9 @@ from langchain.agents.structured_output import ToolStrategy
 
 from agent.profile_registry import AgentHarnessPolicy, ProfileSpec
 from agent.profile_middleware import build_profile_middleware
+from agent.runtime_context import ResearchRuntimeContext
 from agent.structured_output_recovery import pair_invalid_structured_tool_calls
 from agent.talent_contracts import ResearchPacket
-from agent.talent_runtime import talent_recursion_limit
 
 
 TALENT_RESEARCHER_PROMPT = """
@@ -63,5 +63,6 @@ def compile_profile_agent(
                 role="researcher",
             ),
         ],
+        context_schema=ResearchRuntimeContext,
         name="talent-hiring-signal-researcher",
-    ).with_config({"recursion_limit": talent_recursion_limit()})
+    )

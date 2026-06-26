@@ -7,6 +7,12 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Mapping
 
+from langchain.agents.middleware.model_call_limit import (
+    ModelCallLimitExceededError,
+)
+from langchain.agents.middleware.tool_call_limit import (
+    ToolCallLimitExceededError,
+)
 from deepagents import (
     GeneralPurposeSubagentProfile,
     HarnessProfile,
@@ -15,7 +21,9 @@ from deepagents import (
 )
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
 from deepagents.middleware.filesystem import FilesystemPermission
+from langgraph.errors import GraphRecursionError
 
+from agent.harness_contracts import HarnessExecutionError
 from agent.profile_middleware import build_profile_middleware
 from agent.profile_registry import profile_registry
 from agent.research_agents import compile_generic_researchers
@@ -111,12 +119,26 @@ class DeepAgentsHarness:
         }
         if request.profile_id == "talent-hiring-signal":
             config["recursion_limit"] = talent_recursion_limit()
-        async for chunk in graph.astream(
-            {"messages": [{"role": "user", "content": content}]},
-            config=config,
-            context=runtime_context,
-        ):
-            observer.on_stream_chunk(chunk)
+        try:
+            async for chunk in graph.astream(
+                {"messages": [{"role": "user", "content": content}]},
+                config=config,
+                context=runtime_context,
+            ):
+                observer.on_stream_chunk(chunk)
+        except (
+            ModelCallLimitExceededError,
+            ToolCallLimitExceededError,
+        ) as exc:
+            raise HarnessExecutionError(
+                failure_kind="call_budget_exceeded",
+                message=str(exc),
+            ) from exc
+        except GraphRecursionError as exc:
+            raise HarnessExecutionError(
+                failure_kind="recursion_limit_exceeded",
+                message=str(exc),
+            ) from exc
         return observer.snapshot_outcome()
 
 

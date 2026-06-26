@@ -2,8 +2,8 @@ import json
 
 import pytest
 from langchain_core.messages import ToolMessage
-from langgraph.errors import GraphRecursionError
 
+from agent.harness_contracts import HarnessExecutionError
 from agent.run_result import OutcomeBox
 from api.research_execution_service import ResearchExecutionService
 
@@ -155,7 +155,10 @@ async def test_talent_run_does_not_copy_uploaded_files(tmp_path):
 async def test_recursion_failure_publishes_bounded_outcome(tmp_path):
     class LoopingHarness:
         async def execute(self, request, *, runtime_context, observer):
-            raise GraphRecursionError("recursion limit reached")
+            raise HarnessExecutionError(
+                failure_kind="recursion_limit_exceeded",
+                message="recursion limit reached",
+            )
 
     box = OutcomeBox()
     outcome = await ResearchExecutionService(

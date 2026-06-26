@@ -50,7 +50,11 @@ from api.run_repository import (
     get_run,
     transition_run,
 )
-from api.run_result_service import build_generic_result_artifact
+from api.run_result_service import (
+    RunResultUnavailable,
+    build_generic_result_artifact,
+    resolve_run_result,
+)
 from agent.profile_registry import profile_registry
 from agent.talent_contracts import ResearchScope
 from api.talent_artifacts import build_talent_artifacts
@@ -737,6 +741,23 @@ async def get_research_run_v2(run_id: str):
     if run is None:
         return JSONResponse(status_code=404, content={"detail": "ResearchRun 不存在"})
     return run
+
+
+@app.get("/api/runs/{run_id}/result")
+async def get_research_run_result(run_id: str):
+    try:
+        result = await asyncio.to_thread(resolve_run_result, run_id=run_id)
+    except RunResultUnavailable as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=exc.payload(run_id=run_id),
+        )
+    return {
+        "run_id": result.run_id,
+        "execution_status": result.execution_status,
+        "delivery_status": result.delivery_status,
+        "artifact": result.artifact,
+    }
 
 
 @app.get("/api/runs/{run_id}/artifacts/{artifact_id}")

@@ -70,6 +70,47 @@
 响应只包含有界投影。决策原始 `reason`、`actor_fingerprint`、lease owner、
 checkpoint 路径和 checkpoint payload 不会返回。
 
+### GET /api/runs/{run_id}/result
+
+解析当前可交付 canonical result。该接口只读取 application-owned
+ResearchRun、delivery/publication 状态和 immutable artifact，不读取 LangGraph
+checkpoint 或 framework state。
+
+ready generic run 返回 `research-report.md`；ready Talent run 返回当前
+publication 绑定的 Markdown artifact，或无 publication 时返回 canonical
+`decision-brief.md`。
+
+**200 响应：**
+
+```json
+{
+  "run_id": "run_...",
+  "execution_status": "completed",
+  "delivery_status": "ready",
+  "artifact": {
+    "artifact_id": "research-report.md",
+    "kind": "research_report_markdown",
+    "media_type": "text/markdown",
+    "content": "# Report",
+    "content_hash": "sha256-hex"
+  }
+}
+```
+
+稳定错误：
+
+| Status | Code | Meaning |
+|---|---|---|
+| `404` | `run_not_found` | run 不存在 |
+| `409` | `run_not_terminal` | run 仍为 pending/running |
+| `409` | `run_failed` | run failed，无可交付 result |
+| `409` | `run_review_required` | delivery 仍需 review |
+| `409` | `run_delivery_blocked` | delivery 被 reject/block |
+| `409` | `run_result_unavailable` | artifact 缺失、为空、过大或 hash 不匹配 |
+
+响应不包含本地路径、数据库路径、review reason、traceback、checkpoint metadata
+或 private runtime state。
+
 ### GET /api/reviews
 
 严格认证的 durable review 队列。Feature flag 关闭返回

@@ -14,6 +14,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from agent.run_result import ExecutionOutcome
+from api.run_repository import get_artifact, get_run
 
 
 CANONICAL_RESULT_ARTIFACT_ID = "research-report.md"
@@ -27,6 +28,35 @@ class ResolvedRunResult:
     execution_status: str
     delivery_status: str
     artifact: dict[str, str]
+
+
+class RunResultUnavailable(RuntimeError):
+    """Stable application error for canonical result resolution."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        code: str,
+        problem: str,
+        fix: str,
+    ) -> None:
+        super().__init__(code)
+        self.status_code = status_code
+        self.code = code
+        self.problem = problem
+        self.fix = fix
+
+    def payload(self, *, run_id: str | None = None) -> dict[str, Any]:
+        payload = {
+            "code": self.code,
+            "problem": self.problem,
+            "fix": self.fix,
+            "retryable": self.status_code == 409,
+        }
+        if run_id:
+            payload["run_id"] = run_id
+        return payload
 
 
 def build_generic_result_artifact(
@@ -108,3 +138,125 @@ def _safe_excerpt(value: str, *, limit: int = 4000) -> str:
     if len(text) > limit:
         text = f"{text[:limit]}…"
     return text
+
+
+def resolve_run_result(
+    *,
+    run_id: str,
+    db_path: str | None = None,
+) -> ResolvedRunResult:
+    """Resolve the current deliverable result for a persisted run."""
+    run = get_run(run_id=run_id, db_path=db_path)
+    if run is None:
+        raise RunResultUnavailable(
+            status_code=404,
+            code="run_not_found",
+            problem="The requested ResearchRun does not exist.",
+            fix="Check the run_id returned by POST /api/runs.",
+        )
+
+    execution_status = run["execution_status"]
+    delivery_status = run["delivery_status"]
+    if execution_status in {"pending", "running"}:
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_not_terminal",
+            problem="The ResearchRun has not reached a terminal state.",
+            fix="Poll GET /api/runs/{run_id} until execution_status is terminal.",
+        )
+    if execution_status == "failed":
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_failed",
+            problem="The ResearchRun failed and has no deliverable result.",
+            fix="Inspect the bounded run projection and start a new run if needed.",
+        )
+    if delivery_status == "review_required":
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_review_required",
+            problem="The ResearchRun requires review before delivery.",
+            fix="Complete the review workflow, then retry the result request.",
+        )
+    if delivery_status == "blocked":
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_delivery_blocked",
+            problem="Delivery is blocked for this ResearchRun.",
+            fix="Start a corrected run if a deliverable result is still needed.",
+        )
+    if delivery_status != "ready":
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_result_unavailable",
+            problem="No deliverable result is available for this ResearchRun.",
+            fix="Retry after the run reaches ready delivery state.",
+        )
+
+    artifact_id = _select_artifact_id(run)
+    if artifact_id is None:
+        raise _unavailable()
+    artifact = get_artifact(
+        run_id=run_id,
+        artifact_id=artifact_id,
+        db_path=db_path,
+    )
+    if not _valid_artifact(artifact):
+        raise _unavailable()
+
+    return ResolvedRunResult(
+        run_id=run_id,
+        execution_status=execution_status,
+        delivery_status=delivery_status,
+        artifact={
+            "artifact_id": artifact["artifact_id"],
+            "kind": artifact["kind"],
+            "media_type": artifact["media_type"],
+            "content": artifact["content"],
+            "content_hash": artifact["content_hash"],
+        },
+    )
+
+
+def _select_artifact_id(run: dict[str, Any]) -> str | None:
+    if run.get("profile_id") == "generic":
+        return CANONICAL_RESULT_ARTIFACT_ID
+
+    current_ids = [
+        item["artifact_id"]
+        for item in run.get("current_artifacts", [])
+        if item.get("media_type") == "text/markdown"
+    ]
+    if current_ids:
+        return current_ids[0]
+
+    artifact_ids = {
+        item["artifact_id"]: item
+        for item in run.get("artifacts", [])
+    }
+    if "decision-brief.md" in artifact_ids:
+        return "decision-brief.md"
+    if CANONICAL_RESULT_ARTIFACT_ID in artifact_ids:
+        return CANONICAL_RESULT_ARTIFACT_ID
+    return None
+
+
+def _valid_artifact(artifact: dict[str, Any] | None) -> bool:
+    if artifact is None:
+        return False
+    content = artifact.get("content")
+    content_hash = artifact.get("content_hash")
+    if not _is_non_empty_bounded_text(content):
+        return False
+    if not isinstance(content_hash, str):
+        return False
+    return hashlib.sha256(content.encode("utf-8")).hexdigest() == content_hash
+
+
+def _unavailable() -> RunResultUnavailable:
+    return RunResultUnavailable(
+        status_code=409,
+        code="run_result_unavailable",
+        problem="The persisted result artifact is missing or invalid.",
+        fix="Retry later or start a new run if the artifact cannot be recovered.",
+    )

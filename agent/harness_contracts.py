@@ -56,6 +56,14 @@ class ExecutionObserver(Protocol):
     def snapshot_outcome(self) -> ExecutionOutcome: ...
 
 
+class HarnessExecutionError(RuntimeError):
+    """Application-owned stable error raised by framework harness adapters."""
+
+    def __init__(self, *, failure_kind: str, message: str):
+        super().__init__(message)
+        self.failure_kind = failure_kind
+
+
 class AgentHarness(Protocol):
     """Port implemented by the framework-specific Agent harness."""
 

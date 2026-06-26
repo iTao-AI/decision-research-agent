@@ -2,12 +2,9 @@ import asyncio
 from pathlib import PurePosixPath
 
 import pytest
-from langchain.agents.middleware.tool_call_limit import (
-    ToolCallLimitExceededError,
-)
 from langchain_core.messages import AIMessage, ToolMessage
 
-from agent.harness_contracts import ReportCandidate
+from agent.harness_contracts import HarnessExecutionError, ReportCandidate
 from agent.run_result import OutcomeBox
 from api.research_execution_service import ResearchExecutionService
 
@@ -150,15 +147,12 @@ async def test_service_publishes_partial_outcome_before_cancellation_cleanup(tmp
 
 
 @pytest.mark.asyncio
-async def test_service_maps_call_limit_to_stable_failure(tmp_path):
+async def test_service_maps_harness_error_to_stable_failure(tmp_path):
     class LimitedHarness:
         async def execute(self, request, *, runtime_context, observer):
-            raise ToolCallLimitExceededError(
-                tool_name="internet_search",
-                thread_count=0,
-                run_count=13,
-                thread_limit=None,
-                run_limit=12,
+            raise HarnessExecutionError(
+                failure_kind="call_budget_exceeded",
+                message="tool call budget exceeded",
             )
 
     service = ResearchExecutionService(

@@ -7,18 +7,11 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlparse
 
-from langchain.agents.middleware.model_call_limit import (
-    ModelCallLimitExceededError,
-)
-from langchain.agents.middleware.tool_call_limit import (
-    ToolCallLimitExceededError,
-)
-from langgraph.errors import GraphRecursionError
-
 from agent.harness_contracts import (
     AgentHarness,
     ExecutionObserver,
     HarnessRequest,
+    HarnessExecutionError,
     ReportCandidate,
 )
 from agent.research import (
@@ -377,21 +370,13 @@ class ResearchExecutionService:
                 observer=observer,
             )
             return self._freeze_outcome(observer, outcome_box)
-        except (ModelCallLimitExceededError, ToolCallLimitExceededError) as exc:
+        except HarnessExecutionError as exc:
             observer.on_error(exc)
             return self._freeze_outcome(
                 observer,
                 outcome_box,
                 error_message=str(exc),
-                failure_kind="call_budget_exceeded",
-            )
-        except GraphRecursionError as exc:
-            observer.on_error(exc)
-            return self._freeze_outcome(
-                observer,
-                outcome_box,
-                error_message=str(exc),
-                failure_kind="recursion_limit_exceeded",
+                failure_kind=exc.failure_kind,
             )
         except asyncio.CancelledError as exc:
             self._freeze_outcome(

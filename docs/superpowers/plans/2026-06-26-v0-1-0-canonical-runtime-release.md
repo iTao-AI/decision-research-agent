@@ -1,4 +1,3 @@
-<!-- /autoplan restore point: /Users/mac/.gstack/projects/iTao-AI-decision-research-agent/codex-v0-1-0-architecture-reset-design-autoplan-restore-20260626-004255.md -->
 # v0.1.0 Canonical Runtime Release Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use

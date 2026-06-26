@@ -71,9 +71,15 @@ def build_generic_result_artifact(
         and getattr(candidate, "path", None) == CANONICAL_RESULT_PATH
         and _is_non_empty_bounded_text(getattr(candidate, "content", ""))
     ):
+        content = _sanitize_result_content(candidate.content)
+        if not _is_non_empty_bounded_text(content):
+            return _artifact(
+                kind="research_report_fallback_markdown",
+                content=_fallback_report(outcome, generated_at=generated_at),
+            )
         return _artifact(
             kind="research_report_markdown",
-            content=candidate.content,
+            content=content,
         )
 
     return _artifact(
@@ -123,21 +129,28 @@ def _fallback_report(
     return "\n".join(lines)
 
 
-_ABSOLUTE_PATH_RE = re.compile(r"(?:(?:/[A-Za-z0-9._ -]+){2,})")
+_HOST_ABSOLUTE_PATH_RE = re.compile(
+    r"(?:(?:/Users|/private|/var|/tmp|/Volumes|/home|/opt)/[^\s)\"']+)"
+)
+_CHECKPOINT_OR_TRACEBACK_RE = re.compile(r"(?:checkpoint|traceback)", re.IGNORECASE)
+
+
+def _sanitize_result_content(value: str, *, limit: int | None = None) -> str:
+    if not value:
+        return ""
+    sanitized_lines = []
+    for line in value.splitlines():
+        if _CHECKPOINT_OR_TRACEBACK_RE.search(line):
+            continue
+        sanitized_lines.append(_HOST_ABSOLUTE_PATH_RE.sub("[redacted-path]", line))
+    text = "\n".join(sanitized_lines).strip()
+    if limit is not None and len(text) > limit:
+        text = f"{text[:limit]}…"
+    return text
 
 
 def _safe_excerpt(value: str, *, limit: int = 4000) -> str:
-    if not value:
-        return ""
-    text = value.replace("Traceback", "[redacted]").replace(
-        "traceback",
-        "[redacted]",
-    )
-    text = _ABSOLUTE_PATH_RE.sub("[redacted-path]", text)
-    text = text.strip()
-    if len(text) > limit:
-        text = f"{text[:limit]}…"
-    return text
+    return _sanitize_result_content(value, limit=limit)
 
 
 def resolve_run_result(

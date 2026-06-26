@@ -287,6 +287,100 @@ def test_cli_result_prints_canonical_result(monkeypatch, capsys):
     )
 
 
+def test_cli_run_wait_then_result_is_secret_safe_consumer_flow(
+    monkeypatch,
+    capsys,
+):
+    requests = []
+
+    def fake_urlopen(req, timeout):
+        requests.append(
+            {
+                "method": req.get_method(),
+                "url": req.full_url,
+                "headers": dict(req.headers),
+                "body": (
+                    json.loads(req.data.decode("utf-8"))
+                    if req.data is not None
+                    else None
+                ),
+            }
+        )
+        if req.full_url.endswith("/api/runs") and req.get_method() == "POST":
+            return FakeResponse(
+                {
+                    "status": "started",
+                    "run_id": "run_1",
+                    "thread_id": "thread_1",
+                },
+                status=202,
+            )
+        if req.full_url.endswith("/api/runs/run_1/result"):
+            return FakeResponse(
+                {
+                    "run_id": "run_1",
+                    "artifact": {
+                        "artifact_id": "research-report.md",
+                        "content": "# Report",
+                    },
+                }
+            )
+        if req.full_url.endswith("/api/runs/run_1"):
+            return FakeResponse(
+                {
+                    "run_id": "run_1",
+                    "execution_status": "completed",
+                    "delivery_status": "ready",
+                }
+            )
+        raise AssertionError(f"unexpected request: {req.full_url}")
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_API_KEY", "secret-key")
+    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(tool.time, "sleep", lambda seconds: None)
+
+    run_exit = tool.main(
+        [
+            "--base-url",
+            "http://127.0.0.1:9000",
+            "run",
+            "--query",
+            "bounded public smoke",
+            "--thread-id",
+            "thread_1",
+            "--wait",
+        ]
+    )
+    result_exit = tool.main(
+        [
+            "--base-url",
+            "http://127.0.0.1:9000",
+            "result",
+            "--run-id",
+            "run_1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert run_exit == 0
+    assert result_exit == 0
+    assert "secret-key" not in captured.out
+    assert "secret-key" not in captured.err
+    assert [item["method"] for item in requests] == ["POST", "GET", "GET"]
+    assert [item["url"] for item in requests] == [
+        "http://127.0.0.1:9000/api/runs",
+        "http://127.0.0.1:9000/api/runs/run_1",
+        "http://127.0.0.1:9000/api/runs/run_1/result",
+    ]
+    assert requests[0]["body"] == {
+        "query": "bounded public smoke",
+        "profile_id": "generic",
+        "scope": {},
+        "thread_id": "thread_1",
+    }
+    assert '"artifact_id": "research-report.md"' in captured.out
+
+
 def test_result_preserves_structured_http_error(monkeypatch):
     body = io.BytesIO(
         json.dumps(

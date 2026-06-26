@@ -27,8 +27,15 @@ Included:
 - deterministic bounded fallback report;
 - `GET /api/runs/{run_id}/result`;
 - Tool Client `result --run-id`;
-- first-party consumer canonical migration and secret-safe smoke;
+- public Tool Client run/result migration and secret-safe smoke;
 - current API and integration documentation.
+
+Deferred unless completed in its own repository:
+
+- private first-party consumer canonical migration and consumer-focused tests.
+  Record only command names and pass/fail results in handoff; do not record
+  private workspace paths, raw logs, or secrets. Do not claim the final
+  first-party consumer gate complete from public repository tests alone.
 
 Excluded:
 
@@ -408,7 +415,8 @@ git diff --check
 
 Required manual evidence:
 
-- first-party consumer tests pass;
+- first-party consumer tests pass, or the private consumer gate is explicitly
+  marked deferred;
 - bounded run/result smoke passes;
 - rotated key is absent from logs, diff, and committed files;
 - legacy routes remain temporarily available but are no longer used by

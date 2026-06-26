@@ -52,6 +52,38 @@ def test_generic_report_candidate_builds_canonical_artifact():
     ).hexdigest()
 
 
+def test_generic_report_candidate_is_sanitized_before_hashing():
+    from api.run_result_service import build_generic_result_artifact
+
+    result = build_generic_result_artifact(
+        _outcome(
+            report_candidate=ReportCandidate(
+                path=PurePosixPath("/workspace/research-report.md"),
+                content=(
+                    "# Report\n"
+                    "Useful finding.\n"
+                    "host=/Users/private/project/tasks.db\n"
+                    "Traceback (most recent call last):\n"
+                    "checkpoint_thread_id=thread-1\n"
+                    "checkpoint metadata: /private/var/tmp/state.sqlite\n"
+                ),
+            )
+        )
+    )
+
+    content = result["content"]
+    assert result["kind"] == "research_report_markdown"
+    assert "Useful finding." in content
+    assert "/Users/private" not in content
+    assert "tasks.db" not in content
+    assert "Traceback" not in content
+    assert "checkpoint" not in content.lower()
+    assert "/private/var" not in content
+    assert result["content_hash"] == hashlib.sha256(
+        content.encode("utf-8")
+    ).hexdigest()
+
+
 def test_absent_report_builds_explicit_fallback():
     from api.run_result_service import build_generic_result_artifact
 

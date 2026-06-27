@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -10,8 +11,58 @@ import uuid
 
 import pytest
 
+from scripts.durable_hitl_gate_runner import GATE_TESTS, build_report
+
 
 pytestmark = pytest.mark.docker
+
+
+@dataclass(frozen=True)
+class BootstrapOverride:
+    report_path: Path
+    compose_path: Path
+
+
+def _create_test_bootstrap_override(tmp_path: Path) -> BootstrapOverride:
+    bootstrap_dir = tmp_path / "test-bootstrap"
+    bootstrap_dir.mkdir()
+    report_path = bootstrap_dir / "durable-hitl-bootstrap-report.json"
+    report = build_report({gate_name: True for gate_name in GATE_TESTS})
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    compose_path = bootstrap_dir / "docker-compose.test-bootstrap.yml"
+    compose_path.write_text(
+        json.dumps(
+            {
+                "services": {
+                    "backend": {
+                        "volumes": [
+                            {
+                                "type": "bind",
+                                "source": str(report_path),
+                                "target": (
+                                    "/app/docs/evidence/"
+                                    "durable-hitl-gate-report.json"
+                                ),
+                                "read_only": True,
+                            }
+                        ]
+                    }
+                }
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return BootstrapOverride(
+        report_path=report_path,
+        compose_path=compose_path,
+    )
 
 
 @contextmanager
@@ -37,10 +88,18 @@ def _ensure_compose_env_file(root: Path):
 
 
 class DockerProject:
-    def __init__(self, *, root: Path, project_name: str, env: dict[str, str]):
+    def __init__(
+        self,
+        *,
+        root: Path,
+        project_name: str,
+        env: dict[str, str],
+        compose_files: tuple[Path, ...] = (),
+    ):
         self.root = root
         self.project_name = project_name
         self.env = env
+        self.compose_files = compose_files
 
     def _compose(
         self,
@@ -48,10 +107,16 @@ class DockerProject:
         timeout: int = 600,
         input_text: str | None = None,
     ):
+        compose_file_args = [
+            item
+            for compose_file in self.compose_files
+            for item in ("-f", str(compose_file))
+        ]
         return subprocess.run(
             [
                 "docker",
                 "compose",
+                *compose_file_args,
                 "-p",
                 self.project_name,
                 *args,
@@ -159,7 +224,13 @@ def docker_project(tmp_path):
     env["DOCKER_CONFIG"] = str(docker_config)
     env["DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL"] = "true"
     env["API_SECRET"] = "durable-hitl-container-test-only"
-    project = DockerProject(root=root, project_name=project_name, env=env)
+    bootstrap = _create_test_bootstrap_override(tmp_path)
+    project = DockerProject(
+        root=root,
+        project_name=project_name,
+        env=env,
+        compose_files=(root / "docker-compose.yml", bootstrap.compose_path),
+    )
     with _ensure_compose_env_file(root):
         try:
             project._compose(

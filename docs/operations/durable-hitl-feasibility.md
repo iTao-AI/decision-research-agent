@@ -46,3 +46,8 @@ python scripts/durable_hitl_gate_runner.py \
 
 `PASS` requires thirteen passes. Any failure or Docker skip is `NO_GO`. On
 `NO_GO`, keep the feature flag false and do not begin P1C.
+
+The container gate uses an isolated, test-only bootstrap readiness report to
+break the startup prerequisite cycle. The authoritative report is still built
+only from all 13 actual gate results, and production images do not use the test
+override.

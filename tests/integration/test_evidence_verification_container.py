@@ -11,6 +11,7 @@ import pytest
 
 from tests.integration.test_durable_review_container import (
     DockerProject,
+    _create_test_bootstrap_override,
     _ensure_compose_env_file,
 )
 
@@ -61,10 +62,12 @@ def verification_docker_project(tmp_path):
     env["DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL"] = "true"
     env["DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION"] = "true"
     env["API_SECRET"] = "verification-container-test-only"
+    bootstrap = _create_test_bootstrap_override(tmp_path)
     project = DockerProject(
         root=root,
         project_name=project_name,
         env=env,
+        compose_files=(root / "docker-compose.yml", bootstrap.compose_path),
     )
     with _ensure_compose_env_file(root):
         try:

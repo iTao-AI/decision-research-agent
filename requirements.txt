@@ -34,6 +34,7 @@ python-dotenv>=1.2.2        # 环境变量管理
 typing-extensions>=4.5.0    # 类型兼容性支持
 
 # --- 测试依赖 (Test) ---
+httpx2>=2.5.0             # Starlette TestClient supported transport
 pytest>=9.0.3; python_version < "3.12"               # 单元测试框架
 pytest>=9.0.3; python_version >= "3.12"
 pytest-asyncio>=1.4.0      # 异步测试支持

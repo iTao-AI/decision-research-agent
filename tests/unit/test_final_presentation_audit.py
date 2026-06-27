@@ -70,4 +70,3 @@ def test_cli_emits_json_and_fails_closed(capsys) -> None:
     assert payload["status"] == ("ok" if exit_code == 0 else "failed")
     assert isinstance(payload["violations"], list)
     assert exit_code == (0 if not payload["violations"] else 1)
-

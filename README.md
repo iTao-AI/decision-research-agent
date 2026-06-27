@@ -78,6 +78,9 @@ Expected response:
 {"status":"ok","service":"decision-research-agent"}
 ```
 
+Continue with the complete [Getting Started tutorial](docs/getting-started.md)
+for Tool Client readiness, run creation, result retrieval, and troubleshooting.
+
 ## Tool Client
 
 ```bash
@@ -151,6 +154,8 @@ python tools/decision_research_agent_tool.py doctor
 ## Documentation
 
 - [Documentation Index](docs/README.md)
+- [Getting Started](docs/getting-started.md)
+- [Contributing](CONTRIBUTING.md)
 - [Agent Integration](docs/AGENT_INTEGRATION.md)
 - [API Contract](docs/reference/api-contract.md)
 - [Data Models](docs/reference/data-models.md)
@@ -170,8 +175,8 @@ python tools/decision_research_agent_tool.py doctor
   workflows, not public multi-user production features.
 - Evidence verification records human decisions and deterministic snapshots; it
   does not perform automatic source retrieval or LLM verification.
-- Historical evidence, archived plans, and archived OpenSpec records may retain
-  their original wording as immutable project history.
+- Completed implementation history is retained in Git. Active public-neutral
+  project plans remain in the curated Superpowers workspace.
 
 ## License
 

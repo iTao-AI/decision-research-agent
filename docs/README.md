@@ -54,4 +54,3 @@ the application database is business authority.
 
 Completed implementation history is retained in Git. Current contracts live in
 code, tests, ADRs, and the reference documentation above.
-

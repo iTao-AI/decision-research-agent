@@ -48,4 +48,3 @@ is tracked in its [public-neutral execution plan](../superpowers/plans/2026-06-2
 Completed implementation history is removed after durable decisions are
 promoted into ADRs and current reference documentation; Git retains the
 history.
-

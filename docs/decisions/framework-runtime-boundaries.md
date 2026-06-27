@@ -96,4 +96,3 @@ Framework upgrades must preserve the harness compatibility tests, profile
 boundaries, application-owned outcome contract, and release gates. Any change
 that moves business authority into a framework store, trace, Skill, VFS, or UI
 requires an explicit decision update.
-

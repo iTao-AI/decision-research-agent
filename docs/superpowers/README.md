@@ -13,4 +13,3 @@ publication and is removed during the next documentation consolidation.
 
 Private rationale, raw prompts, transcripts, local paths, generated review
 artifacts, and tool-specific restore data never belong in this directory.
-

@@ -68,6 +68,9 @@ curl --fail --silent http://127.0.0.1:8000/health
 {"status":"ok","service":"decision-research-agent"}
 ```
 
+后续 Tool Client readiness、run 创建、result 获取和故障处理见完整的
+[Getting Started tutorial](docs/getting-started.md)。
+
 ## Tool Client
 
 ```bash
@@ -134,6 +137,8 @@ python tools/decision_research_agent_tool.py doctor
 ## 文档
 
 - [Documentation Index](docs/README.md)
+- [Getting Started](docs/getting-started.md)
+- [Contributing](CONTRIBUTING.md)
 - [Agent Integration](docs/AGENT_INTEGRATION.md)
 - [API Contract](docs/reference/api-contract.md)
 - [Data Models](docs/reference/data-models.md)
@@ -149,7 +154,8 @@ python tools/decision_research_agent_tool.py doctor
 - Markdown-only delivery：canonical 研究结果通过 result endpoint 返回 Markdown artifact。
 - Durable review 与 evidence verification 是受控 feature-flag workflow，不是公开多用户生产功能。
 - Evidence verification 记录人工决策和确定性 snapshot；不自动检索来源，也不使用 LLM 做证据核验。
-- 历史 evidence、归档 plan 和归档 OpenSpec 可以保留原始表述，作为不可变项目历史。
+- 已完成的实施历史保留在 Git 中；当前公开中性的项目计划保留在受控的
+  Superpowers workspace 中。
 
 ## License
 

@@ -31,15 +31,3 @@ jobs:
         run: pip install --no-deps -r constraints.txt
       - name: Run tests
         run: python -m pytest -q
-
-  retired-ui:
-    name: Frontend Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Verify bundled frontend is retired
-        run: |
-          test ! -d frontend
-          test ! -f Dockerfile.frontend
-          test ! -f nginx.conf

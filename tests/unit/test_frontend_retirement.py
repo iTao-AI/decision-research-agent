@@ -19,10 +19,14 @@ def test_compose_is_backend_only():
     assert compose["services"]["backend"]["build"]["dockerfile"] == "Dockerfile.backend"
 
 
-def test_ci_keeps_required_frontend_check_without_node_build():
+def test_ci_has_no_frontend_job_or_node_build():
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
 
-    assert workflow["jobs"]["retired-ui"]["name"] == "Frontend Build"
+    assert "retired-ui" not in workflow["jobs"]
+    assert all(
+        job.get("name") != "Frontend Build"
+        for job in workflow["jobs"].values()
+    )
     serialized = (ROOT / ".github/workflows/ci.yml").read_text()
     assert "setup-node" not in serialized
     assert "npm " not in serialized

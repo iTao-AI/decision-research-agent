@@ -29,16 +29,18 @@ Use this priority order:
 1. Actual code, tests, migrations, configuration, and command output.
 2. Accepted decisions in `docs/decisions/`.
 3. Current reference contracts in `docs/reference/` and `docs/architecture.md`.
-4. Current public specs and plans in `docs/superpowers/`.
+4. Active approved public-neutral specs/plans and the current release record in
+   `docs/superpowers/`.
 5. Operations and evidence documents.
 6. Issues, PR descriptions, historical plans, and external artifacts.
 
 If sources conflict, report the conflict and follow current implementation
 unless the task explicitly changes it. Do not silently apply an older plan.
 
-`docs/evidence/run-log.md` is the truth source for partial-versus-complete
-runtime evidence. A cited Evidence entry is not independently verified unless
-its verification state explicitly says so.
+Completed plans are implementation records, not current contract authority.
+Each retained evidence artifact defines its own scope and limits. A cited
+Evidence entry is not independently verified unless its verification state
+explicitly says so.
 
 ## Read Only What The Change Needs
 
@@ -49,10 +51,12 @@ Then read the smallest applicable set:
 |---|---|
 | LangGraph, DeepAgents, model binding, structured output | `agent/main_agent.py`, `agent/profile_agents.py`, `agent/llm.py`, `langchain-dev-guide`, current official docs through Context7 |
 | Run identity, persistence, concurrency | `docs/decisions/run-identity-boundaries.md` and affected repositories/tests |
+| Architecture or framework ownership | `docs/architecture.md`, `docs/decisions/framework-runtime-boundaries.md`, and affected harness tests |
 | Evidence or finalization | `agent/run_result.py`, `api/run_repository.py`, `api/run_result_service.py`, lifecycle tests |
 | Talent profile or benchmark | profile/contracts/artifact/review modules and benchmark tests |
 | Durable review or HITL | `docs/operations/durable-hitl-feasibility.md`, gate report, affected review modules/tests |
 | REST, WebSocket, Tool Client | `docs/reference/api-contract.md`, `docs/AGENT_INTEGRATION.md`, contract tests |
+| Data or state contract | `docs/reference/data-models.md`, `docs/reference/state-machines.md`, and affected repository tests |
 | Future UI/API consumer | affected API contract, Tool Client behavior, WebSocket contract |
 | Public metric or claim | producing command/artifact and its evidence boundary |
 

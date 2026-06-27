@@ -25,18 +25,13 @@ FORBIDDEN_TERMS = (
     "cd frontend",
 )
 
-HISTORICAL_PREFIXES = (
-    "docs/evidence/",
-    "docs/superpowers/",
-    "openspec/",
-)
-
 HISTORICAL_FILES = {
     "CHANGELOG.md",
 }
 
 NEGATIVE_CONTRACT_FILES = {
     "scripts/check_canonical_identity.py",
+    "scripts/final_presentation_audit.py",
     "tests/unit/test_canonical_identity.py",
     "tests/integration/test_legacy_runtime_removed.py",
 }
@@ -81,8 +76,6 @@ def _is_skipped(relative_path: str) -> bool:
     if relative_path in HISTORICAL_FILES:
         return True
     if relative_path in NEGATIVE_CONTRACT_FILES:
-        return True
-    if any(relative_path.startswith(prefix) for prefix in HISTORICAL_PREFIXES):
         return True
     return False
 

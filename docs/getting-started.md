@@ -122,4 +122,3 @@ Evidence.
 hash-mismatched persisted artifact. Preserve the run identifier and inspect
 bounded service diagnostics. Do not bypass result selection by reading runtime
 files or checkpoint state.
-

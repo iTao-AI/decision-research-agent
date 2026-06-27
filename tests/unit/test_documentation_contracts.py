@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -24,15 +25,6 @@ CURRENT_DOCS = [
     PROJECT_ROOT / "spec" / "state-machine.md",
     PROJECT_ROOT / "spec" / "tool-registry.md",
 ]
-
-PUBLIC_PRESENTATION_DOCS = [
-    PROJECT_ROOT / "README.md",
-    PROJECT_ROOT / "README_CN.md",
-    PROJECT_ROOT / "docs" / "README.md",
-    PROJECT_ROOT / "docs" / "releases" / "v0.1.0.md",
-    PROJECT_ROOT / "spec" / "README.md",
-]
-
 
 def _combined_docs() -> str:
     return "\n\n".join(path.read_text(encoding="utf-8") for path in CURRENT_DOCS)
@@ -78,29 +70,31 @@ def test_current_docs_do_not_advertise_removed_or_legacy_surfaces() -> None:
         assert phrase not in docs
 
 
-def test_public_presentation_docs_do_not_expose_private_or_job_search_context() -> None:
-    forbidden_phrases = [
-        "求职",
-        "面试",
-        "简历",
-        "投递",
-        "Career",
-        "/Users/mac",
-        ".gstack/projects",
-        "/autoplan restore point",
-    ]
+def test_all_tracked_markdown_uses_public_neutral_presentation() -> None:
+    from scripts.final_presentation_audit import presentation_violations
 
-    for path in PUBLIC_PRESENTATION_DOCS:
-        text = path.read_text(encoding="utf-8")
-        for phrase in forbidden_phrases:
-            assert phrase not in text, f"{phrase} leaked in {path.relative_to(PROJECT_ROOT)}"
+    completed = subprocess.run(
+        ["git", "-C", str(PROJECT_ROOT), "ls-files", "-z", "*.md"],
+        capture_output=True,
+        check=True,
+    )
+    violations = []
+    for raw_path in completed.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        relative_path = raw_path.decode("utf-8")
+        text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+        for rule in presentation_violations(text):
+            violations.append({"path": relative_path, "rule": rule})
+
+    assert violations == []
 
 
-def test_docs_index_keeps_historical_plans_out_of_current_public_entrypoints() -> None:
+def test_docs_index_links_curated_project_planning_workspace() -> None:
     docs_index = (PROJECT_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
 
-    assert "docs/superpowers/" not in docs_index
-    assert "(superpowers/" not in docs_index
+    assert "superpowers/README.md" in docs_index
+    assert "superpowers/plans/2026-06-27-v0-1-0-release-presentation-cleanup.md" in docs_index
 
 
 def test_readme_first_run_flow_is_canonical_and_copy_pasteable() -> None:

@@ -38,6 +38,22 @@ def test_canonical_identity_check_still_scans_active_public_files(tmp_path):
     ]
 
 
+def test_canonical_identity_check_scans_public_documentation_history(tmp_path):
+    from scripts.check_canonical_identity import find_forbidden_terms
+
+    historical_doc = tmp_path / "docs" / "superpowers" / "stale.md"
+    historical_doc.parent.mkdir(parents=True)
+    historical_doc.write_text("deep-search-agent\n", encoding="utf-8")
+
+    assert find_forbidden_terms(tmp_path) == [
+        {
+            "path": "docs/superpowers/stale.md",
+            "line": 1,
+            "term": "deep-search-agent",
+        }
+    ]
+
+
 def test_health_service_uses_canonical_identifier():
     from fastapi.testclient import TestClient
     from api.server import app

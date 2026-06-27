@@ -69,3 +69,23 @@ source archive or market coverage claim.
   authority for this milestone.
 - Server-side URL retrieval: deferred because it adds SSRF, redirect, DNS,
   payload, content-type, and source-drift risks not required for PR1.
+
+## Evidence And Delivery Separation
+
+Collection, verification, review, and delivery are separate authorities:
+
+```text
+source tool output
+-> immutable Evidence entry
+-> optional deterministic preflight
+-> append-only human verification decision
+-> deterministic effective-state snapshot
+-> publication revision
+-> independent durable review
+-> current deliverable artifact
+```
+
+The bounded real-source proof exercises this chain using an ordinary Evidence
+origin and an existing report checker. It does not introduce a crawler, source
+archive, automatic truth judgment, or market-coverage claim. The checked-in
+proof report is accepted only within the limitations recorded beside it.

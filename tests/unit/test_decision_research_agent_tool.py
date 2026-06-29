@@ -35,6 +35,19 @@ def assert_error_envelope(payload, *, code):
     assert isinstance(payload["retryable"], bool)
 
 
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
 def test_cli_help_uses_public_product_name(capsys):
     with pytest.raises(SystemExit):
         tool._build_parser().parse_args(["--help"])
@@ -863,23 +876,80 @@ def test_doctor_fails_when_enabled_review_is_not_ready(monkeypatch):
     assert result["checks"]["durable_review"]["status"] == "failed"
 
 
-def test_wait_for_run_polls_until_terminal(monkeypatch):
+def test_run_wait_parser_defaults():
+    args = tool._build_parser().parse_args(["run", "--query", "q", "--wait"])
+
+    assert args.result is False
+    assert args.poll_seconds == 1
+    assert args.wait_timeout_seconds == 600
+
+
+@pytest.mark.parametrize(
+    ("poll_seconds", "timeout_seconds", "code"),
+    [
+        (0, 1, "run_poll_seconds_must_be_positive"),
+        (1, 0, "run_wait_timeout_seconds_must_be_positive"),
+    ],
+)
+def test_wait_for_run_rejects_non_positive_bounds(
+    poll_seconds, timeout_seconds, code
+):
+    with pytest.raises(tool.ToolClientError) as captured:
+        tool.wait_for_run(
+            "run_1",
+            tool.ToolConfig(),
+            poll_seconds=poll_seconds,
+            timeout_seconds=timeout_seconds,
+        )
+
+    assert captured.value.payload["code"] == code
+
+
+def test_wait_for_run_sleep_does_not_cross_deadline(monkeypatch):
+    clock = FakeClock()
+    monkeypatch.setattr(tool.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(tool.time, "sleep", clock.sleep)
+    monkeypatch.setattr(
+        tool,
+        "get_run",
+        lambda run_id, config: {"execution_status": "running"},
+    )
+
+    with pytest.raises(tool.ToolClientError) as captured:
+        tool.wait_for_run(
+            "run_1",
+            tool.ToolConfig(),
+            poll_seconds=10,
+            timeout_seconds=1,
+        )
+
+    assert captured.value.payload["code"] == "run_wait_timeout"
+    assert clock.now == 1
+    assert clock.sleeps == [1]
+
+
+@pytest.mark.parametrize(
+    "terminal_status",
+    ["completed", "completed_with_fallback", "failed"],
+)
+def test_wait_for_run_polls_until_terminal(monkeypatch, terminal_status):
     responses = iter(
         [
-            FakeResponse({"run_id": "run-1", "execution_status": "running"}),
-            FakeResponse({"run_id": "run-1", "execution_status": "completed"}),
+            {"run_id": "run-1", "execution_status": "running"},
+            {"run_id": "run-1", "execution_status": terminal_status},
         ]
     )
-    monkeypatch.setattr(tool.request, "urlopen", lambda req, timeout: next(responses))
+    monkeypatch.setattr(tool, "get_run", lambda run_id, config: next(responses))
     monkeypatch.setattr(tool.time, "sleep", lambda seconds: None)
 
     result = tool.wait_for_run(
         "run-1",
-        tool.ToolConfig(base_url="http://127.0.0.1:9000"),
+        tool.ToolConfig(),
         poll_seconds=0.01,
+        timeout_seconds=1,
     )
 
-    assert result["execution_status"] == "completed"
+    assert result["execution_status"] == terminal_status
 
 
 def test_wait_for_review_returns_terminal_resolution(monkeypatch):

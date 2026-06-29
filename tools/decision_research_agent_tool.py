@@ -726,7 +726,13 @@ def wait_for_run(
     config: ToolConfig,
     *,
     poll_seconds: float = 1.0,
+    timeout_seconds: float = 600.0,
 ) -> dict[str, Any]:
+    if poll_seconds <= 0:
+        raise ToolClientError("run_poll_seconds_must_be_positive")
+    if timeout_seconds <= 0:
+        raise ToolClientError("run_wait_timeout_seconds_must_be_positive")
+    deadline = time.monotonic() + timeout_seconds
     while True:
         result = get_run(run_id, config)
         if result.get("execution_status") in {
@@ -735,7 +741,10 @@ def wait_for_run(
             "failed",
         }:
             return result
-        time.sleep(poll_seconds)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ToolClientError("run_wait_timeout")
+        time.sleep(min(poll_seconds, remaining))
 
 
 def _bounded_error_code(value: Any) -> str:
@@ -824,6 +833,9 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--profile", default="generic")
     run.add_argument("--scope-file")
     run.add_argument("--wait", action="store_true")
+    run.add_argument("--result", action="store_true")
+    run.add_argument("--poll-seconds", type=float, default=1)
+    run.add_argument("--wait-timeout-seconds", type=float, default=600)
 
     result = subparsers.add_parser("result")
     result.add_argument("--run-id", required=True)

@@ -92,9 +92,19 @@ python tools/decision_research_agent_tool.py run \
   --thread-id "demo-thread" \
   --wait
 
+python tools/decision_research_agent_tool.py run \
+  --query "Compare the evidence behind the proposed decision" \
+  --wait \
+  --result
+
 python tools/decision_research_agent_tool.py result \
   --run-id "$RUN_ID"
 ```
+
+Use `--wait --result` for the shortest local golden path when the backend is
+already running. It starts the run, waits with a bounded client deadline, and
+prints only the canonical result payload. A run that requires controlled review
+returns a structured recovery error instead of bypassing review.
 
 Configuration:
 

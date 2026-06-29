@@ -27,6 +27,27 @@ class FakeResponse:
         return self.status
 
 
+def assert_error_envelope(payload, *, code):
+    assert payload["code"] == code
+    assert isinstance(payload["problem"], str) and payload["problem"]
+    assert isinstance(payload["cause"], str) and payload["cause"]
+    assert isinstance(payload["fix"], str) and payload["fix"]
+    assert isinstance(payload["retryable"], bool)
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
 def test_cli_help_uses_public_product_name(capsys):
     with pytest.raises(SystemExit):
         tool._build_parser().parse_args(["--help"])
@@ -66,14 +87,106 @@ def test_legacy_commands_are_rejected(argv):
         tool._build_parser().parse_args(argv)
 
 
+def test_public_docs_describe_cli_golden_path_and_error_contract():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    integration = Path("docs/AGENT_INTEGRATION.md").read_text(encoding="utf-8")
+
+    assert "--wait --result" in readme
+    assert "--wait-timeout-seconds" in integration
+    assert "run_wait_timeout" in integration
+    for field in ("code", "problem", "cause", "fix", "retryable"):
+        assert f"`{field}`" in integration
+
+
 def test_http_failure_raises_structured_error(monkeypatch):
-    def fake_urlopen(req, timeout):
-        return FakeResponse({"detail": "bad request"}, status=400)
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: FakeResponse({"detail": "bad request"}, status=400),
+    )
 
-    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
-
-    with pytest.raises(tool.ToolClientError, match="HTTP 400"):
+    with pytest.raises(tool.ToolClientHTTPError) as captured:
         tool.healthcheck(tool.ToolConfig())
+
+    assert captured.value.status == 400
+    assert_error_envelope(captured.value.payload, code="http_400")
+
+
+@pytest.mark.parametrize(
+    ("raised", "code"),
+    [
+        (tool.error.URLError("https://secret.example/path"), "connection_failed"),
+        (TimeoutError("provider token leaked"), "request_timeout"),
+    ],
+)
+def test_transport_failures_are_structured_and_private(
+    monkeypatch, capsys, raised, code
+):
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: (_ for _ in ()).throw(raised),
+    )
+
+    exit_code = tool.main(["healthcheck"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert_error_envelope(payload, code=code)
+    rendered = json.dumps(payload)
+    assert "secret.example" not in rendered
+    assert "provider token" not in rendered
+
+
+def test_invalid_json_response_is_structured_and_private(monkeypatch, capsys):
+    class InvalidJSONResponse(FakeResponse):
+        def read(self):
+            return b'{"secret": invalid}'
+
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: InvalidJSONResponse({}),
+    )
+
+    assert tool.main(["healthcheck"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert_error_envelope(payload, code="invalid_json_response")
+    assert "secret" not in json.dumps(payload)
+
+
+def test_non_object_json_response_is_structured(monkeypatch, capsys):
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: FakeResponse(["unexpected"]),
+    )
+
+    assert tool.main(["healthcheck"]) == 1
+    assert_error_envelope(
+        json.loads(capsys.readouterr().out),
+        code="json_response_not_object",
+    )
+
+
+def test_structured_http_error_fills_minimum_fields(monkeypatch):
+    body = io.BytesIO(
+        json.dumps({"code": "run_review_required", "problem": "Review required."}).encode()
+    )
+    http_error = tool.error.HTTPError(
+        "https://secret.example/result", 409, "Conflict", {}, body
+    )
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: (_ for _ in ()).throw(http_error),
+    )
+
+    with pytest.raises(tool.ToolClientHTTPError) as captured:
+        tool.result("run_1", tool.ToolConfig())
+
+    assert captured.value.status == 409
+    assert_error_envelope(captured.value.payload, code="run_review_required")
 
 
 def test_http_error_preserves_structured_review_envelope(monkeypatch):
@@ -104,6 +217,7 @@ def test_http_error_preserves_structured_review_envelope(monkeypatch):
 
     assert captured.value.status == 404
     assert captured.value.payload["code"] == "durable_hitl_disabled"
+    assert_error_envelope(captured.value.payload, code="durable_hitl_disabled")
 
 
 def test_review_list_and_show_encode_requests(monkeypatch):
@@ -211,6 +325,157 @@ def test_cli_result_prints_canonical_result(monkeypatch, capsys):
     )
 
 
+def test_cli_run_result_requires_wait_before_network(monkeypatch, capsys):
+    monkeypatch.setattr(
+        tool,
+        "start_run",
+        lambda **kwargs: pytest.fail("network path must not be called"),
+    )
+
+    assert tool.main(["run", "--query", "q", "--result"]) == 1
+    assert_error_envelope(
+        json.loads(capsys.readouterr().out),
+        code="result_requires_wait",
+    )
+
+
+@pytest.mark.parametrize("run_id", [None, "", 123])
+def test_cli_run_wait_rejects_invalid_creation_run_id(
+    monkeypatch, capsys, run_id
+):
+    monkeypatch.setattr(tool, "start_run", lambda **kwargs: {"run_id": run_id})
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda *args, **kwargs: pytest.fail("invalid run_id must fail first"),
+    )
+
+    assert tool.main(["run", "--query", "q", "--wait"]) == 1
+    assert_error_envelope(
+        json.loads(capsys.readouterr().out),
+        code="run_response_invalid",
+    )
+
+
+def test_cli_run_wait_result_prints_only_canonical_result(monkeypatch, capsys):
+    calls = []
+
+    def fake_wait(run_id, config, *, poll_seconds, timeout_seconds):
+        calls.append(("poll", poll_seconds, timeout_seconds))
+        return {"run_id": run_id, "execution_status": "completed"}
+
+    monkeypatch.setattr(
+        tool,
+        "start_run",
+        lambda **kwargs: calls.append(("create",)) or {"run_id": "run_1"},
+    )
+    monkeypatch.setattr(tool, "wait_for_run", fake_wait)
+    monkeypatch.setattr(
+        tool,
+        "result",
+        lambda *args, **kwargs: calls.append(("result",))
+        or {"run_id": "run_1", "artifact": {"content": "# Report"}},
+    )
+
+    exit_code = tool.main(
+        [
+            "run",
+            "--query",
+            "q",
+            "--wait",
+            "--result",
+            "--poll-seconds",
+            "0.25",
+            "--wait-timeout-seconds",
+            "30",
+        ]
+    )
+
+    assert exit_code == 0
+    assert calls == [("create",), ("poll", 0.25, 30), ("result",)]
+    assert json.loads(capsys.readouterr().out) == {
+        "run_id": "run_1",
+        "artifact": {"content": "# Report"},
+    }
+
+
+def test_cli_run_result_error_retains_service_code_and_safe_run_id(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(tool, "start_run", lambda **kwargs: {"run_id": "run_1"})
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda *args, **kwargs: {"execution_status": "completed"},
+    )
+    monkeypatch.setattr(
+        tool,
+        "result",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            tool.ToolClientHTTPError(
+                409,
+                {
+                    "code": "run_review_required",
+                    "problem": "Review required.",
+                    "fix": "Resolve the controlled review.",
+                },
+            )
+        ),
+    )
+
+    assert tool.main(
+        ["run", "--query", "private query", "--wait", "--result"]
+    ) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert_error_envelope(payload, code="run_review_required")
+    assert payload["run_id"] == "run_1"
+    assert "private query" not in json.dumps(payload)
+
+
+def test_cli_run_wait_timeout_includes_only_safe_run_context(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(tool, "start_run", lambda **kwargs: {"run_id": "run_1"})
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            tool.ToolClientError("run_wait_timeout")
+        ),
+    )
+
+    assert tool.main(["run", "--query", "private query", "--wait"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert_error_envelope(payload, code="run_wait_timeout")
+    assert payload["run_id"] == "run_1"
+    rendered = json.dumps(payload)
+    assert "private query" not in rendered
+    assert "thread" not in payload
+
+
+def test_scope_file_unreadable_is_private(tmp_path):
+    path = tmp_path / "private-scope.json"
+    with pytest.raises(tool.ToolClientError) as captured:
+        tool.read_scope_file(path)
+
+    assert_error_envelope(captured.value.payload, code="scope_file_unreadable")
+    assert str(path) not in json.dumps(captured.value.payload)
+
+
+@pytest.mark.parametrize("content", ['{"broken":', "[]"])
+def test_scope_file_invalid_is_private(tmp_path, content):
+    path = tmp_path / "private-scope.json"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(tool.ToolClientError) as captured:
+        tool.read_scope_file(path)
+
+    assert_error_envelope(captured.value.payload, code="scope_file_invalid")
+    rendered = json.dumps(captured.value.payload)
+    assert str(path) not in rendered
+    assert content not in rendered
+
+
 def test_cli_run_wait_then_result_is_secret_safe_consumer_flow(
     monkeypatch,
     capsys,
@@ -263,7 +528,7 @@ def test_cli_run_wait_then_result_is_secret_safe_consumer_flow(
     monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(tool.time, "sleep", lambda seconds: None)
 
-    run_exit = tool.main(
+    exit_code = tool.main(
         [
             "--base-url",
             "http://127.0.0.1:9000",
@@ -273,21 +538,19 @@ def test_cli_run_wait_then_result_is_secret_safe_consumer_flow(
             "--thread-id",
             "thread_1",
             "--wait",
-        ]
-    )
-    result_exit = tool.main(
-        [
-            "--base-url",
-            "http://127.0.0.1:9000",
-            "result",
-            "--run-id",
-            "run_1",
+            "--result",
         ]
     )
 
     captured = capsys.readouterr()
-    assert run_exit == 0
-    assert result_exit == 0
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "run_id": "run_1",
+        "artifact": {
+            "artifact_id": "research-report.md",
+            "content": "# Report",
+        },
+    }
     assert "secret-key" not in captured.out
     assert "secret-key" not in captured.err
     assert [item["method"] for item in requests] == ["POST", "GET", "GET"]
@@ -302,7 +565,6 @@ def test_cli_run_wait_then_result_is_secret_safe_consumer_flow(
         "scope": {},
         "thread_id": "thread_1",
     }
-    assert '"artifact_id": "research-report.md"' in captured.out
 
 
 def test_result_preserves_structured_http_error(monkeypatch):
@@ -449,10 +711,10 @@ def test_reject_reason_file_failure_is_structured_and_private(
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert json.loads(captured.out) == {
-        "status": "failed",
-        "error": "rejection_reason_unreadable",
-    }
+    assert_error_envelope(
+        json.loads(captured.out),
+        code="rejection_reason_unreadable",
+    )
     assert "Traceback" not in captured.out
     assert "Traceback" not in captured.err
     assert str(reason_file) not in captured.out
@@ -773,23 +1035,83 @@ def test_doctor_fails_when_enabled_review_is_not_ready(monkeypatch):
     assert result["checks"]["durable_review"]["status"] == "failed"
 
 
-def test_wait_for_run_polls_until_terminal(monkeypatch):
+def test_run_wait_parser_defaults():
+    args = tool._build_parser().parse_args(["run", "--query", "q", "--wait"])
+
+    assert args.result is False
+    assert args.poll_seconds == 1
+    assert args.wait_timeout_seconds == 600
+
+
+@pytest.mark.parametrize(
+    ("poll_seconds", "timeout_seconds", "code"),
+    [
+        (0, 1, "run_poll_seconds_must_be_positive"),
+        (1, 0, "run_wait_timeout_seconds_must_be_positive"),
+    ],
+)
+def test_wait_for_run_rejects_non_positive_bounds(
+    poll_seconds, timeout_seconds, code
+):
+    with pytest.raises(tool.ToolClientError) as captured:
+        tool.wait_for_run(
+            "run_1",
+            tool.ToolConfig(),
+            poll_seconds=poll_seconds,
+            timeout_seconds=timeout_seconds,
+        )
+
+    assert captured.value.payload["code"] == code
+
+
+def test_wait_for_run_sleep_does_not_cross_deadline(monkeypatch):
+    clock = FakeClock()
+    poll_times = []
+    monkeypatch.setattr(tool.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(tool.time, "sleep", clock.sleep)
+
+    def fake_get_run(run_id, config):
+        poll_times.append(clock.now)
+        return {"execution_status": "running"}
+
+    monkeypatch.setattr(tool, "get_run", fake_get_run)
+
+    with pytest.raises(tool.ToolClientError) as captured:
+        tool.wait_for_run(
+            "run_1",
+            tool.ToolConfig(),
+            poll_seconds=10,
+            timeout_seconds=1,
+        )
+
+    assert captured.value.payload["code"] == "run_wait_timeout"
+    assert clock.now == 1
+    assert clock.sleeps == [1]
+    assert poll_times == [0.0]
+
+
+@pytest.mark.parametrize(
+    "terminal_status",
+    ["completed", "completed_with_fallback", "failed"],
+)
+def test_wait_for_run_polls_until_terminal(monkeypatch, terminal_status):
     responses = iter(
         [
-            FakeResponse({"run_id": "run-1", "execution_status": "running"}),
-            FakeResponse({"run_id": "run-1", "execution_status": "completed"}),
+            {"run_id": "run-1", "execution_status": "running"},
+            {"run_id": "run-1", "execution_status": terminal_status},
         ]
     )
-    monkeypatch.setattr(tool.request, "urlopen", lambda req, timeout: next(responses))
+    monkeypatch.setattr(tool, "get_run", lambda run_id, config: next(responses))
     monkeypatch.setattr(tool.time, "sleep", lambda seconds: None)
 
     result = tool.wait_for_run(
         "run-1",
-        tool.ToolConfig(base_url="http://127.0.0.1:9000"),
+        tool.ToolConfig(),
         poll_seconds=0.01,
+        timeout_seconds=1,
     )
 
-    assert result["execution_status"] == "completed"
+    assert result["execution_status"] == terminal_status
 
 
 def test_wait_for_review_returns_terminal_resolution(monkeypatch):
@@ -825,10 +1147,7 @@ def test_wait_for_review_fails_closed_on_manual_recovery(monkeypatch):
         },
     )
 
-    with pytest.raises(
-        tool.ToolClientError,
-        match="manual_recovery:checkpoint_corrupt",
-    ):
+    with pytest.raises(tool.ToolClientError) as captured:
         tool.wait_for_review(
             run_id="run_1",
             review_id="review_1",
@@ -836,6 +1155,40 @@ def test_wait_for_review_fails_closed_on_manual_recovery(monkeypatch):
             poll_seconds=0.01,
             timeout_seconds=1,
         )
+
+    assert_error_envelope(captured.value.payload, code="manual_recovery")
+    assert captured.value.payload["recovery_code"] == "checkpoint_corrupt"
+
+
+def test_local_error_catalog_always_builds_minimum_envelope():
+    assert hasattr(tool, "_LOCAL_ERROR_DETAILS")
+    for code in sorted(tool._LOCAL_ERROR_DETAILS):
+        assert_error_envelope(tool.ToolClientError(code).payload, code=code)
+
+
+def test_manual_recovery_does_not_expose_unbounded_error_code(monkeypatch):
+    monkeypatch.setattr(
+        tool,
+        "show_review",
+        lambda **kwargs: {
+            "workflow": {
+                "status": "manual_recovery",
+                "last_error_code": "/private/path",
+            }
+        },
+    )
+
+    with pytest.raises(tool.ToolClientError) as captured:
+        tool.wait_for_review(
+            run_id="run_1",
+            review_id="review_1",
+            config=tool.ToolConfig(),
+            poll_seconds=0.01,
+            timeout_seconds=1,
+        )
+
+    assert captured.value.payload["recovery_code"] == "unknown"
+    assert "/private/path" not in json.dumps(captured.value.payload)
 
 
 def test_wait_for_review_sleep_does_not_cross_deadline(monkeypatch):
@@ -972,8 +1325,9 @@ def test_evidence_verify_requires_explicit_confirmation(capsys):
             "ev_1",
         ]
     ) == 1
-    assert json.loads(capsys.readouterr().out)["error"] == (
-        "confirm_source_match_required"
+    assert_error_envelope(
+        json.loads(capsys.readouterr().out),
+        code="confirm_source_match_required",
     )
 
 
@@ -998,8 +1352,9 @@ def test_evidence_reject_reason_file_is_bounded_and_not_truncated(
             str(path),
         ]
     ) == 1
-    assert json.loads(capsys.readouterr().out)["error"] == (
-        "verification_reason_must_be_1_to_1000_characters"
+    assert_error_envelope(
+        json.loads(capsys.readouterr().out),
+        code="verification_reason_must_be_1_to_1000_characters",
     )
 
 

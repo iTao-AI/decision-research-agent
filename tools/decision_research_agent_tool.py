@@ -13,17 +13,201 @@ from urllib import error, parse, request
 import uuid
 
 
+_LOCAL_ERROR_DETAILS: dict[str, tuple[str, str, str, bool]] = {
+    "connection_failed": (
+        "Cannot reach Decision Research Agent.",
+        "The configured service endpoint is unavailable.",
+        "Start the backend or verify DECISION_RESEARCH_AGENT_URL.",
+        True,
+    ),
+    "request_timeout": (
+        "The service request timed out.",
+        "The backend did not respond within the configured request timeout.",
+        "Retry the command or increase DECISION_RESEARCH_AGENT_TIMEOUT_SECONDS.",
+        True,
+    ),
+    "invalid_json_response": (
+        "The service returned invalid JSON.",
+        "The response could not be decoded as a JSON document.",
+        "Check backend health and retry after the service is stable.",
+        False,
+    ),
+    "json_response_not_object": (
+        "The service returned an unsupported JSON value.",
+        "The Tool Client requires a JSON object response.",
+        "Check the backend and Tool Client versions before retrying.",
+        False,
+    ),
+    "scope_file_unreadable": (
+        "The scope file cannot be read.",
+        "The file is unavailable or is not valid UTF-8 text.",
+        "Provide a readable UTF-8 JSON file.",
+        False,
+    ),
+    "scope_file_invalid": (
+        "The scope file is invalid.",
+        "Research scope must be a JSON object.",
+        "Correct the scope document and retry the command.",
+        False,
+    ),
+    "run_response_invalid": (
+        "The run creation response is invalid.",
+        "The service did not return a non-empty string run_id.",
+        "Check backend compatibility before creating another run.",
+        False,
+    ),
+    "result_requires_wait": (
+        "Canonical result retrieval requires --wait.",
+        "The --result flag composes run creation, bounded waiting, and delivery.",
+        "Use --wait --result, or call result --run-id separately.",
+        False,
+    ),
+    "run_poll_seconds_must_be_positive": (
+        "Run polling interval must be positive.",
+        "The provided --poll-seconds value is zero or negative.",
+        "Provide a value greater than zero.",
+        False,
+    ),
+    "run_wait_timeout_seconds_must_be_positive": (
+        "Run wait timeout must be positive.",
+        "The provided --wait-timeout-seconds value is zero or negative.",
+        "Provide a value greater than zero.",
+        False,
+    ),
+    "run_wait_timeout": (
+        "The run did not finish before the wait deadline.",
+        "Client polling stopped while the server-side run may still be active.",
+        "Inspect the run by ID or retry result --run-id later.",
+        True,
+    ),
+    "run_has_no_durable_review": (
+        "The run has no durable review workflow.",
+        "No review identifier is attached to the run.",
+        "Inspect the run state before requesting review details.",
+        False,
+    ),
+    "confirm_source_match_required": (
+        "Source confirmation is required.",
+        "Evidence verification requires explicit source matching confirmation.",
+        "Retry with --confirm-source-match after checking the source.",
+        False,
+    ),
+    "exactly_one_reason_source_required": (
+        "Exactly one reason source is required.",
+        "The command requires either a reason file or standard input.",
+        "Choose one reason input method and retry.",
+        False,
+    ),
+    "rejection_reason_must_be_1_to_1000_characters": (
+        "The rejection reason length is invalid.",
+        "The reason must contain between 1 and 1000 characters.",
+        "Provide a complete reason within the allowed limit.",
+        False,
+    ),
+    "rejection_reason_unreadable": (
+        "The rejection reason cannot be read.",
+        "The selected input is unavailable or is not valid UTF-8 text.",
+        "Provide a readable UTF-8 reason and retry.",
+        False,
+    ),
+    "verification_reason_must_be_1_to_1000_characters": (
+        "The verification reason length is invalid.",
+        "The reason must contain between 1 and 1000 characters.",
+        "Provide a complete reason within the allowed limit.",
+        False,
+    ),
+    "verification_reason_unreadable": (
+        "The verification reason cannot be read.",
+        "The selected input is unavailable or is not valid UTF-8 text.",
+        "Provide a readable UTF-8 reason and retry.",
+        False,
+    ),
+    "review_poll_seconds_must_be_positive": (
+        "Review polling interval must be positive.",
+        "The provided --poll-seconds value is zero or negative.",
+        "Provide a value greater than zero.",
+        False,
+    ),
+    "review_wait_timeout_seconds_must_be_positive": (
+        "Review wait timeout must be positive.",
+        "The provided --wait-timeout-seconds value is zero or negative.",
+        "Provide a value greater than zero.",
+        False,
+    ),
+    "review_wait_timeout": (
+        "The review did not finish before the wait deadline.",
+        "Client polling stopped before the workflow reached a terminal state.",
+        "Inspect the review by run ID and retry later.",
+        True,
+    ),
+    "manual_recovery": (
+        "The review requires manual recovery.",
+        "The durable workflow cannot resume automatically.",
+        "Follow the controlled review recovery runbook.",
+        False,
+    ),
+}
+
+
+def _local_error_payload(
+    code: str,
+    *,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    problem, cause, fix, retryable = _LOCAL_ERROR_DETAILS[code]
+    return {
+        "code": code,
+        "problem": problem,
+        "cause": cause,
+        "fix": fix,
+        "retryable": retryable,
+        **(context or {}),
+    }
+
+
+def _normalize_service_error(
+    payload: dict[str, Any],
+    *,
+    status: int,
+) -> dict[str, Any]:
+    normalized = dict(payload)
+    defaults = {
+        "code": f"http_{status}",
+        "problem": "The service rejected the request.",
+        "cause": "The request could not be completed.",
+        "fix": "Inspect the error code and retry when safe.",
+    }
+    for field, default in defaults.items():
+        if not isinstance(normalized.get(field), str) or not normalized[field]:
+            normalized[field] = default
+    if not isinstance(normalized.get("retryable"), bool):
+        normalized["retryable"] = status >= 500
+    return normalized
+
+
 class ToolClientError(RuntimeError):
-    """Raised when the Decision Research Agent client cannot complete a request."""
+    """Bounded client error safe for JSON serialization."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        context: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ):
+        self.payload = payload or _local_error_payload(code, context=context)
+        super().__init__(self.payload["code"])
 
 
 class ToolClientHTTPError(ToolClientError):
-    """Raised when the server returns a structured non-success response."""
+    """Bounded service error retaining its HTTP status."""
 
     def __init__(self, status: int, payload: dict[str, Any]):
         self.status = status
-        self.payload = payload
-        super().__init__(payload.get("code") or f"http_{status}")
+        super().__init__(
+            str(payload.get("code") or f"http_{status}"),
+            payload=_normalize_service_error(payload, status=status),
+        )
 
 
 @dataclass(frozen=True)
@@ -48,11 +232,18 @@ def _read_json(response: Any) -> dict[str, Any]:
     raw = response.read()
     try:
         parsed = json.loads(raw.decode("utf-8"))
-    except Exception as exc:
-        raise ToolClientError(f"invalid JSON response: {exc}") from exc
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ToolClientError("invalid_json_response") from exc
     if not isinstance(parsed, dict):
-        raise ToolClientError("JSON response must be an object")
+        raise ToolClientError("json_response_not_object")
     return parsed
+
+
+def _is_timeout_error(exc: BaseException) -> bool:
+    return isinstance(exc, TimeoutError) or isinstance(
+        getattr(exc, "reason", None),
+        TimeoutError,
+    )
 
 
 def _request_json(
@@ -75,15 +266,15 @@ def _request_json(
             parsed = {
                 "code": f"http_{exc.code}",
                 "problem": "The server returned a non-JSON error.",
-                "retryable": False,
             }
         raise ToolClientHTTPError(exc.code, parsed) from exc
     except ToolClientError:
         raise
     except (OSError, error.URLError, TimeoutError) as exc:
-        raise ToolClientError(str(exc)) from exc
+        code = "request_timeout" if _is_timeout_error(exc) else "connection_failed"
+        raise ToolClientError(code) from exc
     if status < 200 or status >= 300:
-        raise ToolClientError(f"HTTP {status} from {url}: {parsed.get('detail') or parsed.get('error') or 'request failed'}")
+        raise ToolClientHTTPError(status, parsed)
     return parsed
 
 
@@ -547,6 +738,15 @@ def wait_for_run(
         time.sleep(poll_seconds)
 
 
+def _bounded_error_code(value: Any) -> str:
+    rendered = str(value)
+    if not 1 <= len(rendered) <= 128:
+        return "unknown"
+    if not all(character.isalnum() or character in "._-" for character in rendered):
+        return "unknown"
+    return rendered
+
+
 def wait_for_review(
     *,
     run_id: str,
@@ -572,8 +772,13 @@ def wait_for_review(
         if status in {"approved", "rejected"}:
             return result
         if status == "manual_recovery":
-            code = result["workflow"].get("last_error_code") or "unknown"
-            raise ToolClientError(f"manual_recovery:{code}")
+            recovery_code = _bounded_error_code(
+                result["workflow"].get("last_error_code") or "unknown"
+            )
+            raise ToolClientError(
+                "manual_recovery",
+                context={"recovery_code": recovery_code},
+            )
         remaining = max(0.0, deadline - time.monotonic())
         time.sleep(min(poll_seconds, remaining))
     raise ToolClientError("review_wait_timeout")
@@ -830,11 +1035,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    except ToolClientHTTPError as exc:
-        print(json.dumps(exc.payload, ensure_ascii=False, indent=2))
-        return 1
     except ToolClientError as exc:
-        print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False, indent=2))
+        print(json.dumps(exc.payload, ensure_ascii=False, indent=2))
         return 1
 
 

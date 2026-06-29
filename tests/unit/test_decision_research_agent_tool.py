@@ -27,6 +27,14 @@ class FakeResponse:
         return self.status
 
 
+def assert_error_envelope(payload, *, code):
+    assert payload["code"] == code
+    assert isinstance(payload["problem"], str) and payload["problem"]
+    assert isinstance(payload["cause"], str) and payload["cause"]
+    assert isinstance(payload["fix"], str) and payload["fix"]
+    assert isinstance(payload["retryable"], bool)
+
+
 def test_cli_help_uses_public_product_name(capsys):
     with pytest.raises(SystemExit):
         tool._build_parser().parse_args(["--help"])
@@ -67,13 +75,94 @@ def test_legacy_commands_are_rejected(argv):
 
 
 def test_http_failure_raises_structured_error(monkeypatch):
-    def fake_urlopen(req, timeout):
-        return FakeResponse({"detail": "bad request"}, status=400)
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: FakeResponse({"detail": "bad request"}, status=400),
+    )
 
-    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
-
-    with pytest.raises(tool.ToolClientError, match="HTTP 400"):
+    with pytest.raises(tool.ToolClientHTTPError) as captured:
         tool.healthcheck(tool.ToolConfig())
+
+    assert captured.value.status == 400
+    assert_error_envelope(captured.value.payload, code="http_400")
+
+
+@pytest.mark.parametrize(
+    ("raised", "code"),
+    [
+        (tool.error.URLError("https://secret.example/path"), "connection_failed"),
+        (TimeoutError("provider token leaked"), "request_timeout"),
+    ],
+)
+def test_transport_failures_are_structured_and_private(
+    monkeypatch, capsys, raised, code
+):
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: (_ for _ in ()).throw(raised),
+    )
+
+    exit_code = tool.main(["healthcheck"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert_error_envelope(payload, code=code)
+    rendered = json.dumps(payload)
+    assert "secret.example" not in rendered
+    assert "provider token" not in rendered
+
+
+def test_invalid_json_response_is_structured_and_private(monkeypatch, capsys):
+    class InvalidJSONResponse(FakeResponse):
+        def read(self):
+            return b'{"secret": invalid}'
+
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: InvalidJSONResponse({}),
+    )
+
+    assert tool.main(["healthcheck"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert_error_envelope(payload, code="invalid_json_response")
+    assert "secret" not in json.dumps(payload)
+
+
+def test_non_object_json_response_is_structured(monkeypatch, capsys):
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: FakeResponse(["unexpected"]),
+    )
+
+    assert tool.main(["healthcheck"]) == 1
+    assert_error_envelope(
+        json.loads(capsys.readouterr().out),
+        code="json_response_not_object",
+    )
+
+
+def test_structured_http_error_fills_minimum_fields(monkeypatch):
+    body = io.BytesIO(
+        json.dumps({"code": "run_review_required", "problem": "Review required."}).encode()
+    )
+    http_error = tool.error.HTTPError(
+        "https://secret.example/result", 409, "Conflict", {}, body
+    )
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: (_ for _ in ()).throw(http_error),
+    )
+
+    with pytest.raises(tool.ToolClientHTTPError) as captured:
+        tool.result("run_1", tool.ToolConfig())
+
+    assert captured.value.status == 409
+    assert_error_envelope(captured.value.payload, code="run_review_required")
 
 
 def test_http_error_preserves_structured_review_envelope(monkeypatch):
@@ -104,6 +193,7 @@ def test_http_error_preserves_structured_review_envelope(monkeypatch):
 
     assert captured.value.status == 404
     assert captured.value.payload["code"] == "durable_hitl_disabled"
+    assert_error_envelope(captured.value.payload, code="durable_hitl_disabled")
 
 
 def test_review_list_and_show_encode_requests(monkeypatch):
@@ -449,10 +539,10 @@ def test_reject_reason_file_failure_is_structured_and_private(
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert json.loads(captured.out) == {
-        "status": "failed",
-        "error": "rejection_reason_unreadable",
-    }
+    assert_error_envelope(
+        json.loads(captured.out),
+        code="rejection_reason_unreadable",
+    )
     assert "Traceback" not in captured.out
     assert "Traceback" not in captured.err
     assert str(reason_file) not in captured.out
@@ -825,10 +915,7 @@ def test_wait_for_review_fails_closed_on_manual_recovery(monkeypatch):
         },
     )
 
-    with pytest.raises(
-        tool.ToolClientError,
-        match="manual_recovery:checkpoint_corrupt",
-    ):
+    with pytest.raises(tool.ToolClientError) as captured:
         tool.wait_for_review(
             run_id="run_1",
             review_id="review_1",
@@ -836,6 +923,40 @@ def test_wait_for_review_fails_closed_on_manual_recovery(monkeypatch):
             poll_seconds=0.01,
             timeout_seconds=1,
         )
+
+    assert_error_envelope(captured.value.payload, code="manual_recovery")
+    assert captured.value.payload["recovery_code"] == "checkpoint_corrupt"
+
+
+def test_local_error_catalog_always_builds_minimum_envelope():
+    assert hasattr(tool, "_LOCAL_ERROR_DETAILS")
+    for code in sorted(tool._LOCAL_ERROR_DETAILS):
+        assert_error_envelope(tool.ToolClientError(code).payload, code=code)
+
+
+def test_manual_recovery_does_not_expose_unbounded_error_code(monkeypatch):
+    monkeypatch.setattr(
+        tool,
+        "show_review",
+        lambda **kwargs: {
+            "workflow": {
+                "status": "manual_recovery",
+                "last_error_code": "/private/path",
+            }
+        },
+    )
+
+    with pytest.raises(tool.ToolClientError) as captured:
+        tool.wait_for_review(
+            run_id="run_1",
+            review_id="review_1",
+            config=tool.ToolConfig(),
+            poll_seconds=0.01,
+            timeout_seconds=1,
+        )
+
+    assert captured.value.payload["recovery_code"] == "unknown"
+    assert "/private/path" not in json.dumps(captured.value.payload)
 
 
 def test_wait_for_review_sleep_does_not_cross_deadline(monkeypatch):
@@ -972,8 +1093,9 @@ def test_evidence_verify_requires_explicit_confirmation(capsys):
             "ev_1",
         ]
     ) == 1
-    assert json.loads(capsys.readouterr().out)["error"] == (
-        "confirm_source_match_required"
+    assert_error_envelope(
+        json.loads(capsys.readouterr().out),
+        code="confirm_source_match_required",
     )
 
 
@@ -998,8 +1120,9 @@ def test_evidence_reject_reason_file_is_bounded_and_not_truncated(
             str(path),
         ]
     ) == 1
-    assert json.loads(capsys.readouterr().out)["error"] == (
-        "verification_reason_must_be_1_to_1000_characters"
+    assert_error_envelope(
+        json.loads(capsys.readouterr().out),
+        code="verification_reason_must_be_1_to_1000_characters",
     )
 
 

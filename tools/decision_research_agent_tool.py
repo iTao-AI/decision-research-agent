@@ -377,6 +377,20 @@ def doctor(config: ToolConfig) -> dict[str, Any]:
     }
 
 
+def read_scope_file(path: Path) -> dict[str, Any]:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise ToolClientError("scope_file_unreadable") from exc
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ToolClientError("scope_file_invalid") from exc
+    if not isinstance(parsed, dict):
+        raise ToolClientError("scope_file_invalid")
+    return parsed
+
+
 def start_run(
     *,
     query: str,
@@ -919,6 +933,17 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _with_error_context(
+    exc: ToolClientError,
+    *,
+    context: dict[str, Any],
+) -> ToolClientError:
+    payload = {**exc.payload, **context}
+    if isinstance(exc, ToolClientHTTPError):
+        return ToolClientHTTPError(exc.status, payload)
+    return ToolClientError(str(payload["code"]), payload=payload)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -929,18 +954,39 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "doctor":
             result = doctor(config)
         elif args.command == "run":
-            scope = {}
-            if args.scope_file:
-                scope = json.loads(Path(args.scope_file).read_text(encoding="utf-8"))
-            result = start_run(
+            if args.result and not args.wait:
+                raise ToolClientError("result_requires_wait")
+            scope = read_scope_file(Path(args.scope_file)) if args.scope_file else {}
+            created = start_run(
                 query=args.query,
                 thread_id=args.thread_id,
                 profile_id=args.profile,
                 scope=scope,
                 config=config,
             )
-            if args.wait:
-                result = wait_for_run(result["run_id"], config)
+            if not args.wait:
+                result = created
+            else:
+                run_id = created.get("run_id")
+                if not isinstance(run_id, str) or not run_id:
+                    raise ToolClientError("run_response_invalid")
+                try:
+                    terminal = wait_for_run(
+                        run_id,
+                        config,
+                        poll_seconds=args.poll_seconds,
+                        timeout_seconds=args.wait_timeout_seconds,
+                    )
+                    result = (
+                        globals()["result"](run_id, config)
+                        if args.result
+                        else terminal
+                    )
+                except ToolClientError as exc:
+                    raise _with_error_context(
+                        exc,
+                        context={"run_id": run_id},
+                    ) from exc
         elif args.command == "result":
             result = globals()["result"](args.run_id, config)
         elif args.command == "review" and args.review_command == "list":

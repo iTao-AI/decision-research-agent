@@ -1019,11 +1019,8 @@ Replace the `run` branch with this control flow:
                         poll_seconds=args.poll_seconds,
                         timeout_seconds=args.wait_timeout_seconds,
                     )
-                    result = (
-                        globals()["result"](run_id, config)
-                        if args.result
-                        else terminal
-                    )
+                    result_fn = globals()["result"]
+                    result = result_fn(run_id, config) if args.result else terminal
                 except ToolClientError as exc:
                     raise _with_error_context(
                         exc,

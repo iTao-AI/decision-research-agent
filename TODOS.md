@@ -37,9 +37,9 @@ readability milestone. They require separate evidence, design, and approval.
 
 # Post-v0.1.0 CLI DX
 
-- Add a bounded `result --latest` or `run --wait --result` convenience flow
+- [x] Add a bounded `run --wait --result` convenience flow
   after the canonical run/result contract has shipped and real usage shows the
   extra command is material friction.
-- Render Tool Client HTTP failures consistently as structured
+- [x] Render Tool Client HTTP failures consistently as structured
   `problem` / `cause` / `fix` output without exposing raw response bodies or
   tracebacks.

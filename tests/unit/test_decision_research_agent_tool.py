@@ -87,6 +87,17 @@ def test_legacy_commands_are_rejected(argv):
         tool._build_parser().parse_args(argv)
 
 
+def test_public_docs_describe_cli_golden_path_and_error_contract():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    integration = Path("docs/AGENT_INTEGRATION.md").read_text(encoding="utf-8")
+
+    assert "--wait --result" in readme
+    assert "--wait-timeout-seconds" in integration
+    assert "run_wait_timeout" in integration
+    for field in ("code", "problem", "cause", "fix", "retryable"):
+        assert f"`{field}`" in integration
+
+
 def test_http_failure_raises_structured_error(monkeypatch):
     monkeypatch.setattr(
         tool.request,

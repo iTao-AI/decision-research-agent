@@ -68,21 +68,42 @@ python tools/decision_research_agent_tool.py run \
   --thread-id "demo-thread-001" \
   --wait
 
+python tools/decision_research_agent_tool.py run \
+  --query "Research question" \
+  --wait \
+  --result
+
 python tools/decision_research_agent_tool.py result \
   --run-id "$RUN_ID"
 ```
 
-`run --wait` polls `GET /api/runs/{run_id}` until `execution_status` is
-terminal. `result --run-id` calls `GET /api/runs/{run_id}/result` and returns
-the bounded canonical artifact payload. For generic runs the artifact ID is
-`research-report.md`.
+Run-specific flags:
 
-Public repository tests cover this sequence with environment-only API key
-configuration, `run --wait`, and `result --run-id`; captured command output
-must not include the API key. Private first-party consumer migration evidence
-is deferred unless its own repository test command is run separately. Handoffs
-for that external check may record only command names and pass/fail results,
-not workspace paths, raw logs, or secrets.
+```text
+--result                     fetch the canonical result after terminal execution
+--poll-seconds FLOAT         polling interval, default 1
+--wait-timeout-seconds FLOAT total polling deadline, default 600
+```
+
+`run` still prints the creation response. `run --wait` polls
+`GET /api/runs/{run_id}` until `execution_status` is terminal and still prints
+the terminal run projection. `run --wait --result` calls
+`GET /api/runs/{run_id}/result` after terminal execution and prints only the
+canonical result payload. `--result` without `--wait` performs no request and
+returns `result_requires_wait`.
+
+The wait timeout is a client polling deadline; it does not cancel the
+server-side run. On `run_wait_timeout`, the structured error includes `run_id`
+so callers can inspect the run or use `result --run-id` later. `result --run-id`
+remains the recovery path for separately created or previously timed-out runs.
+For generic runs the artifact ID is `research-report.md`.
+
+Public repository tests cover the `run --wait --result` golden path with
+environment-only API key configuration; captured command output must not
+include the API key. Private first-party consumer migration evidence is
+deferred unless its own repository test command is run separately. Handoffs for
+that external check may record only command names and pass/fail results, not
+workspace paths, raw logs, or secrets.
 
 ## Controlled Review Commands
 
@@ -174,8 +195,22 @@ value after success, timeout, or exception.
 
 The client exits non-zero and prints structured JSON for connection errors,
 timeouts, non-2xx responses, malformed JSON, `manual_recovery`, and review wait
-timeouts. Structured server error envelopes retain their stable `code`,
-`problem`, `fix`, and `retryable` fields.
+timeouts. The minimum envelope always contains `code`, `problem`, `cause`,
+`fix`, and `retryable`:
+
+```json
+{
+  "code": "connection_failed",
+  "problem": "Cannot reach Decision Research Agent.",
+  "cause": "The configured service endpoint is unavailable.",
+  "fix": "Start the backend or verify DECISION_RESEARCH_AGENT_URL.",
+  "retryable": true
+}
+```
+
+Structured server error envelopes retain service-owned fields. When a service
+error omits one of the minimum fields, the Tool Client fills only the missing
+field with a bounded generic value.
 
 - The API key is never printed.
 - The CLI rejects API keys on the command line.

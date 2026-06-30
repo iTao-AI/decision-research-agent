@@ -87,6 +87,6 @@ benchmarks, reviews, builds, or deployment results without current command
 evidence.
 
 The v0.1.0 release boundary is backend and CLI; the repository now also carries
-a separately built React demo console. Do not add deployment, public online
-execution, frontend-owned business state, new runtime Skills, broad dependency
-upgrades, or authority changes as incidental cleanup.
+a separately built Agent Research Operations Console. Do not add deployment,
+public online execution, frontend-owned business state, new runtime Skills,
+broad dependency upgrades, or authority changes as incidental cleanup.

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 
 import {
   DEFAULT_BACKEND_BASE_URL,
+  ClientRequestError,
   getHealth,
   getResult,
   getRun,
@@ -43,12 +44,20 @@ export type LiveRunState = {
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = 600_000;
-const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "timeout", "timed_out"]);
+const TERMINAL_STATUSES = new Set([
+  "completed",
+  "completed_with_fallback",
+  "failed",
+  "cancelled",
+  "timeout",
+  "timed_out"
+]);
 
 export function useLiveRun(options: LiveRunOptions = {}) {
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const waitTimeoutMs = options.waitTimeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
   const requestVersion = useRef(0);
+  const activeController = useRef<AbortController | null>(null);
   const [state, setState] = useState<LiveRunState>({
     baseUrl: DEFAULT_BACKEND_BASE_URL,
     mode: "static",
@@ -56,44 +65,49 @@ export function useLiveRun(options: LiveRunOptions = {}) {
   });
 
   const isCurrent = useCallback((version: number) => requestVersion.current === version, []);
-  const nextVersion = useCallback(() => {
+  const invalidateRequests = useCallback(() => {
+    activeController.current?.abort();
+    activeController.current = null;
     requestVersion.current += 1;
     return requestVersion.current;
   }, []);
+  const nextRequest = useCallback(() => {
+    invalidateRequests();
+    const controller = new AbortController();
+    activeController.current = controller;
+    return { controller, version: requestVersion.current };
+  }, [invalidateRequests]);
 
   const setMode = useCallback(
     (mode: DemoMode) => {
-      nextVersion();
+      invalidateRequests();
       setState((current) => ({
-        ...current,
-        error: undefined,
+        baseUrl: current.baseUrl,
         mode,
         status: mode === "static" ? "static" : "idle"
       }));
     },
-    [nextVersion]
+    [invalidateRequests]
   );
 
   const setBaseUrl = useCallback(
     (baseUrl: string) => {
-      nextVersion();
+      invalidateRequests();
       setState((current) => ({
-        ...current,
         baseUrl,
-        error: undefined,
-        health: undefined,
+        mode: current.mode,
         status: current.mode === "static" ? "static" : "idle"
       }));
     },
-    [nextVersion]
+    [invalidateRequests]
   );
 
   const checkHealth = useCallback(async () => {
-    const version = nextVersion();
+    const { controller, version } = nextRequest();
     const baseUrl = state.baseUrl;
     setState((current) => ({ ...current, error: undefined, mode: "live", status: "checking" }));
     try {
-      const health = await getHealth(baseUrl);
+      const health = await getHealth(baseUrl, controller.signal);
       if (!isCurrent(version)) {
         return;
       }
@@ -115,10 +129,11 @@ export function useLiveRun(options: LiveRunOptions = {}) {
         status: "error"
       }));
     }
-  }, [isCurrent, nextVersion, state.baseUrl]);
+  }, [isCurrent, nextRequest, state.baseUrl]);
 
   const runGoldenPath = useCallback(async () => {
-    const version = nextVersion();
+    const { controller: requestController, version } = nextRequest();
+    const deadline = createDeadline(requestController.signal, waitTimeoutMs);
     const baseUrl = state.baseUrl;
     let activeRunId: string | undefined;
     setState((current) => ({
@@ -131,7 +146,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       status: "starting"
     }));
     try {
-      const created = await startRun(baseUrl);
+      const created = await startRun(baseUrl, deadline.signal);
       activeRunId = created.run_id;
       if (!isCurrent(version)) {
         return;
@@ -143,14 +158,15 @@ export function useLiveRun(options: LiveRunOptions = {}) {
         isCurrent: () => isCurrent(version),
         pollIntervalMs,
         runId: created.run_id,
-        waitTimeoutMs
+        signal: deadline.signal,
+        deadlineAt: deadline.deadlineAt
       });
       if (!isCurrent(version)) {
         return;
       }
       setState((current) => ({ ...current, run }));
 
-      const result = await getResult(baseUrl, created.run_id);
+      const result = await getResult(baseUrl, created.run_id, deadline.signal);
       if (!isCurrent(version)) {
         return;
       }
@@ -166,11 +182,15 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       }
       setState((current) => ({
         ...current,
-        error: normalizeClientError(error, activeRunId),
+        error: deadline.didExpire()
+          ? runWaitTimeout(activeRunId)
+          : normalizeClientError(error, activeRunId),
         status: "error"
       }));
+    } finally {
+      deadline.dispose();
     }
-  }, [isCurrent, nextVersion, pollIntervalMs, state.baseUrl, waitTimeoutMs]);
+  }, [isCurrent, nextRequest, pollIntervalMs, state.baseUrl, waitTimeoutMs]);
 
   return {
     checkHealth,
@@ -186,25 +206,30 @@ async function pollRun({
   isCurrent,
   pollIntervalMs,
   runId,
-  waitTimeoutMs
+  signal,
+  deadlineAt
 }: {
   baseUrl: string;
   isCurrent: () => boolean;
   pollIntervalMs: number;
   runId: string;
-  waitTimeoutMs: number;
+  signal: AbortSignal;
+  deadlineAt: number;
 }) {
-  const deadline = Date.now() + waitTimeoutMs;
   while (isCurrent()) {
-    const run = await getRun(baseUrl, runId);
+    const remainingBeforePoll = deadlineAt - Date.now();
+    if (remainingBeforePoll <= 0) {
+      throw new ClientRequestError(runWaitTimeout(runId));
+    }
+    const run = await getRun(baseUrl, runId, signal);
     if (isTerminal(run.execution_status)) {
       return run;
     }
-    const remainingMs = deadline - Date.now();
+    const remainingMs = deadlineAt - Date.now();
     if (remainingMs <= 0) {
-      throw new Error("run_wait_timeout");
+      throw new ClientRequestError(runWaitTimeout(runId));
     }
-    await sleep(Math.min(pollIntervalMs, remainingMs));
+    await sleep(Math.min(pollIntervalMs, remainingMs), signal);
   }
   throw new Error("stale_request");
 }
@@ -213,6 +238,52 @@ function isTerminal(status: string | undefined) {
   return typeof status === "string" && TERMINAL_STATUSES.has(status);
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+function sleep(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function createDeadline(parentSignal: AbortSignal, waitTimeoutMs: number) {
+  const controller = new AbortController();
+  let expired = false;
+  const deadlineAt = Date.now() + waitTimeoutMs;
+  const abortFromParent = () => controller.abort();
+  parentSignal.addEventListener("abort", abortFromParent, { once: true });
+  const timer = window.setTimeout(() => {
+    expired = true;
+    controller.abort();
+  }, waitTimeoutMs);
+  return {
+    deadlineAt,
+    didExpire: () => expired,
+    dispose: () => {
+      window.clearTimeout(timer);
+      parentSignal.removeEventListener("abort", abortFromParent);
+    },
+    signal: controller.signal
+  };
+}
+
+function runWaitTimeout(runId?: string): ClientError {
+  return {
+    code: "run_wait_timeout",
+    problem: "Research run did not reach a terminal result before the client deadline.",
+    cause: "The bounded browser wait expired.",
+    fix: "The server-side run may still continue; check the run again by run_id.",
+    retryable: true,
+    ...(runId ? { run_id: runId } : {})
+  };
 }

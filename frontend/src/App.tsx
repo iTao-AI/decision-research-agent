@@ -191,7 +191,7 @@ function LiveDemoPanel({
       <div className="live-status-grid">
         <article>
           <strong>{state.mode === "static" ? t.live.staticDescription : t.live.liveDescription}</strong>
-          <p>{state.status === "ready" ? t.live.backendAvailable : describeStatus(state.status)}</p>
+          <p>{state.status === "ready" ? t.live.backendAvailable : t.live.statuses[state.status]}</p>
         </article>
         {state.created && (
           <article>
@@ -227,19 +227,6 @@ function LiveErrorCard({ error, fallbackFix }: { error: ClientError; fallbackFix
       {error.run_id && <code>{error.run_id}</code>}
     </article>
   );
-}
-
-function describeStatus(status: string) {
-  const statusText: Record<string, string> = {
-    checking: "checking backend health",
-    error: "operator action required",
-    idle: "ready for backend check",
-    polling: "polling run state",
-    result: "canonical result loaded",
-    starting: "starting research run",
-    static: "static snapshot active"
-  };
-  return statusText[status] ?? status;
 }
 
 function resultPreview(result: RunResultResponse) {
@@ -421,7 +408,7 @@ function ArchitectureMode({ labels }: { labels: Record<string, string> }) {
 
 function buildScreenSummary(screen: ScreenKey) {
   const summaries: Record<ScreenKey, string> = {
-    command: "operator console",
+    command: "research operations",
     lifecycle: "run-scoped",
     evidence: "append-only",
     review: "human-governed",

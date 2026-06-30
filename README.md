@@ -28,12 +28,12 @@ health service identifier use `decision-research-agent`.
 - Provides controlled durable review and evidence verification workflows behind
   explicit feature flags.
 
-The repository ships backend, API, CLI, tests, docs, operational scripts, and a
-React demo console. The demo console is an operator-facing shell for showing
-the existing API, EvidenceLedger, review, verification, and canonical result
-boundaries. It keeps a static fallback for reliable demos and includes a
-bounded Live Backend mode that consumes the public run/result API; it does not
-add backend state or become business authority.
+The repository ships backend, API, CLI, tests, docs, operational scripts, and
+the React-based Agent Research Operations Console. The console can create a
+ResearchRun, observe its lifecycle, and retrieve the canonical result while
+showing the existing EvidenceLedger, review, verification, and authority
+boundaries. It keeps a static fallback for reliable demos and does not add
+backend state or become business authority.
 
 ## Architecture
 
@@ -197,8 +197,9 @@ python tools/decision_research_agent_tool.py doctor
 ## Known Boundaries
 
 - v0.1.0 is a backend-and-CLI release.
-- The React demo console defaults to Static Demo mode and can optionally call a
-  local backend through bounded Live Backend mode.
+- The Agent Research Operations Console defaults to Static Demo mode and can
+  create a ResearchRun against a loopback backend through bounded Live Backend
+  mode.
 - UI delivery must consume the canonical API and result contract without
   reintroducing a parallel runtime.
 - Markdown-only delivery: canonical research results are returned as Markdown

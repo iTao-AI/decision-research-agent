@@ -1,8 +1,11 @@
-# React Demo Console Live Flow Design
+# Agent Research Operations Console Live Flow Design
 
 ## Goal
 
-Add a bounded Live Demo Mode to the React demo console so an operator can prove the UI consumes the real Decision Research Agent backend contract without turning the UI into a new runtime or business authority.
+Add a bounded Live Demo Mode to the Agent Research Operations Console so an
+operator can create a ResearchRun, observe its lifecycle, and retrieve the
+canonical result without turning the UI into a new runtime or business
+authority.
 
 ## Scope
 
@@ -44,7 +47,7 @@ authentication design.
 
 ```mermaid
 flowchart LR
-    UI["React Demo Console"] --> Client["frontend API client"]
+    UI["Agent Research Operations Console"] --> Client["frontend API client"]
     Client --> Health["GET /health"]
     Client --> Start["POST /api/runs"]
     Client --> Poll["GET /api/runs/{run_id}"]
@@ -52,7 +55,10 @@ flowchart LR
     UI --> Static["Static Demo Snapshot"]
 ```
 
-The frontend API client owns browser fetch details, timeout-free bounded parsing, and public error normalization. React components own presentation and state transitions. The application database and backend APIs remain the business authority.
+The frontend API client owns browser fetch details, deadline-bound requests,
+bounded parsing, loopback endpoint validation, and public error normalization.
+React components own presentation and state transitions. The application
+database and backend APIs remain the business authority.
 
 React implementation follows the current official `useEffect` cleanup pattern for async requests: stale async responses must be ignored when the selected backend URL or mode changes.
 
@@ -66,6 +72,10 @@ The frontend accepts only the fields it renders:
 - Result: canonical payload returned by `/api/runs/{run_id}/result`, rendered as JSON plus Markdown/content preview when available.
 
 Unexpected response shapes are displayed as `invalid_response` and do not crash the console.
+Only the exact health identity
+`{"status":"ok","service":"decision-research-agent"}` is ready. Live requests
+accept only `http://127.0.0.1:<port>` without credentials, path, query, or
+fragment.
 
 ## Error Handling
 

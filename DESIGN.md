@@ -1,10 +1,11 @@
-# Decision Research Agent Demo Console Design
+# Agent Research Operations Console Design
 
 ## Purpose
 
-The React Demo Console is an operator console for Decision Research Agent. It
-is built for stable technical demos of run-scoped execution, EvidenceLedger
-authority, human review, evidence verification, and canonical result delivery.
+The Agent Research Operations Console is the React demonstration surface for
+Decision Research Agent. It is built for stable technical demos of run-scoped
+execution, EvidenceLedger authority, human review, evidence verification, and
+canonical result delivery.
 
 It is not a chatbot, public research product, login surface, RBAC surface,
 multi-tenant console, backend state machine, or result authority.
@@ -17,9 +18,10 @@ multi-tenant console, backend state machine, or result authority.
   references.
 - Human-governed: review, verification, publication, and delivery are
   service-owned states.
-- UI-observed: the UI presents static demo fixtures by default and can consume
-  public run/result API contracts in Live Backend mode. It does not create
-  business truth.
+- Operations-capable, not authoritative: the UI presents static demo fixtures
+  by default and can create a ResearchRun, observe its lifecycle, and retrieve
+  the canonical result in Live Backend mode. It does not create business truth
+  or own service state.
 
 ## Information Architecture
 

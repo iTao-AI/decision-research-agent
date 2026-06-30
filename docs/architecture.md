@@ -11,7 +11,7 @@ Canonical call path: ResearchExecutionService -> AgentHarness -> DeepAgentsHarne
 ```mermaid
 flowchart TD
     Client["Tool Client / REST caller"] --> API["FastAPI API"]
-    Operator["Operator"] --> Console["React demo console"]
+    Operator["Operator"] --> Console["Agent Research Operations Console"]
     Console --> API
     API --> Service["ResearchExecutionService"]
     Service --> Harness["DeepAgents harness adapter"]
@@ -73,8 +73,8 @@ bundle, and publication contracts.
 
 ## Deployment Boundary
 
-The repository currently ships a backend-and-CLI release plus a React demo
-console for operator-facing explanation. The demo console keeps a static
+The repository currently ships a backend-and-CLI release plus an Agent Research
+Operations Console for operator-facing explanation. The console keeps a static
 fallback and adds a bounded Live Backend mode that consumes the same canonical
 API/result contracts without adding backend state or reintroducing a parallel
 runtime.

@@ -1,7 +1,9 @@
-# Demo Console
+# Agent Research Operations Console
 
-The React demo console explains Decision Research Agent as an operator-facing
-system rather than a chatbot. It has two modes:
+The React-based research run demonstration console explains Decision Research
+Agent as an operations system rather than a chatbot. It can create a
+ResearchRun, observe its lifecycle, and retrieve the canonical result without
+owning business authority. It has two modes:
 
 - **Static Demo** renders a deterministic bundled snapshot and requires no
   backend, provider, or credentials.
@@ -92,6 +94,11 @@ Open `http://127.0.0.1:5173`, select **Live Backend**, keep Backend base URL as
 The client waits for at most ten minutes. A client timeout stops browser
 polling but does not cancel the server-side ResearchRun. Switching back to
 Static Demo prevents stale in-flight responses from replacing the static view.
+
+The editable backend endpoint accepts only `http://127.0.0.1:<port>`. The
+console rejects other hosts, HTTPS, missing ports, credentials, paths, query
+strings, and fragments before sending a network request. Health is ready only
+for the exact `{"status":"ok","service":"decision-research-agent"}` identity.
 
 ## Authentication Boundary
 

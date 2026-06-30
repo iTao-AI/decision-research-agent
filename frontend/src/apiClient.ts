@@ -51,10 +51,31 @@ export class ClientRequestError extends Error {
   }
 }
 
-export async function getHealth(baseUrl: string): Promise<HealthResponse> {
-  const value = await requestJson<Partial<HealthResponse>>(baseUrl, "/health");
+export async function getHealth(baseUrl: string, signal?: AbortSignal): Promise<HealthResponse> {
+  const value = await requestJson<Partial<HealthResponse>>(baseUrl, "/health", {
+    method: "GET",
+    signal
+  });
   if (typeof value.status !== "string" || typeof value.service !== "string") {
     throw new ClientRequestError(invalidResponse("Health response did not include status/service."));
+  }
+  if (value.service !== "decision-research-agent") {
+    throw new ClientRequestError({
+      code: "service_identity_mismatch",
+      problem: "The endpoint is not Decision Research Agent.",
+      cause: "The health response returned an unexpected service identity.",
+      fix: "Use the local Decision Research Agent backend endpoint.",
+      retryable: false
+    });
+  }
+  if (value.status !== "ok") {
+    throw new ClientRequestError({
+      code: "backend_not_ready",
+      problem: "Decision Research Agent is not ready.",
+      cause: "The health response status was not ok.",
+      fix: "Recover the local backend before starting a demonstration run.",
+      retryable: true
+    });
   }
   return {
     service: value.service,
@@ -62,16 +83,17 @@ export async function getHealth(baseUrl: string): Promise<HealthResponse> {
   };
 }
 
-export async function startRun(baseUrl: string): Promise<RunCreationResponse> {
+export async function startRun(baseUrl: string, signal?: AbortSignal): Promise<RunCreationResponse> {
   const value = await requestJson<Partial<RunCreationResponse>>(baseUrl, "/api/runs", {
     body: JSON.stringify({
       profile_id: "generic",
-      query: "Generate a short evidence-bound demonstration result for the React demo console.",
+      query: "Generate a short evidence-bound result for the Agent Research Operations Console.",
       scope: {},
       thread_id: `demo-console-${Date.now()}`
     }),
     headers: { "Content-Type": "application/json" },
-    method: "POST"
+    method: "POST",
+    signal
   });
   if (
     typeof value.run_id !== "string" ||
@@ -89,10 +111,15 @@ export async function startRun(baseUrl: string): Promise<RunCreationResponse> {
   };
 }
 
-export async function getRun(baseUrl: string, runId: string): Promise<RunProjection> {
+export async function getRun(
+  baseUrl: string,
+  runId: string,
+  signal?: AbortSignal
+): Promise<RunProjection> {
   const value = await requestJson<Partial<RunProjection>>(
     baseUrl,
-    `/api/runs/${encodeURIComponent(runId)}`
+    `/api/runs/${encodeURIComponent(runId)}`,
+    { method: "GET", signal }
   );
   if (typeof value.run_id !== "string") {
     throw new ClientRequestError(invalidResponse("Run projection did not include run_id."));
@@ -106,10 +133,15 @@ export async function getRun(baseUrl: string, runId: string): Promise<RunProject
   };
 }
 
-export async function getResult(baseUrl: string, runId: string): Promise<RunResultResponse> {
+export async function getResult(
+  baseUrl: string,
+  runId: string,
+  signal?: AbortSignal
+): Promise<RunResultResponse> {
   const value = await requestJson<Partial<RunResultResponse>>(
     baseUrl,
-    `/api/runs/${encodeURIComponent(runId)}/result`
+    `/api/runs/${encodeURIComponent(runId)}/result`,
+    { method: "GET", signal }
   );
   if (typeof value.run_id !== "string") {
     throw new ClientRequestError(invalidResponse("Canonical result response did not include run_id."));
@@ -141,6 +173,9 @@ async function requestJson<T>(baseUrl: string, path: string, init?: RequestInit)
   try {
     response = await fetch(buildUrl(baseUrl, path), init ?? { method: "GET" });
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     throw new ClientRequestError(normalizeClientError(error));
   }
 
@@ -155,8 +190,29 @@ async function requestJson<T>(baseUrl: string, path: string, init?: RequestInit)
 }
 
 function buildUrl(baseUrl: string, path: string) {
-  const trimmedBase = baseUrl.trim() || DEFAULT_BACKEND_BASE_URL;
-  return `${trimmedBase.replace(/\/+$/, "")}${path}`;
+  const trimmedBase = baseUrl.trim();
+  if (!/^http:\/\/127\.0\.0\.1:\d{1,5}\/?$/.test(trimmedBase)) {
+    throw new ClientRequestError(invalidBackendUrl());
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmedBase);
+  } catch {
+    throw new ClientRequestError(invalidBackendUrl());
+  }
+  if (
+    parsed.protocol !== "http:" ||
+    parsed.hostname !== "127.0.0.1" ||
+    parsed.port === "" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    throw new ClientRequestError(invalidBackendUrl());
+  }
+  return `${parsed.origin}${path}`;
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -198,6 +254,21 @@ function invalidResponse(cause: string): ClientError {
   };
 }
 
+function invalidBackendUrl(): ClientError {
+  return {
+    code: "invalid_backend_url",
+    problem: "Backend base URL is outside the local demo boundary.",
+    cause:
+      "Live Backend only accepts http://127.0.0.1:<port> without credentials, path, query, or fragment.",
+    fix: "Enter an explicit loopback HTTP endpoint such as http://127.0.0.1:8000.",
+    retryable: false
+  };
+}
+
 function stringOrUndefined(value: unknown) {
   return typeof value === "string" ? value : undefined;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }

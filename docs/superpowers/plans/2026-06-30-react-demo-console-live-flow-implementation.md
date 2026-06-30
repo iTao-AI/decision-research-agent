@@ -1,8 +1,8 @@
-# React Demo Console Live Flow Implementation Plan
+# Agent Research Operations Console Live Flow Implementation Plan
 
 > **For agentic workers:** Implement inline in this session. Do not use subagents for this repository unless the user explicitly authorizes them. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a bounded Live Demo Mode to the React demo console while preserving Static Demo Mode as the reliable demonstration fallback.
+**Goal:** Add a bounded Live Demo Mode to the Agent Research Operations Console while preserving Static Demo Mode as the reliable demonstration fallback.
 
 **Architecture:** Keep backend calls in a small frontend API client, keep run orchestration in a React hook, and keep `App.tsx` focused on presentation. The frontend consumes the canonical API contract and never becomes business authority.
 
@@ -38,7 +38,7 @@
 - Create: `frontend/src/useLiveRun.ts`
 - Modify: `frontend/src/App.test.tsx`
 
-- [x] Write failing tests for `start -> poll -> result`, poll timeout, and stale response isolation.
+- [x] Write failing tests for `start -> poll -> result` and stale response isolation.
 - [x] Run `cd frontend && npm run test` and verify the tests fail for missing behavior.
 - [x] Implement `useLiveRun` with explicit statuses: `static`, `checking`, `ready`, `starting`, `polling`, `result`, `error`.
 - [x] Use stale request versioning equivalent to React cleanup/ignore semantics for async responses.
@@ -68,7 +68,7 @@
 - Modify: `docs/superpowers/specs/2026-06-30-react-demo-console-live-flow-design.md`
 - Modify: `docs/superpowers/plans/2026-06-30-react-demo-console-live-flow-implementation.md`
 
-- [x] Update README docs to say the React demo console supports Static Demo and Live Backend modes.
+- [x] Update README docs to say the Agent Research Operations Console supports Static Demo and Live Backend modes.
 - [x] Run `cd frontend && npm run test`.
 - [x] Run `cd frontend && npm run lint`.
 - [x] Run `cd frontend && npm run build`.
@@ -90,3 +90,15 @@
 - [x] Preserve `docs/releases/v0.1.0.md` as the historical backend-and-CLI release record.
 - [x] Update documentation contract tests to prevent the retired `React deferred` state from returning to current docs.
 - [x] Remove the obsolete canonical-identity rule that rejected valid `cd frontend` commands, with a regression test that still preserves legacy-name checks.
+
+## Review Follow-Up
+
+- [x] Add RED/GREEN tests for a never-resolving poll, deadline abort,
+  `run_wait_timeout` with `run_id`, and no extra GET after deadline sleep.
+- [x] Add RED/GREEN coverage for `completed_with_fallback -> GET result`.
+- [x] Reject non-loopback or over-scoped base URLs before fetch and require the
+  exact canonical health identity.
+- [x] Clear connection-scoped state on Static Demo and backend URL changes,
+  and abort stale requests.
+- [x] Rename the product to Agent Research Operations Console / 研究运行演示控制台
+  and move live status copy into i18n.

@@ -9,8 +9,9 @@ controlled review decisions, and canonical delivery artifacts.
 
 The v0.1.0 release surface remains backend-first: HTTP API, WebSocket
 monitoring, Python Tool Client, operator scripts, tests, and documentation.
-The current repository also includes a separately built React demo console
-with a deterministic Static Demo and bounded local Live Backend mode.
+The current repository also includes a separately built Agent Research
+Operations Console with a deterministic Static Demo and bounded local Live
+Backend mode.
 
 ## Target Users
 
@@ -46,7 +47,7 @@ with a deterministic Static Demo and bounded local Live Backend mode.
 | Durable HITL feasibility | Single-node SQLite review gate, disabled by default, with 13-gate safety report | Implemented |
 | Evidence verification authority | Append-only human verification decisions and revisioned publications | Implemented |
 | Tool Client integration | Canonical Python client for health, run, result, review, and evidence commands | Implemented |
-| React demo console | Static operational snapshot plus bounded local `health -> run -> result` API consumption | Implemented |
+| Agent Research Operations Console | Static operational snapshot plus bounded local `health -> run -> result` API consumption | Implemented |
 
 ## Success Criteria
 
@@ -68,8 +69,9 @@ with a deterministic Static Demo and bounded local Live Backend mode.
 - Business ledger: application SQLite database through service-owned
   repositories.
 - Deployment target: backend Docker service plus optional MySQL dependency.
-- UI: the separately built React demo console consumes canonical API/result
-  contracts and never becomes business authority.
+- UI: the separately built Agent Research Operations Console can create a
+  ResearchRun and consume canonical API/result contracts, but never becomes
+  business authority.
 
 ## Current Non-Goals
 
@@ -88,4 +90,4 @@ with a deterministic Static Demo and bounded local Live Backend mode.
 |---|---|
 | 2026-05-19 | Initial PRD created |
 | 2026-06-26 | Rewritten for v0.1.0 canonical backend, DeepAgents-native harness, and legacy runtime removal |
-| 2026-06-30 | Added the separately built React demo console and bounded local Live Backend consumer flow |
+| 2026-06-30 | Added the separately built Agent Research Operations Console and bounded local Live Backend consumer flow |

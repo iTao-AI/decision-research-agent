@@ -43,6 +43,7 @@ def test_current_docs_state_framework_authority_contracts() -> None:
         "backend-and-CLI release",
         "Static Demo",
         "Live Backend",
+        "Agent Research Operations Console",
         "Markdown-only delivery",
     ]
 
@@ -65,6 +66,8 @@ def test_current_docs_do_not_advertise_removed_or_legacy_surfaces() -> None:
         "PDF Agent",
         "persistent Agent memory",
         "generic research kill-9 resume",
+        "read-only operator console",
+        "只读运行控制台",
     ]
 
     for phrase in forbidden_phrases:
@@ -111,6 +114,8 @@ def test_demo_console_docs_define_a_safe_copy_pasteable_local_flow() -> None:
         "does not accept or store API credentials",
         "Static Demo",
         "Live Backend",
+        "http://127.0.0.1:<port>",
+        '{"status":"ok","service":"decision-research-agent"}',
     ]
 
     for phrase in required:

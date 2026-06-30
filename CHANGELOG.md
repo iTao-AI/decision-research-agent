@@ -6,9 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Demo console
 
-- Added a React operator console with deterministic Static Demo and a bounded
-  local Live Backend flow for `health -> run -> canonical result`. See the
-  [Demo Console guide](docs/demo-console.md).
+- Added the React-based Agent Research Operations Console with deterministic
+  Static Demo and a bounded local Live Backend flow for
+  `health -> run -> canonical result`. See the [Demo Console guide](docs/demo-console.md).
 - Added structured frontend handling for connection, invalid-response, polling,
   and service errors without exposing credentials, paths, or raw exceptions.
 

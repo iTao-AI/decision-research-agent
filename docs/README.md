@@ -1,7 +1,7 @@
 # Decision Research Agent Documentation
 
 Decision Research Agent is a backend-and-CLI research service with a separately
-built React demo console. LangChain is the Agent Framework, DeepAgents is the
+built Agent Research Operations Console. LangChain is the Agent Framework, DeepAgents is the
 research harness, LangGraph is the durable workflow runtime, LangSmith is
 privacy-first tracing/evaluation, and the application database is business
 authority.

@@ -17,8 +17,9 @@ Current verified slices include:
 - A fixed-sample Talent benchmark whose value gate passed.
 - A default-disabled single-node SQLite durable HITL feasibility path whose
   13 durability and safety gates passed.
-- A React demo console with deterministic Static Demo and bounded local Live
-  Backend modes that consume the canonical run/result contract.
+- An Agent Research Operations Console with deterministic Static Demo and
+  bounded local Live Backend modes that create runs and consume the canonical
+  result contract without owning business authority.
 
 The canonical repository and technical identifier are
 `decision-research-agent`. Runtime configuration, Tool Client usage, Docker
@@ -59,7 +60,7 @@ Then read the smallest applicable set:
 | Durable review or HITL | `docs/operations/durable-hitl-feasibility.md`, gate report, affected review modules/tests |
 | REST, WebSocket, Tool Client | `docs/reference/api-contract.md`, `docs/AGENT_INTEGRATION.md`, contract tests |
 | Data or state contract | `docs/reference/data-models.md`, `docs/reference/state-machines.md`, and affected repository tests |
-| React demo console or API consumer | `DESIGN.md`, `docs/demo-console.md`, affected API contract, frontend tests |
+| Agent Research Operations Console or API consumer | `DESIGN.md`, `docs/demo-console.md`, affected API contract, frontend tests |
 | Public metric or claim | producing command/artifact and its evidence boundary |
 
 Do not load every listed document for an unrelated or local change. If a
@@ -202,8 +203,9 @@ python scripts/durable_hitl_gate_runner.py \
 git diff --check
 ```
 
-The React demo console is built and tested independently from the backend
-runtime. Run its checks when frontend code or frontend documentation changes.
+The Agent Research Operations Console is built and tested independently from
+the backend runtime. Run its checks when frontend code or frontend
+documentation changes.
 Run the durable HITL gate only when that contract is affected and Docker is
 available. If a check cannot run, state the exact reason.
 

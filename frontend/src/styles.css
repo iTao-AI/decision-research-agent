@@ -119,6 +119,7 @@ h3 {
 
 .left-rail,
 .inspector {
+  min-width: 0;
   padding: 18px;
   border-right: 1px solid #d8d2c4;
 }
@@ -155,6 +156,7 @@ h3 {
 .canvas {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   padding: 22px;
 }
 
@@ -388,18 +390,52 @@ h3 {
 }
 
 .flow-map {
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  grid-template-columns: 1fr;
   align-items: center;
+}
+
+.caller-row,
+.execution-path {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+}
+
+.caller-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.execution-path {
+  grid-template-columns: minmax(0, 1.2fr) auto minmax(0, 1.7fr) auto minmax(0, 1.2fr);
+}
+
+.authority-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+}
+
+.authority-row .node {
+  width: min(100%, 220px);
+}
+
+.flow-connector {
+  color: #6b7280;
+  text-align: center;
 }
 
 .caller,
 .node {
+  min-width: 0;
   min-height: 54px;
   padding: 12px;
   border: 1px solid #d8d2c4;
   border-radius: 8px;
   background: #f7f5ef;
   font-weight: 700;
+  font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .node.authority {
@@ -520,7 +556,9 @@ dd {
 pre {
   margin: 0;
   overflow-x: auto;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
+  word-break: break-word;
   font-size: 13px;
   line-height: 1.55;
 }
@@ -549,12 +587,19 @@ pre {
 }
 
 .inspector-panel {
+  min-width: 0;
   padding: 16px;
 }
 
 .inspector-panel h2 {
   margin-bottom: 12px;
   font-size: 15px;
+}
+
+@media (max-width: 1500px) {
+  .command-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -599,7 +644,9 @@ pre {
   .two-column,
   .result-layout,
   .evidence-grid,
-  .flow-map {
+  .flow-map,
+  .caller-row,
+  .execution-path {
     grid-template-columns: 1fr;
   }
 }

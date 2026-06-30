@@ -250,18 +250,25 @@ function CommandCenter({ labels }: { labels: Record<string, string> }) {
   return (
     <div className="command-grid">
       <div className="flow-map">
-        {["OpenClaw", "Codex", "Tool Client", "REST caller"].map((caller) => (
-          <span className="caller" key={caller}>
-            {caller}
-          </span>
-        ))}
-        <span className="arrow">→</span>
-        <span className="node">FastAPI</span>
-        <span className="arrow">→</span>
-        <span className="node">ResearchExecutionService</span>
-        <span className="arrow">→</span>
-        <span className="node">DeepAgentsHarness</span>
-        <span className="node authority">Application DB authority</span>
+        <div className="caller-row">
+          {["OpenClaw", "Codex", "Tool Client", "REST caller"].map((caller) => (
+            <span className="caller" key={caller}>
+              {caller}
+            </span>
+          ))}
+        </div>
+        <span className="flow-connector" aria-hidden="true">↓</span>
+        <div className="execution-path">
+          <span className="node">FastAPI</span>
+          <span className="arrow">→</span>
+          <span className="node">ResearchExecutionService</span>
+          <span className="arrow">→</span>
+          <span className="node">DeepAgentsHarness</span>
+        </div>
+        <div className="authority-row">
+          <span className="flow-connector" aria-hidden="true">↳</span>
+          <span className="node authority">Application DB authority</span>
+        </div>
         <p className="note">
           {labels.authority}: Application DB = business authority; LangSmith = diagnostics only.
         </p>

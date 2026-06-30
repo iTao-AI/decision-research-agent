@@ -1,13 +1,15 @@
 # Getting Started
 
-This tutorial starts the Python 3.11 backend, verifies the service, and uses
-the first-party Tool Client to create and retrieve one canonical research run.
+This tutorial starts the Python 3.11 backend, verifies the service, uses the
+first-party Tool Client to retrieve one canonical research run, and opens the
+React console in deterministic Static Demo mode.
 
 ## Prerequisites
 
 - Python 3.11
 - Git
 - Provider credentials for a real research run
+- Node.js `20.19+`, `22.12+`, or `24+` for the optional demo console
 
 Keep credentials in `.env`. Do not pass API keys on the command line or commit
 the environment file.
@@ -88,6 +90,26 @@ A ready generic run returns the persisted Markdown artifact with its ID, kind,
 media type, content hash, and content. The command does not read a local output
 path or framework checkpoint.
 
+## 7. Open Static Demo
+
+Static Demo does not call the backend and remains available when provider or
+service configuration is unavailable:
+
+```bash
+cd frontend
+npm ci
+npm run dev -- --host 127.0.0.1
+```
+
+Open `http://127.0.0.1:5173`. The console starts in Static Demo mode and shows
+the run lifecycle, evidence, review, verification, canonical result, and
+architecture boundaries without creating a ResearchRun.
+
+To connect the console to the local backend, follow the bounded setup in the
+[Demo Console guide](demo-console.md). Live Backend requires an exact CORS
+origin and a loopback-only unauthenticated backend because the console does not
+accept or store API credentials.
+
 ## Troubleshooting
 
 ### Provider configuration is missing
@@ -122,3 +144,9 @@ Evidence.
 hash-mismatched persisted artifact. Preserve the run identifier and inspect
 bounded service diagnostics. Do not bypass result selection by reading runtime
 files or checkpoint state.
+
+### Live Backend reports a connection or CORS error
+
+Static Demo remains usable. For Live Backend, start both processes on
+`127.0.0.1`, configure the exact browser origin, and follow
+[Demo Console troubleshooting](demo-console.md#troubleshooting).

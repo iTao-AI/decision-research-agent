@@ -22,7 +22,6 @@ FORBIDDEN_TERMS = (
     "tools/shared_context_tools.py",
     "frontend/README.md",
     "current Vue code",
-    "cd frontend",
 )
 
 HISTORICAL_FILES = {

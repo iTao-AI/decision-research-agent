@@ -1,18 +1,20 @@
 # Decision Research Agent Documentation
 
-Decision Research Agent is a backend-and-CLI research service. LangChain is
-the Agent Framework, DeepAgents is the research harness, LangGraph is the
-durable workflow runtime, LangSmith is privacy-first tracing/evaluation, and
-the application database is business authority.
+Decision Research Agent is a backend-and-CLI research service with a separately
+built Agent Research Operations Console. LangChain is the Agent Framework, DeepAgents is the
+research harness, LangGraph is the durable workflow runtime, LangSmith is
+privacy-first tracing/evaluation, and the application database is business
+authority.
 
 ## Tutorial
 
 - [Getting Started](getting-started.md) — create a Python 3.11 environment,
-  start the backend, verify health, and run the Tool Client.
+  start the backend, verify health, run the Tool Client, and open Static Demo.
 
 ## How-to And Operations
 
 - [Agent Integration](AGENT_INTEGRATION.md) — use the first-party Tool Client.
+- [Demo Console](demo-console.md) — run Static Demo or the bounded local Live Backend flow.
 - [Observability](observability.md) — configure privacy-first LangSmith traces.
 - [Controlled Review](operations/controlled-review-workflow.md) — operate the review queue.
 - [Durable HITL Feasibility](operations/durable-hitl-feasibility.md) — enable and verify the bounded workflow.
@@ -30,14 +32,16 @@ the application database is business authority.
 ## Explanation And Decisions
 
 - [Architecture](architecture.md) — runtime layers, data flow, and deployment boundary.
+- [Demo Console Design](../DESIGN.md) — operator-console visual and authority boundaries.
 - [Product Requirements](prd.md) — product intent and current scope.
 - [Framework And Runtime Boundaries](decisions/framework-runtime-boundaries.md) — framework ownership.
 - [Run Identity Boundaries](decisions/run-identity-boundaries.md) — identity scopes.
 - [Evidence Verification Authority](decisions/evidence-verification-authority.md) — immutable Evidence decisions.
 - [Product Naming](decisions/product-naming.md) — canonical identity.
 - [AI-Assisted Engineering](development/ai-assisted-engineering.md) — governed implementation workflow.
-- [Superpowers Lifecycle](superpowers/README.md) and the
-  [current release plan](superpowers/plans/2026-06-27-v0-1-0-release-presentation-cleanup.md)
+- [Superpowers Lifecycle](superpowers/README.md), the
+  [Live Demo design](superpowers/specs/2026-06-30-react-demo-console-live-flow-design.md),
+  and its [implementation plan](superpowers/plans/2026-06-30-react-demo-console-live-flow-implementation.md)
   — active public-neutral project planning.
 
 ## Evidence

@@ -28,10 +28,12 @@ health service identifier use `decision-research-agent`.
 - Provides controlled durable review and evidence verification workflows behind
   explicit feature flags.
 
-The repository ships backend, API, CLI, tests, docs, operational scripts, and a
-React static demo console. The demo console is an operator-facing shell for
-showing the existing API, EvidenceLedger, review, verification, and canonical
-result boundaries; it does not add backend state or become business authority.
+The repository ships backend, API, CLI, tests, docs, operational scripts, and
+the React-based Agent Research Operations Console. The console can create a
+ResearchRun, observe its lifecycle, and retrieve the canonical result while
+showing the existing EvidenceLedger, review, verification, and authority
+boundaries. It keeps a static fallback for reliable demos and does not add
+backend state or become business authority.
 
 ## Architecture
 
@@ -81,6 +83,21 @@ Expected response:
 
 Continue with the complete [Getting Started tutorial](docs/getting-started.md)
 for Tool Client readiness, run creation, result retrieval, and troubleshooting.
+
+## Demo Console
+
+The React console starts in deterministic Static Demo mode:
+
+```bash
+cd frontend
+npm ci
+npm run dev -- --host 127.0.0.1
+```
+
+Open `http://127.0.0.1:5173`. The optional Live Backend mode requires an exact
+CORS origin and a loopback-only backend; follow the
+[Demo Console guide](docs/demo-console.md) before enabling it. The current
+console does not accept or store API credentials.
 
 ## Tool Client
 
@@ -166,6 +183,7 @@ python tools/decision_research_agent_tool.py doctor
 
 - [Documentation Index](docs/README.md)
 - [Demo Console Design](DESIGN.md)
+- [Demo Console Guide](docs/demo-console.md)
 - [Getting Started](docs/getting-started.md)
 - [Contributing](CONTRIBUTING.md)
 - [Agent Integration](docs/AGENT_INTEGRATION.md)
@@ -179,7 +197,9 @@ python tools/decision_research_agent_tool.py doctor
 ## Known Boundaries
 
 - v0.1.0 is a backend-and-CLI release.
-- The React demo console is static in PR1 and does not call the backend.
+- The Agent Research Operations Console defaults to Static Demo mode and can
+  create a ResearchRun against a loopback backend through bounded Live Backend
+  mode.
 - UI delivery must consume the canonical API and result contract without
   reintroducing a parallel runtime.
 - Markdown-only delivery: canonical research results are returned as Markdown

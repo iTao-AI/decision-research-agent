@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 
 import { architectureNodes, demoRun } from "./demoData";
 import { copy, type Language, screenEnglishNames, screenKeys, type ScreenKey } from "./i18n";
+import { type ClientError, type RunResultResponse } from "./apiClient";
+import { type DemoMode, type LiveRunOptions, type LiveRunState, useLiveRun } from "./useLiveRun";
 
 const authorityBadges = [
   "Application DB",
@@ -10,14 +12,19 @@ const authorityBadges = [
   "GET /api/runs/{run_id}/result"
 ];
 
-export default function App() {
+export default function App({ liveOptions }: { liveOptions?: LiveRunOptions }) {
   const [language, setLanguage] = useState<Language>("zh");
   const [activeScreen, setActiveScreen] = useState<ScreenKey>("command");
+  const liveRun = useLiveRun(liveOptions);
   const t = copy[language];
 
   const activeTitle = t.screens[activeScreen];
   const activeStatement = t.statements[activeScreen];
   const screenSummary = useMemo(() => buildScreenSummary(activeScreen), [activeScreen]);
+  const displayRunId = liveRun.state.created?.run_id ?? liveRun.state.result?.run_id ?? demoRun.runId;
+  const displayService = liveRun.state.health?.service ?? demoRun.service;
+  const displayHealth = liveRun.state.health?.status ?? liveRun.state.status;
+  const displayMode = liveRun.state.mode === "static" ? demoRun.mode : "live backend";
 
   return (
     <div className="console-shell">
@@ -66,11 +73,16 @@ export default function App() {
 
         <main className="canvas">
           <section className="status-grid" aria-label="Run state summary">
-            <Metric label={t.labels.service} value={demoRun.service} tone="blue" />
-            <Metric label={t.labels.health} value={demoRun.health} tone="amber" />
-            <Metric label={t.labels.mode} value={demoRun.mode} tone="cyan" />
-            <Metric label={t.labels.run} value={demoRun.runId} tone="green" />
+            <Metric label={t.labels.service} value={displayService} tone="blue" />
+            <Metric label={t.labels.health} value={displayHealth} tone="amber" />
+            <Metric label={t.labels.mode} value={displayMode} tone="cyan" />
+            <Metric label={t.labels.run} value={displayRunId} tone="green" />
           </section>
+
+          <LiveDemoPanel
+            language={language}
+            liveRun={liveRun}
+          />
 
           <section className="primary-panel">
             <div className="panel-heading">
@@ -106,15 +118,119 @@ export default function App() {
           </section>
           <section className="inspector-panel">
             <h2>{t.labels.boundaries}</h2>
-            <p>
-              Static demo shell only. No backend state, DB table, API path, login, RBAC,
-              tenant model, online research runner, or PDF export is added in PR1.
-            </p>
+            <p>{t.boundaryStatement}</p>
           </section>
         </aside>
       </div>
     </div>
   );
+}
+
+function LiveDemoPanel({
+  language,
+  liveRun
+}: {
+  language: Language;
+  liveRun: {
+    checkHealth: () => Promise<void>;
+    runGoldenPath: () => Promise<void>;
+    setBaseUrl: (baseUrl: string) => void;
+    setMode: (mode: DemoMode) => void;
+    state: LiveRunState;
+  };
+}) {
+  const t = copy[language];
+  const { state } = liveRun;
+  const isLive = state.mode === "live";
+  const isBusy = ["checking", "starting", "polling"].includes(state.status);
+  return (
+    <section className="live-panel" aria-label={t.live.status}>
+      <div className="mode-switch" aria-label={t.labels.mode}>
+        <button
+          className={state.mode === "static" ? "active" : ""}
+          type="button"
+          onClick={() => liveRun.setMode("static")}
+        >
+          {t.live.staticMode}
+        </button>
+        <button
+          className={isLive ? "active" : ""}
+          type="button"
+          onClick={() => liveRun.setMode("live")}
+        >
+          {t.live.liveMode}
+        </button>
+      </div>
+
+      <div className="live-controls">
+        <label>
+          <span>{t.live.baseUrl}</span>
+          <input
+            aria-label={t.live.baseUrl}
+            disabled={!isLive || isBusy}
+            value={state.baseUrl}
+            onChange={(event) => liveRun.setBaseUrl(event.target.value)}
+          />
+        </label>
+        <button disabled={!isLive || isBusy} type="button" onClick={liveRun.checkHealth}>
+          {t.live.checkHealth}
+        </button>
+        <button
+          disabled={!isLive || isBusy || state.status === "idle" || state.status === "error"}
+          type="button"
+          onClick={liveRun.runGoldenPath}
+        >
+          {t.live.runResult}
+        </button>
+      </div>
+
+      <div className="live-status-grid">
+        <article>
+          <strong>{state.mode === "static" ? t.live.staticDescription : t.live.liveDescription}</strong>
+          <p>{state.status === "ready" ? t.live.backendAvailable : t.live.statuses[state.status]}</p>
+        </article>
+        {state.created && (
+          <article>
+            <strong>run_id</strong>
+            <p>{state.created.run_id}</p>
+          </article>
+        )}
+        {state.error && <LiveErrorCard error={state.error} fallbackFix={t.live.startBackend} />}
+        {state.result ? (
+          <article className="live-result-card">
+            <strong>{t.live.resultPreview}</strong>
+            <p>{state.result.artifact?.artifact_id ?? "unknown artifact"}</p>
+            <pre>{resultPreview(state.result)}</pre>
+          </article>
+        ) : (
+          <article>
+            <strong>{t.live.resultPreview}</strong>
+            <p>{t.live.noResult}</p>
+          </article>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function LiveErrorCard({ error, fallbackFix }: { error: ClientError; fallbackFix: string }) {
+  const fix = error.code === "connection_failed" ? fallbackFix : error.fix || fallbackFix;
+  return (
+    <article className="live-error-card">
+      <strong>{error.code}</strong>
+      <p>{error.problem}</p>
+      <small>{fix}</small>
+      {error.run_id && <code>{error.run_id}</code>}
+    </article>
+  );
+}
+
+function resultPreview(result: RunResultResponse) {
+  const content = result.artifact?.content;
+  if (typeof content === "string" && content.trim()) {
+    return content;
+  }
+  return JSON.stringify(result, null, 2);
 }
 
 function Metric({ label, value, tone }: { label: string; value: string; tone: string }) {
@@ -288,7 +404,7 @@ function ArchitectureMode({ labels }: { labels: Record<string, string> }) {
 
 function buildScreenSummary(screen: ScreenKey) {
   const summaries: Record<ScreenKey, string> = {
-    command: "operator console",
+    command: "research operations",
     lifecycle: "run-scoped",
     evidence: "append-only",
     review: "human-governed",

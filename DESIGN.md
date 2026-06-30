@@ -1,10 +1,11 @@
-# Decision Research Agent Demo Console Design
+# Agent Research Operations Console Design
 
 ## Purpose
 
-The React Demo Console is an operator console for Decision Research Agent. It
-is built for stable interview demos of run-scoped execution, EvidenceLedger
-authority, human review, evidence verification, and canonical result delivery.
+The Agent Research Operations Console is the React demonstration surface for
+Decision Research Agent. It is built for stable technical demos of run-scoped
+execution, EvidenceLedger authority, human review, evidence verification, and
+canonical result delivery.
 
 It is not a chatbot, public research product, login surface, RBAC surface,
 multi-tenant console, backend state machine, or result authority.
@@ -17,8 +18,10 @@ multi-tenant console, backend state machine, or result authority.
   references.
 - Human-governed: review, verification, publication, and delivery are
   service-owned states.
-- UI-observed: the UI presents static demo fixtures in PR1 and later consumes
-  public API contracts. It does not create business truth.
+- Operations-capable, not authoritative: the UI presents static demo fixtures
+  by default and can create a ResearchRun, observe its lifecycle, and retrieve
+  the canonical result in Live Backend mode. It does not create business truth
+  or own service state.
 
 ## Information Architecture
 
@@ -36,10 +39,10 @@ layouts, and message input boxes are not part of the primary interaction model.
 
 ## Layout Rules
 
-- Desktop-first, because the primary use case is a live interview demo.
+- Desktop-first, because the primary use case is a live technical demo.
 - Three-column shell: left navigation, center run canvas, right inspector.
 - The right inspector carries persistent authority notes, CLI golden path, and
-  explicit PR1 boundaries.
+  explicit UI boundaries.
 - Mobile only needs to remain readable; it is not the primary experience.
 - Cards are used only for repeated state records, metrics, and inspection
   panels. Page sections remain unframed inside the shell.
@@ -83,10 +86,11 @@ Colors represent state, not decoration.
 
 - `RunStatusPill`: stable state code and semantic color.
 - `RunSpine`: lifecycle sequence from creation to delivery.
-- `EvidenceRefChip`: clickable evidence reference in later PRs; static in PR1.
+- `EvidenceRefChip`: evidence reference treatment; clickable drill-down can be
+  added only if it consumes an existing API contract.
 - `AuthorityBadge`: distinguishes Application DB, LangGraph checkpoint,
   LangSmith diagnostics, and canonical result endpoint authority.
-- `BoundaryCallout`: states what PR1 does not do.
+- `BoundaryCallout`: states what the demo console does not do.
 - `CommandSnippet`: shows the CLI golden path:
 
 ```bash
@@ -109,9 +113,14 @@ python tools/decision_research_agent_tool.py run \
 
 ## Data Rules
 
-- PR1 uses local static demo data only.
-- No calls to `/health`, `/api/runs/{run_id}`, `/result`, telemetry, token
-  usage, or WebSocket endpoints are implemented in PR1.
+- Static Demo mode uses local demo data only.
+- Live Backend mode may call `/health`, `POST /api/runs`,
+  `/api/runs/{run_id}`, and `/api/runs/{run_id}/result`.
+- Live Backend is local-only in the current slice. It uses one explicit CORS
+  origin and a loopback-bound backend with `API_SECRET` unset because the
+  console does not accept or store API credentials.
+- Telemetry, token usage, and WebSocket endpoints are not part of the current
+  UI flow.
 - `GET /api/runs/{run_id}/result` remains the canonical result contract.
 - UI fixtures must not imply that review approval verifies Evidence.
 - `cited` and `verified` remain separate concepts.

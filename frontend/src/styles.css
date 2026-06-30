@@ -164,6 +164,7 @@ h3 {
 }
 
 .metric,
+.live-panel,
 .primary-panel,
 .inspector-panel,
 .evidence-card,
@@ -205,6 +206,120 @@ h3 {
 
 .metric.green {
   border-top: 4px solid #15803d;
+}
+
+.live-panel {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+.mode-switch,
+.live-controls,
+.live-status-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.mode-switch {
+  grid-template-columns: repeat(2, minmax(0, 150px));
+}
+
+.mode-switch button,
+.live-controls button {
+  min-height: 38px;
+  border: 1px solid #d8d2c4;
+  border-radius: 8px;
+  background: #f7f5ef;
+  color: #15171a;
+  cursor: pointer;
+}
+
+.mode-switch button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.live-controls {
+  grid-template-columns: minmax(280px, 1fr) 140px 180px;
+  align-items: end;
+}
+
+.live-controls label {
+  display: grid;
+  gap: 6px;
+}
+
+.live-controls label span {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.live-controls input {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid #d8d2c4;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fffdf8;
+  color: #15171a;
+  font: inherit;
+}
+
+.live-controls button:disabled,
+.live-controls input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.live-status-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.live-status-grid article {
+  min-height: 86px;
+  padding: 12px;
+  border: 1px solid #d8d2c4;
+  border-radius: 8px;
+  background: #f7f5ef;
+}
+
+.live-status-grid strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.live-status-grid p,
+.live-error-card small {
+  margin: 0;
+  color: #4b5563;
+  overflow-wrap: anywhere;
+}
+
+.live-error-card {
+  border-color: #b91c1c !important;
+}
+
+.live-error-card strong {
+  color: #b91c1c;
+}
+
+.live-error-card code {
+  display: block;
+  margin-top: 8px;
+}
+
+.live-result-card {
+  grid-column: 1 / -1;
+}
+
+.live-result-card pre {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow: auto;
 }
 
 .primary-panel {
@@ -431,6 +546,7 @@ pre {
   }
 
   .status-grid,
+  .live-status-grid,
   .two-column,
   .result-layout,
   .evidence-grid {
@@ -454,6 +570,8 @@ pre {
   }
 
   .status-grid,
+  .live-controls,
+  .live-status-grid,
   .command-grid,
   .two-column,
   .result-layout,

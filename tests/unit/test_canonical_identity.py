@@ -38,6 +38,17 @@ def test_canonical_identity_check_still_scans_active_public_files(tmp_path):
     ]
 
 
+def test_canonical_identity_check_allows_current_react_frontend_commands(tmp_path):
+    from scripts.check_canonical_identity import find_forbidden_terms
+
+    (tmp_path / "README.md").write_text(
+        "cd frontend\nnpm ci\nnpm run build\n",
+        encoding="utf-8",
+    )
+
+    assert find_forbidden_terms(tmp_path) == []
+
+
 def test_canonical_identity_check_scans_public_documentation_history(tmp_path):
     from scripts.check_canonical_identity import find_forbidden_terms
 

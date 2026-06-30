@@ -16,7 +16,10 @@ readability milestone. They require separate evidence, design, and approval.
 - Evaluate JD recommendations, interview verification questions, and candidate
   evaluation only with a separately approved evidence and review policy.
 - [x] Controlled single-node review API and CLI workflow.
-- [ ] React frontend migration and review UI.
+- [x] Agent Research Operations Console with deterministic Static Demo and
+  bounded local Live Backend run/result flow.
+- [ ] Add live controlled-review and evidence-verification controls only after
+  demo usage shows that the existing CLI workflows are insufficient.
 - [ ] Multi-user identity/RBAC.
 - [ ] Shared database and multi-instance worker coordination.
 - Keep durable HITL disabled by default. Enable controlled review only inside the documented

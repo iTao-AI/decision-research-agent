@@ -11,6 +11,8 @@ Canonical call path: ResearchExecutionService -> AgentHarness -> DeepAgentsHarne
 ```mermaid
 flowchart TD
     Client["Tool Client / REST caller"] --> API["FastAPI API"]
+    Operator["Operator"] --> Console["Agent Research Operations Console"]
+    Console --> API
     API --> Service["ResearchExecutionService"]
     Service --> Harness["DeepAgents harness adapter"]
     Harness --> Framework["LangChain agent framework"]
@@ -71,11 +73,16 @@ bundle, and publication contracts.
 
 ## Deployment Boundary
 
-The repository currently ships a backend-and-CLI release plus a React static
-demo console for operator-facing explanation. The demo console does not add
-backend state or call live APIs in PR1. Future live UI work should consume the
-same canonical API and WebSocket contracts rather than reintroducing a parallel
+The repository currently ships a backend-and-CLI release plus an Agent Research
+Operations Console for operator-facing explanation. The console keeps a static
+fallback and adds a bounded Live Backend mode that consumes the same canonical
+API/result contracts without adding backend state or reintroducing a parallel
 runtime.
+
+The browser client is not an authentication or deployment boundary. Its current
+Live Backend mode is limited to a loopback-only backend with one explicitly
+allowed CORS origin; authenticated and public deployments remain outside this
+UI slice.
 
 Delivery is Markdown-only delivery in v0.1.0. The result endpoint returns
 canonical Markdown artifacts and does not generate PDF files.

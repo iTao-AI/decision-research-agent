@@ -11,6 +11,7 @@ CURRENT_DOCS = [
     PROJECT_ROOT / "README_CN.md",
     PROJECT_ROOT / "AGENTS.md",
     PROJECT_ROOT / "docs" / "README.md",
+    PROJECT_ROOT / "docs" / "demo-console.md",
     PROJECT_ROOT / "docs" / "prd.md",
     PROJECT_ROOT / "docs" / "observability.md",
     PROJECT_ROOT / "docs" / "AGENT_INTEGRATION.md",
@@ -40,7 +41,9 @@ def test_current_docs_state_framework_authority_contracts() -> None:
         "Application DB = business authority",
         "ResearchExecutionService -> AgentHarness -> DeepAgentsHarness",
         "backend-and-CLI release",
-        "React deferred",
+        "Static Demo",
+        "Live Backend",
+        "Agent Research Operations Console",
         "Markdown-only delivery",
     ]
 
@@ -63,6 +66,8 @@ def test_current_docs_do_not_advertise_removed_or_legacy_surfaces() -> None:
         "PDF Agent",
         "persistent Agent memory",
         "generic research kill-9 resume",
+        "read-only operator console",
+        "只读运行控制台",
     ]
 
     for phrase in forbidden_phrases:
@@ -93,7 +98,28 @@ def test_docs_index_links_curated_project_planning_workspace() -> None:
     docs_index = (PROJECT_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
 
     assert "superpowers/README.md" in docs_index
-    assert "superpowers/plans/2026-06-27-v0-1-0-release-presentation-cleanup.md" in docs_index
+    assert "superpowers/specs/2026-06-30-react-demo-console-live-flow-design.md" in docs_index
+    assert "superpowers/plans/2026-06-30-react-demo-console-live-flow-implementation.md" in docs_index
+
+
+def test_demo_console_docs_define_a_safe_copy_pasteable_local_flow() -> None:
+    guide = (PROJECT_ROOT / "docs" / "demo-console.md").read_text(encoding="utf-8")
+
+    required = [
+        "npm ci",
+        "npm run dev -- --host 127.0.0.1",
+        "DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN=http://127.0.0.1:5173",
+        "API_SECRET=",
+        "python -m uvicorn api.server:app --host 127.0.0.1 --port 8000",
+        "does not accept or store API credentials",
+        "Static Demo",
+        "Live Backend",
+        "http://127.0.0.1:<port>",
+        '{"status":"ok","service":"decision-research-agent"}',
+    ]
+
+    for phrase in required:
+        assert phrase in guide
 
 
 def test_readme_first_run_flow_is_canonical_and_copy_pasteable() -> None:

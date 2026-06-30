@@ -49,6 +49,19 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.queryByText(/read-only operator console/i)).not.toBeInTheDocument();
   });
 
+  it("keeps the document language aligned with the language toggle", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(document.documentElement).toHaveAttribute("lang", "zh-CN");
+
+    await user.click(screen.getByRole("button", { name: "English" }));
+    expect(document.documentElement).toHaveAttribute("lang", "en");
+
+    await user.click(screen.getByRole("button", { name: "中文" }));
+    expect(document.documentElement).toHaveAttribute("lang", "zh-CN");
+  });
+
   it("states that the UI starts runs without owning authority", async () => {
     const user = userEvent.setup();
     render(<App />);

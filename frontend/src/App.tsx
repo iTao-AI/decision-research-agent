@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { architectureNodes, demoRun } from "./demoData";
 import { copy, type Language, screenEnglishNames, screenKeys, type ScreenKey } from "./i18n";
@@ -25,6 +25,10 @@ export default function App({ liveOptions }: { liveOptions?: LiveRunOptions }) {
   const displayService = liveRun.state.health?.service ?? demoRun.service;
   const displayHealth = liveRun.state.health?.status ?? liveRun.state.status;
   const displayMode = liveRun.state.mode === "static" ? demoRun.mode : "live backend";
+
+  useEffect(() => {
+    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+  }, [language]);
 
   return (
     <div className="console-shell">

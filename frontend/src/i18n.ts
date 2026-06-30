@@ -29,6 +29,8 @@ export const copy = {
     english: "English",
     subtitle:
       "研究运行演示控制台：可触发 ResearchRun、观察生命周期并获取 canonical result，但不拥有业务 authority。",
+    boundaryStatement:
+      "Static Demo 和有界 Live Backend consumer 仅用于演示研究运行链路。Demo console 不新增 backend state、DB table、API path、login、RBAC、tenant model、public online runner 或 PDF export。",
     screens: {
       command: "研究运行演示控制台",
       lifecycle: "运行生命周期",
@@ -102,6 +104,8 @@ export const copy = {
     english: "English",
     subtitle:
       "Agent Research Operations Console: starts ResearchRuns, observes lifecycle, and retrieves canonical results without owning business authority.",
+    boundaryStatement:
+      "Static fallback plus bounded Live Backend consumer. No backend state, DB table, API path, login, RBAC, tenant model, public online runner, or PDF export is added by the demo console.",
     screens: {
       command: "Agent Research Operations Console",
       lifecycle: "Run Lifecycle",
@@ -164,7 +168,7 @@ export const copy = {
       result:
         "The UI does not define the answer; the canonical result is selected by GET /api/runs/{run_id}/result.",
       architecture:
-        "Framework owns execution context. Service owns business facts. UI only observes public contracts."
+        "Framework owns execution context. Service owns business facts. UI starts runs and consumes public contracts without owning authority."
     }
   }
 } as const;

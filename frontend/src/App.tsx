@@ -118,11 +118,7 @@ export default function App({ liveOptions }: { liveOptions?: LiveRunOptions }) {
           </section>
           <section className="inspector-panel">
             <h2>{t.labels.boundaries}</h2>
-            <p>
-              Static fallback plus bounded Live Backend consumer. No backend state, DB table,
-              API path, login, RBAC, tenant model, public online runner, or PDF export is
-              added by the demo console.
-            </p>
+            <p>{t.boundaryStatement}</p>
           </section>
         </aside>
       </div>

@@ -37,13 +37,28 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.getByRole("heading", { name: "研究运行演示控制台" })).toBeInTheDocument();
     expect(screen.getByText("Agent-first / human-governed / Evidence-governed")).toBeInTheDocument();
     expect(screen.getByText("静态快照已启用")).toBeInTheDocument();
+    expect(screen.getByText(/Static Demo 和有界 Live Backend consumer/)).toBeInTheDocument();
     expect(screen.queryByText(/只读控制台/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Static fallback plus bounded Live Backend consumer/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "English" }));
 
     expect(screen.getByRole("heading", { name: "Agent Research Operations Console" })).toBeInTheDocument();
     expect(screen.getByText("Agent-first / human-governed / Evidence-governed")).toBeInTheDocument();
+    expect(screen.getByText(/Static fallback plus bounded Live Backend consumer/)).toBeInTheDocument();
     expect(screen.queryByText(/read-only operator console/i)).not.toBeInTheDocument();
+  });
+
+  it("states that the UI starts runs without owning authority", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "English" }));
+    await user.click(screen.getByRole("button", { name: "Architecture Explain Mode" }));
+
+    expect(screen.getByText(/UI starts runs and consumes public contracts without owning authority/)).toBeInTheDocument();
+    expect(screen.queryByText(/only observes public contracts/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/read-only/i)).not.toBeInTheDocument();
   });
 
   it("does not expose chat input or message bubble as the primary interaction", () => {

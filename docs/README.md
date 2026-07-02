@@ -6,6 +6,10 @@ research harness, LangGraph is the durable workflow runtime, LangSmith is
 privacy-first tracing/evaluation, and the application database is business
 authority.
 
+Use the repository README for a 30-second overview, the Architecture Deep Dive
+for 3-minute technical depth, and the Demo Console or demo videos for fast
+external evaluation of the public contract surface.
+
 ## Tutorial
 
 - [Getting Started](getting-started.md) — create a Python 3.11 environment,
@@ -14,7 +18,7 @@ authority.
 ## How-to And Operations
 
 - [Agent Integration](AGENT_INTEGRATION.md) — use the first-party Tool Client.
-- [Demo Console](demo-console.md) — run Static Demo or the bounded local Live Backend flow.
+- [Demo Console](demo-console.md) — run Static Demo, use bounded local Live Backend, and understand the video demo boundary.
 - [Observability](observability.md) — configure privacy-first LangSmith traces.
 - [Controlled Review](operations/controlled-review-workflow.md) — operate the review queue.
 - [Durable HITL Feasibility](operations/durable-hitl-feasibility.md) — enable and verify the bounded workflow.
@@ -31,7 +35,7 @@ authority.
 
 ## Explanation And Decisions
 
-- [Architecture](architecture.md) — runtime layers, data flow, and deployment boundary.
+- [Architecture Deep Dive](architecture.md) — runtime layers, authority boundaries, verification, and deployment separation.
 - [Demo Console Design](../DESIGN.md) — operator-console visual and authority boundaries.
 - [Product Requirements](prd.md) — product intent and current scope.
 - [Framework And Runtime Boundaries](decisions/framework-runtime-boundaries.md) — framework ownership.

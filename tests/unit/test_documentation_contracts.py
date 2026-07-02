@@ -158,6 +158,39 @@ def test_readme_first_run_flow_is_canonical_and_copy_pasteable() -> None:
     assert positions == sorted(positions)
 
 
+def test_public_readmes_surface_engineering_depth_and_golden_path() -> None:
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    readme_cn = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")
+
+    assert "## Engineering Depth" in readme
+    assert "[Architecture Deep Dive](docs/architecture.md)" in readme
+    assert "--wait \\\n  --result" in readme_cn
+    assert "`--wait --result`" in readme_cn
+
+
+def test_architecture_deep_dive_preserves_authority_boundaries() -> None:
+    architecture = (PROJECT_ROOT / "docs" / "architecture.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Application DB = business authority" in architecture
+    assert "Application DB" in architecture
+    assert "ResearchRun" in architecture
+    assert "EvidenceLedger" in architecture
+    assert "LangSmith" in architecture
+    assert "diagnostics only" in architecture or "diagnostic-only" in architecture
+    assert "not business ledgers" in architecture
+
+
+def test_demo_console_docs_state_deterministic_video_boundary() -> None:
+    guide = (PROJECT_ROOT / "docs" / "demo-console.md").read_text(encoding="utf-8")
+
+    assert "Demo Video Boundary" in guide
+    assert "Portfolio Demo Boundary" not in guide
+    assert "deterministic loopback contract demos" in guide
+    assert "not live provider research recordings" in guide
+
+
 def test_operations_docs_cover_release_recovery_boundaries() -> None:
     docs = _combined_docs()
 

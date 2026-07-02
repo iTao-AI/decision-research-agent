@@ -35,23 +35,92 @@ showing the existing EvidenceLedger, review, verification, and authority
 boundaries. It keeps a static fallback for reliable demos and does not add
 backend state or become business authority.
 
+## Engineering Depth
+
+- The service separates interface clients from application-owned ResearchRun,
+  EvidenceLedger, review, verification, publication, and result authority.
+- `run_id` scopes execution, persistence, telemetry, artifacts, and final
+  delivery while `thread_id` remains caller conversation compatibility.
+- Terminal run states use fenced finalization so completion, timeout,
+  cancellation, and stale writers cannot overwrite frozen Evidence.
+- Web, CLI, REST, and demo-console flows consume the same canonical API and
+  result contracts instead of maintaining parallel product logic.
+- LangGraph and LangSmith remain framework/runtime and diagnostic layers; the
+  application database is the business ledger.
+- Release evidence is bounded by explicit verification scripts, docs contracts,
+  benchmark reports, and feature-flag limits.
+
 ## Architecture
 
 ```mermaid
-flowchart TD
-    User["User or automation"] --> Tool["Tool Client / REST API"]
-    Tool --> API["FastAPI backend"]
-    API --> Harness["DeepAgents harness"]
-    Harness --> LC["LangChain agent framework"]
-    LC --> LG["LangGraph runtime"]
-    Harness --> Tools["Search / database / fixture tools"]
-    API --> DB[("Application SQLite DB")]
-    API --> Artifacts["Canonical artifacts"]
-    API --> LS["LangSmith diagnostics"]
+flowchart TB
+    subgraph Interfaces["Interfaces"]
+        CLI["Tool Client CLI"]
+        REST["REST / WebSocket API"]
+        Console["Agent Research Operations Console"]
+    end
+
+    subgraph Services["Application Services"]
+        API["FastAPI boundary"]
+        Execution["ResearchExecutionService"]
+        Result["RunResultService"]
+    end
+
+    subgraph Domain["Domain Authority"]
+        Runs[("ResearchRun")]
+        Evidence[("EvidenceLedger")]
+        Brief["DecisionBrief / canonical result"]
+    end
+
+    subgraph Runtime["Framework Runtime"]
+        DeepAgents["DeepAgents harness"]
+        LangChain["LangChain agent framework"]
+        LangGraph["LangGraph workflow runtime"]
+        Tools["Approved tools and profile adapters"]
+    end
+
+    subgraph Verification["Verification"]
+        Tests["Contract / unit / integration tests"]
+        Gates["Benchmarks and release proof scripts"]
+        LangSmith["LangSmith diagnostics only"]
+    end
+
+    subgraph Deployment["Deployment Boundary"]
+        Local["Loopback local service"]
+        Flags["Default-disabled controlled features"]
+        PublicDemo["Deterministic demo videos"]
+    end
+
+    CLI --> API
+    REST --> API
+    Console --> API
+    API --> Execution
+    Execution --> Result
+    Execution --> Runs
+    Execution --> Evidence
+    Result --> Brief
+    Execution --> DeepAgents
+    DeepAgents --> LangChain
+    LangChain --> LangGraph
+    DeepAgents --> Tools
+    Tests --> API
+    Gates --> Domain
+    LangSmith -. diagnostic correlation .-> Execution
+    Local --> API
+    Flags --> Execution
+    PublicDemo -. contract demo .-> Console
 ```
 
 Service-owned state remains the authority for business decisions. LangSmith is
 used for diagnostics, not as the ResearchRun or EvidenceLedger ledger.
+
+- [Architecture Deep Dive](docs/architecture.md)
+- [Demo Console](docs/demo-console.md)
+- [Demo videos](https://itao-ai.github.io/my-website/#project/decision-research-agent)
+
+The demo videos are deterministic loopback contract demos. They are not live
+provider research recordings, not a public production service, and not evidence
+of an online multi-user deployment.
 
 ## Quick Start
 
@@ -182,8 +251,10 @@ python tools/decision_research_agent_tool.py doctor
 ## Documentation
 
 - [Documentation Index](docs/README.md)
+- [Architecture Deep Dive](docs/architecture.md)
 - [Demo Console Design](DESIGN.md)
 - [Demo Console Guide](docs/demo-console.md)
+- [Demo videos](https://itao-ai.github.io/my-website/#project/decision-research-agent)
 - [Getting Started](docs/getting-started.md)
 - [Contributing](CONTRIBUTING.md)
 - [Agent Integration](docs/AGENT_INTEGRATION.md)

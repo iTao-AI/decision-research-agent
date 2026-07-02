@@ -1,26 +1,86 @@
-# Architecture: Decision Research Agent
+# Architecture Deep Dive: Decision Research Agent
 
-Decision Research Agent is a backend research service with a canonical
-run-scoped API, DeepAgents-native execution harness, service-owned persistence,
-and deterministic delivery contracts.
+Decision Research Agent is a backend research service with canonical
+run-scoped APIs, DeepAgents-native execution, service-owned persistence, and
+bounded result delivery. This document gives the 3-minute technical view. For
+full schemas and state transitions, use the linked reference docs instead of
+treating this page as a duplicate data-model specification.
 
-## Runtime Layers
+Terminology contract: LangChain = Agent Framework; DeepAgents = research
+harness; LangGraph = durable workflow runtime; LangSmith = privacy-first
+tracing/evaluation; Application DB = business authority.
 
 Canonical call path: ResearchExecutionService -> AgentHarness -> DeepAgentsHarness.
 
+## Layered Architecture
+
 ```mermaid
-flowchart TD
-    Client["Tool Client / REST caller"] --> API["FastAPI API"]
-    Operator["Operator"] --> Console["Agent Research Operations Console"]
-    Console --> API
-    API --> Service["ResearchExecutionService"]
-    Service --> Harness["DeepAgents harness adapter"]
-    Harness --> Framework["LangChain agent framework"]
-    Framework --> Runtime["LangGraph runtime"]
-    Harness --> Tools["Search / database / fixture tools"]
-    Service --> Ledger[("Application DB")]
-    Service --> Artifacts["Run artifacts"]
-    Runtime --> Trace["LangSmith diagnostics"]
+flowchart TB
+    subgraph Interfaces["Interfaces"]
+        Web["Agent Research Operations Console"]
+        CLI["Tool Client CLI"]
+        Rest["REST / WebSocket API"]
+        Automation["First-party automation"]
+    end
+
+    subgraph Services["Application Services"]
+        ApiBoundary["FastAPI boundary"]
+        Execution["ResearchExecutionService"]
+        Result["RunResultService"]
+        Review["Review / verification services"]
+    end
+
+    subgraph Domain["Domain Authority"]
+        Runs[("ResearchRun")]
+        Evidence[("EvidenceLedger")]
+        Artifacts[("Artifacts and publications")]
+        Brief["DecisionBrief / canonical result"]
+    end
+
+    subgraph Runtime["Framework Runtime"]
+        Harness["DeepAgents harness adapter"]
+        LC["LangChain agent framework"]
+        LG["LangGraph workflow runtime"]
+        Tools["Approved tools, profile adapters, skills"]
+    end
+
+    subgraph Verification["Verification"]
+        ContractTests["API / docs / data contract tests"]
+        Benchmarks["Benchmark and proof reports"]
+        ReleaseAudits["Presentation and identity audits"]
+        LS["LangSmith diagnostics only"]
+    end
+
+    subgraph Deployment["Deployment Boundary"]
+        Loopback["Loopback local backend"]
+        CORS["Single explicit CORS origin"]
+        Flags["Default-disabled controlled features"]
+        Videos["Deterministic loopback demo videos"]
+    end
+
+    Web --> ApiBoundary
+    CLI --> ApiBoundary
+    Rest --> ApiBoundary
+    Automation --> ApiBoundary
+    ApiBoundary --> Execution
+    ApiBoundary --> Result
+    Execution --> Review
+    Execution --> Runs
+    Execution --> Evidence
+    Review --> Artifacts
+    Result --> Brief
+    Harness --> LC
+    LC --> LG
+    Harness --> Tools
+    Execution --> Harness
+    ContractTests --> ApiBoundary
+    Benchmarks --> Evidence
+    ReleaseAudits --> Interfaces
+    LS -. diagnostic correlation .-> Execution
+    Loopback --> ApiBoundary
+    CORS --> Web
+    Flags --> Review
+    Videos -. contract demo only .-> Web
 ```
 
 ## Ownership Boundaries
@@ -31,66 +91,106 @@ This document summarizes the current implementation.
 
 | Layer | Owns |
 |---|---|
-| DeepAgents harness | Agent execution, tool filtering, middleware, skills loading, runtime context injection |
-| LangChain | Agent framework, model/tool binding, structured output integration |
-| LangGraph | Workflow runtime, recursion limits, checkpoint-compatible execution |
-| Service layer | ResearchRun, EvidenceLedger, review state, verification decisions, publication state, canonical result delivery |
-| LangSmith | Trace and diagnostics only |
+| Interfaces | Web, CLI, REST, WebSocket, and automation access to canonical contracts |
+| Application services | ResearchRun lifecycle, fenced finalization, result projection, review and verification workflows |
+| Domain authority | ResearchRun, EvidenceLedger, artifacts, publications, DecisionBrief, and canonical result state |
+| Framework runtime | DeepAgents execution, LangChain model/tool binding, LangGraph workflow execution |
+| Verification | Tests, release proof scripts, bounded benchmark evidence, presentation and identity audits |
+| Deployment boundary | Loopback local service, exact CORS origin, disabled-by-default controlled features, public demo limits |
 
-Terminology contract: LangChain = Agent Framework; DeepAgents = research
-harness; LangGraph = durable workflow runtime; LangSmith = privacy-first
-tracing/evaluation; Application DB = business authority.
+LangSmith and LangGraph checkpoints are not business ledgers. LangSmith is
+diagnostics only. Service-owned tables remain the source of truth for
+ResearchRun, EvidenceLedger, review decisions, verification snapshots,
+publication state, and delivery.
 
-LangSmith and LangGraph checkpoints are not business ledgers. Service-owned
-tables remain the source of truth for delivery, review, evidence verification,
-and publication decisions.
+## Interface Consistency
 
-## Profile Execution
+Web, CLI, REST, WebSocket, and first-party automation all consume canonical
+service contracts. The Agent Research Operations Console can create a
+ResearchRun, observe lifecycle state, and retrieve
+`GET /api/runs/{run_id}/result`, but it does not own business authority or
+define a separate runtime.
 
-Generic research uses the DeepAgentsHarness path with framework-owned virtual
-workspace behavior, read-only Skills, compiled researcher delegation, middleware
-budgets, tool filtering, and runtime context injection. The service observes
-the execution and persists only validated outcome, evidence, telemetry, and
-artifact state.
+The CLI golden path `run --wait --result` and the demo console Live Backend
+mode resolve the same canonical result contract. Static Demo mode is a
+deterministic bundled snapshot for explanation, not a replacement for the API.
 
-Talent Hiring Signal uses a bounded direct LangChain structured-output path
-inside the profile compiler. It intentionally does not load generic Skills,
-arbitrary filesystem tools, upload tools, or broad workspace access. Talent
-readiness is decided by service-owned schema, evidence-reference, review
-bundle, and publication contracts.
+Reference contracts:
 
-## Data Flow
+- [API Contract](reference/api-contract.md)
+- [Data Models](reference/data-models.md)
+- [State Machines](reference/state-machines.md)
+- [Tool Registry](reference/tool-registry.md)
 
-1. Caller starts a run with `POST /api/runs`.
-2. API creates `run_id` and initial run/segment records.
-3. `ResearchExecutionService` executes the profile through the DeepAgents
-   harness adapter.
-4. Tools and agent output are captured into evidence and run outcome snapshots.
-5. The service finalizes the run through a fenced terminal transaction.
-6. Generic runs persist a canonical report artifact; Talent runs persist
-   structured packets, review bundles, publications, and decision briefs.
-7. Callers retrieve bounded delivery through `GET /api/runs/{run_id}/result`.
+## ResearchRun Lifecycle And Fenced Finalization
 
-## Deployment Boundary
+`run_id` owns one isolated execution. `thread_id` groups caller conversation
+for compatibility and correlation; it is not the execution ledger. Run-scoped
+workspace, runtime context, token accounting, telemetry, monitor routing, and
+search cache must not leak across concurrent runs.
 
-The repository currently ships a backend-and-CLI release plus an Agent Research
-Operations Console for operator-facing explanation. The console keeps a static
-fallback and adds a bounded Live Backend mode that consumes the same canonical
-API/result contracts without adding backend state or reintroducing a parallel
-runtime.
+The service finalizes terminal states through fenced transactions. Completion,
+timeout, cancellation, and stale writer paths must preserve frozen Evidence
+and cannot silently overwrite terminal run state. Generic runs persist a
+canonical Markdown report artifact. Talent runs may also persist structured
+packets, review bundles, publications, and DecisionBrief artifacts under the
+same run-owned authority.
 
-The browser client is not an authentication or deployment boundary. Its current
-Live Backend mode is limited to a loopback-only backend with one explicitly
-allowed CORS origin; authenticated and public deployments remain outside this
-UI slice.
+The state-machine reference remains the contract source for transition detail:
+[State Machines](reference/state-machines.md).
 
-Delivery is Markdown-only delivery in v0.1.0. The result endpoint returns
-canonical Markdown artifacts and does not generate PDF files.
+## EvidenceLedger, DecisionBrief, And Canonical Result Authority
 
-Controlled durable review and evidence verification are supported only within
-the documented single-node SQLite boundary unless a later architecture decision
-expands the deployment model.
+Evidence is application-owned. Findings and claims must resolve to run-scoped
+Evidence references where the profile requires them, and missing or invented
+references fail closed. Review approval permits delivery, but approval does
+not verify Evidence. Verification decisions are explicit persisted snapshots.
 
-The main generic research path does not resume an interrupted tool call after
-process death. Durable recovery is currently scoped to the controlled review
-gate and its checkpoint database, not arbitrary research execution.
+`GET /api/runs/{run_id}/result` is the delivery projection. For generic runs it
+returns the canonical Markdown report when available. For Talent runs it
+resolves the current publication artifact when publication is enabled, or the
+canonical `decision-brief.md` artifact when that is the active contract.
+
+Detailed fields and publication semantics live in
+[Data Models](reference/data-models.md) and
+[Evidence Verification Authority](decisions/evidence-verification-authority.md).
+
+## Verification And Release Proof Boundaries
+
+Verification is intentionally bounded:
+
+- Unit, contract, integration, and documentation tests check repository
+  behavior and public presentation.
+- Benchmark and proof artifacts state their own scope and limitations.
+- `scripts/final_presentation_audit.py` checks public-neutral presentation and
+  tracked Markdown links.
+- `scripts/check_canonical_identity.py` checks canonical repository identity.
+- Release notes describe required gates without claiming a tag, GitHub
+  Release, deployment, or Docker smoke that has not been run.
+
+Evidence artifacts are not universal product claims. For example, the durable
+HITL gate proves only the documented single-node SQLite feasibility boundary,
+and real-source proof covers a small declared workflow sample.
+
+## Credential, CORS, Public Demo, And Local-Prod Separation
+
+The current repository release is backend, API, CLI, tests, docs, scripts, and
+the separately built Agent Research Operations Console. The console defaults
+to Static Demo and can use bounded Live Backend mode only against a loopback
+backend.
+
+The browser client is not an authentication or deployment boundary. Live
+Backend mode accepts only a loopback base URL, requires one exact CORS origin,
+and does not accept or store API credentials. Authenticated environments should
+use the first-party Tool Client.
+
+Public demo videos are deterministic loopback contract demos. They are not
+live provider research recordings, not a public production service, and not
+evidence of an online multi-user deployment.
+
+Controlled durable review and evidence verification stay disabled by default
+and remain limited to the documented single-node SQLite boundary unless a
+later architecture decision expands the deployment model.
+
+Delivery is Markdown-only in v0.1.0. The result endpoint returns canonical
+Markdown artifacts and does not generate PDF files.

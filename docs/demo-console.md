@@ -14,6 +14,14 @@ owning business authority. It has two modes:
 The console is a consumer of service-owned state. It does not write review or
 verification decisions, create database authority, or bypass result gates.
 
+## Demo Video Boundary
+
+Public demo videos for Decision Research Agent are deterministic loopback contract demos.
+They show the console and canonical result contract in a repeatable local
+demonstration path. They are not live provider research recordings, not public
+production service recordings, and not evidence of an online multi-user
+deployment.
+
 ## Prerequisites
 
 - Node.js `20.19+`, `22.13+`, or `24+`

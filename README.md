@@ -116,7 +116,7 @@ used for diagnostics, not as the ResearchRun or EvidenceLedger ledger.
 
 - [Architecture Deep Dive](docs/architecture.md)
 - [Demo Console](docs/demo-console.md)
-- [Demo videos](https://itao-ai.github.io/my-website/#project/decision-research-agent)
+- [Demo videos](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
 
 The demo videos are deterministic loopback contract demos. They are not live
 provider research recordings, not a public production service, and not evidence
@@ -254,7 +254,7 @@ python tools/decision_research_agent_tool.py doctor
 - [Architecture Deep Dive](docs/architecture.md)
 - [Demo Console Design](DESIGN.md)
 - [Demo Console Guide](docs/demo-console.md)
-- [Demo videos](https://itao-ai.github.io/my-website/#project/decision-research-agent)
+- [Demo videos](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
 - [Getting Started](docs/getting-started.md)
 - [Contributing](CONTRIBUTING.md)
 - [Agent Integration](docs/AGENT_INTEGRATION.md)

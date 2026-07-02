@@ -104,7 +104,7 @@ flowchart TB
 
 - [Architecture Deep Dive](docs/architecture.md)
 - [Demo Console](docs/demo-console.md)
-- [Demo videos](https://itao-ai.github.io/my-website/#project/decision-research-agent)
+- [Demo videos](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
 
 Demo videos 是 deterministic loopback contract demos，不是 live provider
 research recordings，也不是 public production service 或在线多用户部署证明。
@@ -232,7 +232,7 @@ python tools/decision_research_agent_tool.py doctor
 - [Architecture Deep Dive](docs/architecture.md)
 - [Demo Console Design](DESIGN.md)
 - [Demo Console Guide](docs/demo-console.md)
-- [Demo videos](https://itao-ai.github.io/my-website/#project/decision-research-agent)
+- [Demo videos](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
 - [Getting Started](docs/getting-started.md)
 - [Contributing](CONTRIBUTING.md)
 - [Agent Integration](docs/AGENT_INTEGRATION.md)

@@ -161,9 +161,16 @@ def test_readme_first_run_flow_is_canonical_and_copy_pasteable() -> None:
 def test_public_readmes_surface_engineering_depth_and_golden_path() -> None:
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     readme_cn = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")
+    canonical_demo_route = (
+        "https://itao-ai.github.io/my-website/#/projects/decision-research-agent"
+    )
 
     assert "## Engineering Depth" in readme
     assert "[Architecture Deep Dive](docs/architecture.md)" in readme
+    assert canonical_demo_route in readme
+    assert canonical_demo_route in readme_cn
+    assert "#project/decision-research-agent" not in readme
+    assert "#project/decision-research-agent" not in readme_cn
     assert "--wait \\\n  --result" in readme_cn
     assert "`--wait --result`" in readme_cn
 

@@ -4,8 +4,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import asdict
+from datetime import datetime
+from pathlib import PurePosixPath, Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import urlsplit
+from unittest.mock import patch
+from uuid import UUID
 
 
 SCHEMA_VERSION = "dra.downstream-consumer.v1"
@@ -359,3 +365,200 @@ def serialize_fixture(payload: dict[str, object]) -> bytes:
     return (json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode(
         "utf-8"
     )
+
+
+def _evidence(*, thread_id: str, source_number: int) -> Any:
+    from agent.research import EvidenceEntry
+
+    source_url = f"https://example.com/contract-source-{source_number}"
+    return EvidenceEntry(
+        thread_id=thread_id,
+        query_text="Synthetic private query",
+        subagent_name="offline_fixture",
+        tool_name="synthetic_source",
+        source_url=source_url,
+        source_identity=source_url,
+        snippet="Synthetic private snippet",
+        evidence_fingerprint=f"{source_number:064x}",
+        retrieved_at=FIXTURE_TIMESTAMP,
+        tool_call_id="tool-private",
+        citation_status="cited",
+        verification_status="unverified",
+        created_at=FIXTURE_TIMESTAMP,
+    )
+
+
+def _generic_artifact(*, run_id: str, fallback: bool) -> dict[str, str]:
+    from agent.harness_contracts import ReportCandidate
+    from agent.run_result import ExecutionOutcome
+    from api.run_result_service import build_generic_result_artifact
+
+    candidate = None
+    if not fallback:
+        candidate = ReportCandidate(
+            path=PurePosixPath("/workspace/research-report.md"),
+            content="# Synthetic Research Report\n\nPublic-safe contract proof.",
+        )
+    outcome = ExecutionOutcome(
+        thread_id=f"thread_{run_id}",
+        query="Synthetic private query",
+        session_dir=PurePosixPath("/workspace/fixture"),
+        run_id=run_id,
+        segment_id=f"{run_id}_seg_000",
+        last_agent_text="Public-safe fallback draft.",
+        report_candidate=candidate,
+    )
+    return build_generic_result_artifact(
+        outcome,
+        generated_at=datetime.fromisoformat(FIXTURE_TIMESTAMP),
+    )
+
+
+def _resolve_result(*, run_id: str, db_path: str) -> tuple[int, dict[str, Any]]:
+    from api.run_result_service import RunResultUnavailable, resolve_run_result
+
+    try:
+        return 200, asdict(resolve_run_result(run_id=run_id, db_path=db_path))
+    except RunResultUnavailable as exc:
+        return exc.status_code, exc.payload(run_id=run_id)
+
+
+def _seed_source_cases(db_path: str) -> list[tuple[str, dict[str, Any]]]:
+    from api.run_repository import (
+        create_run,
+        finalize_run_transaction,
+        get_run,
+        transition_run,
+    )
+
+    definitions = [
+        "pending",
+        "running",
+        "canonical_ready",
+        "fallback_ready",
+        "compatibility_fallback",
+        "review_required",
+        "blocked",
+        "failed",
+        "result_unavailable",
+    ]
+    created: dict[str, dict[str, str]] = {}
+    for case_id in definitions:
+        created[case_id] = create_run(
+            thread_id=f"thread_{case_id}",
+            query="Synthetic private query",
+            db_path=db_path,
+        )
+
+    running = created["running"]
+    if not transition_run(
+        run_id=running["run_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        db_path=db_path,
+        execution_status="running",
+    ):
+        raise RuntimeError("deterministic running transition failed")
+
+    terminal = {
+        "canonical_ready": ("completed", "not_required", "ready", False, 1),
+        "fallback_ready": ("completed", "not_required", "ready", True, 2),
+        "compatibility_fallback": (
+            "completed_with_fallback",
+            "not_required",
+            "ready",
+            True,
+            3,
+        ),
+        "review_required": ("completed", "required", "review_required", None, None),
+        "blocked": ("completed", "resolved", "blocked", None, None),
+        "failed": ("failed", "not_required", "failed", None, None),
+        "result_unavailable": ("completed", "not_required", "ready", None, None),
+    }
+    for case_id, (
+        execution_status,
+        review_status,
+        delivery_status,
+        fallback,
+        evidence_number,
+    ) in terminal.items():
+        identity = created[case_id]
+        artifacts = (
+            [_generic_artifact(run_id=identity["run_id"], fallback=fallback)]
+            if fallback is not None
+            else []
+        )
+        evidence_entries = (
+            [_evidence(thread_id=identity["thread_id"], source_number=evidence_number)]
+            if evidence_number is not None
+            else []
+        )
+        if not finalize_run_transaction(
+            run_id=identity["run_id"],
+            segment_id=identity["segment_id"],
+            expected_state_version=0,
+            allowed_previous_statuses={"pending"},
+            execution_status=execution_status,
+            review_status=review_status,
+            delivery_status=delivery_status,
+            evidence_entries=evidence_entries,
+            artifacts=artifacts,
+            db_path=db_path,
+        ):
+            raise RuntimeError("deterministic terminal transition failed")
+
+    sources = []
+    for case_id in definitions:
+        identity = created[case_id]
+        status = get_run(run_id=identity["run_id"], db_path=db_path)
+        if status is None:
+            raise RuntimeError("deterministic run lookup failed")
+        sources.append((case_id, status))
+    return sources
+
+
+def build_fixture_bundle() -> dict[str, Any]:
+    with TemporaryDirectory(prefix="dra-consumer-contract-") as temp_dir:
+        db_path = str(Path(temp_dir) / "contract.db")
+        with (
+            patch("api.run_repository._now", return_value=FIXTURE_TIMESTAMP),
+            patch(
+                "api.publication_repository.evidence_verification_enabled",
+                return_value=False,
+            ),
+            patch(
+                "api.run_repository.uuid.uuid4",
+                side_effect=[UUID(int=index) for index in range(1, 10)],
+            ),
+        ):
+            sources = _seed_source_cases(db_path)
+            cases = []
+            for case_id, status in sources:
+                result_http_status, result_payload = _resolve_result(
+                    run_id=status["run_id"], db_path=db_path
+                )
+                cases.append(
+                    project_consumer_case(
+                        case_id=case_id,
+                        status_payload=status,
+                        result_http_status=result_http_status,
+                        result_payload=result_payload,
+                    )
+                )
+
+    bundle = {
+        "schema_version": SCHEMA_VERSION,
+        "service": {
+            "name": "decision-research-agent",
+            "health": {"status": "ok", "service": "decision-research-agent"},
+            "status_endpoint": "/api/runs/{run_id}",
+            "result_endpoint": "/api/runs/{run_id}/result",
+        },
+        "capabilities": {
+            "supported": SUPPORTED_CAPABILITIES,
+            "partial": PARTIAL_CAPABILITIES,
+            "unknown": UNKNOWN_CAPABILITIES,
+        },
+        "cases": cases,
+    }
+    return validate_fixture_bundle(bundle)

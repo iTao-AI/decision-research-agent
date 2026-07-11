@@ -251,3 +251,70 @@ def test_fixture_schema_is_exact_and_deterministic():
     for mutation in mutations:
         with pytest.raises(ContractValidationError):
             validate_fixture_bundle(mutation)
+
+
+def test_build_fixture_bundle_covers_required_states_and_is_deterministic():
+    from scripts.downstream_consumer_contract import (
+        build_fixture_bundle,
+        serialize_fixture,
+    )
+
+    first = build_fixture_bundle()
+    second = build_fixture_bundle()
+
+    assert serialize_fixture(first) == serialize_fixture(second)
+    assert [case["case_id"] for case in first["cases"]] == [
+        "pending",
+        "running",
+        "canonical_ready",
+        "fallback_ready",
+        "compatibility_fallback",
+        "review_required",
+        "blocked",
+        "failed",
+        "result_unavailable",
+    ]
+
+
+def test_fixture_capabilities_keep_untyped_semantics_unknown():
+    from scripts.downstream_consumer_contract import build_fixture_bundle
+
+    capabilities = build_fixture_bundle()["capabilities"]
+    assert "run_level_evidence" in capabilities["supported"]
+    assert "retrieved_at_is_not_source_as_of" in capabilities["partial"]
+    assert "typed_limitations" in capabilities["unknown"]
+    assert "claim_level_evidence_refs" in capabilities["unknown"]
+    assert "persistent_failure_cause" in capabilities["unknown"]
+    assert "persistent_usage_cost" in capabilities["unknown"]
+
+
+def test_build_fixture_uses_expected_results_evidence_and_public_values():
+    from scripts.downstream_consumer_contract import build_fixture_bundle
+
+    bundle = build_fixture_bundle()
+    by_id = {case["case_id"]: case for case in bundle["cases"]}
+    for case_id in ("canonical_ready", "fallback_ready", "compatibility_fallback"):
+        assert len(by_id[case_id]["evidence"]) == 1
+    assert by_id["fallback_ready"]["expected"]["disposition"] == "block_fallback"
+    assert by_id["compatibility_fallback"]["expected"]["disposition"] == "block_fallback"
+    assert by_id["pending"]["result"]["body"]["code"] == "run_not_terminal"
+    assert by_id["running"]["result"]["body"]["code"] == "run_not_terminal"
+    assert by_id["review_required"]["result"]["body"]["code"] == "run_review_required"
+    assert by_id["blocked"]["result"]["body"]["code"] == "run_delivery_blocked"
+    assert by_id["failed"]["result"]["body"]["code"] == "run_failed"
+    assert by_id["result_unavailable"]["result"]["body"]["code"] == "run_result_unavailable"
+
+    serialized = json.dumps(bundle, ensure_ascii=False)
+    for forbidden in (
+        "/Users/",
+        "/private/",
+        "Traceback",
+        "checkpoint",
+        "api_key",
+        "secret",
+        "Synthetic private query",
+        "Synthetic private snippet",
+        "tool-private",
+    ):
+        assert forbidden not in serialized
+    assert "2026-07-11T00:00:00+00:00" in serialized

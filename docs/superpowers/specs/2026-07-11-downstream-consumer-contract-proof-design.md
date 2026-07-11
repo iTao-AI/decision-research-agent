@@ -194,6 +194,8 @@ be public `https` URLs without userinfo.
 
 - run-level Evidence does not establish claim-level support;
 - `retrieved_at` is retrieval time, not official source as-of date;
+- Evidence `verification_status` is a compatibility projection and does not by
+  itself prove a human verification decision or origin;
 - fallback content is inspectable but not acceptable as canonical downstream
   research;
 - `completed_with_fallback` is compatibility input, not the active generic
@@ -238,6 +240,9 @@ unknown upstream values.
    combinations in the scenario matrix.
 3. Require the expected result HTTP status and stable result error code for
    each non-success state.
+   The current result envelope marks every `409` as retryable, so the validator
+   derives disposition from run state and stable error code, not from
+   `retryable` alone.
 4. Accept a generic canonical result only when:
    - execution is `completed`;
    - review is `not_required`;
@@ -274,6 +279,10 @@ trailing newline. A `build` command writes the expected bytes; a `check`
 command validates the committed fixture and fails if rebuilding produces a
 different payload.
 
+The fixture validator applies a public-safe marker check to its own committed
+payload. This is a proof-artifact boundary, not a claim that the runtime result
+endpoint is a general DLP system.
+
 ## Failure Handling
 
 The command returns bounded JSON errors or a non-zero exit code without raw
@@ -289,6 +298,11 @@ exceptions. Stable proof errors include:
 
 Error output must not contain raw fixture content, local paths, database paths,
 tracebacks, credentials, or source snippets.
+
+Review-required and blocked cases are synthetic application-contract states.
+They prove downstream consumption of the stable status/result shape, not the
+durable review worker, lease, restart, or SIGKILL lifecycle already covered by
+the separate durable HITL proof.
 
 ## Testing
 

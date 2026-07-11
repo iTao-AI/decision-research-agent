@@ -1,9 +1,11 @@
 """Offline downstream-consumer compatibility proof."""
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import re
+import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import PurePosixPath, Path
@@ -12,6 +14,11 @@ from typing import Any
 from urllib.parse import urlsplit
 from unittest.mock import patch
 from uuid import UUID
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 SCHEMA_VERSION = "dra.downstream-consumer.v1"
@@ -295,6 +302,11 @@ def _assert_public_safe(payload: object) -> None:
 
 
 def validate_fixture_bundle(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, dict) and payload.get("schema_version") not in {
+        None,
+        SCHEMA_VERSION,
+    }:
+        _fail("contract_schema_unsupported")
     root = _require_exact_keys(
         payload,
         {"schema_version", "service", "capabilities", "cases"},
@@ -562,3 +574,60 @@ def build_fixture_bundle() -> dict[str, Any]:
         "cases": cases,
     }
     return validate_fixture_bundle(bundle)
+
+
+def _status_line(status: str) -> str:
+    return json.dumps(
+        {"status": status, "schema_version": SCHEMA_VERSION},
+        separators=(",", ":"),
+    )
+
+
+def _error(code: str) -> int:
+    print(
+        json.dumps({"status": "invalid", "code": code}, separators=(",", ":")),
+        file=sys.stderr,
+    )
+    return 1
+
+
+def _read_fixture(path: Path) -> dict[str, Any]:
+    with path.open("rb") as handle:
+        raw = handle.read(MAX_FIXTURE_BYTES + 1)
+    if len(raw) > MAX_FIXTURE_BYTES:
+        _fail("contract_file_invalid")
+    payload = json.loads(raw.decode("utf-8"))
+    if not isinstance(payload, dict):
+        _fail("contract_file_invalid")
+    return payload
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Build or check the consumer fixture.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    build_parser = subparsers.add_parser("build")
+    build_parser.add_argument("--output", required=True)
+    check_parser = subparsers.add_parser("check")
+    check_parser.add_argument("--input", required=True)
+    args = parser.parse_args(argv)
+
+    try:
+        if args.command == "build":
+            Path(args.output).write_bytes(serialize_fixture(build_fixture_bundle()))
+            print(_status_line("built"))
+            return 0
+
+        payload = _read_fixture(Path(args.input))
+        validate_fixture_bundle(payload)
+        if serialize_fixture(payload) != serialize_fixture(build_fixture_bundle()):
+            _fail("contract_fixture_drift")
+        print(_status_line("valid"))
+        return 0
+    except ContractValidationError as exc:
+        return _error(exc.code)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return _error("contract_file_invalid")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

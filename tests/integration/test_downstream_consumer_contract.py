@@ -3,6 +3,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -318,3 +321,110 @@ def test_build_fixture_uses_expected_results_evidence_and_public_values():
     ):
         assert forbidden not in serialized
     assert "2026-07-11T00:00:00+00:00" in serialized
+
+
+def test_committed_fixture_matches_fresh_build():
+    from scripts.downstream_consumer_contract import (
+        build_fixture_bundle,
+        serialize_fixture,
+    )
+
+    committed = Path("docs/evidence/downstream-consumer-contract-v1.json").read_bytes()
+    assert committed == serialize_fixture(build_fixture_bundle())
+
+
+def test_cli_build_and_check_are_deterministic(tmp_path, capsys):
+    from scripts.downstream_consumer_contract import (
+        build_fixture_bundle,
+        main,
+        serialize_fixture,
+    )
+
+    output = tmp_path / "fixture.json"
+    assert main(["build", "--output", str(output)]) == 0
+    assert output.read_bytes() == serialize_fixture(build_fixture_bundle())
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "built",
+        "schema_version": "dra.downstream-consumer.v1",
+    }
+
+    assert main(["check", "--input", str(output)]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "valid",
+        "schema_version": "dra.downstream-consumer.v1",
+    }
+
+
+def test_cli_file_entrypoint_can_import_application_modules(tmp_path):
+    output = tmp_path / "fixture.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/downstream_consumer_contract.py",
+            "build",
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["status"] == "built"
+
+
+def test_cli_reports_drift_with_bounded_error(tmp_path, capsys):
+    from scripts.downstream_consumer_contract import build_fixture_bundle, main
+
+    payload = build_fixture_bundle()
+    payload["cases"][0]["run"]["state_version"] += 1
+    fixture = tmp_path / "modified.json"
+    fixture.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert main(["check", "--input", str(fixture)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {
+        "status": "invalid",
+        "code": "contract_fixture_drift",
+    }
+    assert str(fixture) not in captured.err
+
+
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        (b"not-json", "contract_file_invalid"),
+        (b"[]", "contract_file_invalid"),
+        (b'{"schema_version":"unsupported"}', "contract_schema_unsupported"),
+    ],
+)
+def test_cli_maps_invalid_input_to_bounded_codes(tmp_path, capsys, body: bytes, code: str):
+    from scripts.downstream_consumer_contract import main
+
+    fixture = tmp_path / "invalid.json"
+    fixture.write_bytes(body)
+    assert main(["check", "--input", str(fixture)]) == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.err) == {"status": "invalid", "code": code}
+    assert str(fixture) not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_rejects_oversized_unreadable_and_unwritable_files(tmp_path, capsys):
+    from scripts.downstream_consumer_contract import MAX_FIXTURE_BYTES, main
+
+    oversized = tmp_path / "oversized.json"
+    oversized.write_bytes(b" " * (MAX_FIXTURE_BYTES + 1))
+    assert main(["check", "--input", str(oversized)]) == 1
+    assert json.loads(capsys.readouterr().err)["code"] == "contract_file_invalid"
+
+    assert main(["check", "--input", str(tmp_path)]) == 1
+    unreadable_error = capsys.readouterr().err
+    assert json.loads(unreadable_error)["code"] == "contract_file_invalid"
+    assert str(tmp_path) not in unreadable_error
+
+    assert main(["build", "--output", str(tmp_path)]) == 1
+    unwritable_error = capsys.readouterr().err
+    assert json.loads(unwritable_error)["code"] == "contract_file_invalid"
+    assert str(tmp_path) not in unwritable_error

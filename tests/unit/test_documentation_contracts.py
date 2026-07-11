@@ -214,3 +214,22 @@ def test_operations_docs_cover_release_recovery_boundaries() -> None:
 
     for phrase in required_phrases:
         assert phrase in docs
+
+
+def test_downstream_consumer_contract_is_indexed_and_bounded():
+    reference = Path(
+        "docs/reference/downstream-consumer-contract.md"
+    ).read_text(encoding="utf-8")
+    evidence_index = Path("docs/evidence/README.md").read_text(encoding="utf-8")
+    integration = Path("docs/AGENT_INTEGRATION.md").read_text(encoding="utf-8")
+    docs_index = Path("docs/README.md").read_text(encoding="utf-8")
+
+    assert "dra.downstream-consumer.v1" in reference
+    assert "supported" in reference
+    assert "partial" in reference
+    assert "unknown" in reference
+    assert "block_fallback" in reference
+    assert "must not parse Markdown" in reference
+    assert "downstream-consumer-contract-v1.json" in evidence_index
+    assert "downstream-consumer-contract.md" in integration
+    assert "downstream-consumer-contract.md" in docs_index

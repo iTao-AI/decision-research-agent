@@ -28,6 +28,7 @@ external evaluation of the public contract surface.
 ## Reference
 
 - [API Contract](reference/api-contract.md) — REST, WebSocket, authentication, and errors.
+- [Downstream Consumer Contract](reference/downstream-consumer-contract.md) — deterministic status, result, Evidence, fallback, and failure-handling proof.
 - [Data Models](reference/data-models.md) — run, Evidence, artifact, review, and publication records.
 - [State Machines](reference/state-machines.md) — execution, delivery, review, and verification transitions.
 - [Tool Registry](reference/tool-registry.md) — server-owned tool and Skill boundaries.

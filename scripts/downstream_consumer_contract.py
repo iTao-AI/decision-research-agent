@@ -237,6 +237,8 @@ def _validate_artifact(value: object) -> dict[str, Any]:
         or hashlib.sha256(content.encode("utf-8")).hexdigest() != content_hash
     ):
         _fail("contract_artifact_invalid")
+    if _HOST_ABSOLUTE_PATH_RE.search(content):
+        _fail("contract_artifact_invalid")
     return artifact
 
 
@@ -279,7 +281,7 @@ def _validate_evidence_rows(value: object, *, exact: bool) -> list[dict[str, Any
                 or parsed.password is not None
             ):
                 _fail("contract_evidence_invalid")
-            lowered_hostname = hostname.lower()
+            lowered_hostname = hostname.lower().rstrip(".")
             if lowered_hostname == "localhost" or lowered_hostname.endswith(
                 ".localhost"
             ):
@@ -301,9 +303,17 @@ def _validate_evidence_rows(value: object, *, exact: bool) -> list[dict[str, Any
             _fail("contract_evidence_invalid")
         if parsed_retrieved_at.tzinfo is None or parsed_retrieved_at.utcoffset() is None:
             _fail("contract_evidence_invalid")
-        if raw["citation_status"] not in _CITATION_STATUSES:
+        citation_status = raw["citation_status"]
+        if (
+            not isinstance(citation_status, str)
+            or citation_status not in _CITATION_STATUSES
+        ):
             _fail("contract_evidence_invalid")
-        if raw["verification_status"] not in _VERIFICATION_STATUSES:
+        verification_status = raw["verification_status"]
+        if (
+            not isinstance(verification_status, str)
+            or verification_status not in _VERIFICATION_STATUSES
+        ):
             _fail("contract_evidence_invalid")
         rows.append({key: raw[key] for key in sorted(EVIDENCE_KEYS)})
     return rows
@@ -426,7 +436,9 @@ def _assert_public_safe(payload: object) -> None:
     serialized = json.dumps(payload, ensure_ascii=False)
     lowered = serialized.lower()
     forbidden = ("/users/", "/private/", "traceback", "checkpoint", "api_key=", "secret=")
-    if any(marker in lowered for marker in forbidden):
+    if _HOST_ABSOLUTE_PATH_RE.search(serialized) or any(
+        marker in lowered for marker in forbidden
+    ):
         _fail("contract_file_invalid")
 
 

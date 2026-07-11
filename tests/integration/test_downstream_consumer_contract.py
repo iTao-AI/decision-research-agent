@@ -222,6 +222,7 @@ def test_projection_enforces_evidence_identity_url_and_duplicates():
         ("retrieved_at", "not-a-timestamp"),
         ("retrieved_at", "2026-07-11T00:00:00"),
         ("source_url", "https://localhost/source"),
+        ("source_url", "https://localhost./source"),
         ("source_url", "https://127.0.0.1/source"),
         ("source_url", "https://10.0.0.1/source"),
         ("source_url", "https://169.254.10.20/source"),
@@ -238,6 +239,79 @@ def test_projection_rejects_unsafe_or_untyped_evidence(field: str, value: str):
     status["evidence"][0][field] = value
     with pytest.raises(ContractValidationError, match="contract_evidence_invalid"):
         _project(status=status)
+
+
+@pytest.mark.parametrize("field", ["citation_status", "verification_status"])
+@pytest.mark.parametrize("value", [[], {}, None, 1])
+def test_projection_rejects_non_string_evidence_statuses(field: str, value: object):
+    from scripts.downstream_consumer_contract import ContractValidationError
+
+    status = _canonical_status()
+    status["evidence"][0][field] = value
+    with pytest.raises(ContractValidationError, match="contract_evidence_invalid"):
+        _project(status=status)
+
+
+def test_projection_rejects_host_path_in_validly_hashed_artifact():
+    from scripts.downstream_consumer_contract import ContractValidationError
+
+    result = _canonical_result()
+    content = "# Synthetic report\n\nRead /home/example/private-report.md"
+    result["artifact"]["content"] = content
+    result["artifact"]["content_hash"] = hashlib.sha256(
+        content.encode("utf-8")
+    ).hexdigest()
+
+    with pytest.raises(ContractValidationError, match="contract_artifact_invalid"):
+        _project(result=result)
+
+
+def test_fixture_public_safe_check_rejects_host_path_anywhere():
+    from scripts.downstream_consumer_contract import (
+        ContractValidationError,
+        build_fixture_bundle,
+        validate_fixture_bundle,
+    )
+
+    payload = build_fixture_bundle()
+    payload["cases"][0]["result"]["body"]["problem"] = (
+        "Internal detail from /home/example/private-state.json"
+    )
+
+    with pytest.raises(ContractValidationError, match="contract_file_invalid"):
+        validate_fixture_bundle(payload)
+
+
+def test_cli_bounds_non_string_evidence_status_error(tmp_path):
+    from scripts.downstream_consumer_contract import build_fixture_bundle
+
+    fixture = tmp_path / "private-invalid-fixture.json"
+    payload = build_fixture_bundle()
+    payload["cases"][2]["evidence"][0]["citation_status"] = []
+    fixture.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/downstream_consumer_contract.py",
+            "check",
+            "--input",
+            str(fixture),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert completed.stdout == ""
+    assert json.loads(completed.stderr) == {
+        "status": "invalid",
+        "code": "contract_evidence_invalid",
+    }
+    assert "TypeError" not in completed.stderr
+    assert "Traceback" not in completed.stderr
+    assert str(fixture) not in completed.stderr
 
 
 def test_fixture_schema_is_exact_and_deterministic():

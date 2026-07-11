@@ -109,6 +109,7 @@ trace is privacy-first diagnostic data; it is not business authority.
 
 The proof CLI fails closed with bounded codes such as
 `contract_file_invalid`, `contract_schema_unsupported`,
+`contract_schema_invalid`,
 `contract_state_invalid`, `contract_result_invalid`,
 `contract_artifact_invalid`, `contract_evidence_invalid`, and
 `contract_fixture_drift`. It does not print requested paths, fixture content,

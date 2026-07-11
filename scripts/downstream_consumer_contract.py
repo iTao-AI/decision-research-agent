@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import re
 import sys
@@ -92,6 +93,11 @@ UNKNOWN_CAPABILITIES = [
 
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+_HOST_ABSOLUTE_PATH_RE = re.compile(
+    r"(?:(?:/Users|/private|/var|/tmp|/Volumes|/home|/opt)/[^\s)\"']+)"
+)
+_CITATION_STATUSES = {"cited", "uncited"}
+_VERIFICATION_STATUSES = {"verified", "unverified"}
 _CASE_KEYS = {"case_id", "profile_id", "run", "evidence", "result", "expected"}
 _RUN_KEYS = {
     "run_id",
@@ -103,6 +109,74 @@ _RUN_KEYS = {
 _RESULT_KEYS = {"http_status", "body"}
 _EXPECTED_KEYS = {"support", "disposition"}
 _ARTIFACT_KEYS = {"artifact_id", "kind", "media_type", "content", "content_hash"}
+_ERROR_KEYS = {"code", "problem", "fix", "retryable", "run_id"}
+_REQUIRED_CASE_IDS = [
+    "pending",
+    "running",
+    "canonical_ready",
+    "fallback_ready",
+    "compatibility_fallback",
+    "review_required",
+    "blocked",
+    "failed",
+    "result_unavailable",
+]
+_CASE_CONTRACTS = {
+    "pending": (
+        ("pending", "not_required", "pending"),
+        409,
+        "run_not_terminal",
+        ("supported", "wait"),
+    ),
+    "running": (
+        ("running", "not_required", "pending"),
+        409,
+        "run_not_terminal",
+        ("supported", "wait"),
+    ),
+    "canonical_ready": (
+        ("completed", "not_required", "ready"),
+        200,
+        CANONICAL_KIND,
+        ("supported", "accept_draft"),
+    ),
+    "fallback_ready": (
+        ("completed", "not_required", "ready"),
+        200,
+        FALLBACK_KIND,
+        ("partial", "block_fallback"),
+    ),
+    "compatibility_fallback": (
+        ("completed_with_fallback", "not_required", "ready"),
+        200,
+        FALLBACK_KIND,
+        ("partial", "block_fallback"),
+    ),
+    "review_required": (
+        ("completed", "required", "review_required"),
+        409,
+        "run_review_required",
+        ("supported", "await_review"),
+    ),
+    "blocked": (
+        ("completed", "resolved", "blocked"),
+        409,
+        "run_delivery_blocked",
+        ("supported", "block"),
+    ),
+    "failed": (
+        ("failed", "not_required", "failed"),
+        409,
+        "run_failed",
+        ("supported", "block"),
+    ),
+    "result_unavailable": (
+        ("completed", "not_required", "ready"),
+        409,
+        "run_result_unavailable",
+        ("supported", "block"),
+    ),
+}
 
 
 class ContractValidationError(ValueError):
@@ -183,18 +257,54 @@ def _validate_evidence_rows(value: object, *, exact: bool) -> list[dict[str, Any
             _fail("contract_evidence_invalid")
         seen.add(evidence_id)
         source_identity = raw["source_identity"]
-        if not isinstance(source_identity, str) or not source_identity.strip():
+        if (
+            not isinstance(source_identity, str)
+            or not source_identity.strip()
+            or _HOST_ABSOLUTE_PATH_RE.search(source_identity)
+        ):
             _fail("contract_evidence_invalid")
         source_url = raw["source_url"]
         if source_url is not None:
             if not isinstance(source_url, str):
                 _fail("contract_evidence_invalid")
-            parsed = urlsplit(source_url)
-            if parsed.scheme != "https" or not parsed.hostname or parsed.username:
+            try:
+                parsed = urlsplit(source_url)
+                hostname = parsed.hostname
+            except ValueError:
                 _fail("contract_evidence_invalid")
-        for key in ("retrieved_at", "citation_status", "verification_status"):
-            if not isinstance(raw[key], str) or not raw[key]:
+            if (
+                parsed.scheme != "https"
+                or not hostname
+                or parsed.username is not None
+                or parsed.password is not None
+            ):
                 _fail("contract_evidence_invalid")
+            lowered_hostname = hostname.lower()
+            if lowered_hostname == "localhost" or lowered_hostname.endswith(
+                ".localhost"
+            ):
+                _fail("contract_evidence_invalid")
+            try:
+                address = ipaddress.ip_address(lowered_hostname)
+            except ValueError:
+                address = None
+            if address is not None and (
+                address.is_loopback or address.is_private or address.is_link_local
+            ):
+                _fail("contract_evidence_invalid")
+        retrieved_at = raw["retrieved_at"]
+        if not isinstance(retrieved_at, str):
+            _fail("contract_evidence_invalid")
+        try:
+            parsed_retrieved_at = datetime.fromisoformat(retrieved_at)
+        except ValueError:
+            _fail("contract_evidence_invalid")
+        if parsed_retrieved_at.tzinfo is None or parsed_retrieved_at.utcoffset() is None:
+            _fail("contract_evidence_invalid")
+        if raw["citation_status"] not in _CITATION_STATUSES:
+            _fail("contract_evidence_invalid")
+        if raw["verification_status"] not in _VERIFICATION_STATUSES:
+            _fail("contract_evidence_invalid")
         rows.append({key: raw[key] for key in sorted(EVIDENCE_KEYS)})
     return rows
 
@@ -219,7 +329,11 @@ def _validate_result(
     http_status: object,
     body: object,
 ) -> tuple[dict[str, Any], tuple[str, str]]:
-    if not isinstance(body, dict) or not isinstance(http_status, int):
+    if (
+        not isinstance(body, dict)
+        or isinstance(http_status, bool)
+        or not isinstance(http_status, int)
+    ):
         _fail("contract_result_invalid")
     support, disposition = STATE_DISPOSITIONS[state]
     if http_status == 200:
@@ -247,10 +361,23 @@ def _validate_result(
         return dict(result), (support, disposition)
 
     expected_status, expected_code = _expected_error(state)
+    error = _require_exact_keys(body, _ERROR_KEYS, "contract_result_invalid")
+    if (
+        not isinstance(error["code"], str)
+        or not isinstance(error["problem"], str)
+        or not error["problem"]
+        or not isinstance(error["fix"], str)
+        or not error["fix"]
+        or not isinstance(error["retryable"], bool)
+        or not isinstance(error["run_id"], str)
+    ):
+        _fail("contract_result_invalid")
     if http_status != expected_status or body.get("code") != expected_code:
         _fail("contract_result_invalid")
     if body.get("run_id") != run_id:
         _fail("contract_result_invalid")
+    if expected_code == "run_result_unavailable":
+        support, disposition = "supported", "block"
     return dict(body), (support, disposition)
 
 
@@ -266,6 +393,8 @@ def project_consumer_case(
         _fail("contract_state_invalid")
     run_id = _identifier(status_payload.get("run_id"), "contract_state_invalid")
     profile_id = _identifier(status_payload.get("profile_id"), "contract_state_invalid")
+    if profile_id != "generic":
+        _fail("contract_state_invalid")
     state_version = status_payload.get("state_version")
     if isinstance(state_version, bool) or not isinstance(state_version, int) or state_version < 0:
         _fail("contract_state_invalid")
@@ -335,7 +464,13 @@ def validate_fixture_bundle(payload: Any) -> dict[str, Any]:
         "unknown": UNKNOWN_CAPABILITIES,
     }:
         _fail("contract_schema_invalid")
-    if not isinstance(root["cases"], list) or not root["cases"]:
+    if not isinstance(root["cases"], list):
+        _fail("contract_schema_invalid")
+    case_ids = [
+        case.get("case_id") if isinstance(case, dict) else None
+        for case in root["cases"]
+    ]
+    if case_ids != _REQUIRED_CASE_IDS:
         _fail("contract_schema_invalid")
     seen: set[str] = set()
     for raw_case in root["cases"]:
@@ -345,9 +480,9 @@ def validate_fixture_bundle(payload: Any) -> dict[str, Any]:
             _fail("contract_schema_invalid")
         seen.add(case_id)
         _identifier(case["profile_id"], "contract_schema_invalid")
-        run = _require_exact_keys(case["run"], _RUN_KEYS, "contract_schema_invalid")
-        if case["profile_id"] == "":
+        if case["profile_id"] != "generic":
             _fail("contract_schema_invalid")
+        run = _require_exact_keys(case["run"], _RUN_KEYS, "contract_schema_invalid")
         state_version = run["state_version"]
         if isinstance(state_version, bool) or not isinstance(state_version, int) or state_version < 0:
             _fail("contract_state_invalid")
@@ -364,6 +499,21 @@ def validate_fixture_bundle(payload: Any) -> dict[str, Any]:
         expected_payload = _require_exact_keys(
             case["expected"], _EXPECTED_KEYS, "contract_schema_invalid"
         )
+        contract_state, contract_http_status, contract_result, contract_expected = (
+            _CASE_CONTRACTS[case_id]
+        )
+        actual_result = (
+            result["body"]["artifact"]["kind"]
+            if result["http_status"] == 200
+            else result["body"]["code"]
+        )
+        if (
+            state != contract_state
+            or result["http_status"] != contract_http_status
+            or actual_result != contract_result
+            or expected != contract_expected
+        ):
+            _fail("contract_schema_invalid")
         if expected_payload != {"support": expected[0], "disposition": expected[1]}:
             _fail("contract_state_invalid")
         if evidence != case["evidence"]:

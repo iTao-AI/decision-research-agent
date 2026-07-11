@@ -277,7 +277,7 @@
       "case_id": "result_unavailable",
       "evidence": [],
       "expected": {
-        "disposition": "accept_draft",
+        "disposition": "block",
         "support": "supported"
       },
       "profile_id": "generic",

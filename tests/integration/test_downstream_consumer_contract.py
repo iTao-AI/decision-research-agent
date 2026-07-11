@@ -70,39 +70,12 @@ def _project(status: dict | None = None, result: dict | None = None) -> dict:
 
 
 def _bundle(case: dict | None = None) -> dict:
-    return {
-        "schema_version": "dra.downstream-consumer.v1",
-        "service": {
-            "name": "decision-research-agent",
-            "health": {"status": "ok", "service": "decision-research-agent"},
-            "status_endpoint": "/api/runs/{run_id}",
-            "result_endpoint": "/api/runs/{run_id}/result",
-        },
-        "capabilities": {
-            "supported": [
-                "run_state",
-                "run_level_evidence",
-                "generic_canonical_artifact",
-                "fallback_distinction",
-                "review_and_delivery_gates",
-                "stable_result_errors",
-            ],
-            "partial": [
-                "retrieved_at_is_not_source_as_of",
-                "fallback_content_is_not_canonical",
-                "completed_with_fallback_is_compatibility_only",
-            ],
-            "unknown": [
-                "claim_level_evidence_refs",
-                "typed_limitations",
-                "typed_conflicts_and_gaps",
-                "source_title_publisher_and_effective_date",
-                "persistent_failure_cause",
-                "persistent_usage_cost",
-            ],
-        },
-        "cases": [case or _project()],
-    }
+    from scripts.downstream_consumer_contract import build_fixture_bundle
+
+    payload = build_fixture_bundle()
+    if case is not None:
+        payload["cases"][2] = case
+    return payload
 
 
 def test_canonical_projection_is_strict_and_public_safe():
@@ -144,6 +117,23 @@ def test_projection_rejects_invalid_run_state(field: str, value: object):
     status[field] = value
     with pytest.raises(ContractValidationError):
         _project(status=status)
+
+
+def test_generic_v1_rejects_non_generic_profile_in_projector_and_fixture():
+    from scripts.downstream_consumer_contract import (
+        ContractValidationError,
+        validate_fixture_bundle,
+    )
+
+    status = _canonical_status()
+    status["profile_id"] = "talent-hiring-signal"
+    with pytest.raises(ContractValidationError, match="contract_state_invalid"):
+        _project(status=status)
+
+    payload = _bundle()
+    payload["cases"][0]["profile_id"] = "talent-hiring-signal"
+    with pytest.raises(ContractValidationError, match="contract_schema_invalid"):
+        validate_fixture_bundle(payload)
 
 
 @pytest.mark.parametrize(
@@ -219,6 +209,36 @@ def test_projection_enforces_evidence_identity_url_and_duplicates():
     status["evidence"] = []
     assert _project(status=status)["evidence"] == []
 
+    status = _canonical_status()
+    status["evidence"][0]["source_url"] = None
+    assert _project(status=status)["evidence"][0]["source_url"] is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("citation_status", "unknown"),
+        ("verification_status", "pending"),
+        ("retrieved_at", "not-a-timestamp"),
+        ("retrieved_at", "2026-07-11T00:00:00"),
+        ("source_url", "https://localhost/source"),
+        ("source_url", "https://127.0.0.1/source"),
+        ("source_url", "https://10.0.0.1/source"),
+        ("source_url", "https://169.254.10.20/source"),
+        ("source_url", "https://[::1]/source"),
+        ("source_url", "https://user@example.com/source"),
+        ("source_url", "https://:password@example.com/source"),
+        ("source_identity", "/Users/example/private-source"),
+    ],
+)
+def test_projection_rejects_unsafe_or_untyped_evidence(field: str, value: str):
+    from scripts.downstream_consumer_contract import ContractValidationError
+
+    status = _canonical_status()
+    status["evidence"][0][field] = value
+    with pytest.raises(ContractValidationError, match="contract_evidence_invalid"):
+        _project(status=status)
+
 
 def test_fixture_schema_is_exact_and_deterministic():
     from scripts.downstream_consumer_contract import (
@@ -242,7 +262,7 @@ def test_fixture_schema_is_exact_and_deterministic():
     extra_case["cases"][0]["extra"] = True
     mutations.append(extra_case)
     extra_evidence = copy.deepcopy(payload)
-    extra_evidence["cases"][0]["evidence"][0]["snippet"] = "private"
+    extra_evidence["cases"][2]["evidence"][0]["snippet"] = "private"
     mutations.append(extra_evidence)
     duplicate_case = copy.deepcopy(payload)
     duplicate_case["cases"].append(copy.deepcopy(duplicate_case["cases"][0]))
@@ -321,6 +341,98 @@ def test_build_fixture_uses_expected_results_evidence_and_public_values():
     ):
         assert forbidden not in serialized
     assert "2026-07-11T00:00:00+00:00" in serialized
+
+
+def test_fixture_rejects_non_success_error_envelope_mutations():
+    from scripts.downstream_consumer_contract import (
+        ContractValidationError,
+        build_fixture_bundle,
+        validate_fixture_bundle,
+    )
+
+    payload = build_fixture_bundle()
+    pending_body = payload["cases"][0]["result"]["body"]
+    mutations = []
+    extra = copy.deepcopy(payload)
+    extra["cases"][0]["result"]["body"]["extra"] = "not allowed"
+    mutations.append(extra)
+    for key in ("code", "problem", "fix", "retryable", "run_id"):
+        missing = copy.deepcopy(payload)
+        del missing["cases"][0]["result"]["body"][key]
+        mutations.append(missing)
+    for key, value in (
+        ("code", 1),
+        ("problem", 1),
+        ("fix", 1),
+        ("retryable", 1),
+        ("run_id", 1),
+    ):
+        wrong_type = copy.deepcopy(payload)
+        wrong_type["cases"][0]["result"]["body"][key] = value
+        mutations.append(wrong_type)
+
+    assert set(pending_body) == {"code", "problem", "fix", "retryable", "run_id"}
+    for mutation in mutations:
+        with pytest.raises(ContractValidationError, match="contract_result_invalid"):
+            validate_fixture_bundle(mutation)
+
+
+def test_fixture_requires_exact_ordered_approved_case_matrix():
+    from scripts.downstream_consumer_contract import (
+        ContractValidationError,
+        build_fixture_bundle,
+        validate_fixture_bundle,
+    )
+
+    payload = build_fixture_bundle()
+    mutations = []
+    reordered = copy.deepcopy(payload)
+    reordered["cases"][0], reordered["cases"][1] = (
+        reordered["cases"][1],
+        reordered["cases"][0],
+    )
+    mutations.append(reordered)
+    missing = copy.deepcopy(payload)
+    missing["cases"].pop()
+    mutations.append(missing)
+    wrong_binding = copy.deepcopy(payload)
+    wrong_binding["cases"][0]["run"] = copy.deepcopy(
+        wrong_binding["cases"][2]["run"]
+    )
+    wrong_binding["cases"][0]["result"] = copy.deepcopy(
+        wrong_binding["cases"][2]["result"]
+    )
+    wrong_binding["cases"][0]["expected"] = copy.deepcopy(
+        wrong_binding["cases"][2]["expected"]
+    )
+    mutations.append(wrong_binding)
+
+    for mutation in mutations:
+        with pytest.raises(ContractValidationError, match="contract_schema_invalid"):
+            validate_fixture_bundle(mutation)
+
+
+def test_result_unavailable_is_supported_and_blocked():
+    from scripts.downstream_consumer_contract import project_consumer_case
+
+    status = _canonical_status()
+    projected = project_consumer_case(
+        case_id="result_unavailable",
+        status_payload=status,
+        result_http_status=409,
+        result_payload={
+            "code": "run_result_unavailable",
+            "problem": "No deliverable result is available for this ResearchRun.",
+            "fix": "Retry after the run reaches ready delivery state.",
+            "retryable": True,
+            "run_id": status["run_id"],
+        },
+    )
+
+    assert projected["expected"] == {
+        "support": "supported",
+        "disposition": "block",
+    }
 
 
 def test_committed_fixture_matches_fresh_build():

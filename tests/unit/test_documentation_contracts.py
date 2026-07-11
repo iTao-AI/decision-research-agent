@@ -230,6 +230,7 @@ def test_downstream_consumer_contract_is_indexed_and_bounded():
     assert "unknown" in reference
     assert "block_fallback" in reference
     assert "must not parse Markdown" in reference
+    assert "contract_schema_invalid" in reference
     assert "downstream-consumer-contract-v1.json" in evidence_index
     assert "downstream-consumer-contract.md" in integration
     assert "downstream-consumer-contract.md" in docs_index

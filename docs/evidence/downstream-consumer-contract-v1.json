@@ -1,0 +1,313 @@
+{
+  "capabilities": {
+    "partial": [
+      "retrieved_at_is_not_source_as_of",
+      "fallback_content_is_not_canonical",
+      "completed_with_fallback_is_compatibility_only"
+    ],
+    "supported": [
+      "run_state",
+      "run_level_evidence",
+      "generic_canonical_artifact",
+      "fallback_distinction",
+      "review_and_delivery_gates",
+      "stable_result_errors"
+    ],
+    "unknown": [
+      "claim_level_evidence_refs",
+      "typed_limitations",
+      "typed_conflicts_and_gaps",
+      "source_title_publisher_and_effective_date",
+      "persistent_failure_cause",
+      "persistent_usage_cost"
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "pending",
+      "evidence": [],
+      "expected": {
+        "disposition": "wait",
+        "support": "supported"
+      },
+      "profile_id": "generic",
+      "result": {
+        "body": {
+          "code": "run_not_terminal",
+          "fix": "Poll GET /api/runs/{run_id} until execution_status is terminal.",
+          "problem": "The ResearchRun has not reached a terminal state.",
+          "retryable": true,
+          "run_id": "run_00000000000000000000000000000001"
+        },
+        "http_status": 409
+      },
+      "run": {
+        "delivery_status": "pending",
+        "execution_status": "pending",
+        "review_status": "not_required",
+        "run_id": "run_00000000000000000000000000000001",
+        "state_version": 0
+      }
+    },
+    {
+      "case_id": "running",
+      "evidence": [],
+      "expected": {
+        "disposition": "wait",
+        "support": "supported"
+      },
+      "profile_id": "generic",
+      "result": {
+        "body": {
+          "code": "run_not_terminal",
+          "fix": "Poll GET /api/runs/{run_id} until execution_status is terminal.",
+          "problem": "The ResearchRun has not reached a terminal state.",
+          "retryable": true,
+          "run_id": "run_00000000000000000000000000000002"
+        },
+        "http_status": 409
+      },
+      "run": {
+        "delivery_status": "pending",
+        "execution_status": "running",
+        "review_status": "not_required",
+        "run_id": "run_00000000000000000000000000000002",
+        "state_version": 1
+      }
+    },
+    {
+      "case_id": "canonical_ready",
+      "evidence": [
+        {
+          "citation_status": "cited",
+          "evidence_id": "ev_run_00000000000000000000000000000003_0000000000000000000000000000000000000000000000000000000000000001",
+          "retrieved_at": "2026-07-11T00:00:00+00:00",
+          "source_identity": "https://example.com/contract-source-1",
+          "source_url": "https://example.com/contract-source-1",
+          "verification_status": "unverified"
+        }
+      ],
+      "expected": {
+        "disposition": "accept_draft",
+        "support": "supported"
+      },
+      "profile_id": "generic",
+      "result": {
+        "body": {
+          "artifact": {
+            "artifact_id": "research-report.md",
+            "content": "# Synthetic Research Report\n\nPublic-safe contract proof.",
+            "content_hash": "829679a9790c374eacf8fef75a3c4ca64e0b09628234458e46f57e7127627e11",
+            "kind": "research_report_markdown",
+            "media_type": "text/markdown"
+          },
+          "delivery_status": "ready",
+          "execution_status": "completed",
+          "run_id": "run_00000000000000000000000000000003"
+        },
+        "http_status": 200
+      },
+      "run": {
+        "delivery_status": "ready",
+        "execution_status": "completed",
+        "review_status": "not_required",
+        "run_id": "run_00000000000000000000000000000003",
+        "state_version": 1
+      }
+    },
+    {
+      "case_id": "fallback_ready",
+      "evidence": [
+        {
+          "citation_status": "cited",
+          "evidence_id": "ev_run_00000000000000000000000000000004_0000000000000000000000000000000000000000000000000000000000000002",
+          "retrieved_at": "2026-07-11T00:00:00+00:00",
+          "source_identity": "https://example.com/contract-source-2",
+          "source_url": "https://example.com/contract-source-2",
+          "verification_status": "unverified"
+        }
+      ],
+      "expected": {
+        "disposition": "block_fallback",
+        "support": "partial"
+      },
+      "profile_id": "generic",
+      "result": {
+        "body": {
+          "artifact": {
+            "artifact_id": "research-report.md",
+            "content": "# Fallback Report\n\nA canonical `/workspace/research-report.md` artifact was not available.\n\n- Run ID: run_00000000000000000000000000000004\n- Generated at: 2026-07-11T00:00:00+00:00\n\n## Last Agent Text\n\nPublic-safe fallback draft.\n",
+            "content_hash": "5ea08bd27c5732293f7cd385a28be98e473803508fffd87f1b4ef791252b061b",
+            "kind": "research_report_fallback_markdown",
+            "media_type": "text/markdown"
+          },
+          "delivery_status": "ready",
+          "execution_status": "completed",
+          "run_id": "run_00000000000000000000000000000004"
+        },
+        "http_status": 200
+      },
+      "run": {
+        "delivery_status": "ready",
+        "execution_status": "completed",
+        "review_status": "not_required",
+        "run_id": "run_00000000000000000000000000000004",
+        "state_version": 1
+      }
+    },
+    {
+      "case_id": "compatibility_fallback",
+      "evidence": [
+        {
+          "citation_status": "cited",
+          "evidence_id": "ev_run_00000000000000000000000000000005_0000000000000000000000000000000000000000000000000000000000000003",
+          "retrieved_at": "2026-07-11T00:00:00+00:00",
+          "source_identity": "https://example.com/contract-source-3",
+          "source_url": "https://example.com/contract-source-3",
+          "verification_status": "unverified"
+        }
+      ],
+      "expected": {
+        "disposition": "block_fallback",
+        "support": "partial"
+      },
+      "profile_id": "generic",
+      "result": {
+        "body": {
+          "artifact": {
+            "artifact_id": "research-report.md",
+            "content": "# Fallback Report\n\nA canonical `/workspace/research-report.md` artifact was not available.\n\n- Run ID: run_00000000000000000000000000000005\n- Generated at: 2026-07-11T00:00:00+00:00\n\n## Last Agent Text\n\nPublic-safe fallback draft.\n",
+            "content_hash": "3513aaee75c99bbd79e50e4870ae2c9dec9aacf9930e745075342797a64012d1",
+            "kind": "research_report_fallback_markdown",
+            "media_type": "text/markdown"
+          },
+          "delivery_status": "ready",
+          "execution_status": "completed_with_fallback",
+          "run_id": "run_00000000000000000000000000000005"
+        },
+        "http_status": 200
+      },
+      "run": {
+        "delivery_status": "ready",
+        "execution_status": "completed_with_fallback",
+        "review_status": "not_required",
+        "run_id": "run_00000000000000000000000000000005",
+        "state_version": 1
+      }
+    },
+    {
+      "case_id": "review_required",
+      "evidence": [],
+      "expected": {
+        "disposition": "await_review",
+        "support": "supported"
+      },
+      "profile_id": "generic",
+      "result": {
+        "body": {
+          "code": "run_review_required",
+          "fix": "Complete the review workflow, then retry the result request.",
+          "problem": "The ResearchRun requires review before delivery.",
+          "retryable": true,
+          "run_id": "run_00000000000000000000000000000006"
+        },
+        "http_status": 409
+      },
+      "run": {
+        "delivery_status": "review_required",
+        "execution_status": "completed",
+        "review_status": "required",
+        "run_id": "run_00000000000000000000000000000006",
+        "state_version": 1
+      }
+    },
+    {
+      "case_id": "blocked",
+      "evidence": [],
+      "expected": {
+        "disposition": "block",
+        "support": "supported"
+      },
+      "profile_id": "generic",
+      "result": {
+        "body": {
+          "code": "run_delivery_blocked",
+          "fix": "Start a corrected run if a deliverable result is still needed.",
+          "problem": "Delivery is blocked for this ResearchRun.",
+          "retryable": true,
+          "run_id": "run_00000000000000000000000000000007"
+        },
+        "http_status": 409
+      },
+      "run": {
+        "delivery_status": "blocked",
+        "execution_status": "completed",
+        "review_status": "resolved",
+        "run_id": "run_00000000000000000000000000000007",
+        "state_version": 1
+      }
+    },
+    {
+      "case_id": "failed",
+      "evidence": [],
+      "expected": {
+        "disposition": "block",
+        "support": "supported"
+      },
+      "profile_id": "generic",
+      "result": {
+        "body": {
+          "code": "run_failed",
+          "fix": "Inspect the bounded run projection and start a new run if needed.",
+          "problem": "The ResearchRun failed and has no deliverable result.",
+          "retryable": true,
+          "run_id": "run_00000000000000000000000000000008"
+        },
+        "http_status": 409
+      },
+      "run": {
+        "delivery_status": "failed",
+        "execution_status": "failed",
+        "review_status": "not_required",
+        "run_id": "run_00000000000000000000000000000008",
+        "state_version": 1
+      }
+    },
+    {
+      "case_id": "result_unavailable",
+      "evidence": [],
+      "expected": {
+        "disposition": "block",
+        "support": "supported"
+      },
+      "profile_id": "generic",
+      "result": {
+        "body": {
+          "code": "run_result_unavailable",
+          "fix": "Retry later or start a new run if the artifact cannot be recovered.",
+          "problem": "The persisted result artifact is missing or invalid.",
+          "retryable": true,
+          "run_id": "run_00000000000000000000000000000009"
+        },
+        "http_status": 409
+      },
+      "run": {
+        "delivery_status": "ready",
+        "execution_status": "completed",
+        "review_status": "not_required",
+        "run_id": "run_00000000000000000000000000000009",
+        "state_version": 1
+      }
+    }
+  ],
+  "schema_version": "dra.downstream-consumer.v1",
+  "service": {
+    "health": {
+      "service": "decision-research-agent",
+      "status": "ok"
+    },
+    "name": "decision-research-agent",
+    "result_endpoint": "/api/runs/{run_id}/result",
+    "status_endpoint": "/api/runs/{run_id}"
+  }
+}

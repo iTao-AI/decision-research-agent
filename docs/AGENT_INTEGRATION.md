@@ -10,6 +10,9 @@ tools/decision_research_agent_tool.py
 The client wraps the existing HTTP API. It does not store API keys, start the
 backend, manage UI sessions, or run benchmark jobs.
 
+For a strict, fail-closed status/result adapter and deterministic compatibility
+fixture, see the [Downstream Consumer Contract](reference/downstream-consumer-contract.md).
+
 ## Canonical Configuration
 
 | Variable | Purpose | Empty or invalid canonical value |

@@ -386,6 +386,7 @@ contains exact top-level sections:
 ```text
 schema_version
 evaluator_version
+source
 dataset
 registry
 summary

@@ -6,13 +6,14 @@ import uvicorn
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Header, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from contextlib import asynccontextmanager
 import uuid
+from typing import Annotated
 
 # Load env once at startup — tools read from os.environ
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
@@ -30,12 +31,15 @@ from api.cors_config import get_allowed_origins
 from api.task_tracker import create_tracked_task
 from api.thread_ids import validate_thread_id
 from api.run_repository import (
+    RunCreationConflict,
+    create_or_replay_run,
     create_run,
     finalize_run_transaction,
     get_artifact,
     get_run,
     transition_run,
 )
+from api.run_creation_models import validate_idempotency_key
 from api.run_result_service import (
     RunResultUnavailable,
     build_generic_result_artifact,
@@ -147,7 +151,7 @@ async def lifespan(app: FastAPI):
                 application_db_path = str(runtime.application_db_path)
                 migrate_with_backup(
                     db_path=application_db_path,
-                    backup_path=f"{application_db_path}.pre-p2a-pr2.bak",
+                    backup_path=f"{application_db_path}.pre-run-idempotency.bak",
                 )
             readiness = check_review_readiness(
                 runtime=runtime,
@@ -425,8 +429,57 @@ async def _mark_run_timeout(
     )
 
 
+def _run_creation_error(
+    status_code: int,
+    *,
+    code: str,
+    problem: str,
+    cause: str,
+    fix: str,
+    retryable: bool,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "code": code,
+            "problem": problem,
+            "cause": cause,
+            "fix": fix,
+            "retryable": retryable,
+            "run_id": None,
+            "request_id": f"request_{uuid.uuid4().hex}",
+        },
+    )
+
+
+def _run_creation_conflict_response(code: str) -> JSONResponse:
+    if code == "run_idempotency_conflict":
+        return _run_creation_error(
+            409,
+            code=code,
+            problem="The run idempotency key is already bound to another request.",
+            cause="The canonical request does not match the first accepted request.",
+            fix="Retry the original request or use a new high-entropy key.",
+            retryable=False,
+        )
+    return _run_creation_error(
+        503,
+        code="run_idempotency_unavailable",
+        problem="Run idempotency persistence is unavailable.",
+        cause="The durable run-creation ledger could not be used safely.",
+        fix="Retry the same request and key after the service is ready.",
+        retryable=True,
+    )
+
+
 @app.post("/api/runs")
-async def create_research_run(request: RunRequest):
+async def create_research_run(
+    request: RunRequest,
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key"),
+    ] = None,
+):
     """Create one run-scoped research execution."""
     try:
         profile = profile_registry.get(request.profile_id)
@@ -455,15 +508,50 @@ async def create_research_run(request: RunRequest):
                     "fix": "Provide a bounded ResearchScope with declared public samples.",
                 },
             ) from exc
-    thread_id = request.thread_id or str(uuid.uuid4())
-    created = await asyncio.to_thread(
-        create_run,
-        thread_id=thread_id,
-        query=request.query,
-        profile_id=request.profile_id,
-        profile_version=profile.version,
-        scope=validated_scope,
-    )
+    if idempotency_key is None:
+        thread_id = request.thread_id or str(uuid.uuid4())
+        created = await asyncio.to_thread(
+            create_run,
+            thread_id=thread_id,
+            query=request.query,
+            profile_id=request.profile_id,
+            profile_version=profile.version,
+            scope=validated_scope,
+        )
+        replay = False
+    else:
+        try:
+            validated_key = validate_idempotency_key(idempotency_key)
+        except ValueError:
+            return _run_creation_error(
+                422,
+                code="run_idempotency_key_invalid",
+                problem="The run idempotency key is invalid.",
+                cause="Idempotency-Key failed the bounded public contract.",
+                fix="Use 8-128 high-entropy ASCII characters from the documented set.",
+                retryable=False,
+            )
+        try:
+            acceptance = await asyncio.to_thread(
+                create_or_replay_run,
+                idempotency_key=validated_key,
+                thread_id=request.thread_id,
+                query=request.query,
+                profile_id=request.profile_id,
+                profile_version=profile.version,
+                scope=validated_scope,
+            )
+        except RunCreationConflict as exc:
+            return _run_creation_conflict_response(exc.code)
+        created = acceptance.model_dump(mode="json")
+        thread_id = acceptance.thread_id
+        replay = acceptance.idempotent_replay
+
+    response = {"status": "started", **created}
+    if idempotency_key is not None:
+        response["idempotent_replay"] = replay
+    if replay:
+        return response
     outcome_box = OutcomeBox()
     run_coroutine = _run_v2_with_persistence(
         query=request.query,
@@ -495,7 +583,7 @@ async def create_research_run(request: RunRequest):
             evidence_entries=[],
         )
         raise
-    return {"status": "started", **created}
+    return response
 
 
 @app.get("/api/runs/{run_id}")

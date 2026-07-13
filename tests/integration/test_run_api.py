@@ -38,10 +38,194 @@ def test_create_and_get_run_returns_distinct_thread_and_run_identity(
     assert created["run_id"].startswith("run_")
     assert created["segment_id"].endswith("_seg_000")
     assert scheduled[0][1] == created["run_id"]
+    assert set(created) == {"status", "thread_id", "run_id", "segment_id"}
 
     fetched = client.get(f"/api/runs/{created['run_id']}", headers=AUTH_HEADERS)
     assert fetched.status_code == 200
     assert fetched.json()["run_id"] == created["run_id"]
+
+
+def test_keyed_create_replays_identity_and_schedules_once(tmp_path, monkeypatch):
+    import api.server as server
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+    scheduled = []
+
+    def capture_task(coroutine, task_id, **kwargs):
+        scheduled.append(task_id)
+        coroutine.close()
+
+    monkeypatch.setattr(server, "create_tracked_task", capture_task)
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "Idempotency-Key": "run-key-api-0001"}
+    body = {"query": "research", "profile_id": "generic", "scope": {}}
+    first = client.post("/api/runs", json=body, headers=headers)
+    second = client.post("/api/runs", json=body, headers=headers)
+    assert first.status_code == second.status_code == 200
+    assert first.json()["idempotent_replay"] is False
+    assert second.json()["idempotent_replay"] is True
+    assert {key: first.json()[key] for key in ("run_id", "thread_id", "segment_id")} == {
+        key: second.json()[key] for key in ("run_id", "thread_id", "segment_id")
+    }
+    assert scheduled == [first.json()["run_id"]]
+
+
+def test_keyed_replay_does_not_construct_run_coroutine(tmp_path, monkeypatch):
+    import api.server as server
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+    constructed = []
+    real = server._run_v2_with_persistence
+
+    def capture_coroutine(**kwargs):
+        constructed.append(kwargs["run_id"])
+        return real(**kwargs)
+
+    def capture_task(coroutine, task_id, **kwargs):
+        coroutine.close()
+
+    monkeypatch.setattr(server, "_run_v2_with_persistence", capture_coroutine)
+    monkeypatch.setattr(server, "create_tracked_task", capture_task)
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "Idempotency-Key": "run-key-api-fence-0001"}
+    body = {"query": "research"}
+    first = client.post("/api/runs", json=body, headers=headers)
+    second = client.post("/api/runs", json=body, headers=headers)
+    assert first.status_code == second.status_code == 200
+    assert constructed == [first.json()["run_id"]]
+
+
+def test_keyed_create_conflict_is_stable_and_schedules_nothing_new(tmp_path, monkeypatch):
+    import api.server as server
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+    scheduled = []
+
+    def capture_task(coroutine, task_id, **kwargs):
+        scheduled.append(task_id)
+        coroutine.close()
+
+    monkeypatch.setattr(server, "create_tracked_task", capture_task)
+    client = TestClient(app)
+    raw_key = "run-key-api-0002"
+    headers = {**AUTH_HEADERS, "Idempotency-Key": raw_key}
+    assert client.post("/api/runs", json={"query": "first"}, headers=headers).status_code == 200
+    conflict = client.post("/api/runs", json={"query": "second"}, headers=headers)
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "run_idempotency_conflict"
+    assert conflict.json()["retryable"] is False
+    assert conflict.json()["run_id"] is None
+    assert raw_key not in conflict.text
+    assert len(scheduled) == 1
+
+
+def test_invalid_idempotency_key_is_stable_and_does_not_touch_repository(monkeypatch):
+    import api.server as server
+
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+    monkeypatch.setattr(
+        server,
+        "create_or_replay_run",
+        lambda **kwargs: pytest.fail("invalid key must fail before persistence"),
+        raising=False,
+    )
+    response = TestClient(app).post(
+        "/api/runs",
+        json={"query": "research"},
+        headers={**AUTH_HEADERS, "Idempotency-Key": "short"},
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "run_idempotency_key_invalid"
+
+
+def test_keyed_persistence_failure_is_503_without_unkeyed_fallback(monkeypatch):
+    import api.server as server
+    from api.run_repository import RunCreationConflict
+
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+    monkeypatch.setattr(
+        server,
+        "create_or_replay_run",
+        lambda **kwargs: (_ for _ in ()).throw(
+            RunCreationConflict("run_idempotency_unavailable")
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        server,
+        "create_run",
+        lambda **kwargs: pytest.fail("must not fall back to unkeyed create"),
+    )
+    raw_key = "run-key-api-0003"
+    response = TestClient(app).post(
+        "/api/runs",
+        json={"query": "research"},
+        headers={**AUTH_HEADERS, "Idempotency-Key": raw_key},
+    )
+    assert response.status_code == 503
+    assert response.json()["code"] == "run_idempotency_unavailable"
+    assert response.json()["retryable"] is True
+    assert raw_key not in response.text
+
+
+def test_unknown_run_creation_conflict_maps_to_safe_unavailable(monkeypatch):
+    import api.server as server
+    from api.run_repository import RunCreationConflict
+
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+    monkeypatch.setattr(
+        server,
+        "create_or_replay_run",
+        lambda **kwargs: (_ for _ in ()).throw(
+            RunCreationConflict("unexpected_internal_code")
+        ),
+    )
+    response = TestClient(app).post(
+        "/api/runs",
+        json={"query": "research"},
+        headers={**AUTH_HEADERS, "Idempotency-Key": "run-key-api-unknown-0001"},
+    )
+    assert response.status_code == 503
+    assert response.json()["code"] == "run_idempotency_unavailable"
+    assert "unexpected_internal_code" not in response.text
+
+
+def test_keyed_scheduler_failure_remains_bound_and_replays_failed_run(
+    tmp_path,
+    monkeypatch,
+):
+    import api.server as server
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+
+    def fail_to_schedule(*args, **kwargs):
+        raise RuntimeError("scheduler unavailable")
+
+    monkeypatch.setattr(server, "create_tracked_task", fail_to_schedule)
+    client = TestClient(app, raise_server_exceptions=False)
+    headers = {**AUTH_HEADERS, "Idempotency-Key": "run-key-api-schedule-0001"}
+    body = {"query": "research"}
+    first = client.post("/api/runs", json=body, headers=headers)
+    assert first.status_code == 500
+
+    monkeypatch.setattr(
+        server,
+        "create_tracked_task",
+        lambda *args, **kwargs: pytest.fail("replay must not schedule"),
+    )
+    replay = client.post("/api/runs", json=body, headers=headers)
+    assert replay.status_code == 200
+    assert replay.json()["idempotent_replay"] is True
+    fetched = client.get(
+        f"/api/runs/{replay.json()['run_id']}",
+        headers=AUTH_HEADERS,
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["execution_status"] == "failed"
 
 
 def test_create_run_registers_run_scoped_timeout_callback(tmp_path, monkeypatch):

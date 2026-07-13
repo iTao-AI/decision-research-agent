@@ -6,7 +6,7 @@
 
 **Architecture:** Reuse `scripts.downstream_consumer_contract` for generic run/result/Evidence validity, then add evaluation-only trajectory, trust-signal, typed-reference-status, and fixture-defined metric envelopes. Pure evaluators emit stable finding codes into a canonical report; `check` byte-compares that report with reviewed baselines. No runtime, provider, telemetry/token collector, or LangSmith path participates in v1.
 
-**Tech Stack:** Python 3.11, standard library (`argparse`, `dataclasses`, `hashlib`, `json`, `pathlib`), existing proof modules, pytest, GitHub Actions
+**Tech Stack:** Python 3.11, existing Pydantic v2, standard library (`argparse`, `copy`, `hashlib`, `json`, `pathlib`, `tempfile`), existing proof modules, pytest, GitHub Actions
 
 ## Global Constraints
 
@@ -14,9 +14,14 @@
 - Keep the required deterministic path credential-free, network-free, provider-free, and byte-stable.
 - Keep v1 deterministic-only. Live observation is a separately designed future
   follow-up and is not an implementation task in this plan.
+- Reuse strict Pydantic v2 models for structural schemas. Add no dependency;
+  DRA cross-field and policy semantics remain project-owned.
 - Do not change REST endpoints, Tool Client behavior, database schema, migrations, profiles, DeepAgents/LangGraph behavior, LangSmith configuration, frontend, or dependencies.
 - Reuse `build_fixture_bundle()` and `project_consumer_case()` from `scripts/downstream_consumer_contract`; do not copy their state/result/Evidence validation rules.
-- Do not import `agent.main_agent`, provider models, network tools, LangGraph execution, LangSmith clients, telemetry singletons, or token singletons on the deterministic import path.
+- Do not import AgentEvals, DeepAgents or `deepagents.evals`, LangChain/LangGraph
+  runtime, LangSmith clients, provider models, network tools, telemetry
+  singletons, or token singletons on the deterministic import path. Pydantic is
+  the only framework import approved for the structural contract module.
 - Do not parse Markdown into findings, claims, limitations, conflicts, or Evidence refs.
 - Treat all committed scenarios, reports, docs, and CLI errors as public artifacts. Exclude prompts, answer text, tool arguments/results, Evidence snippets, credentials, host paths, tracebacks, and raw exceptions.
 - Label every fixture-defined monetary value `cost_estimate`; include
@@ -34,6 +39,7 @@
 
 | Existing surface | Reuse decision |
 |---|---|
+| `requirements.txt` and `agent/talent_contracts.py` | Reuse the existing Pydantic v2 dependency and project contract pattern (`BaseModel`, `ConfigDict`, `Field`, `Literal`, and validators) for strict evaluation structure; do not change requirements. |
 | `scripts/downstream_consumer_contract.py` | Reuse `build_fixture_bundle()`, `validate_fixture_bundle()`, and `project_consumer_case()` for generic state/result/Evidence authority. |
 | `docs/evidence/downstream-consumer-contract-v1.json` | Keep unchanged; the evaluation baseline references freshly built projections rather than copying or editing this fixture. |
 | `scripts/talent_value_gate_runner.py` | Keep unchanged; run its unit tests as a non-regression check, but do not orchestrate it from the new gate. |
@@ -44,6 +50,12 @@
 ## NOT In Scope
 
 - Hosted LangSmith datasets/evaluators: optional diagnostics cannot be required release authority.
+- AgentEvals trajectory matching: its message-trajectory equivalence semantics,
+  new dependency, and adapter/reference-trajectory cost do not fit DRA's
+  normalized metadata policy gate.
+- DeepAgents live evaluation (`TrajectoryScorer`/`run_agent`): real Agent/model
+  execution plus LangSmith, credential, and hosted-diagnostics coupling is not
+  suitable for required deterministic CI.
 - Live observation, provider-backed evaluation, runtime normalization, timeout
   handling, trace correlation, and process-local collector reads: defer to a
   separately approved follow-up.
@@ -76,7 +88,7 @@ downstream fixture builder ─────┘                             │
 | File | Responsibility |
 |---|---|
 | `benchmarks/agent-evaluation-v1/scenarios.json` | Exact ordered eight-case manifest with fixed policies, normalized trajectories, metrics, and expected finding codes. |
-| `scripts/agent_evaluation_contracts.py` | Manifest/observation/report/comparison validation, public-safety checks, bounded JSON loading, dataset hashing, and deterministic serialization. |
+| `scripts/agent_evaluation_contracts.py` | Strict Pydantic structural models and boundary adapters for manifest/case/observation/metrics/report/comparison, plus project-owned bounded JSON loading, public-safety checks, dataset hashing, and deterministic serialization. |
 | `scripts/agent_evaluation_evaluators.py` | Fixed evaluator registry, consumer validation context, stable findings, expectation matching, and per-case status. |
 | `scripts/agent_evaluation_gate.py` | Deterministic observation/report builder, Markdown renderer, baseline comparison, and build/check CLI. |
 | `tests/unit/test_agent_evaluation_contracts.py` | Exact schema, size, enum, public-safety, metric, and serialization mutation coverage. |
@@ -424,6 +436,11 @@ assert exact stable codes, including
 `evaluation_case_invalid`, `evaluation_metrics_invalid`,
 `evaluation_public_output_unsafe`, and `evaluation_output_invalid`.
 
+Include explicit tests that extra fields fail closed, string-to-number
+coercion is rejected, bool-as-int is rejected, raw Pydantic `ValidationError`
+details never reach stderr or a report, and the `model_dump(mode="json")`
+plain-data round trip remains byte-stable.
+
 Add an explicit boundary pair: a structurally invalid event fails validation
 before registry invocation, while a structurally valid orphan tool result passes
 validation and later produces the evaluator finding `trajectory.event_invalid`.
@@ -449,7 +466,8 @@ query, prompt, source content, answer, path, or provider name.
 
 - [ ] **Step 4: Implement strict validators and deterministic serialization**
 
-Use one bounded exception and explicit exact-key helpers:
+Keep the public validation interfaces returning plain dictionaries and one
+bounded exception:
 
 ```python
 class EvaluationValidationError(ValueError):
@@ -460,12 +478,6 @@ class EvaluationValidationError(ValueError):
 
 def _fail(code: str) -> None:
     raise EvaluationValidationError(code)
-
-
-def _require_exact_keys(value: object, keys: set[str], code: str) -> dict[str, Any]:
-    if not isinstance(value, dict) or set(value) != keys:
-        _fail(code)
-    return value
 
 
 def dataset_hash(manifest: dict[str, Any]) -> str:
@@ -479,9 +491,25 @@ def dataset_hash(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 ```
 
-Validators own structural contract only: exact keys, types, enums, byte/length
-bounds, identifier/format rules, unique `event_id`, legal signal-reference
-shape, public safety, and serialization schemas. They must not enforce
+Define focused Pydantic models for the manifest envelope, individual cases,
+metrics, observations, reports, and comparisons. Their base configuration is
+equivalent to `ConfigDict(extra="forbid", frozen=True, strict=True)`; do not
+claim that `frozen` recursively deep-freezes nested values. Keep explicit
+boundary adapters so `ValidationError` from each model maps directly to the
+existing stable code for that boundary rather than using one monolithic model
+and interpreting error locations.
+
+Every file load must first use the existing standard-library bounded byte read
+and `json.loads`, then call `model_validate(python_object, strict=True)`. Do not
+use `model_validate_json` as a bounded loader. After validation, use
+`model_dump(mode="json")` to obtain canonical plain data before the existing
+deterministic `json.dumps` and hashing strategy.
+
+Pydantic models own structural contract only: exact fields, strict types,
+`Literal` enums, `Field` bounds, and declarative field formats. Small
+project-owned validators retain regex checks for project vocabulary,
+uniqueness, public safety, explicit schema-version mapping, and semantics
+Pydantic cannot or should not own. Neither layer may enforce
 call/result pairing, orphan detection, terminal order, current-run isolation,
 tool policy, action-after-signal policy, metric/trajectory consistency, or
 expected finding comparison.
@@ -699,10 +727,11 @@ sibling temp cleanup, and no implicit parent creation.
 For import isolation, run `main(["check"])`, then assert none of
 `agent.main_agent`, `agent.llm`, `tools.tavily_tools`, `tools.talent_search`, or
 `tools.ragflow_tools` are present in `sys.modules`. Run this in a subprocess so
-earlier test imports cannot create a false failure. Separately assert the three
-new Python files contain no `langsmith` import or client construction; a
-transitive `langchain_core` import may load LangSmith support code and is not by
-itself evidence that a client was initialized.
+earlier test imports cannot create a false failure. Pydantic is allowed. Assert
+the three new Python files do not import `agentevals`, `deepagents` or
+`deepagents.evals`, LangChain/LangGraph runtime, a LangSmith client, providers,
+network tools, or collectors. Do not introduce `langchain_core` merely because
+it may exist transitively.
 
 Monkeypatch one library call to raise an unexpected exception and invoke the CLI
 in a subprocess. Assert exit 1, empty stdout, and exact bounded stderr with
@@ -934,6 +963,10 @@ runtime/provider/collector paths are not invoked, live observation is deferred,
 LangSmith remains separate diagnostics, and the application DB remains business
 authority.
 
+Include the concise framework-reuse rationale: Pydantic owns structural
+schemas; project evaluators own DRA cross-field and policy semantics;
+AgentEvals and DeepAgents live evaluation remain deferred.
+
 Index both evidence files and the reference. Link it from Agent integration and
 both public READMEs. Under `CHANGELOG.md` `Unreleased`, describe the implemented
 capability only; do not claim the version is released.
@@ -1004,10 +1037,16 @@ git commit -m "docs(eval): publish regression gate workflow"
 git status --short --branch
 git diff --name-status c67e952fcc83fbcfcd46b9779d84fdbeac52741f..HEAD
 git diff --check c67e952fcc83fbcfcd46b9779d84fdbeac52741f..HEAD
+git diff --name-only c67e952fcc83fbcfcd46b9779d84fdbeac52741f..HEAD -- \
+  requirements.txt requirements-dev.txt pyproject.toml
+rg -n "requirements|pyproject" <(git diff --name-only \
+  c67e952fcc83fbcfcd46b9779d84fdbeac52741f..HEAD)
 ```
 
 Expected: only the approved spec, plan, evaluation code/tests/manifest,
-baselines, docs, changelog, and CI workflow appear; diff check is silent.
+baselines, docs, changelog, and CI workflow appear; diff check is silent; no
+requirements or dependency metadata file changed. Treat `rg` exit 1 with no
+matches as success.
 
 - [ ] **Step 2: Run the deterministic release gate twice**
 

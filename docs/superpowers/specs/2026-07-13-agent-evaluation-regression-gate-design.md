@@ -107,6 +107,8 @@ trajectory, safety, and efficiency observations.
 - No automatic bad-case ingestion, baseline update, or release approval.
 - No LangSmith API key requirement, trace export authority, or business-state
   decision based on a trace.
+- No AgentEvals or DeepAgents evaluation-suite dependency and no live framework
+  evaluation path in the required v1 gate.
 - No live observation command, provider invocation, runtime adapter, timeout
   handling, process-local telemetry/token collection, or trace correlation.
   Any live evaluation path is a separately designed future follow-up.
@@ -140,7 +142,35 @@ and fixture-defined efficiency, and compare a generated report with an
 explicitly reviewed baseline. Keep live provider behavior outside this release
 and require a separate design if it later becomes valuable.
 
-### D. Use LangSmith datasets and evaluators as the canonical gate
+### D. Reuse existing Pydantic v2 for structural contracts
+
+Selected. Pydantic v2 is already a project dependency and the repository's
+existing contract pattern. The manifest, case, observation, report, and
+comparison envelopes use strict Pydantic models for exact fields and types,
+`Literal` enums, `Field` bounds, format validators, and `extra="forbid"`.
+Project-owned bounded I/O, public-safety scanning, hashing, deterministic
+serialization, stable CLI errors, and cross-field policy remain separate.
+
+### E. Use AgentEvals trajectory matching in the required gate
+
+`create_trajectory_match_evaluator` primarily compares OpenAI or LangChain
+message trajectories using strict, unordered, subset, or superset equivalence.
+The v1 gate instead evaluates DRA-normalized metadata events without raw
+content or arguments, including allowlists, call/result pairing, terminal
+ordering, run isolation, and trust-signal policy. AgentEvals would add a new
+dependency plus adapter/reference-trajectory cost while replacing little
+project logic. Rejected for the required v1 gate; reconsider only if a future
+live or provider-backed observation path establishes a concrete need.
+
+### F. Use the DeepAgents live evaluation suite in required CI
+
+The DeepAgents `TrajectoryScorer` and `run_agent` path executes a real Agent
+and model and connects evaluation to LangSmith pytest integration, credentials,
+and hosted diagnostics. That conflicts with credential-free, provider-free,
+byte-stable required CI. Rejected for v1; it remains a candidate for a future
+optional live evaluation design.
+
+### G. Use LangSmith datasets and evaluators as the canonical gate
 
 LangSmith is useful for trace diagnostics, but requiring a hosted workspace and
 service key would violate the repository's credential-free CI and authority
@@ -218,10 +248,23 @@ evaluation-only data and are not presented as persisted runtime fields.
 
 ### Validation And Evaluation Ownership
 
-Contract validators own only structural validity: exact keys, types, enums,
-byte/length bounds, identifier and format rules, unique event IDs, legal signal
-reference shape, public-safety checks, and serialization schemas. Structurally
-invalid input raises a stable validation error before evaluation.
+Strict Pydantic structural models own exact fields and types, enums,
+byte/length bounds, and local identifier and format rules. Their shared base is
+equivalent to `ConfigDict(extra="forbid", frozen=True, strict=True)`; `frozen`
+does not claim recursive deep immutability. Existing project-owned bounded byte
+reads and `json.loads` run before `model_validate(..., strict=True)`. Validation
+then produces a canonical plain dictionary through `model_dump(mode="json")`
+for deterministic serialization.
+
+Validation occurs at explicit envelope, case, metrics, report, and comparison
+boundaries so each boundary maps `ValidationError` to its fixed
+`evaluation_*` code. Schema-version mismatches continue to map explicitly to
+`evaluation_schema_unsupported`; no raw Pydantic error, location, message,
+input, path, or traceback is public. A monolithic model must not infer public
+error ownership from an internal error location. Project-owned validators keep
+regex checks that encode project vocabulary, uniqueness, public-safety
+scanning, schema-version handling, and other rules that Pydantic cannot or
+should not own.
 
 Pure evaluators own cross-field and policy semantics: tool call/result pairing
 and orphan detection, terminal-last ordering, current-run isolation, tool
@@ -344,8 +387,11 @@ output. Registry order is fixed so reports are byte-stable.
 
 The required command:
 
-1. loads the exact versioned scenario manifest;
-2. validates its schema and computes a SHA-256 dataset hash;
+1. bounded-reads the exact versioned scenario manifest and applies
+   `json.loads`;
+2. validates the Python object through strict Pydantic boundary models, dumps
+   canonical plain data with `model_dump(mode="json")`, and computes a SHA-256
+   dataset hash using the existing deterministic `json.dumps` policy;
 3. obtains current status/result/Evidence projections from the existing
    downstream proof builder;
 4. builds the normalized deterministic observations;
@@ -361,6 +407,10 @@ collectors. It must run with no `.env` and no credentials.
 Equivalent source and fixed input must produce identical UTF-8 bytes. JSON uses
 sorted keys, two-space indentation, and one trailing newline. Markdown is
 rendered only from the validated JSON report.
+
+`model_validate_json` is not the bounded loader: the required path preserves
+the standard-library byte limit, and Pydantic's strict JSON validation may
+accept some JSON representations that strict Python-object validation rejects.
 
 ## Report Contract
 

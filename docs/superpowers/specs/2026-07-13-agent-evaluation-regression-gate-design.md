@@ -12,17 +12,18 @@ downstream contract compatibility. The missing release asset is a coherent,
 versioned Agent evaluation surface that converts those contract boundaries
 into one deterministic regression gate.
 
-This change adds a public-safe evaluation dataset, an evaluator registry, a
-deterministic replay/check command, an opt-in bounded live observation command,
-and machine- plus human-readable reports. It evaluates canonical result
+This change adds a public-safe evaluation dataset, an evaluator registry,
+deterministic build/check commands, and machine- plus human-readable reports.
+It evaluates canonical result
 behavior, normalized tool trajectory, Evidence integrity, terminal state,
 safety boundaries, and efficiency observations without changing runtime
 authority or introducing an LLM judge.
 
-The deterministic gate is required, credential-free, network-free, and stable
-enough for CI. Live observation remains explicit and non-required. LangSmith
-may supply optional trace correlation, but the application database and
-repository-visible report remain the evaluation authority.
+The gate is required, credential-free, network-free, provider-free, and stable
+enough for CI. It consumes deterministic fixtures only; it does not invoke the
+Agent runtime, process-local collectors, or LangSmith. The application database
+continues to own runtime business authority, while the repository-visible
+report is authoritative only for this fixed-input regression proof.
 
 This capability is intended to be the principal engineering addition for a
 future `v0.1.1` release. Version bumping, tagging, publishing, and release
@@ -46,8 +47,9 @@ creation are separate actions.
 - The downstream fixture already types terminal status, generic canonical and
   fallback result behavior, run-level Evidence, and fail-closed consumer
   disposition. The new gate reuses that proof rather than rebuilding it.
-- Telemetry and token/cost tracking are process-local. Cost is a local estimate,
-  not a provider invoice, and neither surface becomes durable in this change.
+- Telemetry and token/cost tracking are process-local and remain outside this
+  gate. Fixture-defined efficiency values validate estimate labeling and
+  `not_observed` semantics; they are not provider measurements or invoices.
 
 ## Problem
 
@@ -88,9 +90,7 @@ trajectory, safety, and efficiency observations.
 5. Fail required CI on contract, Evidence, state, or safety regressions while
    keeping efficiency measurements observational until stable thresholds are
    approved from repeated evidence.
-6. Provide an opt-in bounded live observation path using the existing Agent
-   runtime without turning live variability into a required release gate.
-7. Keep DeepAgents, LangGraph, the application database, and LangSmith in their
+6. Keep DeepAgents, LangGraph, the application database, and LangSmith in their
    current authority roles.
 
 ## Non-Goals
@@ -107,6 +107,9 @@ trajectory, safety, and efficiency observations.
 - No automatic bad-case ingestion, baseline update, or release approval.
 - No LangSmith API key requirement, trace export authority, or business-state
   decision based on a trace.
+- No live observation command, provider invocation, runtime adapter, timeout
+  handling, process-local telemetry/token collection, or trace correlation.
+  Any live evaluation path is a separately designed future follow-up.
 - No benchmark of answer truth, broad research quality, latency SLO, market
   coverage, or provider comparison.
 - No Async Subagents, memory, multi-user/RBAC, anonymous public research, MCP
@@ -129,19 +132,19 @@ This would mix deterministic fixtures, real-provider execution, durability
 experiments, independent review, and consumer compatibility into a single
 success signal. It would also make CI slow and credential-dependent. Rejected.
 
-### C. Add a deterministic evaluation contract plus optional live observation
+### C. Add a deterministic evaluation contract
 
 Recommended. Reuse typed output from the downstream proof for result/state
 semantics, add a small normalized observation envelope for trajectory, safety,
-and efficiency, and compare a generated report with an explicitly reviewed
-baseline. Keep live provider behavior separate and opt-in.
+and fixture-defined efficiency, and compare a generated report with an
+explicitly reviewed baseline. Keep live provider behavior outside this release
+and require a separate design if it later becomes valuable.
 
 ### D. Use LangSmith datasets and evaluators as the canonical gate
 
 LangSmith is useful for trace diagnostics, but requiring a hosted workspace and
 service key would violate the repository's credential-free CI and authority
-boundaries. Rejected as the canonical path; optional correlation remains
-supported.
+boundaries. Rejected; v1 does not integrate, query, or reference LangSmith.
 
 ## Architecture
 
@@ -154,22 +157,13 @@ flowchart LR
     JSON --> Markdown["Deterministic Markdown renderer"]
     JSON --> Compare["Reviewed baseline comparison"]
     Compare --> Gate["CI regression decision"]
-
-    Runtime["Existing Agent runtime"] --> Live["Bounded live observation"]
-    Live --> Registry
-    Trace["Optional LangSmith trace reference"] -. diagnostics .-> Live
-
-    DB[("Application DB authority")] -. unchanged .-> Runtime
-    Graph["LangGraph workflow state"] -. runtime only .-> Runtime
-    Deep["DeepAgents harness"] -. execution only .-> Runtime
 ```
 
 The evaluator consumes a normalized observation envelope. It does not become a
 new run ledger or runtime result model. Deterministic observations are built
 from fixed public-safe inputs; status/result/Evidence cases are sourced through
-the existing downstream compatibility builder. Live observations are ephemeral
-operator artifacts unless the operator explicitly saves them outside the
-committed baseline.
+the existing downstream compatibility builder. No runtime report source or
+provider-backed path exists in v1.
 
 ## Authority Boundaries
 
@@ -178,8 +172,8 @@ committed baseline.
 - DeepAgents remains the research harness and tool/subagent execution surface.
 - LangGraph remains workflow execution and checkpoint-compatible review
   position, not the business ledger.
-- LangSmith remains privacy-first diagnostics. A trace reference may help an
-  operator investigate a finding but cannot clear or create a gate finding.
+- LangSmith remains privacy-first diagnostics outside this gate. The report
+  contains no trace reference, and tracing cannot clear or create a finding.
 - The committed evaluation report is release proof for fixed inputs. It is not
   runtime output, production monitoring, independent fact verification, or a
   provider quality ranking.
@@ -241,17 +235,18 @@ The evaluator does not claim to detect arbitrary prompt injection. A trust
 signal is a structured, fixture-declared fact such as
 `untrusted_instruction_present`. Safety rules can then verify that no
 prohibited tool action follows that signal and that the public report contains
-no forbidden material. Live mode may omit trust signals when the runtime does
-not provide a typed equivalent; omission must remain visible as `not_observed`,
-not silently treated as safe.
+no forbidden material. Every v1 fixture declares trust-signal observation
+explicitly, including the observed-none cases; v1 has no missing-trust runtime
+branch.
 
 ### Metrics
 
 Metrics use these semantics:
 
 - assistant and tool counts are non-negative integers;
-- elapsed time is an observation, never a deterministic wall-clock assertion;
-- token counts may be absent when the current collector has no record;
+- elapsed time is fixture-defined evaluation input, never a measured wall-clock
+  assertion;
+- token counts may be fixture-defined as absent to exercise `not_observed`;
 - cost is always named `cost_estimate` and carries currency and pricing-basis
   metadata;
 - no cost field may be labeled as billed, invoiced, or provider-reported unless
@@ -322,10 +317,12 @@ output. Registry order is fixed so reports are byte-stable.
 
 ### `efficiency_observation.v1`
 
-- records assistant/tool counts, elapsed time, token counts when available, and
-  local cost estimate metadata;
+- records fixture-defined assistant/tool counts, elapsed values, token counts,
+  and local estimate metadata;
 - validates types and internal count consistency;
 - produces observational findings only in v1;
+- never reads runtime telemetry, token collectors, provider metadata, or
+  billing data;
 - cannot fail the release gate for threshold drift until an approved baseline
   establishes stable thresholds across repeated runs.
 
@@ -351,33 +348,6 @@ Equivalent source and fixed input must produce identical UTF-8 bytes. JSON uses
 sorted keys, two-space indentation, and one trailing newline. Markdown is
 rendered only from the validated JSON report.
 
-## Bounded Live Observation Mode
-
-Live mode is explicit, operator-run, and never required in CI. It may execute
-one existing profile through the current runtime with:
-
-- an explicit query or declared fixture input;
-- a positive per-run timeout with a conservative upper bound;
-- unique run, thread, and segment identities;
-- existing provider and search configuration;
-- bounded output written only to an explicit operator-selected path;
-- no automatic baseline update or commit.
-
-The command normalizes only fields available from the current execution
-outcome and current process-local collectors. Missing fields remain typed as
-`not_observed`. It must preserve the current Evidence and result boundaries,
-sanitize exported errors, and avoid raw prompts, tool payloads, credentials,
-or host paths.
-
-A live report has `source="live_observation"`, includes no deterministic
-baseline-pass claim, and records environment variable names/status only when a
-preflight is requested. It does not print secret values. Provider/model names
-may be recorded only if already public-safe and explicitly allowlisted.
-
-An optional LangSmith trace reference may be recorded when tracing is already
-configured. The command must not accept an API key on the command line, query
-LangSmith to decide the gate, or fail because no trace exists.
-
 ## Report Contract
 
 The canonical JSON report schema is `dra.agent-evaluation-report.v1` and
@@ -400,7 +370,7 @@ Required identity fields include:
 - evaluator/report version;
 - ordered evaluator IDs and versions;
 - ordered case IDs;
-- deterministic/live source classification.
+- exact `source="deterministic"` classification.
 
 Each case records:
 
@@ -454,8 +424,6 @@ rewrite.
 - Efficiency changes remain observational for v1. Adding a blocking threshold
   requires repeated measurements, an explicit unit and environment boundary,
   an approved tolerance, and a new evaluator/baseline version.
-- Live observation can support a release narrative but cannot make a failing
-  deterministic gate pass.
 
 ## CLI And Failure Handling
 
@@ -464,7 +432,6 @@ The implementation provides one repository script with bounded commands:
 ```text
 check             validate, evaluate, and compare committed artifacts
 build             write candidate deterministic JSON and Markdown
-observe           run one bounded live observation to explicit outputs
 ```
 
 All commands return non-zero for invalid inputs or blocking failure. Stable
@@ -477,9 +444,7 @@ public errors include:
 - `evaluation_expectation_mismatch`;
 - `evaluation_blocking_regression`;
 - `evaluation_baseline_drift`;
-- `evaluation_output_invalid`;
-- `live_observation_timeout`;
-- `live_observation_failed`.
+- `evaluation_output_invalid`.
 
 CLI error output must not contain raw exceptions, tracebacks, credentials,
 provider responses, prompt/tool content, or local paths. The implementation may
@@ -526,17 +491,9 @@ log a bounded case ID and evaluator ID.
 - no deterministic path imports or initializes provider, network, DeepAgents,
   LangGraph execution, LangSmith client, telemetry collector, or token
   collector;
-- missing token/cost or LangSmith data remains `not_observed` and non-blocking;
-- cost labels remain explicit estimates.
-
-### Live mode tests
-
-- mock the existing runtime to verify unique identities, timeout, one-run bound,
-  sanitization, and explicit output requirement;
-- ensure live mode cannot write or update the committed baseline;
-- ensure missing credentials/configuration fails with bounded guidance;
-- ensure no LangSmith configuration is required;
-- do not perform provider or network execution in required tests.
+- fixture-defined missing token/cost data remains `not_observed` and
+  non-blocking;
+- cost labels remain explicit estimates and no runtime collector is read.
 
 ### Broader verification
 
@@ -554,13 +511,13 @@ frontend; that would be scope growth and requires review.
 Add a public reference explaining:
 
 - what the deterministic gate does and does not prove;
-- deterministic versus live observation modes;
 - evaluator registry and scenario matrix;
 - report schema, dataset hash, baseline review, and stable failure codes;
 - why efficiency and cost are observational estimates in v1;
 - why generic Markdown is not parsed into typed facts;
-- why LangSmith is optional diagnostics and the application ledger remains
-  authoritative;
+- why runtime, provider, telemetry/token collectors, and LangSmith are outside
+  the gate while the application ledger remains authoritative;
+- why live observation is deferred to a separately reviewed future follow-up;
 - how existing Talent, durability, real-source, and downstream proofs remain
   separate.
 
@@ -607,8 +564,8 @@ evidence and their own contract review.
 
 ## Review Strategy
 
-This is a Level 3 offline evaluation contract with an opt-in live runner and no
-runtime authority change. A focused engineering plan review is required. A
+This is a Level 3 deterministic offline evaluation contract with no runtime
+authority change. A focused engineering plan review is required. A
 full Autoplan is not required because the work stays within one repository and
 does not expand product or business authority.
 

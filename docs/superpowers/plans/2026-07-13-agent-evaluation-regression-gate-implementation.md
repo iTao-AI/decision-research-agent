@@ -2,23 +2,26 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Do not use subagents in this repository unless the owner explicitly authorizes them for this task.
 
-**Goal:** Add a versioned, deterministic Agent evaluation gate with exact adverse-case expectations, reviewed JSON/Markdown baselines, an explicit CI check, and a separate bounded live-observation command.
+**Goal:** Add a versioned, deterministic Agent evaluation gate with exact adverse-case expectations, reviewed JSON/Markdown baselines, an explicit CI check, and public documentation.
 
-**Architecture:** Reuse `scripts.downstream_consumer_contract` for generic run/result/Evidence validity, then add evaluation-only trajectory, trust-signal, typed-reference-status, and metric envelopes. Pure evaluators emit stable finding codes into a canonical report; the deterministic command byte-compares that report with reviewed baselines, while the live command lazily invokes the existing generic runtime and never changes or clears a deterministic gate result.
+**Architecture:** Reuse `scripts.downstream_consumer_contract` for generic run/result/Evidence validity, then add evaluation-only trajectory, trust-signal, typed-reference-status, and fixture-defined metric envelopes. Pure evaluators emit stable finding codes into a canonical report; `check` byte-compares that report with reviewed baselines. No runtime, provider, telemetry/token collector, or LangSmith path participates in v1.
 
-**Tech Stack:** Python 3.11, standard library (`argparse`, `asyncio`, `dataclasses`, `hashlib`, `json`, `pathlib`, `time`, `uuid`), existing application and proof modules, pytest, GitHub Actions
+**Tech Stack:** Python 3.11, standard library (`argparse`, `dataclasses`, `hashlib`, `json`, `pathlib`), existing proof modules, pytest, GitHub Actions
 
 ## Global Constraints
 
 - Implement against `docs/superpowers/specs/2026-07-13-agent-evaluation-regression-gate-design.md`.
 - Keep the required deterministic path credential-free, network-free, provider-free, and byte-stable.
-- Keep live execution opt-in, one-run-only, generic-profile-only in v1, deadline-bound, and non-required in CI.
+- Keep v1 deterministic-only. Live observation is a separately designed future
+  follow-up and is not an implementation task in this plan.
 - Do not change REST endpoints, Tool Client behavior, database schema, migrations, profiles, DeepAgents/LangGraph behavior, LangSmith configuration, frontend, or dependencies.
 - Reuse `build_fixture_bundle()` and `project_consumer_case()` from `scripts/downstream_consumer_contract`; do not copy their state/result/Evidence validation rules.
 - Do not import `agent.main_agent`, provider models, network tools, LangGraph execution, LangSmith clients, telemetry singletons, or token singletons on the deterministic import path.
 - Do not parse Markdown into findings, claims, limitations, conflicts, or Evidence refs.
 - Treat all committed scenarios, reports, docs, and CLI errors as public artifacts. Exclude prompts, answer text, tool arguments/results, Evidence snippets, credentials, host paths, tracebacks, and raw exceptions.
-- Label every monetary value `cost_estimate`; include `estimate=true`, currency, and pricing basis. Never claim invoice or billing authority.
+- Label every fixture-defined monetary value `cost_estimate`; include
+  `estimate=true`, currency, and pricing basis. Never claim measured provider
+  usage, invoice, or billing authority.
 - Efficiency changes remain observational in v1. Only contract, state, Evidence, isolation, safety, expectation, and baseline drift are blocking.
 - Do not add automatic baseline updates. `build` writes only explicit candidate paths; `check` is the required gate.
 - Do not implement `POST /api/runs` idempotency or lost-response reconciliation in this change.
@@ -35,14 +38,15 @@
 | `docs/evidence/downstream-consumer-contract-v1.json` | Keep unchanged; the evaluation baseline references freshly built projections rather than copying or editing this fixture. |
 | `scripts/talent_value_gate_runner.py` | Keep unchanged; run its unit tests as a non-regression check, but do not orchestrate it from the new gate. |
 | `scripts/durable_hitl_gate_runner.py` and `scripts/real_source_proof.py` | Keep separate; do not invoke them from CI evaluation. |
-| `agent.main_agent.run_deep_agent()` | Lazy-import only inside `observe`; never import it for deterministic build/check. |
-| `agent.run_result.ExecutionOutcome` and `api.run_result_service.build_generic_result_artifact()` | Reuse in live normalization without changing runtime models. |
-| `agent.telemetry.collector` and `agent.token_tracking.token_collector` | Read and clear only for the unique live run; never make them durable or authoritative. |
+| Agent runtime, provider adapters, telemetry/token collectors, and LangSmith | Keep untouched and unimported by deterministic build/check. |
 | `.github/workflows/ci.yml` | Add one explicit deterministic gate step before the existing full pytest step. |
 
 ## NOT In Scope
 
 - Hosted LangSmith datasets/evaluators: optional diagnostics cannot be required release authority.
+- Live observation, provider-backed evaluation, runtime normalization, timeout
+  handling, trace correlation, and process-local collector reads: defer to a
+  separately approved follow-up.
 - LLM-as-judge or subjective answer scoring: no stable human-quality authority exists for v1.
 - Automatic bad-case promotion or baseline rewrite: review must remain explicit.
 - Generic structured outcome or claim-level Evidence contract: current consumer proof marks these semantics unknown.
@@ -54,8 +58,6 @@
 ## Data Flow
 
 ```text
-DETERMINISTIC (required CI)
-
 scenarios.json ──validate/hash──┐
                                ├─> build observations ─> evaluator registry
 downstream fixture builder ─────┘                             │
@@ -67,16 +69,6 @@ downstream fixture builder ─────┘                             │
                               Markdown renderer             baseline compare
                                                                    │
                                                     zero / bounded error code
-
-LIVE (operator only)
-
-explicit query ─> lazy run_deep_agent ─> ExecutionOutcome ─> safe observation
-                                                               │
-                                process-local usage (optional) ─┤
-                                                               v
-                                                    evaluator registry
-                                                               │
-                                               explicit JSON/Markdown paths
 ```
 
 ## Scope And File Map
@@ -86,13 +78,13 @@ explicit query ─> lazy run_deep_agent ─> ExecutionOutcome ─> safe observat
 | `benchmarks/agent-evaluation-v1/scenarios.json` | Exact ordered eight-case manifest with fixed policies, normalized trajectories, metrics, and expected finding codes. |
 | `scripts/agent_evaluation_contracts.py` | Manifest/observation/report/comparison validation, public-safety checks, bounded JSON loading, dataset hashing, and deterministic serialization. |
 | `scripts/agent_evaluation_evaluators.py` | Fixed evaluator registry, consumer validation context, stable findings, expectation matching, and per-case status. |
-| `scripts/agent_evaluation_gate.py` | Deterministic observation/report builder, Markdown renderer, baseline comparison, lazy bounded live adapter, and CLI. |
+| `scripts/agent_evaluation_gate.py` | Deterministic observation/report builder, Markdown renderer, baseline comparison, and build/check CLI. |
 | `tests/unit/test_agent_evaluation_contracts.py` | Exact schema, size, enum, public-safety, metric, and serialization mutation coverage. |
 | `tests/unit/test_agent_evaluation_evaluators.py` | Six evaluator families, expected adverse cases, unexpected regressions, and not-observed behavior. |
-| `tests/integration/test_agent_evaluation_gate.py` | Current downstream proof reuse, deterministic bytes, baselines, CLI, lazy import boundary, and mocked live flow. |
+| `tests/integration/test_agent_evaluation_gate.py` | Current downstream proof reuse, deterministic bytes, baselines, CLI, and runtime import boundary. |
 | `docs/evidence/agent-evaluation-regression-v1.json` | Generated reviewed deterministic baseline. |
 | `docs/evidence/agent-evaluation-regression-v1.md` | Deterministic Markdown rendered only from the JSON baseline. |
-| `docs/reference/agent-evaluation-regression-gate.md` | Operator/reference contract for modes, evaluators, reports, failure codes, and limits. |
+| `docs/reference/agent-evaluation-regression-gate.md` | Operator/reference contract for deterministic commands, evaluators, reports, failure codes, and limits. |
 | `docs/evidence/README.md` | Evidence index entry and proof boundary. |
 | `docs/README.md` | Reference index entry. |
 | `docs/AGENT_INTEGRATION.md` | Link from Agent/operator integration documentation. |
@@ -112,8 +104,6 @@ COMPARISON_SCHEMA_VERSION = "dra.agent-evaluation-comparison.v1"
 EVALUATOR_VERSION = "1"
 MAX_MANIFEST_BYTES = 512 * 1024
 MAX_REPORT_BYTES = 2 * 1024 * 1024
-MAX_LIVE_TIMEOUT_SECONDS = 900.0
-
 CASE_IDS = (
     "canonical_success",
     "fallback_blocked",
@@ -157,11 +147,9 @@ trajectory.tool_prohibited
 safety.action_after_untrusted_instruction
 isolation.cross_run_reference
 efficiency.token_usage_not_observed
-trajectory.pairing_not_observed
-safety.trust_signal_not_observed
 ```
 
-Only the last three codes are observational. Mutation-only blocking codes may
+Only `efficiency.token_usage_not_observed` is observational. Mutation-only blocking codes may
 include `result.contract_invalid`, `trajectory.event_invalid`,
 `evidence.reference_unresolved`, `metrics.invalid`, and
 `evaluation.public_output_unsafe`.
@@ -201,9 +189,8 @@ EXPECTED_KEYS = {
 
 `run`, `evidence`, and `result` are copied from a validated downstream case;
 their exact nested shape remains owned by the downstream proof. The normalized
-observation does not enter the report directly. Live observations use the same
-keys with `source="live_observation"`, partial/not-observed statuses, and
-`expected=None`.
+observation does not enter the report directly. Every v1 observation has
+`source="deterministic"` and an exact `expected` object.
 
 Each evaluated case contains exactly:
 
@@ -271,11 +258,9 @@ Each evaluated case contains exactly:
 ```
 
 The `evaluators` array contains all six registry entries in registry order.
-Deterministic cases set `expectation_match` to a boolean and copy the
-manifest expectation. A live case sets `status="not_observed"`,
-`expectation_match=None`, and `expected=None`; individual evaluator entries may
-still be `pass` for contract checks or `not_observed` for missing typed data.
-This status is not a release-gate pass.
+Every case sets `expectation_match` to a boolean and copies the manifest
+expectation. `not_observed` remains an evaluator status for explicitly absent
+fixture-defined data; it is not a second report source or runtime branch.
 
 ## Stable Scenario Matrix
 
@@ -297,6 +282,12 @@ trust_signals
 metrics
 expected
 ```
+
+The manifest supports only the deterministic branch used by these cases:
+`trajectory_status="complete"`, `trust_signal_status="observed"`, and
+`evidence_ref_status="not_observed"`. The builder adds
+`source="deterministic"`. Do not add partial trajectory, missing trust-signal,
+runtime, provider, or alternate-source schema branches in v1.
 
 Use this exact case policy:
 
@@ -525,10 +516,9 @@ def test_canonical_success_has_no_blocking_findings():
 
 Add separate tests for fallback/review/failure codes, missing/unresolved
 Evidence, disallowed/orphan trajectory events, cross-run refs, the two-call
-untrusted-signal sequence, partial/not-observed signals, invalid metrics,
-expected adverse cases, unexpected/missing findings, and a live case without
-expectations. Assert exact finding dictionaries and registry order, not message
-text.
+untrusted-signal sequence, observed-none trust signals, invalid metrics,
+expected adverse cases, and unexpected/missing findings. Assert exact finding
+dictionaries and registry order, not message text.
 
 - [ ] **Step 2: Run evaluator tests and verify RED**
 
@@ -592,15 +582,15 @@ Required rules:
 - `terminal_state`: emit exact expected review/failed codes; do not invent
   timeout/provider/cancel cause.
 - `safety_boundary`: block configured tool calls after their referenced
-  untrusted signal; emit observational not-observed for live omissions.
+  untrusted signal; treat observed-none fixtures as an explicit safe input.
 - `efficiency_observation`: validate internal counts and estimate shape; emit
-  `efficiency.token_usage_not_observed` only as observational.
+  `efficiency.token_usage_not_observed` only as observational, and never read
+  real telemetry, token, provider, or billing data.
 
 `evaluate_observation()` compares ordered actual code arrays with deterministic
 `expected`. Exact match plus blocking codes becomes `expected_block`; exact
 match without blocking codes becomes `pass`; any mismatch becomes
-`regression`; absent live expectations produces `status="not_observed"`,
-`expectation_match=None`, and `expected=None`.
+`regression`.
 
 - [ ] **Step 5: Run evaluator and contract tests**
 
@@ -726,8 +716,8 @@ The report top-level keys are exact:
     "cases": evaluated_cases,
     "limits": [
         "Deterministic contract regression proof, not answer-truth verification.",
-        "Efficiency and cost are observations; cost is a local estimate.",
-        "LangSmith is optional diagnostics and not evaluation authority.",
+        "Efficiency and cost are fixture observations; cost is an estimate.",
+        "LangSmith diagnostics are separate and are not invoked by this gate.",
     ],
 }
 ```
@@ -802,135 +792,7 @@ git commit -m "feat(eval): add deterministic regression gate"
 
 ---
 
-### Task 4: Add Bounded Live Observation Without Gate Authority
-
-**Files:**
-- Modify: `scripts/agent_evaluation_gate.py`
-- Modify: `tests/integration/test_agent_evaluation_gate.py`
-
-**Interfaces:**
-- Produces: `async run_live_observation(*, query: str, timeout_seconds: float, agent_runner: Callable | None = None) -> dict[str, Any]`
-- Produces: `build_live_report(observation: dict[str, Any]) -> dict[str, Any]`
-- Extends: CLI `observe --query --timeout-seconds --json-output --markdown-output`
-
-- [ ] **Step 1: Write RED tests for the one-run live boundary**
-
-Start with the unique-identity/one-call test:
-
-```python
-def test_live_runner_passes_unique_thread_run_segment_and_generic_profile():
-    calls = []
-
-    async def fake_runner(**kwargs):
-        calls.append(kwargs)
-        return _canonical_outcome(**kwargs)
-
-    observation = asyncio.run(
-        run_live_observation(
-            query="Bounded public research question.",
-            timeout_seconds=30,
-            agent_runner=fake_runner,
-        )
-    )
-    assert len(calls) == 1
-    assert calls[0]["profile_id"] == "generic"
-    assert calls[0]["scope"] is None
-    assert observation["run"]["run_id"] == calls[0]["run_id"]
-```
-
-Add separate tests for timeout bounds, canonical/fallback projection, partial
-trajectory/trust status, observed/missing usage, bounded timeout/exception and
-invalid Evidence, run-scoped cleanup with sentinel records, explicit outputs,
-baseline-path refusal, and absence of a deterministic gate claim. Use an
-injected async `agent_runner`; required tests must never import or call a real
-model/provider. Build a fixed `ExecutionOutcome` with a public-safe
-`ReportCandidate` for canonical success and a second outcome with no candidate
-for fallback.
-
-- [ ] **Step 2: Run live-focused tests and verify RED**
-
-```bash
-PYTHON_DOTENV_DISABLED=1 python -m pytest \
-  tests/integration/test_agent_evaluation_gate.py -k live -q
-```
-
-Expected: FAIL because `run_live_observation()` and the `observe` command do
-not exist.
-
-- [ ] **Step 3: Implement lazy runtime execution and cleanup**
-
-Validate non-empty bounded query input without exporting it. Require
-`0 < timeout_seconds <= 900`. Generate unique identities:
-
-```python
-identity = uuid.uuid4().hex
-thread_id = f"evaluation-live-{identity}"
-run_id = f"run_{identity}"
-segment_id = f"{run_id}_seg_000"
-```
-
-Only when `agent_runner is None`, import `run_deep_agent` inside the function.
-Call it once through `asyncio.wait_for()` with `profile_id="generic"` and
-`scope=None`. In `finally`, lazy-import current collectors and call only
-`collector.clear_run(run_id)` and `token_collector.clear_thread(thread_id)`.
-Never clear all process data.
-
-- [ ] **Step 4: Normalize only current observable fields**
-
-On success, build the generic artifact with
-`build_generic_result_artifact(outcome)` and project run/result/Evidence through
-`project_consumer_case()`. Include only Evidence rows that have the current-run
-identity and a real typed `retrieved_at`; otherwise return the bounded
-`live_observation_failed` error rather than fabricating a retrieval time.
-
-Extract tool names only from diagnostics matching `tool:<identifier>`. Mark
-`trajectory_status="partial"`; do not manufacture tool-result pairing. Mark
-`trust_signal_status="not_observed"` and
-`evidence_ref_status="not_observed"`. Read token usage by unique thread only;
-format current `total_cost` as an eight-decimal `cost_estimate` with
-`pricing_basis="process-local-token-pricing"` and `estimate=true`. If no token
-record exists, emit only `{"status":"not_observed"}`.
-
-Never export `last_agent_text`, query, error message, session path, diagnostics
-other than allowlisted tool names, Evidence snippet, model name, or provider
-response.
-
-- [ ] **Step 5: Implement live report and CLI behavior**
-
-The live report uses the canonical report schema with
-`source="live_observation"`, one case, `dataset=null`, and no deterministic
-expectation/baseline claim. `release_gate_passed` must be absent for live
-summary; use `evaluation_status="observed"` instead.
-
-`observe` requires query plus both output paths. It refuses committed baseline
-paths, writes validated JSON/Markdown only after both serialize successfully,
-and maps timeout/failure to `live_observation_timeout` or
-`live_observation_failed` without a raw exception/path.
-
-- [ ] **Step 6: Run live and full gate-focused tests**
-
-```bash
-PYTHON_DOTENV_DISABLED=1 python -m pytest \
-  tests/unit/test_agent_evaluation_contracts.py \
-  tests/unit/test_agent_evaluation_evaluators.py \
-  tests/integration/test_agent_evaluation_gate.py -q
-
-PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
-```
-
-Expected: all tests pass and deterministic baseline remains unchanged.
-
-- [ ] **Step 7: Commit live observation separately**
-
-```bash
-git add scripts/agent_evaluation_gate.py \
-  tests/integration/test_agent_evaluation_gate.py
-git commit -m "feat(eval): add bounded live observation"
-```
-
----
-
-### Task 5: Document And Expose The Release Gate In CI
+### Task 4: Document And Expose The Release Gate In CI
 
 **Files:**
 - Create: `docs/reference/agent-evaluation-regression-gate.md`
@@ -944,7 +806,8 @@ git commit -m "feat(eval): add bounded live observation"
 - Modify: `.github/workflows/ci.yml`
 
 **Interfaces:**
-- Documents: deterministic `check`, candidate `build`, opt-in `observe`
+- Documents: deterministic `check`, candidate `build`, evaluator/report
+  boundaries, and explicitly deferred live observation
 - Adds: explicit backend CI step before full pytest
 
 - [ ] **Step 1: Write RED documentation/CI contract tests**
@@ -966,9 +829,9 @@ required = (
 )
 ```
 
-Also assert the two baseline filenames are indexed, `observe` is described as
-opt-in/non-CI, and no document claims billed cost, automatic truth evaluation,
-published `v0.1.1`, or runtime authority.
+Also assert the two baseline filenames are indexed, live observation is
+described only as a deferred non-goal, and no document claims billed cost,
+automatic truth evaluation, published `v0.1.1`, or runtime authority.
 
 Parse `.github/workflows/ci.yml` as text and assert the deterministic gate step
 appears after dependency installation and before `python -m pytest -q`, with
@@ -994,19 +857,14 @@ PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py build \
   --json-output /tmp/dra-agent-evaluation-candidate.json \
   --markdown-output /tmp/dra-agent-evaluation-candidate.md
-
-PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py observe \
-  --query "Compare two public, declared options using cited sources." \
-  --timeout-seconds 600 \
-  --json-output /tmp/dra-agent-evaluation-live.json \
-  --markdown-output /tmp/dra-agent-evaluation-live.md
 ```
 
 Explain all six evaluators, the eight-case matrix, exact report and comparison
 schemas, baseline review workflow, stable errors, estimate semantics, and
 limitations. State that generic Markdown must not be parsed into typed facts,
-live output cannot clear the deterministic gate, LangSmith is optional
-diagnostics, and the application DB remains business authority.
+runtime/provider/collector paths are not invoked, live observation is deferred,
+LangSmith remains separate diagnostics, and the application DB remains business
+authority.
 
 Index both evidence files and the reference. Link it from Agent integration and
 both public READMEs. Under `CHANGELOG.md` `Unreleased`, describe the implemented
@@ -1062,7 +920,7 @@ git commit -m "docs(eval): publish regression gate workflow"
 
 ---
 
-### Task 6: Full Verification And Scope Audit
+### Task 5: Full Verification And Scope Audit
 
 **Files:**
 - Verify only; modify only files already in scope if a failing check exposes a
@@ -1152,10 +1010,7 @@ push, create a PR, merge, tag, publish, or deploy.
 | Evaluator expectation | adverse case no longer detected | exact expected/actual tests | `evaluation_expectation_mismatch`, non-zero |
 | Baseline compare | report changes or one baseline file is stale | byte/hash/changed-case tests | bounded comparison, non-zero |
 | Candidate build | one output unwritable after validation | validate both paths and write temporary bytes before replace | bounded output error; never auto-replace baseline |
-| Live runtime | timeout/provider exception | mocked timeout/exception tests | stable live error, no raw exception |
-| Live Evidence | missing typed retrieval time or unsafe field | normalization test | fail closed, no fabricated timestamp |
-| Live usage | provider omits token metadata | missing-usage test | observational `not_observed` |
-| Process collectors | unique run cleanup accidentally clears other run | sentinel-record cleanup test | only live identities cleared |
+| Fixture efficiency | absent token/cost data or malformed estimate | unit mutation and not-observed tests | observational `not_observed` or bounded validation error |
 | Public reports | path/secret/traceback leaks | recursive public-safety mutations | blocking output error before write |
 | CI | deterministic path imports model/network | subprocess import-guard test | CI fails before full pytest |
 
@@ -1163,8 +1018,8 @@ No listed path may fail silently.
 
 ## Execution Order
 
-Sequential implementation, no parallelization opportunity. Tasks 2-5 depend on
+Sequential implementation, no parallelization opportunity. Tasks 2-4 depend on
 the exact contracts from Task 1, Task 3 depends on evaluator outputs from Task
-2, live mode extends the same CLI/report code from Task 3, and docs/CI must name
-the final commands from Tasks 3-4. Keep one isolated worktree to avoid baseline
-and documentation conflicts.
+2, and docs/CI in Task 4 must name the final deterministic commands from Task 3.
+Task 5 verifies the complete scoped diff. Keep one isolated worktree to avoid
+baseline and documentation conflicts.

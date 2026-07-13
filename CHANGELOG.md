@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Agent evaluation
+
+- Added a credential-free deterministic regression gate with eight fixed cases,
+  six policy evaluators, reviewed JSON/Markdown baselines, bounded comparison
+  output, and stable public error codes.
+- Reused Pydantic for structural contracts while keeping DRA policy evaluation,
+  deterministic serialization, and authority boundaries project-owned.
+
 ### Demo console
 
 - Added the React-based Agent Research Operations Console with deterministic

@@ -29,6 +29,7 @@ external evaluation of the public contract surface.
 
 - [API Contract](reference/api-contract.md) — REST, WebSocket, authentication, and errors.
 - [Downstream Consumer Contract](reference/downstream-consumer-contract.md) — deterministic status, result, Evidence, fallback, and failure-handling proof.
+- [Agent Evaluation Regression Gate](reference/agent-evaluation-regression-gate.md) — deterministic eight-case, six-evaluator release gate and baseline workflow.
 - [Data Models](reference/data-models.md) — run, Evidence, artifact, review, and publication records.
 - [State Machines](reference/state-machines.md) — execution, delivery, review, and verification transitions.
 - [Tool Registry](reference/tool-registry.md) — server-owned tool and Skill boundaries.
@@ -54,6 +55,9 @@ external evaluation of the public contract surface.
 - [Talent Hiring Signal Benchmark v1](../benchmarks/talent-hiring-signal-v1/README.md)
   — bounded profile and renderer gates.
 - [Evidence Index](evidence/README.md) — current bounded evidence.
+- [Agent Evaluation Report](evidence/agent-evaluation-regression-v1.md) and
+  [JSON baseline](evidence/agent-evaluation-regression-v1.json) — deterministic
+  contract regression evidence and limits.
 - [Durable HITL Gate Report](evidence/durable-hitl-gate-report.json) — 13-gate result artifact.
 - [Real-Source Proof](evidence/real-source-proof.md) and
   [JSON report](evidence/real-source-proof.json) — bounded proof and limitations.

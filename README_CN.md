@@ -221,6 +221,7 @@ DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false
 常用本地检查：
 
 ```bash
+PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
 python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
@@ -238,6 +239,7 @@ python tools/decision_research_agent_tool.py doctor
 - [Agent Integration](docs/AGENT_INTEGRATION.md)
 - [API Contract](docs/reference/api-contract.md)
 - [Data Models](docs/reference/data-models.md)
+- [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
 - [v0.1.0 Release Notes](docs/releases/v0.1.0.md)
 - [Controlled Review Workflow](docs/operations/controlled-review-workflow.md)

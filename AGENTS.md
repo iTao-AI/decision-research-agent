@@ -66,6 +66,25 @@ Then read the smallest applicable set:
 Do not load every listed document for an unrelated or local change. If a
 document is missing or stale, inspect implementation and tests instead.
 
+## Framework Reuse And Project-Owned Logic
+
+- Before implementing work involving LangChain, DeepAgents, LangGraph,
+  LangSmith, or Pydantic, verify the project's installed versions, current
+  usage, relevant source code, and official documentation through Context7.
+- Prefer framework-native capabilities when they satisfy the approved
+  contract, deterministic testing, security, authority separation,
+  compatibility, and maintenance-cost requirements.
+- Do not force framework usage for keyword visibility or merely to avoid a
+  small amount of clear project-owned code.
+- Retain project-owned implementations when a framework approach introduces
+  unnecessary dependencies, hosted-service coupling, runtime side effects,
+  semantic mismatch, migration risk, or higher adaptation cost.
+- Runtime, tracing, and checkpoint facilities do not automatically own
+  business authority.
+- For non-obvious choices, briefly record the reason for reusing or rejecting
+  framework capabilities in the applicable spec, plan, or review. Do not
+  create documentation solely for that record.
+
 ## Architecture Boundaries
 
 - The application database is authoritative for research runs, evidence,

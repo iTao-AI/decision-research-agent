@@ -35,6 +35,16 @@ Outcome 不是业务权威。只有 fenced terminal transaction 写入
 `research_runs_v2`、`evidence_entries_v2`、artifact/review/publication tables
 之后，才成为可查询状态。
 
+## Run creation idempotency ledger
+
+`run_create_idempotency_v1` is application-database authority for optional
+run-create replay identity. It stores `key_hash`, `request_schema_version`,
+`request_hash`, `run_id`, and `created_at`. The raw key is never stored.
+`run_id` is unique and references `research_runs_v2(run_id) ON DELETE CASCADE`.
+The v1 ledger has no TTL or cleanup job. The canonical request hash covers the
+validated query, caller-supplied nullable thread identity, profile ID, and
+normalized scope; it excludes server-generated identity and profile version.
+
 ## Evidence Entry
 
 证据条目是 append-only snapshot。核心字段包括：

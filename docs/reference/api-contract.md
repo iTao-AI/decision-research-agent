@@ -16,6 +16,30 @@ of this contract.
 
 ### POST /api/runs
 
+`Idempotency-Key` is an optional request header. When it is absent, every
+accepted request remains an independent create and the response shape is
+unchanged. A key must contain 8-128 ASCII characters matching
+`[A-Za-z0-9][A-Za-z0-9._:-]{7,127}`. Its scope is service-wide for the current
+single-service credential/development deployment.
+
+The first keyed acceptance returns the existing fields plus
+`idempotent_replay: false`. Reusing the same key with the same canonical
+query/profile/thread/scope returns the original identities with
+`idempotent_replay: true` and schedules nothing new. `status: started` is a
+create acknowledgement; use `GET /api/runs/{run_id}` for current state.
+
+Stable direct error envelopes are:
+
+- `409 run_idempotency_conflict` when the key is bound to a different request;
+  the response does not disclose the bound run.
+- `422 run_idempotency_key_invalid` for an invalid header.
+- `503 run_idempotency_unavailable` when the durable ledger cannot be used;
+  keyed requests never fall back to an unkeyed create.
+
+The raw key is not persisted, logged, or returned by the server. Durable
+identity lookup does not recover a handler/process interruption after commit
+but before scheduling and does not claim exactly-once execution.
+
 Start a canonical run-scoped research execution.
 
 Request:

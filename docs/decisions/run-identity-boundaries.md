@@ -32,6 +32,12 @@ not be mechanically renamed or collapsed.
 telemetry, WebSocket routing, token collection, monitor routing, search cache,
 Evidence, and delivery remain isolated by `run_id`.
 
+Optional `Idempotency-Key` reconciliation does not change same-thread independent runs:
+unkeyed requests remain independent. Only callers that reuse
+the same key and canonical request recover the original identity. The
+application database owns this immutable binding; checkpoint and trace state
+do not.
+
 The application database owns these identities as business facts. LangGraph
 checkpoint configuration and LangSmith trace correlation do not replace the
 ResearchRun ledger.

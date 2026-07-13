@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Run creation reliability
+
+- Added optional durable `Idempotency-Key` handling for run creation, including
+  atomic replay/conflict behavior, concurrent duplicate serialization, and
+  Tool Client recovery after a lost response.
+- Added a deterministic public reconciliation proof while explicitly excluding
+  crash-before-schedule recovery and exactly-once execution claims.
+
 ## [0.1.1] - 2026-07-13
 
 ### Tool Client

@@ -139,6 +139,17 @@ same run-owned authority.
 The state-machine reference remains the contract source for transition detail:
 [State Machines](reference/state-machines.md).
 
+## Run creation reconciliation boundary
+
+The application database owns the optional idempotency-key hash, canonical
+request hash, and run/thread/segment binding. FastAPI owns header validation
+and stable transport errors. The Tool Client owns key preservation and the
+caller's retry choice. DeepAgents and LangGraph begin execution only for a new
+accepted create; LangGraph checkpoint state is not create-identity authority.
+LangSmith remains diagnostics only. Replays return before coroutine
+construction and scheduling. This boundary does not add crash-before-schedule
+recovery or exactly-once execution.
+
 ## EvidenceLedger, DecisionBrief, And Canonical Result Authority
 
 Evidence is application-owned. Findings and claims must resolve to run-scoped

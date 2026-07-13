@@ -240,3 +240,27 @@ field with a bounded generic value.
 - Use loopback binding unless remote access is intentional.
 - The standalone Tool Client reads process environment variables directly; it
   does not load the repository `.env`.
+## Lost-response run creation recovery
+
+The `run` command generates one reusable `run-create-<uuid>` identity for each
+invocation, or accepts an explicit `--idempotency-key`. There is no automatic retry.
+If create returns `request_timeout` or `connection_failed`, retry the
+same query/profile/thread/scope and exact key:
+
+```bash
+KEY="run-create-$(python -c 'import uuid; print(uuid.uuid4())')"
+python tools/decision_research_agent_tool.py run \
+  --query "Compare the declared options" \
+  --idempotency-key "$KEY"
+
+# Retry only after an ambiguous create failure, with identical inputs.
+python tools/decision_research_agent_tool.py run \
+  --query "Compare the declared options" \
+  --idempotency-key "$KEY"
+```
+
+The same request/key returns the original run identity. Changing a canonical
+request field under the key returns `409`. The key is replay identity, not
+authentication. `status=started` acknowledges creation; read current state
+through `GET /api/runs/{run_id}`. A handler/process interruption before
+scheduling can leave execution unstarted and is not recovered by this design.

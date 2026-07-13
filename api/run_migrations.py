@@ -330,7 +330,7 @@ def verify_run_schema(
             for index_row in conn.execute(
                 "PRAGMA index_list(run_create_idempotency_v1)"
             ).fetchall():
-                if index_row[2] != 1:
+                if index_row[2] != 1 or index_row[4] != 0:
                     continue
                 escaped_name = str(index_row[1]).replace('"', '""')
                 index_columns = [

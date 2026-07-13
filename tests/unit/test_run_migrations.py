@@ -291,3 +291,39 @@ def test_verifier_rejects_idempotency_table_without_unique_run_id(tmp_path):
             include_evidence_verification=True,
             include_publication=True,
         )
+
+
+def test_verifier_rejects_partial_unique_run_id_index(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    init_legacy_db(db_path).close()
+    migrate_with_backup(
+        db_path=db_path,
+        backup_path=str(tmp_path / "backup.db"),
+    )
+    _replace_idempotency_table_without_constraint(
+        db_path,
+        key_hash_definition="TEXT PRIMARY KEY",
+        run_id_definition="TEXT NOT NULL",
+    )
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX fake_run_id_unique
+                ON run_create_idempotency_v1(run_id)
+                WHERE run_id LIKE 'allow-%'
+                """
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(
+        RuntimeError,
+        match="missing_constraints=.*run_id_unique",
+    ):
+        verify_run_schema(
+            db_path=db_path,
+            include_evidence_verification=True,
+            include_publication=True,
+        )

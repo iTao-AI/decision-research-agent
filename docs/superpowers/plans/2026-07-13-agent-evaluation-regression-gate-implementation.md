@@ -149,10 +149,31 @@ isolation.cross_run_reference
 efficiency.token_usage_not_observed
 ```
 
-Only `efficiency.token_usage_not_observed` is observational. Mutation-only blocking codes may
-include `result.contract_invalid`, `trajectory.event_invalid`,
-`evidence.reference_unresolved`, `metrics.invalid`, and
-`evaluation.public_output_unsafe`.
+Only `efficiency.token_usage_not_observed` is observational. Mutation-only
+dot-separated evaluator findings may include `result.contract_invalid`,
+`trajectory.event_invalid`, `evidence.reference_unresolved`, and
+`metrics.invalid`. Underscore-separated codes such as
+`evaluation_public_output_unsafe` are validation/CLI errors and never evaluator
+findings.
+
+The exact underscore-separated validation/CLI stderr code set is:
+
+```text
+evaluation_manifest_invalid
+evaluation_schema_unsupported
+evaluation_case_invalid
+evaluation_registry_invalid
+evaluation_metrics_invalid
+evaluation_baseline_invalid
+evaluation_output_invalid
+evaluation_public_output_unsafe
+evaluation_internal_error
+```
+
+Expectation mismatches and blocking regressions use only the candidate report's
+existing summary and case status plus comparison fields `match`,
+`changed_case_ids`, `blocking_regression_codes`, and `observational_changes`.
+They never introduce another stderr code or comparison-schema field.
 
 The builder passes each evaluator an observation with this exact top-level key
 set:
@@ -394,14 +415,20 @@ def test_committed_manifest_has_exact_ordered_cases_and_stable_hash():
     assert len(dataset_hash(manifest)) == 64
 ```
 
-Add separate mutation tests for wrong schema, extra/duplicate cases, unknown
-source case/policy/event kind, duplicate/orphan events, invalid signal binding,
-malformed metric/estimate, forbidden public fields/strings, oversize input,
-and wrong report/comparison keys. Use `copy.deepcopy()` mutations and assert
-exact stable codes, including
+Add separate structural mutation tests for wrong schema, extra/duplicate cases,
+unknown enum, duplicate event IDs, malformed signal-reference shape, malformed
+metric/estimate types or formats, forbidden public fields/strings, oversize
+input, and wrong report/comparison keys. Use `copy.deepcopy()` mutations and
+assert exact stable codes, including
 `evaluation_schema_unsupported`, `evaluation_manifest_invalid`,
 `evaluation_case_invalid`, `evaluation_metrics_invalid`,
 `evaluation_public_output_unsafe`, and `evaluation_output_invalid`.
+
+Add an explicit boundary pair: a structurally invalid event fails validation
+before registry invocation, while a structurally valid orphan tool result passes
+validation and later produces the evaluator finding `trajectory.event_invalid`.
+Do the same for malformed metric types versus valid metric values whose counts
+do not match the trajectory.
 
 - [ ] **Step 2: Run the new contract tests and verify RED**
 
@@ -452,12 +479,17 @@ def dataset_hash(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 ```
 
-Validate event keys by `kind`, require unique `event_id`, exact call/result
-pairing when `trajectory_status="complete"`, signal references to an existing
-`tool_result`, and exact expected-code ordering. Require `estimate is True`, a
-three-letter uppercase currency, an identifier-like pricing basis, and an
-eight-decimal non-negative amount string. Reject non-integer/bool counts and
-elapsed values.
+Validators own structural contract only: exact keys, types, enums, byte/length
+bounds, identifier/format rules, unique `event_id`, legal signal-reference
+shape, public safety, and serialization schemas. They must not enforce
+call/result pairing, orphan detection, terminal order, current-run isolation,
+tool policy, action-after-signal policy, metric/trajectory consistency, or
+expected finding comparison.
+
+For metric structure, require `estimate is True`, a three-letter uppercase
+currency, an identifier-like pricing basis, and an eight-decimal non-negative
+amount string. Reject non-integer/bool counts and elapsed values, but leave
+valid cross-field count consistency to `efficiency_observation`.
 
 `assert_public_safe()` applies to the manifest, canonical reports, comparison
 envelopes, and CLI status/error output. It rejects forbidden keys (`query`,
@@ -514,10 +546,12 @@ def test_canonical_success_has_no_blocking_findings():
     assert evaluated["expectation_match"] is True
 ```
 
-Add separate tests for fallback/review/failure codes, missing/unresolved
-Evidence, disallowed/orphan trajectory events, cross-run refs, the two-call
-untrusted-signal sequence, observed-none trust signals, invalid metrics,
-expected adverse cases, and unexpected/missing findings. Assert exact finding
+Use only observations that already pass `validate_observation()`. Add separate
+tests for fallback/review/failure codes, missing/unresolved Evidence,
+disallowed tools, call/result pairing and orphan events, terminal ordering,
+cross-run refs, the two-call untrusted-signal sequence, observed-none trust
+signals, valid-but-inconsistent metric counts, expected adverse/pass cases, and
+unexpected or missing findings that become `regression`. Assert exact finding
 dictionaries and registry order, not message text.
 
 - [ ] **Step 2: Run evaluator tests and verify RED**
@@ -574,8 +608,9 @@ Required rules:
 
 - `result_contract`: emit `result.contract_invalid` on consumer failure and
   `result.fallback_blocked` on `block_fallback`.
-- `trajectory_policy`: enforce allowlist, unique ordered events, complete
-  pairing only when status is complete, terminal-last, and current-run refs.
+- `trajectory_policy`: enforce allowlist, call/result pairing and orphan
+  detection, terminal-last ordering, and current-run refs. Unique event IDs are
+  already guaranteed by structural validation.
 - `evidence_integrity`: require run-level Evidence only when declared, check
   `ev_{run_id}_` identity, resolve typed refs only when status is observed, and
   never inspect Markdown.
@@ -583,7 +618,8 @@ Required rules:
   timeout/provider/cancel cause.
 - `safety_boundary`: block configured tool calls after their referenced
   untrusted signal; treat observed-none fixtures as an explicit safe input.
-- `efficiency_observation`: validate internal counts and estimate shape; emit
+- `efficiency_observation`: compare structurally valid metric counts with the
+  trajectory, emit `metrics.invalid` on inconsistency, emit
   `efficiency.token_usage_not_observed` only as observational, and never read
   real telemetry, token, provider, or billing data.
 
@@ -650,9 +686,15 @@ def test_deterministic_builder_uses_fresh_downstream_bundle_not_committed_copy(m
 
 Add separate tests for exact observation order/run-ref resolution, report
 schema/summary/limits, all adverse expectations, JSON/Markdown bytes and
-content parity, comparison hashes and changed cases, committed baselines,
-provider-module import isolation, explicit candidate outputs, baseline-path
-refusal, invalid input, drift, and unwritable output.
+content parity, comparison hashes and changed cases, and committed baselines.
+Cover matching and coherently drifted baseline pairs with exact comparison
+stdout, empty stderr, and exit assertions. Cover missing, unreadable, oversized,
+malformed, unsupported-schema, and incoherent JSON/Markdown baseline pairs with
+exact `evaluation_baseline_invalid` stderr, empty stdout, and exit 1. Cover
+valid-drift `--comparison-output` success and write failure. Cover distinct
+resolved output paths, same-path refusal, symlink aliases to either committed
+baseline, directory/unwritable outputs, missing parents, one-output failure,
+sibling temp cleanup, and no implicit parent creation.
 
 For import isolation, run `main(["check"])`, then assert none of
 `agent.main_agent`, `agent.llm`, `tools.tavily_tools`, `tools.talent_search`, or
@@ -661,6 +703,10 @@ earlier test imports cannot create a false failure. Separately assert the three
 new Python files contain no `langsmith` import or client construction; a
 transitive `langchain_core` import may load LangSmith support code and is not by
 itself evidence that a client was initialized.
+
+Monkeypatch one library call to raise an unexpected exception and invoke the CLI
+in a subprocess. Assert exit 1, empty stdout, and exact bounded stderr with
+`evaluation_internal_error`, with no traceback, path, or raw exception text.
 
 - [ ] **Step 2: Run the integration file and verify RED**
 
@@ -674,8 +720,10 @@ exist.
 
 - [ ] **Step 3: Implement deterministic observation construction**
 
-Validate a fresh downstream bundle, index cases by `case_id`, and deep-copy the
-selected source case. Apply only declared evaluation transformations:
+Call `build_fixture_bundle()` exactly once per `build` or `check`, validate the
+fresh bundle once, index its cases by `case_id`, and deep-copy each selected
+source case. Never rebuild the fixture database per evaluation case. Apply only
+declared evaluation transformations:
 
 ```python
 source = copy.deepcopy(consumer_cases[case["source_case_id"]])
@@ -748,11 +796,31 @@ validation, and returns:
 }
 ```
 
-`check` uses default committed manifest/baselines and accepts an optional
-`--comparison-output`. `build` requires `--json-output` and
-`--markdown-output`; reject either path when it resolves to a committed
-baseline path. Errors print one JSON object to stderr with only `status` and
-stable `code`. Success prints one bounded comparison/status object to stdout.
+Library functions propagate exceptions unchanged; `main()` is the only public
+boundary. It catches known validation, file, JSON, and Unicode failures and maps
+them to existing stable codes. Every unexpected exception maps to
+`evaluation_internal_error`. Invalid paths/inputs write exactly one
+`{"status":"invalid","code":"<stable-code>"}` JSON line to stderr, leave
+stdout empty, and exit 1 without traceback, path, or raw exception text.
+
+`check` uses default committed manifest/baselines and accepts optional
+`--comparison-output`. Match writes the bounded comparison to stdout with empty
+stderr and exits 0. Valid drift writes the bounded comparison to stdout with
+empty stderr and exits 1; it is not a validation error. A committed baseline
+that is missing, unreadable, oversized, malformed, uses an unsupported schema,
+or forms an incoherent JSON/Markdown pair writes `evaluation_baseline_invalid`
+to stderr, leaves stdout empty, and exits 1. On valid drift,
+comparison-output may be written; a write failure maps to
+`evaluation_output_invalid` with stdout empty.
+
+`build` requires `--json-output` and `--markdown-output`. Resolve both paths;
+they must differ, and neither may resolve to a committed baseline, including
+through symlink aliases. Reject directories, missing parents, and unwritable
+destinations without creating parents. Serialize and validate both payloads,
+write sibling temporary files, then replace only the explicit candidate paths;
+clean temporary files on every failure. The two candidate replacements are not
+transactionally atomic, but committed baselines remain protected by path
+refusal.
 
 - [ ] **Step 6: Generate candidate baselines and inspect them before copying**
 
@@ -1001,18 +1069,40 @@ Expected: worktree is clean, commits are task-scoped, and no runtime/API/DB,
 frontend, dependency, release, or unrelated maintenance file changed. Do not
 push, create a PR, merge, tag, publish, or deploy.
 
+## Test Coverage Map
+
+```text
+manifest errors
+  -> fresh downstream fixture exactly once per build/check
+  -> structural validation
+  -> evaluators: pass | expected_block | regression
+  -> canonical JSON report -> deterministic Markdown
+  -> build: distinct paths -> symlink/baseline protection -> temp cleanup
+  -> check: match | valid drift | invalid baseline | comparison-output failure
+  -> import isolation | bounded internal-exception handling
+```
+
+The deterministic unit/integration suite covers `check` match and drift,
+`evaluation_baseline_invalid`, comparison-output failure, `build` same-path and
+symlink refusal, sibling temporary-file cleanup, import isolation, and
+`evaluation_internal_error`. It has no UI, E2E, live, provider, or LLM
+evaluation coverage.
+
 ## Failure Modes And Coverage
 
 | Path | Realistic failure | Test/error handling | Operator result |
 |---|---|---|---|
-| Manifest load | oversized/malformed/unsupported JSON | unit mutations + bounded loader | stable `evaluation_manifest_invalid` or schema error |
-| Consumer proof reuse | current result contract drifts | integration fresh-build and projector mutation tests | blocking `result.contract_invalid` |
-| Evaluator expectation | adverse case no longer detected | exact expected/actual tests | `evaluation_expectation_mismatch`, non-zero |
-| Baseline compare | report changes or one baseline file is stale | byte/hash/changed-case tests | bounded comparison, non-zero |
-| Candidate build | one output unwritable after validation | validate both paths and write temporary bytes before replace | bounded output error; never auto-replace baseline |
-| Fixture efficiency | absent token/cost data or malformed estimate | unit mutation and not-observed tests | observational `not_observed` or bounded validation error |
-| Public reports | path/secret/traceback leaks | recursive public-safety mutations | blocking output error before write |
-| CI | deterministic path imports model/network | subprocess import-guard test | CI fails before full pytest |
+| Manifest load | malformed/oversized manifest or unsupported schema | bounded loader and exact schema tests | `evaluation_manifest_invalid` or `evaluation_schema_unsupported` stderr, exit 1 |
+| Structural validation | invalid case, registry, or metric shape | unit mutations before evaluator invocation | `evaluation_case_invalid`, `evaluation_registry_invalid`, or `evaluation_metrics_invalid` stderr, exit 1 |
+| Consumer proof reuse | current result contract drifts | fresh-fixture integration and projector mutation tests | report `regression` with dot-separated `result.contract_invalid`; comparison stdout, stderr empty, exit 1 |
+| Evaluator expectation | adverse case no longer detected | exact expected/actual status tests | candidate summary/case `regression`; comparison stdout, stderr empty, exit 1 |
+| Baseline compare | coherent report drift | byte/hash/changed-case tests | bounded comparison stdout, stderr empty, exit 1 |
+| Baseline load | missing/unreadable/oversized/malformed/unsupported/incoherent pair | bounded pair validation | `evaluation_baseline_invalid` stderr, stdout empty, exit 1 |
+| Comparison output | explicit comparison path/write failure | valid-drift CLI integration tests | `evaluation_output_invalid` stderr, stdout empty, exit 1 |
+| Candidate build | same path, baseline symlink alias, unwritable output, or replace failure | resolved-path checks, sibling temporary files, cleanup assertions | `evaluation_output_invalid` stderr; committed baseline protected |
+| Fixture efficiency | absent token/cost data or structurally invalid estimate | unit mutation and not-observed tests | observational `not_observed` or `evaluation_metrics_invalid` stderr |
+| Public reports | unsafe path/secret/traceback value | recursive public-safety mutations | `evaluation_public_output_unsafe` stderr before write |
+| Import/internal boundary | deterministic path imports runtime/provider code or raises unexpectedly | subprocess import guard and exception mutation | import test fails or `evaluation_internal_error` stderr without traceback |
 
 No listed path may fail silently.
 

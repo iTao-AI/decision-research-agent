@@ -216,6 +216,20 @@ the downstream contract proof. The evaluation layer must not fork or relax
 that validator. `trajectory`, typed refs, trust signals, and metrics are
 evaluation-only data and are not presented as persisted runtime fields.
 
+### Validation And Evaluation Ownership
+
+Contract validators own only structural validity: exact keys, types, enums,
+byte/length bounds, identifier and format rules, unique event IDs, legal signal
+reference shape, public-safety checks, and serialization schemas. Structurally
+invalid input raises a stable validation error before evaluation.
+
+Pure evaluators own cross-field and policy semantics: tool call/result pairing
+and orphan detection, terminal-last ordering, current-run isolation, tool
+allowlists, actions after an untrusted signal, consistency between metric counts
+and trajectory events, and expected-versus-actual finding comparison. A
+structurally valid fixture may therefore be semantically policy-invalid and
+must produce a dot-separated evaluator finding rather than a validation error.
+
 ### Normalized Trajectory Events
 
 Trajectory events use a small exact vocabulary:
@@ -285,7 +299,7 @@ output. Registry order is fixed so reports are byte-stable.
 ### `trajectory_policy.v1`
 
 - verifies allowed tool names for the case;
-- requires unique event IDs and tool-call/result pairing;
+- verifies tool-call/result pairing and rejects orphan events;
 - rejects calls or results associated with another `run_id`;
 - verifies terminal event ordering;
 - does not score reasoning text or require a particular number of subagents.
@@ -319,7 +333,7 @@ output. Registry order is fixed so reports are byte-stable.
 
 - records fixture-defined assistant/tool counts, elapsed values, token counts,
   and local estimate metadata;
-- validates types and internal count consistency;
+- evaluates internal count consistency after structural metric validation;
 - produces observational findings only in v1;
 - never reads runtime telemetry, token collectors, provider metadata, or
   billing data;
@@ -405,6 +419,12 @@ write it to an explicit path, but it is not embedded in the report being
 compared. The committed JSON and Markdown therefore remain reproducible
 without comparing a document to a field inside itself.
 
+Expectation mismatches and blocking regressions are valid evaluation outcomes,
+not validation errors. Their authority remains in the candidate report's
+existing case statuses and summary counts, with dot-separated blocking finding
+codes projected into the comparison envelope. They do not introduce a second
+set of underscore-separated pseudo-errors.
+
 ## Baseline And Release Gate
 
 The baseline is reviewed evidence, not a snapshot that tests automatically
@@ -417,6 +437,15 @@ rewrite.
   and changed case IDs, not raw report bodies or a host path.
 - `build` writes candidate artifacts only to explicit paths. It does not replace
   committed baselines implicitly.
+- Resolved JSON and Markdown candidate paths must differ, and neither may
+  resolve to a committed baseline, including through a symlink alias.
+- Candidate parents must already exist. Directories, missing parents, and
+  unwritable outputs fail with a bounded output error; the command does not
+  create parents implicitly.
+- `build` writes and validates sibling temporary files before replacing the two
+  explicit candidate outputs and cleans temporary files after failure. The two
+  candidate replacements are not a transactional pair, but committed baselines
+  remain protected by resolved-path refusal.
 - A maintainer must inspect scenario, evaluator, report, and documentation
   changes together before accepting a new baseline.
 - Contract, Evidence, terminal-state, isolation, and safety mismatches are
@@ -434,21 +463,46 @@ check             validate, evaluate, and compare committed artifacts
 build             write candidate deterministic JSON and Markdown
 ```
 
-All commands return non-zero for invalid inputs or blocking failure. Stable
-public errors include:
+Library functions do not catch or rewrite exceptions. `main()` is the only
+public error boundary. It maps known validation, file, JSON, and Unicode
+failures to stable codes and maps every unexpected exception to
+`evaluation_internal_error`.
+
+Stable validation/CLI error codes are exactly:
 
 - `evaluation_manifest_invalid`;
 - `evaluation_schema_unsupported`;
 - `evaluation_case_invalid`;
 - `evaluation_registry_invalid`;
-- `evaluation_expectation_mismatch`;
-- `evaluation_blocking_regression`;
-- `evaluation_baseline_drift`;
-- `evaluation_output_invalid`.
+- `evaluation_metrics_invalid`;
+- `evaluation_baseline_invalid`;
+- `evaluation_output_invalid`;
+- `evaluation_public_output_unsafe`;
+- `evaluation_internal_error`.
 
-CLI error output must not contain raw exceptions, tracebacks, credentials,
-provider responses, prompt/tool content, or local paths. The implementation may
-log a bounded case ID and evaluator ID.
+Every invalid-input/output error writes exactly
+`{"status":"invalid","code":"<stable-code>"}` plus one newline to stderr,
+writes nothing to stdout, and exits 1. It must not expose a raw exception,
+traceback, path, credential, provider response, prompt, or tool content.
+
+A valid matching baseline writes the bounded comparison envelope to stdout,
+leaves stderr empty, and exits 0. A structurally valid candidate containing an
+expectation mismatch or blocking regression writes the bounded comparison
+envelope to stdout, leaves stderr empty, and exits 1; the candidate report's
+existing summary/case status and the comparison's dot-separated finding codes
+carry that release-gate outcome. A coherent but different baseline pair is also
+valid drift: it writes only the bounded comparison envelope to stdout, leaves
+stderr empty, and exits 1.
+
+A committed JSON/Markdown baseline that is missing, unreadable, oversized,
+malformed, has an unsupported or wrong schema, or is not a coherent pair writes
+exactly the stderr error with `evaluation_baseline_invalid`, leaves stdout
+empty, and exits 1. Baseline validation never reuses
+`evaluation_output_invalid`. That code is limited to explicit candidate or
+comparison output path/write/replace failures and invalid generated public
+output schemas. During a valid non-zero comparison,
+`check --comparison-output` may write the comparison envelope; an output write
+failure becomes `evaluation_output_invalid`, with stdout empty.
 
 ## Testing Strategy
 
@@ -458,7 +512,9 @@ log a bounded case ID and evaluator ID.
 - deterministic dataset hash and registry order;
 - byte-identical JSON and Markdown builds;
 - committed baseline equals a fresh build;
-- duplicate/unknown case or evaluator IDs fail closed;
+- structurally invalid exact keys, types, enums, sizes, identifiers, duplicate
+  event IDs, malformed signal references, and unsafe public values fail through
+  validation codes before evaluators run;
 - Markdown contains no information absent from JSON.
 
 ### Scenario behavior
@@ -475,13 +531,16 @@ log a bounded case ID and evaluator ID.
 ### Evaluator mutation coverage
 
 - artifact kind/media/hash/size mutation;
-- unknown tool, duplicate event ID, orphan tool result, terminal event followed
-  by another action;
+- structurally valid but policy-invalid unknown tool, orphan tool result,
+  terminal event followed by another action, and metric/trajectory count
+  mismatch produce dot-separated evaluator findings;
 - missing/foreign Evidence identity and unresolved typed ref;
 - impossible execution/review/delivery combination and unknown result code;
 - trust signal without prohibited action versus prohibited action after signal;
-- negative/non-integer counts, malformed elapsed/token/cost estimate fields;
-- unknown enum, extra public-report key, and unsupported schema version.
+- negative/non-integer counts and malformed elapsed/token/cost estimate fields
+  fail structurally; semantically inconsistent valid counts produce
+  `metrics.invalid`;
+- expected adverse, pass, and regression classifications are asserted exactly.
 
 ### Privacy and authority coverage
 
@@ -495,6 +554,23 @@ log a bounded case ID and evaluator ID.
   non-blocking;
 - cost labels remain explicit estimates and no runtime collector is read.
 
+### CLI and output coverage
+
+- matching and coherent drifted baselines assert comparison-only stdout, empty
+  stderr, and exit 0/1 respectively;
+- candidate expectation mismatch and blocking regression assert comparison-only
+  stdout, empty stderr, exit 1, and existing report summary/case authority;
+- malformed, missing, unreadable, oversized, wrong-schema, and stale-one-file
+  incoherent baseline pairs assert exact `evaluation_baseline_invalid` stderr,
+  empty stdout, and exit 1;
+- `--comparison-output` succeeds for valid drift and fails closed on write
+  error with `evaluation_output_invalid`;
+- same candidate path, symlink-to-baseline aliases, directory/unwritable output,
+  missing parent, one-output failure, generated output schema failure, and
+  temporary-file cleanup are covered with `evaluation_output_invalid`;
+- an unexpected monkeypatched exception is checked in a subprocess and maps to
+  `evaluation_internal_error` without traceback, path, or raw exception output.
+
 ### Broader verification
 
 - focused new unit/integration tests;
@@ -505,6 +581,15 @@ log a bounded case ID and evaluator ID.
 
 Frontend checks are not required unless implementation unexpectedly touches the
 frontend; that would be scope growth and requires review.
+
+## Performance And Complexity
+
+Each `build` or `check` calls `build_fixture_bundle()` exactly once, validates
+that bundle once, and then projects the fixed cases from the in-memory result.
+It must not rebuild the fixture database per case. Evaluation is linear in the
+bounded number of manifest cases and trajectory events, with manifest/report
+byte limits constraining input and output work. This change adds no cache,
+concurrency, database persistence, or dependency.
 
 ## Documentation
 

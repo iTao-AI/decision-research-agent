@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import sqlite3
+import threading
 import uuid
 from typing import Any
 
@@ -34,6 +35,7 @@ DELIVERY_STATUSES = {
     "failed",
 }
 MIGRATION_VERSION = "003_run_identity_backbone"
+_SCHEMA_INIT_LOCK = threading.Lock()
 
 
 class RunCreationConflict(RuntimeError):
@@ -55,7 +57,7 @@ def _connect(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
-def init_run_schema(db_path: str | None = None) -> None:
+def _init_run_schema_unlocked(db_path: str | None = None) -> None:
     """Apply the additive run identity migration idempotently."""
     conn = _connect(db_path)
     try:
@@ -204,6 +206,12 @@ def init_run_schema(db_path: str | None = None) -> None:
             )
     finally:
         conn.close()
+
+
+def init_run_schema(db_path: str | None = None) -> None:
+    """Apply the additive schema once at a time within this process."""
+    with _SCHEMA_INIT_LOCK:
+        _init_run_schema_unlocked(db_path)
 
 
 def _ensure_baseline_origin_column(

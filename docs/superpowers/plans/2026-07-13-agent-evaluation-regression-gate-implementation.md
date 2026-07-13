@@ -437,9 +437,11 @@ assert exact stable codes, including
 `evaluation_public_output_unsafe`, and `evaluation_output_invalid`.
 
 Include explicit tests that extra fields fail closed, string-to-number
-coercion is rejected, bool-as-int is rejected, raw Pydantic `ValidationError`
-details never reach stderr or a report, and the `model_dump(mode="json")`
-plain-data round trip remains byte-stable.
+coercion is rejected, and bool-as-int is rejected. At every `validate_*`
+library boundary, assert that an internal Pydantic `ValidationError` becomes
+the exact `EvaluationValidationError(code)` and never escapes raw. Also assert
+that the `model_dump(mode="json")` canonical plain-data round trip remains
+byte-stable.
 
 Add an explicit boundary pair: a structurally invalid event fails validation
 before registry invocation, while a structurally valid orphan tool result passes
@@ -481,9 +483,9 @@ def _fail(code: str) -> None:
 
 
 def dataset_hash(manifest: dict[str, Any]) -> str:
-    validate_manifest(manifest)
+    canonical = validate_manifest(manifest)
     raw = json.dumps(
-        manifest,
+        canonical,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -504,6 +506,11 @@ and `json.loads`, then call `model_validate(python_object, strict=True)`. Do not
 use `model_validate_json` as a bounded loader. After validation, use
 `model_dump(mode="json")` to obtain canonical plain data before the existing
 deterministic `json.dumps` and hashing strategy.
+
+`serialize_json(payload, *, validator)` must serialize the canonical plain
+dictionary returned by `validator(payload)`, never the original `payload`
+after validation. Keep its public interface and the existing `json.dumps`
+parameters unchanged.
 
 Pydantic models own structural contract only: exact fields, strict types,
 `Literal` enums, `Field` bounds, and declarative field formats. Small
@@ -736,6 +743,11 @@ it may exist transitively.
 Monkeypatch one library call to raise an unexpected exception and invoke the CLI
 in a subprocess. Assert exit 1, empty stdout, and exact bounded stderr with
 `evaluation_internal_error`, with no traceback, path, or raw exception text.
+
+Through the CLI, also supply structurally invalid input and assert exit 1,
+empty stdout, and stderr containing only the existing stable `evaluation_*`
+code. Assert that raw Pydantic location, message, and input details, filesystem
+paths, and tracebacks are absent, and that no candidate report is written.
 
 - [ ] **Step 2: Run the integration file and verify RED**
 

@@ -4,7 +4,29 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-### Agent evaluation
+## [0.1.1] - 2026-07-13
+
+### Tool Client
+
+- Added a structured Tool Client golden flow for creating a run, waiting with
+  a bounded client deadline, and retrieving the canonical result through
+  `--wait --result`.
+- Added bounded structured errors for connection, polling, review-required,
+  invalid-response, and result-delivery failures.
+
+### Agent Research Operations Console
+
+- Added the React-based Agent Research Operations Console with deterministic
+  Static Demo and a bounded loopback-only Live Backend flow for
+  `health -> run -> canonical result`.
+- Added visual and accessibility QA plus public architecture, setup, and demo
+  documentation. The console does not accept credentials or own business
+  authority.
+
+### Deterministic contract proof
+
+- Added a deterministic downstream consumer fixture and validator proof for
+  status, canonical result, Evidence, fallback, and failure boundaries.
 
 - Added a credential-free deterministic regression gate with eight fixed cases,
   six policy evaluators, reviewed JSON/Markdown baselines, bounded comparison
@@ -12,18 +34,11 @@ All notable changes to this project are documented in this file.
 - Reused Pydantic for structural contracts while keeping DRA policy evaluation,
   deterministic serialization, and authority boundaries project-owned.
 
-### Demo console
+### Maintenance
 
-- Added the React-based Agent Research Operations Console with deterministic
-  Static Demo and a bounded local Live Backend flow for
-  `health -> run -> canonical result`. See the [Demo Console guide](docs/demo-console.md).
-- Added structured frontend handling for connection, invalid-response, polling,
-  and service errors without exposing credentials, paths, or raw exceptions.
-
-### For contributors
-
-- Added frontend test, type/lint, build, CI, and Dependabot coverage for the
-  React console, with the locked dependencies verified by `npm audit`.
+- Completed scoped frontend and CI maintenance for `actions/setup-node`,
+  `jsdom`, Vite, and Vitest, with Node compatibility documentation and the demo
+  route kept current.
 
 ## [0.1.0] - 2026-06-28
 

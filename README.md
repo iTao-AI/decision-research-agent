@@ -263,13 +263,17 @@ python tools/decision_research_agent_tool.py doctor
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.1 Release Notes](docs/releases/v0.1.1.md)
 - [v0.1.0 Release Notes](docs/releases/v0.1.0.md)
 - [Controlled Review Workflow](docs/operations/controlled-review-workflow.md)
 - [Evidence Verification Workflow](docs/operations/evidence-verification-workflow.md)
 
 ## Known Boundaries
 
-- v0.1.0 is a backend-and-CLI release.
+- The v0.1.1 release surface adds the separately built Agent Research
+  Operations Console and deterministic contract gates to the existing
+  backend-and-CLI release without changing runtime API, schema, or database
+  migration requirements.
 - The Agent Research Operations Console defaults to Static Demo mode and can
   create a ResearchRun against a loopback backend through bounded Live Backend
   mode.

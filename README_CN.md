@@ -241,13 +241,16 @@ python tools/decision_research_agent_tool.py doctor
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.1 Release Notes](docs/releases/v0.1.1.md)
 - [v0.1.0 Release Notes](docs/releases/v0.1.0.md)
 - [Controlled Review Workflow](docs/operations/controlled-review-workflow.md)
 - [Evidence Verification Workflow](docs/operations/evidence-verification-workflow.md)
 
 ## 已知边界
 
-- v0.1.0 是 backend-and-CLI release。
+- v0.1.1 release surface 在既有 backend-and-CLI service 之外增加独立构建的
+  Agent Research Operations Console 与确定性 contract gates；它不改变 runtime
+  API、schema 或 database migration 要求。
 - 研究运行演示控制台默认使用 Static Demo 模式，也可以通过受控 Live Backend 模式在 loopback backend 创建 ResearchRun。
 - UI 交付必须消费 canonical API 与 result contract，不能重新引入并行 runtime。
 - Markdown-only delivery：canonical 研究结果通过 result endpoint 返回 Markdown artifact。

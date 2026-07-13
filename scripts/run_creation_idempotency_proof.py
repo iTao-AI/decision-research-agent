@@ -45,14 +45,104 @@ LIMITS = [
     "Response loss is simulated only after current-process scheduling completes.",
     "Process or handler failure before scheduling is not recovered by this design.",
 ]
+EXPECTED_OBSERVATIONS: dict[str, dict[str, bool | int]] = {
+    "lost_response_replay": {
+        "same_identity": True,
+        "replay_marked": True,
+        "schedule_count": 1,
+        "persisted_run_count": 1,
+    },
+    "request_conflict": {
+        "status_is_409": True,
+        "stable_code": True,
+        "identity_hidden": True,
+        "schedule_count": 1,
+    },
+    "concurrent_duplicate_serialization": {
+        "new_count": 1,
+        "replay_count": 5,
+        "persisted_run_count": 1,
+        "ledger_count": 1,
+    },
+    "durable_restart_lookup": {
+        "same_identity": True,
+        "replay_marked": True,
+    },
+    "unkeyed_independence": {
+        "distinct_runs": True,
+        "persisted_run_count": 2,
+    },
+    "raw_key_non_persistence": {
+        "raw_key_absent": True,
+        "hashes_present": True,
+    },
+    "tool_client_key_recovery": {
+        "ambiguous_failure": True,
+        "reusable_key_present": True,
+        "exact_header_reused": True,
+    },
+}
+
+
+def _invalid_report() -> None:
+    raise ValueError("run_idempotency_proof_report_invalid")
 
 
 def _case(case_id: str, **observations: bool | int) -> dict[str, Any]:
-    if case_id not in CASE_IDS:
-        raise ValueError("run_idempotency_proof_case_invalid")
-    if not all(isinstance(value, (bool, int)) for value in observations.values()):
-        raise ValueError("run_idempotency_proof_observation_invalid")
+    expected = EXPECTED_OBSERVATIONS.get(case_id)
+    if expected is None or set(observations) != set(expected):
+        _invalid_report()
+    if any(
+        type(observations[key]) is not type(value) or observations[key] != value
+        for key, value in expected.items()
+    ):
+        _invalid_report()
     return {"case_id": case_id, "status": "passed", "observations": observations}
+
+
+def validate_report(report: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(report, dict) or set(report) != {
+        "schema_version",
+        "status",
+        "source",
+        "cases",
+        "boundaries",
+        "limits",
+    }:
+        _invalid_report()
+    if (
+        report["schema_version"] != REPORT_SCHEMA_VERSION
+        or report["status"] != "valid"
+        or report["source"] != "deterministic_local"
+        or report["boundaries"] != BOUNDARIES
+        or report["limits"] != LIMITS
+    ):
+        _invalid_report()
+    cases = report["cases"]
+    if not isinstance(cases, list) or len(cases) != len(CASE_IDS):
+        _invalid_report()
+    for expected_id, case in zip(CASE_IDS, cases, strict=True):
+        if not isinstance(case, dict) or set(case) != {
+            "case_id",
+            "status",
+            "observations",
+        }:
+            _invalid_report()
+        if case["case_id"] != expected_id or case["status"] != "passed":
+            _invalid_report()
+        expected_observations = EXPECTED_OBSERVATIONS[expected_id]
+        observations = case["observations"]
+        if not isinstance(observations, dict) or set(observations) != set(
+            expected_observations
+        ):
+            _invalid_report()
+        if any(
+            type(observations[key]) is not type(value)
+            or observations[key] != value
+            for key, value in expected_observations.items()
+        ):
+            _invalid_report()
+    return report
 
 
 def _row_count(db_path: str, table: str) -> int:
@@ -283,7 +373,7 @@ def build_report() -> dict[str, Any]:
     cases = [lost, conflict, *repository_cases, tool_case]
     if [case["case_id"] for case in cases] != list(CASE_IDS):
         raise ValueError("run_idempotency_proof_case_order_invalid")
-    return {
+    report = {
         "schema_version": REPORT_SCHEMA_VERSION,
         "status": "valid",
         "source": "deterministic_local",
@@ -291,15 +381,18 @@ def build_report() -> dict[str, Any]:
         "boundaries": dict(BOUNDARIES),
         "limits": list(LIMITS),
     }
+    return validate_report(report)
 
 
 def serialize_report(report: dict[str, Any]) -> bytes:
+    validate_report(report)
     return (json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode(
         "utf-8"
     )
 
 
 def render_markdown(report: dict[str, Any]) -> str:
+    validate_report(report)
     lines = [
         "# Run Creation Idempotency v1 Proof",
         "",
@@ -332,11 +425,17 @@ def _check() -> bool:
     )
 
 
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        del message
+        raise ValueError("run_idempotency_proof_baseline_invalid")
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("json", "markdown", "check"))
-    args = parser.parse_args(argv)
     try:
+        parser = _ArgumentParser(description=__doc__)
+        parser.add_argument("command", choices=("json", "markdown", "check"))
+        args = parser.parse_args(argv)
         report = build_report()
         if args.command == "json":
             sys.stdout.buffer.write(serialize_report(report))

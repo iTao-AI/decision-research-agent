@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from packaging.markers import default_environment
@@ -8,7 +9,8 @@ from packaging.specifiers import SpecifierSet
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.0.md"
+V010_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.0.md"
+V011_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.1.md"
 PYTEST_FIXED_FLOOR = "9.0.3"
 
 
@@ -16,8 +18,31 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_version_is_v0_1_0() -> None:
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.0"
+def test_current_release_version_is_consistent() -> None:
+    package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
+    lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
+
+    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.1"
+    assert package["version"] == "0.1.1"
+    assert lock["version"] == "0.1.1"
+    assert lock["packages"][""]["version"] == "0.1.1"
+
+
+def test_changelog_has_empty_unreleased_and_complete_v0_1_1_entry() -> None:
+    changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [0.1.1]", 1)[0]
+
+    assert unreleased.strip() == ""
+    assert "## [0.1.1] - 2026-07-13" in changelog
+    for phrase in (
+        "structured Tool Client",
+        "Agent Research Operations Console",
+        "downstream consumer",
+        "eight fixed cases",
+        "six policy evaluators",
+        "frontend and CI maintenance",
+    ):
+        assert phrase in changelog
 
 
 def test_changelog_contains_v0_1_0_release_entry() -> None:
@@ -34,8 +59,10 @@ def test_security_policy_matches_current_release_surface() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
 
     required = [
-        "Decision Research Agent v0.1.0",
-        "backend-and-CLI release",
+        "Decision Research Agent v0.1.1",
+        "Agent Research Operations Console",
+        "does not accept credentials",
+        "not a publicly hosted service",
         "API keys must be provided through environment variables",
         "Do not disclose suspected vulnerabilities in public Issues or pull requests.",
         "LangSmith traces are privacy-first by default",
@@ -45,7 +72,7 @@ def test_security_policy_matches_current_release_surface() -> None:
 
 
 def test_release_notes_document_breaking_migration_and_rollback() -> None:
-    notes = _read(RELEASE_NOTES)
+    notes = _read(V010_RELEASE_NOTES)
 
     required = [
         "# Decision Research Agent v0.1.0",
@@ -72,7 +99,7 @@ def test_release_notes_document_breaking_migration_and_rollback() -> None:
 
 
 def test_release_notes_do_not_claim_unrun_final_gate() -> None:
-    notes = _read(RELEASE_NOTES)
+    notes = _read(V010_RELEASE_NOTES)
 
     forbidden = [
         "release tag created",
@@ -82,6 +109,57 @@ def test_release_notes_do_not_claim_unrun_final_gate() -> None:
     ]
     for phrase in forbidden:
         assert phrase not in notes
+
+
+def test_v0_1_1_release_notes_cover_surface_compatibility_and_limits() -> None:
+    notes = _read(V011_RELEASE_NOTES)
+
+    required = [
+        "# Decision Research Agent v0.1.1",
+        "## Supported Surface",
+        "## Changes",
+        "structured Tool Client",
+        "Agent Research Operations Console",
+        "Static Demo",
+        "loopback-only",
+        "downstream consumer",
+        "eight fixed cases",
+        "six evaluators",
+        "## Compatibility And Migration",
+        "No runtime API, schema, or database migration",
+        "## Rollback",
+        "## Required Verification",
+        "## Known Limits",
+        "does not accept credentials",
+        "does not own review, verification, or publication authority",
+        "not a live-provider run",
+        "not production SLA",
+        "not answer-quality accuracy",
+        "not provider measurements",
+    ]
+    for phrase in required:
+        assert phrase in notes
+
+
+def test_v0_1_1_release_is_discoverable_without_claiming_publication() -> None:
+    readme = _read(PROJECT_ROOT / "README.md")
+    readme_cn = _read(PROJECT_ROOT / "README_CN.md")
+    docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
+    combined = "\n".join((readme, readme_cn, docs_index, _read(V011_RELEASE_NOTES)))
+
+    assert "[v0.1.1 Release Notes](docs/releases/v0.1.1.md)" in readme
+    assert "[v0.1.1 Release Notes](docs/releases/v0.1.1.md)" in readme_cn
+    assert "[v0.1.1 Release Notes](releases/v0.1.1.md)" in docs_index
+    assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme
+    assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
+    assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
+    for forbidden in (
+        "v0.1.1 is published",
+        "release tag created",
+        "GitHub Release published",
+        "deployment completed",
+    ):
+        assert forbidden not in combined
 
 
 def test_pytest_dependency_declaration_uses_security_fixed_floor() -> None:

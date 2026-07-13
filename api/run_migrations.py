@@ -20,6 +20,11 @@ from api.publication_repository import (
     verify_publication_schema,
 )
 from api.run_repository import MIGRATION_VERSION
+from api.run_repository import init_run_schema
+from api.run_creation_models import (
+    RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
+    RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,
+)
 
 
 REQUIRED_TABLES = {
@@ -32,6 +37,7 @@ REQUIRED_TABLES = {
     "review_workflows_v2",
     "review_resume_attempts_v2",
     "review_resolutions_v2",
+    "run_create_idempotency_v1",
 }
 REQUIRED_INDEXES = {
     "idx_research_runs_v2_thread",
@@ -41,6 +47,7 @@ REQUIRED_INDEXES = {
 EXPECTED_MIGRATIONS = {
     MIGRATION_VERSION: "run-identity-backbone-v1",
     REVIEW_MIGRATION_VERSION: REVIEW_MIGRATION_CHECKSUM,
+    RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION: RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
 }
 REQUIRED_COLUMNS = {
     "research_runs_v2": {
@@ -110,6 +117,13 @@ REQUIRED_COLUMNS = {
         "action",
         "resolved_review_json",
         "artifact_ids_json",
+        "created_at",
+    },
+    "run_create_idempotency_v1": {
+        "key_hash",
+        "request_schema_version",
+        "request_hash",
+        "run_id",
         "created_at",
     },
 }
@@ -283,12 +297,30 @@ def verify_run_schema(
             ).fetchall()
         except sqlite3.DatabaseError:
             foreign_key_errors = [("schema_mismatch",)]
+        declared_foreign_keys = (
+            conn.execute(
+                "PRAGMA foreign_key_list(run_create_idempotency_v1)"
+            ).fetchall()
+            if "run_create_idempotency_v1" in tables
+            else []
+        )
+        required_idempotency_fk = any(
+            row[2] == "research_runs_v2"
+            and row[3] == "run_id"
+            and row[4] == "run_id"
+            and row[6].upper() == "CASCADE"
+            for row in declared_foreign_keys
+        )
+        missing_foreign_keys = (
+            [] if required_idempotency_fk else ["run_create_idempotency_v1.run_id"]
+        )
         if (
             missing_tables
             or missing_indexes
             or missing_columns
             or invalid_migrations
             or foreign_key_errors
+            or missing_foreign_keys
         ):
             raise RuntimeError(
                 "run_schema_verification_failed:"
@@ -296,6 +328,7 @@ def verify_run_schema(
                 f"columns={missing_columns},"
                 f"migrations={invalid_migrations},"
                 f"foreign_keys={foreign_key_errors}"
+                f",missing_foreign_keys={missing_foreign_keys}"
             )
         if include_publication:
             verify_publication_schema(db_path=db_path)
@@ -313,9 +346,7 @@ def verify_run_schema(
         conn.close()
 
 
-def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
-    """Back up, apply, and verify; restore the original DB on any failure."""
-    backup_existed = Path(backup_path).exists()
+def _migration_markers(db_path: str) -> dict[str, str]:
     connection = sqlite3.connect(sqlite_db_path(db_path))
     try:
         has_migration_table = connection.execute(
@@ -324,28 +355,63 @@ def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
             WHERE type = 'table' AND name = 'schema_migrations'
             """
         ).fetchone()
-        marker_was_applied = (
+        if has_migration_table is None:
+            return {}
+        markers = dict(
             connection.execute(
-                """
-                SELECT 1 FROM schema_migrations
-                WHERE version = ? AND checksum = ?
-                """,
-                (
-                    PUBLICATION_MIGRATION_VERSION,
-                    PUBLICATION_MIGRATION_CHECKSUM,
-                ),
-            ).fetchone()
-            is not None
-            if has_migration_table is not None
-            else False
+                "SELECT version, checksum FROM schema_migrations"
+            ).fetchall()
         )
     finally:
         connection.close()
-    try:
+    known = {
+        PUBLICATION_MIGRATION_VERSION: PUBLICATION_MIGRATION_CHECKSUM,
+        RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION: RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
+    }
+    invalid = [
+        version
+        for version, checksum in known.items()
+        if version in markers and markers[version] != checksum
+    ]
+    if invalid:
+        raise RuntimeError(f"run_schema_migration_checksum_invalid:{sorted(invalid)}")
+    return markers
+
+
+def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
+    """Back up, apply, and verify; restore the original DB on any failure."""
+    backup_existed = Path(backup_path).exists()
+    markers = _migration_markers(db_path)
+    publication_applied = (
+        markers.get(PUBLICATION_MIGRATION_VERSION)
+        == PUBLICATION_MIGRATION_CHECKSUM
+    )
+    idempotency_applied = (
+        markers.get(RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION)
+        == RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM
+    )
+
+    if not publication_applied:
         migrate_publication_with_backup(
             db_path=db_path,
             backup_path=backup_path,
         )
+    elif not idempotency_applied:
+        if Path(backup_path).exists():
+            raise RuntimeError("run_idempotency_migration_backup_already_exists")
+        backup_database(db_path=db_path, backup_path=backup_path)
+        try:
+            init_run_schema(db_path)
+            verify_run_schema(
+                db_path=db_path,
+                include_evidence_verification=True,
+                include_publication=True,
+            )
+        except Exception:
+            restore_database(backup_path=backup_path, db_path=db_path)
+            raise
+
+    try:
         return verify_run_schema(
             db_path=db_path,
             include_evidence_verification=True,
@@ -353,7 +419,7 @@ def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
         )
     except Exception:
         if (
-            not marker_was_applied
+            not publication_applied
             and not backup_existed
             and Path(backup_path).exists()
         ):

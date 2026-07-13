@@ -216,3 +216,78 @@ def test_existing_backup_is_not_overwritten_for_007_upgrade(tmp_path):
     with pytest.raises(RuntimeError, match="run_idempotency_migration_backup_already_exists"):
         migrate_with_backup(db_path=db_path, backup_path=str(backup_path))
     assert backup_path.read_bytes() == b"keep"
+
+
+def _replace_idempotency_table_without_constraint(
+    db_path,
+    *,
+    key_hash_definition,
+    run_id_definition,
+):
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute("PRAGMA foreign_keys=OFF")
+            connection.execute("DROP TABLE run_create_idempotency_v1")
+            connection.execute(
+                f"""
+                CREATE TABLE run_create_idempotency_v1 (
+                    key_hash {key_hash_definition},
+                    request_schema_version TEXT NOT NULL,
+                    request_hash TEXT NOT NULL,
+                    run_id {run_id_definition}
+                        REFERENCES research_runs_v2(run_id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+    finally:
+        connection.close()
+
+
+def test_verifier_rejects_idempotency_table_without_key_hash_primary_key(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    init_legacy_db(db_path).close()
+    migrate_with_backup(
+        db_path=db_path,
+        backup_path=str(tmp_path / "backup.db"),
+    )
+    _replace_idempotency_table_without_constraint(
+        db_path,
+        key_hash_definition="TEXT NOT NULL",
+        run_id_definition="TEXT NOT NULL UNIQUE",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="missing_constraints=.*key_hash_primary_key",
+    ):
+        verify_run_schema(
+            db_path=db_path,
+            include_evidence_verification=True,
+            include_publication=True,
+        )
+
+
+def test_verifier_rejects_idempotency_table_without_unique_run_id(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    init_legacy_db(db_path).close()
+    migrate_with_backup(
+        db_path=db_path,
+        backup_path=str(tmp_path / "backup.db"),
+    )
+    _replace_idempotency_table_without_constraint(
+        db_path,
+        key_hash_definition="TEXT PRIMARY KEY",
+        run_id_definition="TEXT NOT NULL",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="missing_constraints=.*run_id_unique",
+    ):
+        verify_run_schema(
+            db_path=db_path,
+            include_evidence_verification=True,
+            include_publication=True,
+        )

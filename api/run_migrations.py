@@ -314,6 +314,36 @@ def verify_run_schema(
         missing_foreign_keys = (
             [] if required_idempotency_fk else ["run_create_idempotency_v1.run_id"]
         )
+        missing_constraints = []
+        if "run_create_idempotency_v1" in tables:
+            idempotency_columns = conn.execute(
+                "PRAGMA table_info(run_create_idempotency_v1)"
+            ).fetchall()
+            primary_key_columns = [
+                row[1]
+                for row in sorted(idempotency_columns, key=lambda row: row[5])
+                if row[5] > 0
+            ]
+            if primary_key_columns != ["key_hash"]:
+                missing_constraints.append("key_hash_primary_key")
+            run_id_unique = False
+            for index_row in conn.execute(
+                "PRAGMA index_list(run_create_idempotency_v1)"
+            ).fetchall():
+                if index_row[2] != 1:
+                    continue
+                escaped_name = str(index_row[1]).replace('"', '""')
+                index_columns = [
+                    row[2]
+                    for row in conn.execute(
+                        f'PRAGMA index_info("{escaped_name}")'
+                    ).fetchall()
+                ]
+                if index_columns == ["run_id"]:
+                    run_id_unique = True
+                    break
+            if not run_id_unique:
+                missing_constraints.append("run_id_unique")
         if (
             missing_tables
             or missing_indexes
@@ -321,6 +351,7 @@ def verify_run_schema(
             or invalid_migrations
             or foreign_key_errors
             or missing_foreign_keys
+            or missing_constraints
         ):
             raise RuntimeError(
                 "run_schema_verification_failed:"
@@ -329,6 +360,7 @@ def verify_run_schema(
                 f"migrations={invalid_migrations},"
                 f"foreign_keys={foreign_key_errors}"
                 f",missing_foreign_keys={missing_foreign_keys}"
+                f",missing_constraints={missing_constraints}"
             )
         if include_publication:
             verify_publication_schema(db_path=db_path)

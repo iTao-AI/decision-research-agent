@@ -194,6 +194,22 @@ flag in `os.environ`. It runs profiles sequentially and must not be invoked
 concurrently in the same process. The runner restores or removes the temporary
 value after success, timeout, or exception.
 
+## Agent Evaluation Regression Gate
+
+The required offline regression gate checks eight fixed scenarios across result,
+trajectory, Evidence, terminal-state, safety, and efficiency boundaries:
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
+```
+
+See the [Agent Evaluation Regression Gate](reference/agent-evaluation-regression-gate.md)
+for the `dra.agent-evaluation-cases.v1`, `dra.agent-evaluation-report.v1`, and
+`dra.agent-evaluation-comparison.v1` contracts and reviewed baseline workflow.
+It must not parse Markdown into typed facts. Pydantic owns structural schemas;
+project evaluators own DRA policy. AgentEvals and DeepAgents live evaluation
+remain deferred, while LangSmith remains separate diagnostics.
+
 ## Error And Security Behavior
 
 The client exits non-zero and prints structured JSON for connection errors,

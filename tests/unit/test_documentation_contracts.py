@@ -234,3 +234,53 @@ def test_downstream_consumer_contract_is_indexed_and_bounded():
     assert "downstream-consumer-contract-v1.json" in evidence_index
     assert "downstream-consumer-contract.md" in integration
     assert "downstream-consumer-contract.md" in docs_index
+
+
+def test_agent_evaluation_regression_gate_is_documented_and_required_in_ci():
+    paths = [
+        PROJECT_ROOT / "docs/reference/agent-evaluation-regression-gate.md",
+        PROJECT_ROOT / "docs/evidence/README.md",
+        PROJECT_ROOT / "docs/README.md",
+        PROJECT_ROOT / "docs/AGENT_INTEGRATION.md",
+        PROJECT_ROOT / "README.md",
+        PROJECT_ROOT / "README_CN.md",
+        PROJECT_ROOT / "CHANGELOG.md",
+    ]
+    docs = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    required = (
+        "dra.agent-evaluation-cases.v1",
+        "dra.agent-evaluation-report.v1",
+        "dra.agent-evaluation-comparison.v1",
+        "agent_evaluation_gate.py check",
+        "cost_estimate",
+        "estimate",
+        "LangSmith",
+        "diagnostics",
+        "must not parse Markdown",
+    )
+    for phrase in required:
+        assert phrase in docs
+    assert "agent-evaluation-regression-v1.json" in docs
+    assert "agent-evaluation-regression-v1.md" in docs
+    assert "live observation" in docs.lower()
+    assert "deferred" in docs.lower()
+    assert "Pydantic owns structural schemas" in docs
+    assert "project evaluators own DRA" in docs
+    assert "AgentEvals" in docs
+    assert "DeepAgents live evaluation" in docs
+
+    forbidden = (
+        "billed cost",
+        "automatic truth evaluation",
+        "v0.1.1 is published",
+        "evaluation report is runtime authority",
+    )
+    for phrase in forbidden:
+        assert phrase not in docs
+
+    workflow = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    install = workflow.index("pip install --no-deps -r constraints.txt")
+    gate = workflow.index("python scripts/agent_evaluation_gate.py check")
+    pytest_step = workflow.index("python -m pytest -q")
+    assert install < gate < pytest_step
+    assert "PYTHON_DOTENV_DISABLED: '1'" in workflow

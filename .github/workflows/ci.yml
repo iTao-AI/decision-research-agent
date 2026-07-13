@@ -29,6 +29,10 @@ jobs:
             constraints.txt
       - name: Install dependencies
         run: pip install --no-deps -r constraints.txt
+      - name: Run deterministic Agent evaluation gate
+        env:
+          PYTHON_DOTENV_DISABLED: '1'
+        run: python scripts/agent_evaluation_gate.py check
       - name: Run tests
         run: python -m pytest -q
 

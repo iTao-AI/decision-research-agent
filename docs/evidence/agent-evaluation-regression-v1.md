@@ -10,7 +10,7 @@
 - Blocking regressions: 0
 - Expectation mismatches: 0
 - Observational changes: 2
-- Not observed: 2
+- Not observed: 9
 
 ## Cases
 

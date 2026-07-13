@@ -207,6 +207,15 @@ def test_manifest_rejects_duplicate_cases_events_and_invalid_signal_refs():
         validate_manifest(bad_signal)
 
 
+@pytest.mark.parametrize("source_case_id", ["missing_source", "fallback_ready"])
+def test_manifest_rejects_unknown_or_cross_case_source_case_id(source_case_id):
+    manifest = _manifest()
+    manifest["cases"][0]["source_case_id"] = source_case_id
+    with pytest.raises(EvaluationValidationError) as exc_info:
+        validate_manifest(manifest)
+    assert exc_info.value.code == "evaluation_case_invalid"
+
+
 def test_observation_allows_semantic_orphan_but_rejects_structural_and_metric_errors():
     orphan = _observation()
     orphan["trajectory"] = [
@@ -314,3 +323,40 @@ def test_model_dump_plain_data_round_trip_and_serialization_are_byte_stable():
 
     reordered = {"cases": manifest["cases"], "schema_version": manifest["schema_version"]}
     assert dataset_hash(reordered) == dataset_hash(manifest)
+
+
+@pytest.mark.parametrize(
+    ("field_path", "value"),
+    [
+        (("amount",), "1.0"),
+        (("amount",), "-0.00100000"),
+        (("currency",), "usd"),
+        (("currency",), "USDX"),
+        (("pricing_basis",), "invalid basis"),
+        (("estimate",), False),
+        (("input_tokens",), -1),
+        (("output_tokens",), 1.5),
+    ],
+)
+def test_manifest_rejects_malformed_cost_and_token_variants(field_path, value):
+    manifest = _manifest()
+    token_usage = manifest["cases"][0]["metrics"]["token_usage"]
+    target = token_usage["cost_estimate"] if field_path[0] in {
+        "amount",
+        "currency",
+        "pricing_basis",
+        "estimate",
+    } else token_usage
+    target[field_path[0]] = value
+    with pytest.raises(EvaluationValidationError) as exc_info:
+        validate_manifest(manifest)
+    assert exc_info.value.code == "evaluation_metrics_invalid"
+
+
+@pytest.mark.parametrize(("field", "value"), [("elapsed_ms", -1), ("elapsed_ms", 1.5)])
+def test_manifest_rejects_negative_or_non_integer_elapsed_metrics(field, value):
+    manifest = _manifest()
+    manifest["cases"][0]["metrics"][field] = value
+    with pytest.raises(EvaluationValidationError) as exc_info:
+        validate_manifest(manifest)
+    assert exc_info.value.code == "evaluation_metrics_invalid"

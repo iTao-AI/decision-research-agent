@@ -26,6 +26,16 @@ CASE_IDS = (
     "untrusted_instruction_action",
     "cross_run_reference",
 )
+_SOURCE_CASE_BY_CASE_ID = {
+    "canonical_success": "canonical_ready",
+    "fallback_blocked": "fallback_ready",
+    "review_required": "review_required",
+    "failed_terminal": "failed",
+    "evidence_missing": "canonical_ready",
+    "prohibited_tool": "canonical_ready",
+    "untrusted_instruction_action": "canonical_ready",
+    "cross_run_reference": "canonical_ready",
+}
 REGISTRY = (
     ("result_contract", "1"),
     ("trajectory_policy", "1"),
@@ -423,6 +433,11 @@ def validate_manifest(payload: Any) -> dict[str, Any]:
         _fail("evaluation_schema_unsupported")
     cases = [_validate_case(case) for case in envelope.cases]
     if [case["case_id"] for case in cases] != list(CASE_IDS):
+        _fail("evaluation_case_invalid")
+    if any(
+        case["source_case_id"] != _SOURCE_CASE_BY_CASE_ID[case["case_id"]]
+        for case in cases
+    ):
         _fail("evaluation_case_invalid")
     canonical = {"schema_version": MANIFEST_SCHEMA_VERSION, "cases": cases}
     assert_public_safe(canonical)

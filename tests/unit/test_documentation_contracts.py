@@ -257,6 +257,7 @@ def test_agent_evaluation_regression_gate_is_documented_and_required_in_ci():
         "LangSmith",
         "diagnostics",
         "must not parse Markdown",
+        "Claim-level Evidence remains `not_observed`",
     )
     for phrase in required:
         assert phrase in docs

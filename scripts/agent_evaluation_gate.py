@@ -322,9 +322,17 @@ def _error(code: str) -> int:
     return 1
 
 
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        del message
+        _fail("evaluation_output_invalid")
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build or check Agent evaluation artifacts.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser = _ArgumentParser(description="Build or check Agent evaluation artifacts.")
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, parser_class=_ArgumentParser
+    )
     build = subparsers.add_parser("build")
     build.add_argument("--json-output", required=True)
     build.add_argument("--markdown-output", required=True)
@@ -334,8 +342,8 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
     try:
+        args = _parser().parse_args(argv)
         manifest = load_manifest(MANIFEST_PATH)
         report = build_deterministic_report(manifest)
         markdown = render_markdown(report)

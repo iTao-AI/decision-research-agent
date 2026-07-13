@@ -17,7 +17,7 @@
         {
           "evaluator_id": "evidence_integrity",
           "finding_codes": [],
-          "status": "pass"
+          "status": "not_observed"
         },
         {
           "evaluator_id": "terminal_state",
@@ -81,7 +81,7 @@
         {
           "evaluator_id": "evidence_integrity",
           "finding_codes": [],
-          "status": "pass"
+          "status": "not_observed"
         },
         {
           "evaluator_id": "terminal_state",
@@ -151,7 +151,7 @@
         {
           "evaluator_id": "evidence_integrity",
           "finding_codes": [],
-          "status": "pass"
+          "status": "not_observed"
         },
         {
           "evaluator_id": "terminal_state",
@@ -226,7 +226,7 @@
         {
           "evaluator_id": "evidence_integrity",
           "finding_codes": [],
-          "status": "pass"
+          "status": "not_observed"
         },
         {
           "evaluator_id": "terminal_state",
@@ -375,7 +375,7 @@
         {
           "evaluator_id": "evidence_integrity",
           "finding_codes": [],
-          "status": "pass"
+          "status": "not_observed"
         },
         {
           "evaluator_id": "terminal_state",
@@ -445,7 +445,7 @@
         {
           "evaluator_id": "evidence_integrity",
           "finding_codes": [],
-          "status": "pass"
+          "status": "not_observed"
         },
         {
           "evaluator_id": "terminal_state",
@@ -519,7 +519,7 @@
         {
           "evaluator_id": "evidence_integrity",
           "finding_codes": [],
-          "status": "pass"
+          "status": "not_observed"
         },
         {
           "evaluator_id": "terminal_state",
@@ -622,7 +622,7 @@
   "summary": {
     "blocking_regression_count": 0,
     "expectation_mismatch_count": 0,
-    "not_observed_count": 2,
+    "not_observed_count": 9,
     "observational_change_count": 2,
     "release_gate_passed": true
   }

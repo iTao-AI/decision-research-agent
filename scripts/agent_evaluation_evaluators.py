@@ -210,6 +210,12 @@ def evaluate_observation(observation: dict[str, Any]) -> dict[str, Any]:
             status = "expected_block"
         elif observational_codes and not blocking_codes:
             status = "not_observed"
+        elif (
+            evaluator_id == "evidence_integrity"
+            and canonical["evidence_ref_status"] == "not_observed"
+            and not codes
+        ):
+            status = "not_observed"
         elif codes:
             status = "regression"
         else:

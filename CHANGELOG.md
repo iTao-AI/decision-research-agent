@@ -14,6 +14,16 @@ All notable changes to this project are documented in this file.
 - Added a deterministic public reconciliation proof while explicitly excluding
   crash-before-schedule recovery and exactly-once execution claims.
 
+### Durable run dispatch
+
+- Added atomic `run_dispatches_v1` intent creation and migration
+  `008_run_dispatch_reconciliation`, with exact verification, no backfill, and
+  isolated `.pre-run-dispatch.bak` restore protection.
+- Added single-node pre-execution reconciliation, exact start fencing, bounded
+  asynchronous retry through three attempts, and deterministic public proof
+  artifacts. `status: started` remains an acceptance acknowledgement; the
+  contract does not claim exactly-once or running-execution recovery.
+
 ## [0.1.1] - 2026-07-13
 
 ### Tool Client

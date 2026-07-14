@@ -340,3 +340,74 @@ def test_run_creation_idempotency_contract_is_public_and_bounded():
     assert workflow.count(proof) == 1
     assert workflow.index("python scripts/agent_evaluation_gate.py check") < workflow.index(proof)
     assert workflow.index(proof) < workflow.index("python -m pytest -q")
+
+
+def test_run_dispatch_reconciliation_contract_is_public_and_bounded():
+    paths = [
+        PROJECT_ROOT / "docs" / "architecture.md",
+        PROJECT_ROOT / "docs" / "decisions" / "framework-runtime-boundaries.md",
+        PROJECT_ROOT / "docs" / "reference" / "api-contract.md",
+        PROJECT_ROOT / "docs" / "reference" / "data-models.md",
+        PROJECT_ROOT / "docs" / "reference" / "state-machines.md",
+        PROJECT_ROOT / "docs" / "AGENT_INTEGRATION.md",
+        PROJECT_ROOT / "docs" / "README.md",
+        PROJECT_ROOT / "docs" / "evidence" / "README.md",
+        PROJECT_ROOT / "README.md",
+        PROJECT_ROOT / "README_CN.md",
+        PROJECT_ROOT / "CHANGELOG.md",
+    ]
+    docs = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    required = (
+        "run_dispatches_v1",
+        "008_run_dispatch_reconciliation",
+        "status: started",
+        "acceptance acknowledgement",
+        "run_dispatch_schedule_failed",
+        "run_dispatch_start_timeout",
+        "three attempts",
+        "no backfill",
+        ".pre-run-dispatch.bak",
+        "run-dispatch-reconciliation-v1.json",
+        "run-dispatch-reconciliation-v1.md",
+        "commit_before_execution_start_recovery: proven",
+        "crash_before_schedule_recovery: proven",
+        "exactly_once_execution: not_claimed",
+        "running_execution_recovery: not_proven",
+        "provider_tool_side_effect_exactly_once: not_claimed",
+        "multi_instance_high_availability: not_proven",
+        "live_provider_result: not_observed",
+    )
+    for phrase in required:
+        assert phrase in docs
+
+    api = (PROJECT_ROOT / "docs" / "reference" / "api-contract.md").read_text(
+        encoding="utf-8"
+    )
+    assert "HTTP 200" in api
+    assert "existing response shape" in api
+    assert "asynchronous" in api
+
+    architecture = (PROJECT_ROOT / "docs" / "architecture.md").read_text(
+        encoding="utf-8"
+    )
+    assert "application dispatch authority" in architecture
+    assert "before Agent invocation" in architecture
+    assert "Agent middleware" in architecture
+
+    old_evidence = (
+        PROJECT_ROOT / "docs" / "evidence" / "run-creation-idempotency-v1.md"
+    ).read_text(encoding="utf-8")
+    new_evidence = (
+        PROJECT_ROOT / "docs" / "evidence" / "run-dispatch-reconciliation-v1.md"
+    ).read_text(encoding="utf-8")
+    assert "crash_before_schedule_recovery: not_proven" in old_evidence
+    assert "crash_before_schedule_recovery: proven" in new_evidence
+    assert (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.1.2"
+
+    workflow = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    old_proof = "python scripts/run_creation_idempotency_proof.py check"
+    new_proof = "python scripts/run_dispatch_reconciliation_proof.py check"
+    pytest_step = "python -m pytest -q"
+    assert workflow.count(new_proof) == 1
+    assert workflow.index(old_proof) < workflow.index(new_proof)
+    assert workflow.index(new_proof) < workflow.index(pytest_step)

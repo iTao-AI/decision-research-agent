@@ -24,7 +24,8 @@ health service identifier use `decision-research-agent`.
 - Persists ResearchRun, EvidenceLedger, review, verification, publication, and
   canonical result state in the application database.
 - Supports lost-response run identity reconciliation through an optional
-  durable `Idempotency-Key`, without claiming crash recovery or exactly-once execution.
+  durable `Idempotency-Key` and single-node recovery of committed work before
+  Agent invocation, without claiming exactly-once execution.
 - Produces bounded result artifacts through `GET /api/runs/{run_id}/result`.
 - Supports Talent Hiring Signal as the first benchmarked research profile.
 - Provides controlled durable review and evidence verification workflows behind
@@ -273,9 +274,13 @@ python tools/decision_research_agent_tool.py doctor
 
 ## Known Boundaries
 
-- The v0.1.2 release surface adds optional durable run-creation idempotency and
-  deterministic identity reconciliation to v0.1.1. It does not prove
-  crash-before-schedule recovery or claim exactly-once execution.
+- The current unreleased dispatch contract adds application-owned
+  `run_dispatches_v1` reconciliation before Agent invocation. The historical
+  v0.1.2 identity proof remains unchanged and does not itself prove
+  crash-before-schedule recovery; the newer dispatch proof does. Neither proof
+  claims exactly-once execution, running recovery, provider/tool side-effect
+  exactly-once behavior, multi-instance high availability, or a live-provider
+  result.
 - The v0.1.1 release surface adds the separately built Agent Research
   Operations Console and deterministic contract gates to the existing
   backend-and-CLI release without changing runtime API, schema, or database

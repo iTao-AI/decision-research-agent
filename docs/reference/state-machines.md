@@ -10,10 +10,12 @@ verification, publication, and delivery state.
 ```mermaid
 stateDiagram-v2
     [*] --> pending: POST /api/runs
-    pending --> running: fenced transition
+    pending --> leased: private dispatch claim
+    leased --> pending: bounded retry
+    leased --> running: atomic start fence
+    leased --> failed: three attempts exhausted
     running --> completed: harness outcome accepted
     running --> failed: exception, timeout, cancellation
-    pending --> failed: startup/scheduling failure
     completed --> [*]
     failed --> [*]
 ```
@@ -29,6 +31,14 @@ Execution identity:
 Terminal writes use `state_version` and allowed previous statuses. A stale
 writer, timeout callback, cancellation handler, or normal completion cannot
 silently overwrite a terminal run written by another path.
+
+The `leased` state is represented by private `run_dispatches_v1`; public
+ResearchRun remains `pending` until the exact lease owner and attempt atomically
+advance dispatch to `started`, run to `running`, and the initial segment to
+`running`. Expired leases can be reclaimed. A stale task or timeout is a no-op
+against a newer attempt. Bounded scheduler/start failures use
+`run_dispatch_schedule_failed` or `run_dispatch_start_timeout`; the third
+failed attempt converges dispatch, run, and segment to `failed`.
 
 ## Harness Boundary
 

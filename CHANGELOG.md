@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-14
+
 ### Run creation reliability
 
 - Added optional durable `Idempotency-Key` handling for run creation, including

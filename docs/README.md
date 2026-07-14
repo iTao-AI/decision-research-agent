@@ -65,6 +65,9 @@ external evaluation of the public contract surface.
 
 ## Release
 
+- [v0.1.2 Release Notes](releases/v0.1.2.md) — optional run-creation
+  idempotency, deterministic reconciliation proof, compatibility, rollback,
+  verification, and explicit limits.
 - [v0.1.1 Release Notes](releases/v0.1.1.md) — current supported surface,
   compatibility, rollback, verification, and known limits.
 - [v0.1.0 Release Notes](releases/v0.1.0.md) — migration, rollback, and release gates.

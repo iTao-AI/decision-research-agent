@@ -242,6 +242,7 @@ python tools/decision_research_agent_tool.py doctor
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.2 Release Notes](docs/releases/v0.1.2.md)
 - [v0.1.1 Release Notes](docs/releases/v0.1.1.md)
 - [v0.1.0 Release Notes](docs/releases/v0.1.0.md)
 - [Controlled Review Workflow](docs/operations/controlled-review-workflow.md)
@@ -249,6 +250,9 @@ python tools/decision_research_agent_tool.py doctor
 
 ## 已知边界
 
+- v0.1.2 release surface 在 v0.1.1 基础上增加可选的 durable run-creation
+  idempotency 和确定性 identity reconciliation；它不证明
+  crash-before-schedule recovery，也不声称 exactly-once execution。
 - v0.1.1 release surface 在既有 backend-and-CLI service 之外增加独立构建的
   Agent Research Operations Console 与确定性 contract gates；它不改变 runtime
   API、schema 或 database migration 要求。

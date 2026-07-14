@@ -265,6 +265,7 @@ python tools/decision_research_agent_tool.py doctor
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.2 Release Notes](docs/releases/v0.1.2.md)
 - [v0.1.1 Release Notes](docs/releases/v0.1.1.md)
 - [v0.1.0 Release Notes](docs/releases/v0.1.0.md)
 - [Controlled Review Workflow](docs/operations/controlled-review-workflow.md)
@@ -272,6 +273,9 @@ python tools/decision_research_agent_tool.py doctor
 
 ## Known Boundaries
 
+- The v0.1.2 release surface adds optional durable run-creation idempotency and
+  deterministic identity reconciliation to v0.1.1. It does not prove
+  crash-before-schedule recovery or claim exactly-once execution.
 - The v0.1.1 release surface adds the separately built Agent Research
   Operations Console and deterministic contract gates to the existing
   backend-and-CLI release without changing runtime API, schema, or database

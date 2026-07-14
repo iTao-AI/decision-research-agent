@@ -38,6 +38,7 @@ def test_changelog_orders_unreleased_before_complete_v0_1_1_entry() -> None:
     assert v0_1_1_heading in changelog
     assert v0_1_0_heading in changelog
     assert changelog.index(unreleased_heading) < changelog.index(v0_1_1_heading)
+    assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
     v0_1_1 = changelog.split(v0_1_1_heading, 1)[1].split(v0_1_0_heading, 1)[0]
     for phrase in (
         "structured Tool Client",

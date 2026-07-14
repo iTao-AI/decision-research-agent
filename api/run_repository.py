@@ -17,6 +17,11 @@ from api.run_creation_models import (
     idempotency_key_hash,
     run_create_request_hash,
 )
+from api.run_dispatch_models import (
+    RUN_DISPATCH_MIGRATION_CHECKSUM,
+    RUN_DISPATCH_MIGRATION_VERSION,
+    RunDispatchConflict,
+)
 
 
 EXECUTION_STATUSES = {
@@ -118,6 +123,45 @@ def _init_run_schema_unlocked(db_path: str | None = None) -> None:
             )
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS run_dispatches_v1 (
+                    run_id TEXT PRIMARY KEY
+                        REFERENCES research_runs_v2(run_id) ON DELETE CASCADE,
+                    status TEXT NOT NULL
+                        CHECK(status IN ('pending', 'leased', 'started', 'failed')),
+                    lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0
+                        CHECK(attempt_count >= 0),
+                    last_error_code TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    started_at TEXT,
+                    CHECK(
+                        (status = 'leased'
+                         AND lease_owner IS NOT NULL
+                         AND lease_expires_at IS NOT NULL)
+                        OR
+                        (status != 'leased'
+                         AND lease_owner IS NULL
+                         AND lease_expires_at IS NULL)
+                    ),
+                    CHECK(
+                        (status = 'started'
+                         AND started_at IS NOT NULL
+                         AND last_error_code IS NULL)
+                        OR
+                        (status = 'failed'
+                         AND started_at IS NULL
+                         AND last_error_code IS NOT NULL)
+                        OR
+                        (status IN ('pending', 'leased')
+                         AND started_at IS NULL)
+                    )
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS evidence_entries_v2 (
                     evidence_id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL REFERENCES research_runs_v2(run_id) ON DELETE CASCADE,
@@ -188,6 +232,12 @@ def _init_run_schema_unlocked(db_path: str | None = None) -> None:
             )
             conn.execute(
                 """
+                CREATE INDEX IF NOT EXISTS idx_run_dispatches_status_lease_created
+                ON run_dispatches_v1(status, lease_expires_at, created_at)
+                """
+            )
+            conn.execute(
+                """
                 INSERT OR IGNORE INTO schema_migrations(version, applied_at, checksum)
                 VALUES (?, ?, ?)
                 """,
@@ -202,6 +252,17 @@ def _init_run_schema_unlocked(db_path: str | None = None) -> None:
                     RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,
                     _now(),
                     RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO schema_migrations(version, applied_at, checksum)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    RUN_DISPATCH_MIGRATION_VERSION,
+                    _now(),
+                    RUN_DISPATCH_MIGRATION_CHECKSUM,
                 ),
             )
     finally:
@@ -246,6 +307,15 @@ def _insert_run_identity(
     scope: dict[str, Any],
     now: str,
 ) -> dict[str, str]:
+    marker = connection.execute(
+        "SELECT checksum FROM schema_migrations WHERE version = ?",
+        (RUN_DISPATCH_MIGRATION_VERSION,),
+    ).fetchone()
+    if (
+        marker is None
+        or marker["checksum"] != RUN_DISPATCH_MIGRATION_CHECKSUM
+    ):
+        raise RunDispatchConflict("run_dispatch_unavailable")
     run_id = f"run_{uuid.uuid4().hex}"
     segment_id = f"{run_id}_seg_000"
     connection.execute(
@@ -262,7 +332,12 @@ def _insert_run_identity(
             query,
             profile_id,
             profile_version,
-            json.dumps(scope, ensure_ascii=False, sort_keys=True),
+            json.dumps(
+                scope,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
             now,
             now,
         ),
@@ -274,6 +349,15 @@ def _insert_run_identity(
         ) VALUES (?, ?, 'initial', 0, 1, 'pending', ?, ?)
         """,
         (segment_id, run_id, now, now),
+    )
+    connection.execute(
+        """
+        INSERT INTO run_dispatches_v1 (
+            run_id, status, lease_owner, lease_expires_at, attempt_count,
+            last_error_code, created_at, updated_at, started_at
+        ) VALUES (?, 'pending', NULL, NULL, 0, NULL, ?, ?, NULL)
+        """,
+        (run_id, now, now),
     )
     return {"run_id": run_id, "thread_id": thread_id, "segment_id": segment_id}
 

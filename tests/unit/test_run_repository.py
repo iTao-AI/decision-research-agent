@@ -605,3 +605,178 @@ def test_same_evidence_can_be_persisted_in_two_runs_without_id_collision(tmp_pat
         for item in runs
     ]
     assert ids[0] != ids[1]
+
+
+def test_unkeyed_create_inserts_pending_dispatch_with_canonical_scope(tmp_path):
+    from api.run_repository import create_run
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(
+        db_path=db_path,
+        thread_id="thread-1",
+        query="query",
+        scope={"z": 2, "a": {"b": 1}},
+    )
+
+    connection = sqlite3.connect(db_path)
+    try:
+        dispatch = connection.execute(
+            "SELECT status, attempt_count FROM run_dispatches_v1 WHERE run_id = ?",
+            (created["run_id"],),
+        ).fetchone()
+        scope_json = connection.execute(
+            "SELECT scope_json FROM research_runs_v2 WHERE run_id = ?",
+            (created["run_id"],),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+    assert dispatch == ("pending", 0)
+    assert scope_json == '{"a":{"b":1},"z":2}'
+
+
+def test_keyed_replay_keeps_one_dispatch(tmp_path):
+    from api.run_repository import create_or_replay_run
+
+    db_path = str(tmp_path / "runs.db")
+    first = create_or_replay_run(
+        idempotency_key="run-key-dispatch-0001",
+        thread_id=None,
+        query="research",
+        db_path=db_path,
+    )
+    second = create_or_replay_run(
+        idempotency_key="run-key-dispatch-0001",
+        thread_id=None,
+        query="research",
+        db_path=db_path,
+    )
+
+    connection = sqlite3.connect(db_path)
+    try:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM run_dispatches_v1 WHERE run_id = ?",
+            (first.run_id,),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+    assert second.idempotent_replay is True
+    assert count == 1
+
+
+def test_same_thread_unkeyed_runs_each_get_dispatch(tmp_path):
+    from api.run_repository import create_run
+
+    db_path = str(tmp_path / "runs.db")
+    first = create_run(db_path=db_path, thread_id="thread-1", query="same")
+    second = create_run(db_path=db_path, thread_id="thread-1", query="same")
+
+    connection = sqlite3.connect(db_path)
+    try:
+        rows = connection.execute(
+            "SELECT run_id, status FROM run_dispatches_v1 ORDER BY run_id"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    assert {row[0] for row in rows} == {first["run_id"], second["run_id"]}
+    assert {row[1] for row in rows} == {"pending"}
+
+
+def test_wrong_dispatch_marker_fails_before_identity_insert(tmp_path):
+    from api.run_dispatch_models import RUN_DISPATCH_MIGRATION_VERSION
+    from api.run_repository import RunDispatchConflict, create_run, init_run_schema
+
+    db_path = str(tmp_path / "runs.db")
+    init_run_schema(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE schema_migrations SET checksum = 'wrong' WHERE version = ?",
+                (RUN_DISPATCH_MIGRATION_VERSION,),
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(RunDispatchConflict, match="run_dispatch_unavailable"):
+        create_run(db_path=db_path, thread_id="thread-1", query="query")
+
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute("SELECT COUNT(*) FROM research_runs_v2").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM run_segments").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM run_dispatches_v1").fetchone()[0] == 0
+    finally:
+        connection.close()
+
+
+def test_dispatch_insert_failure_rolls_back_run_and_segment(tmp_path):
+    from api.run_repository import create_run, init_run_schema
+
+    db_path = str(tmp_path / "runs.db")
+    init_run_schema(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                CREATE TRIGGER fail_dispatch_insert
+                BEFORE INSERT ON run_dispatches_v1
+                BEGIN
+                    SELECT RAISE(ABORT, 'dispatch insert failed');
+                END
+                """
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(sqlite3.DatabaseError, match="dispatch insert failed"):
+        create_run(db_path=db_path, thread_id="thread-1", query="query")
+
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute("SELECT COUNT(*) FROM research_runs_v2").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM run_segments").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM run_dispatches_v1").fetchone()[0] == 0
+    finally:
+        connection.close()
+
+
+def test_key_binding_failure_rolls_back_run_segment_and_dispatch(tmp_path):
+    from api.run_repository import RunCreationConflict, create_or_replay_run, init_run_schema
+
+    db_path = str(tmp_path / "runs.db")
+    init_run_schema(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                CREATE TRIGGER fail_key_binding_insert
+                BEFORE INSERT ON run_create_idempotency_v1
+                BEGIN
+                    SELECT RAISE(ABORT, 'key binding insert failed');
+                END
+                """
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(RunCreationConflict, match="run_idempotency_unavailable"):
+        create_or_replay_run(
+            db_path=db_path,
+            idempotency_key="run-key-dispatch-0002",
+            thread_id=None,
+            query="query",
+        )
+
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute("SELECT COUNT(*) FROM research_runs_v2").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM run_segments").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM run_dispatches_v1").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM run_create_idempotency_v1").fetchone()[0] == 0
+    finally:
+        connection.close()

@@ -2,6 +2,7 @@ import sys
 import os
 import asyncio
 import logging
+import sqlite3
 from functools import partial
 import uvicorn
 from pathlib import Path
@@ -164,10 +165,22 @@ async def lifespan(app: FastAPI):
     app.state.evidence_verification_runtime_readiness = None
     try:
         application_db_path = sqlite_db_path()
-        migrate_with_backup(
-            db_path=application_db_path,
-            backup_path=f"{application_db_path}.pre-run-dispatch.bak",
+        runtime = validate_review_runtime(output_dir=output_dir)
+        verification_runtime = validate_evidence_verification_runtime(
+            review_runtime=runtime,
+            output_dir=output_dir,
         )
+        try:
+            migrate_with_backup(
+                db_path=application_db_path,
+                backup_path=f"{application_db_path}.pre-run-dispatch.bak",
+            )
+        except sqlite3.DatabaseError as exc:
+            if runtime.enabled:
+                raise ReviewConfigurationError(
+                    "review_runtime_not_ready"
+                ) from exc
+            raise
         run_dispatch_worker = create_run_dispatch_worker(application_db_path)
         run_dispatch_task = asyncio.create_task(run_dispatch_worker.run_forever())
         await asyncio.sleep(0)
@@ -176,11 +189,6 @@ async def lifespan(app: FastAPI):
         app.state.run_dispatch_worker = run_dispatch_worker
         app.state.run_dispatch_worker_task = run_dispatch_task
 
-        runtime = validate_review_runtime(output_dir=output_dir)
-        verification_runtime = validate_evidence_verification_runtime(
-            review_runtime=runtime,
-            output_dir=output_dir,
-        )
         if runtime.enabled:
             readiness = check_review_readiness(
                 runtime=runtime,

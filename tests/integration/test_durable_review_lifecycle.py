@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 import api.server as server
 from agent.run_result import AgentRunResult
 from agent.talent_contracts import ResearchPacket
+from api.run_dispatch_repository import claim_run_dispatch
 from api.run_repository import create_run, get_run
+
+
+DISPATCH_WORKER_ID = "dispatch_worker_00000000000000000000000000000001"
 
 
 def _scope():
@@ -54,7 +58,8 @@ def _packet():
 
 
 async def _finalize_talent_fixture(tmp_path, monkeypatch, *, enabled: bool):
-    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", db_path)
     monkeypatch.setenv(
         "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL",
         "true" if enabled else "false",
@@ -68,6 +73,9 @@ async def _finalize_talent_fixture(tmp_path, monkeypatch, *, enabled: bool):
     )
 
     async def capture_agent(*args, **kwargs):
+        assert get_run(db_path=db_path, run_id=created["run_id"])[
+            "execution_status"
+        ] == "running"
         return AgentRunResult(
             thread_id="talent-thread",
             query="query",
@@ -79,16 +87,19 @@ async def _finalize_talent_fixture(tmp_path, monkeypatch, *, enabled: bool):
         )
 
     monkeypatch.setattr(server, "run_deep_agent", capture_agent)
-    await server._run_v2_with_persistence(
-        query="query",
-        thread_id="talent-thread",
+    claim = claim_run_dispatch(
+        db_path=db_path,
+        worker_id=DISPATCH_WORKER_ID,
+        lease_seconds=30,
         run_id=created["run_id"],
-        segment_id=created["segment_id"],
-        profile_id="talent-hiring-signal",
-        scope=scope,
+    )
+    assert claim is not None
+    await server._run_dispatched_with_persistence(
+        claim,
+        db_path=db_path,
         outcome_box=server.OutcomeBox(),
     )
-    return get_run(run_id=created["run_id"])
+    return get_run(db_path=db_path, run_id=created["run_id"])
 
 
 @pytest.mark.asyncio
@@ -244,10 +255,64 @@ def test_app_lifespan_cleans_up_when_worker_fails_during_startup(
 
 
 def test_app_lifespan_fails_startup_without_api_secret(monkeypatch):
+    migrations = []
+    monkeypatch.setattr(
+        server,
+        "migrate_with_backup",
+        lambda **kwargs: migrations.append(kwargs),
+    )
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "true")
     monkeypatch.delenv("API_SECRET", raising=False)
 
     with pytest.raises(RuntimeError, match="review_auth_not_configured"):
+        with TestClient(server.app):
+            pass
+    assert migrations == []
+
+
+def test_app_lifespan_validates_review_paths_before_migration(
+    tmp_path,
+    monkeypatch,
+):
+    migrations = []
+    shared_path = str(tmp_path / "shared.db")
+    monkeypatch.setattr(
+        server,
+        "migrate_with_backup",
+        lambda **kwargs: migrations.append(kwargs),
+    )
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "true")
+    monkeypatch.setenv("API_SECRET", "configured")
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", shared_path)
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH",
+        shared_path,
+    )
+
+    with pytest.raises(RuntimeError, match="review_databases_must_be_separate"):
+        with TestClient(server.app):
+            pass
+    assert migrations == []
+
+
+def test_app_lifespan_does_not_mask_stable_migration_runtime_errors(
+    tmp_path,
+    monkeypatch,
+):
+    def fail_migration(**kwargs):
+        raise RuntimeError("run_dispatch_migration_backup_already_exists")
+
+    monkeypatch.setattr(server, "migrate_with_backup", fail_migration)
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "false")
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_DB_PATH",
+        str(tmp_path / "tasks.db"),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="run_dispatch_migration_backup_already_exists",
+    ):
         with TestClient(server.app):
             pass
 

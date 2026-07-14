@@ -42,7 +42,7 @@ from api.run_repository import (
 )
 from api.run_dispatch_models import RunDispatchClaim
 from api.run_dispatch_repository import (
-    dispatch_attempt_is_started,
+    reconcile_run_dispatch_timeout,
     release_run_dispatch_for_retry,
     start_run_dispatch,
 )
@@ -503,18 +503,12 @@ async def _mark_dispatched_timeout(
 ) -> None:
     """Fence timeout handling to the exact dispatch attempt."""
     try:
-        started = await asyncio.to_thread(
-            dispatch_attempt_is_started,
+        timeout_outcome = await asyncio.to_thread(
+            reconcile_run_dispatch_timeout,
             db_path=db_path,
             claim=claim,
         )
-        if not started:
-            await asyncio.to_thread(
-                release_run_dispatch_for_retry,
-                db_path=db_path,
-                claim=claim,
-                error_code="run_dispatch_start_timeout",
-            )
+        if timeout_outcome != "started":
             return
     except Exception:
         logging.error("Run dispatch timeout inspection failed")

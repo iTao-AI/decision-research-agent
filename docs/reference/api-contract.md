@@ -44,8 +44,11 @@ The raw key is not persisted, logged, or returned by the server. After commit,
 dispatch is asynchronous: scheduler or wake failure does not turn an accepted
 response into HTTP 500. The private worker records bounded codes such as
 `run_dispatch_schedule_failed` and `run_dispatch_start_timeout`, retries up to
-three attempts, and then atomically fails dispatch, run, and segment. Recovery
-stops once execution is running and does not claim exactly-once execution.
+three attempts, and then atomically fails dispatch, run, and segment. If a
+worker dies after the third claim, the next scan records
+`run_dispatch_lease_expired` and performs the same terminal convergence without
+creating attempt 4. Recovery stops once execution is running and does not claim
+exactly-once execution.
 
 Start a canonical run-scoped research execution.
 

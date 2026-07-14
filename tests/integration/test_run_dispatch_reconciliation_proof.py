@@ -87,6 +87,47 @@ def test_report_bytes_are_deterministic_and_match_committed_evidence():
     assert BASELINE_MARKDOWN_PATH.read_text(encoding="utf-8") == render_markdown(first)
 
 
+@pytest.mark.parametrize(
+    "broken_boundary",
+    ("create_run_dispatch_worker", "_schedule_run_dispatch"),
+)
+def test_recovery_proof_fails_closed_when_production_worker_path_breaks(
+    monkeypatch,
+    broken_boundary,
+):
+    import api.server as server
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("injected_dispatch_boundary_failure")
+
+    monkeypatch.setattr(server, broken_boundary, broken)
+
+    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
+        build_report()
+
+
+def test_cli_fails_stably_when_production_recovery_boundary_raises(
+    monkeypatch,
+    capsys,
+):
+    import scripts.run_dispatch_reconciliation_proof as proof
+
+    monkeypatch.setattr(
+        proof,
+        "build_report",
+        lambda: (_ for _ in ()).throw(RuntimeError("injected")),
+    )
+
+    assert proof.main(["check"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {
+        "status": "invalid",
+        "code": "run_dispatch_proof_baseline_invalid",
+    }
+    assert len(captured.err.splitlines()) == 1
+
+
 def test_check_entrypoint_is_stable_json_and_network_free():
     completed = subprocess.run(
         [sys.executable, "scripts/run_dispatch_reconciliation_proof.py", "check"],

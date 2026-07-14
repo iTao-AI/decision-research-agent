@@ -23,7 +23,7 @@
       "case_id": "commit_before_schedule_recovery",
       "observations": {
         "agent_entries": 1,
-        "fresh_worker_claimed": true
+        "lifespan_worker_recovered": true
       },
       "status": "passed"
     },
@@ -31,7 +31,8 @@
       "case_id": "handler_cancellation_recovery",
       "observations": {
         "agent_entries": 1,
-        "committed_identity_recovered": true
+        "committed_identity_recovered": true,
+        "handler_cancelled_after_commit": true
       },
       "status": "passed"
     },
@@ -39,6 +40,7 @@
       "case_id": "worker_restart_recovery",
       "observations": {
         "agent_entries": 1,
+        "fresh_worker_recovered": true,
         "second_worker_reclaimed": true
       },
       "status": "passed"
@@ -72,7 +74,9 @@
       "case_id": "scheduler_exhaustion",
       "observations": {
         "attempt_count": 3,
+        "attempt_count_capped": true,
         "dispatch_failed": true,
+        "expired_third_lease_failed": true,
         "run_failed": true,
         "segment_failed": true
       },

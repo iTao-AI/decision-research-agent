@@ -59,15 +59,17 @@ EXPECTED_OBSERVATIONS: dict[str, dict[str, bool | int]] = {
         "dispatch_pending": True,
     },
     "commit_before_schedule_recovery": {
-        "fresh_worker_claimed": True,
+        "lifespan_worker_recovered": True,
         "agent_entries": 1,
     },
     "handler_cancellation_recovery": {
         "committed_identity_recovered": True,
+        "handler_cancelled_after_commit": True,
         "agent_entries": 1,
     },
     "worker_restart_recovery": {
         "second_worker_reclaimed": True,
+        "fresh_worker_recovered": True,
         "agent_entries": 1,
     },
     "expired_lease_reclaim": {
@@ -85,7 +87,9 @@ EXPECTED_OBSERVATIONS: dict[str, dict[str, bool | int]] = {
     },
     "scheduler_exhaustion": {
         "attempt_count": 3,
+        "attempt_count_capped": True,
         "dispatch_failed": True,
+        "expired_third_lease_failed": True,
         "run_failed": True,
         "segment_failed": True,
     },
@@ -247,47 +251,206 @@ def _atomic_create_case(root: Path) -> dict[str, Any]:
     )
 
 
+def _proof_environment(db_path: str) -> dict[str, str]:
+    return {
+        "DECISION_RESEARCH_AGENT_DB_PATH": db_path,
+        "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL": "false",
+        "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION": "false",
+        "API_SECRET": "proof-only-api-secret",
+        "OPENAI_API_KEY": "proof-local-placeholder",
+    }
+
+
+def _fake_agent(created: dict[str, str], entries: list[int]):
+    from agent.harness_contracts import ReportCandidate
+    from agent.run_result import AgentRunResult
+
+    async def run(*_args, **_kwargs):
+        entries.append(1)
+        return AgentRunResult(
+            thread_id=created["thread_id"],
+            query="proof",
+            session_dir=Path("/workspace/proof"),
+            run_id=created["run_id"],
+            segment_id=created["segment_id"],
+            report_candidate=ReportCandidate(
+                path=Path("/workspace/research-report.md"),
+                content="# Deterministic result",
+            ),
+        )
+
+    return run
+
+
+async def _wait_for_completed(db_path: str, run_id: str) -> bool:
+    from api.run_repository import get_run
+
+    for _ in range(200):
+        run = await asyncio.to_thread(get_run, db_path=db_path, run_id=run_id)
+        if run is not None and run["execution_status"] == "completed":
+            return True
+        if run is not None and run["execution_status"] == "failed":
+            raise ValueError("run_dispatch_proof_recovery_failed")
+        await asyncio.sleep(0.01)
+    raise TimeoutError("run_dispatch_proof_recovery_timeout")
+
+
+async def _run_fresh_worker_until_completed(server, db_path: str, run_id: str) -> bool:
+    worker = server.create_run_dispatch_worker(db_path)
+    worker_task = asyncio.create_task(worker.run_forever())
+    worker.wake()
+    try:
+        return await _wait_for_completed(db_path, run_id)
+    finally:
+        worker.stop()
+        await worker_task
+
+
 def _recovery_cases(root: Path) -> list[dict[str, Any]]:
+    from api.run_dispatch_repository import get_run_dispatch
     from api.run_repository import create_run
 
-    cases = []
-    for case_id, filename in (
-        ("commit_before_schedule_recovery", "commit.db"),
-        ("handler_cancellation_recovery", "cancel.db"),
-    ):
-        db_path = str(root / filename)
-        created = create_run(db_path=db_path, thread_id="proof-thread", query="proof")
-        claim = _claim(db_path, created["run_id"], "1")
-        entries: list[int] = []
-        won = _start_and_enter(db_path, claim, entries)
-        if case_id == "commit_before_schedule_recovery":
-            cases.append(
-                _case(case_id, fresh_worker_claimed=won, agent_entries=len(entries))
-            )
-        else:
-            cases.append(
-                _case(
-                    case_id,
-                    committed_identity_recovered=won,
-                    agent_entries=len(entries),
+    commit_db = str(root / "commit.db")
+    with patch.dict(os.environ, _proof_environment(commit_db), clear=False):
+        import api.server as server
+
+        committed = create_run(
+            db_path=commit_db,
+            thread_id="proof-thread",
+            query="proof",
+        )
+        commit_entries: list[int] = []
+
+        async def recover_from_lifespan():
+            with patch.object(
+                server,
+                "run_deep_agent",
+                _fake_agent(committed, commit_entries),
+            ):
+                async with server.lifespan(server.app):
+                    return await _wait_for_completed(commit_db, committed["run_id"])
+
+        lifespan_recovered = asyncio.run(recover_from_lifespan())
+
+    cancel_db = str(root / "cancel.db")
+    with patch.dict(os.environ, _proof_environment(cancel_db), clear=False):
+        cancel_entries: list[int] = []
+
+        async def recover_after_handler_cancellation():
+            class BlockingDispatch:
+                def __init__(self):
+                    self.entered = asyncio.Event()
+
+                async def dispatch_run(self, _run_id):
+                    self.entered.set()
+                    await asyncio.Event().wait()
+
+                def wake(self):
+                    pass
+
+            blocking = BlockingDispatch()
+            server.app.state.run_dispatch_worker = blocking
+            handler = asyncio.create_task(
+                server.create_research_run(
+                    server.RunRequest(
+                        query="proof",
+                        thread_id="proof-thread",
+                    )
                 )
             )
+            await blocking.entered.wait()
+            row = _row(
+                cancel_db,
+                """
+                SELECT run.run_id, run.thread_id, segment.segment_id
+                FROM research_runs_v2 AS run
+                JOIN run_segments AS segment ON segment.run_id = run.run_id
+                """,
+            )
+            created = dict(row)
+            handler.cancel()
+            cancelled = False
+            try:
+                await handler
+            except asyncio.CancelledError:
+                cancelled = True
+            with patch.object(
+                server,
+                "run_deep_agent",
+                _fake_agent(created, cancel_entries),
+            ):
+                recovered = await _run_fresh_worker_until_completed(
+                    server,
+                    cancel_db,
+                    created["run_id"],
+                )
+            return created, cancelled, recovered
 
-    db_path = str(root / "restart.db")
-    created = create_run(db_path=db_path, thread_id="proof-thread", query="proof")
-    first = _claim(db_path, created["run_id"], "1")
-    _expire(db_path, created["run_id"])
-    second = _claim(db_path, created["run_id"], "2")
-    entries = []
-    won = _start_and_enter(db_path, second, entries)
-    cases.append(
+        cancelled_created, handler_cancelled, cancellation_recovered = asyncio.run(
+            recover_after_handler_cancellation()
+        )
+
+    restart_db = str(root / "restart.db")
+    with patch.dict(os.environ, _proof_environment(restart_db), clear=False):
+        restarted = create_run(
+            db_path=restart_db,
+            thread_id="proof-thread",
+            query="proof",
+        )
+        abandoned: list[Any] = []
+
+        async def abandon_then_restart():
+            def capture_abandoned(claim, *, db_path):
+                del db_path
+                abandoned.append(claim)
+
+            with patch.object(server, "_schedule_run_dispatch", capture_abandoned):
+                first_worker = server.create_run_dispatch_worker(restart_db)
+                if not await first_worker.run_once(run_id=restarted["run_id"]):
+                    raise ValueError("run_dispatch_proof_recovery_failed")
+            _expire(restart_db, restarted["run_id"])
+            restart_entries: list[int] = []
+            with patch.object(
+                server,
+                "run_deep_agent",
+                _fake_agent(restarted, restart_entries),
+            ):
+                recovered = await _run_fresh_worker_until_completed(
+                    server,
+                    restart_db,
+                    restarted["run_id"],
+                )
+            return recovered, restart_entries
+
+        restart_recovered, restart_entries = asyncio.run(abandon_then_restart())
+        restarted_dispatch = get_run_dispatch(
+            db_path=restart_db,
+            run_id=restarted["run_id"],
+        )
+
+    return [
+        _case(
+            "commit_before_schedule_recovery",
+            lifespan_worker_recovered=lifespan_recovered,
+            agent_entries=len(commit_entries),
+        ),
+        _case(
+            "handler_cancellation_recovery",
+            committed_identity_recovered=(
+                cancelled_created["run_id"] is not None and cancellation_recovered
+            ),
+            handler_cancelled_after_commit=handler_cancelled,
+            agent_entries=len(cancel_entries),
+        ),
         _case(
             "worker_restart_recovery",
-            second_worker_reclaimed=first.attempt_count == 1 and won,
-            agent_entries=len(entries),
-        )
-    )
-    return cases
+            second_worker_reclaimed=(
+                len(abandoned) == 1 and restarted_dispatch["attempt_count"] == 2
+            ),
+            fresh_worker_recovered=restart_recovered,
+            agent_entries=len(restart_entries),
+        ),
+    ]
 
 
 def _fence_cases(root: Path) -> list[dict[str, Any]]:
@@ -360,10 +523,42 @@ def _scheduler_exhaustion_case(root: Path) -> dict[str, Any]:
         "SELECT status FROM run_segments WHERE run_id = ?",
         (created["run_id"],),
     )
+
+    expired_db = str(root / "expired-exhaust.db")
+    expired = create_run(
+        db_path=expired_db,
+        thread_id="proof-thread",
+        query="proof",
+    )
+    abandoned: list[Any] = []
+    expiring_worker = RunDispatchWorker(
+        db_path=expired_db,
+        scheduler=abandoned.append,
+        worker_id="dispatch_worker_66666666666666666666666666666666",
+    )
+    for _ in range(3):
+        asyncio.run(expiring_worker.dispatch_run(expired["run_id"]))
+        _expire(expired_db, expired["run_id"])
+    fourth_scheduled = asyncio.run(
+        expiring_worker.dispatch_run(expired["run_id"])
+    )
+    expired_dispatch = get_run_dispatch(
+        db_path=expired_db,
+        run_id=expired["run_id"],
+    )
     return _case(
         "scheduler_exhaustion",
         attempt_count=dispatch["attempt_count"],
+        attempt_count_capped=(
+            expired_dispatch["attempt_count"] == 3 and len(abandoned) == 3
+        ),
         dispatch_failed=dispatch["status"] == "failed",
+        expired_third_lease_failed=(
+            fourth_scheduled is False
+            and expired_dispatch["status"] == "failed"
+            and expired_dispatch["last_error_code"]
+            == "run_dispatch_lease_expired"
+        ),
         run_failed=run["execution_status"] == "failed",
         segment_failed=segment["status"] == "failed",
     )
@@ -612,6 +807,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         "# Run Dispatch Reconciliation v1 Proof",
         "",
         "Status: valid deterministic local contract proof.",
+        "Recovery cases exercise the production lifespan, worker, scheduler, and handler-cancellation boundaries.",
         "",
         "| Case | Status |",
         "|---|---|",
@@ -662,7 +858,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("run_dispatch_proof_baseline_invalid")
             print(json.dumps({"status": "valid", "match": True}, separators=(",", ":")))
         return 0
-    except (OSError, ValueError, json.JSONDecodeError):
+    except (OSError, RuntimeError, TimeoutError, ValueError, json.JSONDecodeError):
         print(
             json.dumps(
                 {"status": "invalid", "code": "run_dispatch_proof_baseline_invalid"},

@@ -243,6 +243,79 @@ def test_third_failed_claim_fails_dispatch_run_and_segment_consistently(tmp_path
     assert "secret query" not in str(dispatch)
 
 
+def test_expired_third_claim_is_failed_before_scanning_next_pending_run(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    exhausted = create_run(
+        db_path=db_path,
+        thread_id="thread-1",
+        query="exhausted",
+    )
+    pending = create_run(
+        db_path=db_path,
+        thread_id="thread-2",
+        query="pending",
+    )
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE run_dispatches_v1 SET created_at = ? WHERE run_id = ?",
+                ("2026-07-14T00:00:00+00:00", exhausted["run_id"]),
+            )
+            connection.execute(
+                "UPDATE run_dispatches_v1 SET created_at = ? WHERE run_id = ?",
+                ("2026-07-14T00:00:01+00:00", pending["run_id"]),
+            )
+    finally:
+        connection.close()
+
+    claims = []
+    for attempt in range(1, 4):
+        claim = _claim(
+            db_path,
+            run_id=exhausted["run_id"],
+            now=NOW + timedelta(minutes=attempt),
+        )
+        claims.append(claim)
+        connection = sqlite3.connect(db_path)
+        try:
+            with connection:
+                connection.execute(
+                    "UPDATE run_dispatches_v1 SET lease_expires_at = ? WHERE run_id = ?",
+                    (
+                        (NOW + timedelta(minutes=attempt, seconds=-1)).isoformat(),
+                        exhausted["run_id"],
+                    ),
+                )
+        finally:
+            connection.close()
+
+    next_claim = _claim(db_path, now=NOW + timedelta(minutes=4))
+
+    assert [claim.attempt_count for claim in claims] == [1, 2, 3]
+    assert next_claim.run_id == pending["run_id"]
+    assert next_claim.attempt_count == 1
+    dispatch = get_run_dispatch(db_path=db_path, run_id=exhausted["run_id"])
+    assert dispatch["status"] == "failed"
+    assert dispatch["attempt_count"] == 3
+    assert dispatch["last_error_code"] == "run_dispatch_lease_expired"
+    connection = sqlite3.connect(db_path)
+    try:
+        run = connection.execute(
+            "SELECT execution_status, delivery_status FROM research_runs_v2 WHERE run_id = ?",
+            (exhausted["run_id"],),
+        ).fetchone()
+        segment = connection.execute(
+            "SELECT status FROM run_segments WHERE segment_id = ?",
+            (exhausted["segment_id"],),
+        ).fetchone()
+    finally:
+        connection.close()
+    assert run == ("failed", "failed")
+    assert segment == ("failed",)
+    assert start_run_dispatch(db_path=db_path, claim=claims[-1]) is False
+
+
 def test_claim_fails_closed_for_noncanonical_scope(tmp_path):
     db_path = str(tmp_path / "tasks.db")
     created = create_run(db_path=db_path, thread_id="thread-1", query="research")

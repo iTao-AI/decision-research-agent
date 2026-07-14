@@ -38,7 +38,11 @@ advance dispatch to `started`, run to `running`, and the initial segment to
 `running`. Expired leases can be reclaimed. A stale task or timeout is a no-op
 against a newer attempt. Bounded scheduler/start failures use
 `run_dispatch_schedule_failed` or `run_dispatch_start_timeout`; the third
-failed attempt converges dispatch, run, and segment to `failed`.
+failed attempt converges dispatch, run, and segment to `failed`. An expired
+third lease is terminalized with `run_dispatch_lease_expired` before scanning
+the next pending row, so attempt 4 is never created. Pre-start timeout uses
+atomic timeout reconciliation: the exact attempt is released while leased,
+timeout-finalized if already started, or ignored if a newer attempt owns state.
 
 ## Harness Boundary
 

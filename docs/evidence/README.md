@@ -21,7 +21,9 @@ The dispatch proof explicitly records `exactly_once_execution: not_claimed`,
 `running_execution_recovery: not_proven`,
 `provider_tool_side_effect_exactly_once: not_claimed`,
 `multi_instance_high_availability: not_proven`, and
-`live_provider_result: not_observed`.
+`live_provider_result: not_observed`. Its recovery cases exercise the
+production lifespan, worker, scheduler, start fence, handler cancellation, and
+fresh-worker restart boundaries rather than direct repository-only starts.
 
 The durable HITL artifact proves only the documented feasibility boundary; its
 feature flag remains disabled by default. The real-source artifact proves a

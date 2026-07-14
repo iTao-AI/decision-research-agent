@@ -1,6 +1,7 @@
 # Run Dispatch Reconciliation v1 Proof
 
 Status: valid deterministic local contract proof.
+Recovery cases exercise the production lifespan, worker, scheduler, and handler-cancellation boundaries.
 
 | Case | Status |
 |---|---|

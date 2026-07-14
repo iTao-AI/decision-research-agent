@@ -253,6 +253,49 @@ async def test_stale_timeout_does_not_change_newer_started_attempt(tmp_path, mon
     assert get_run(db_path=db_path, run_id=created["run_id"])["execution_status"] == "running"
 
 
+@pytest.mark.asyncio
+async def test_same_attempt_start_between_timeout_read_and_release_is_not_orphaned(
+    tmp_path,
+    monkeypatch,
+):
+    import api.server as server
+    from api.run_dispatch_repository import (
+        reconcile_run_dispatch_timeout as real_timeout_reconciliation,
+    )
+
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", db_path)
+    created = create_run(db_path=db_path, thread_id="thread-1", query="query")
+    claim = claim_run_dispatch(
+        db_path=db_path,
+        worker_id=WORKER_1,
+        lease_seconds=30,
+        run_id=created["run_id"],
+    )
+
+    def start_before_timeout_reconciliation(**kwargs):
+        assert start_run_dispatch(db_path=db_path, claim=claim) is True
+        return real_timeout_reconciliation(**kwargs)
+
+    monkeypatch.setattr(
+        server,
+        "reconcile_run_dispatch_timeout",
+        start_before_timeout_reconciliation,
+    )
+
+    await server._mark_dispatched_timeout(
+        claim,
+        db_path=db_path,
+        outcome_box=server.OutcomeBox(),
+        timeout_seconds=1,
+    )
+
+    dispatch = get_run_dispatch(db_path=db_path, run_id=created["run_id"])
+    run = get_run(db_path=db_path, run_id=created["run_id"])
+    assert dispatch["status"] == "started"
+    assert run["execution_status"] == "failed"
+
+
 def test_route_post_commit_dispatch_failure_still_returns_ack(tmp_path, monkeypatch):
     import api.server as server
 

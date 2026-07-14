@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sqlite3
 
 from api.database import sqlite_db_path
@@ -25,6 +26,10 @@ from api.run_creation_models import (
     RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
     RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,
 )
+from api.run_dispatch_models import (
+    RUN_DISPATCH_MIGRATION_CHECKSUM,
+    RUN_DISPATCH_MIGRATION_VERSION,
+)
 
 
 REQUIRED_TABLES = {
@@ -38,16 +43,19 @@ REQUIRED_TABLES = {
     "review_resume_attempts_v2",
     "review_resolutions_v2",
     "run_create_idempotency_v1",
+    "run_dispatches_v1",
 }
 REQUIRED_INDEXES = {
     "idx_research_runs_v2_thread",
     "idx_review_workflows_status_lease",
     "idx_review_decisions_run",
+    "idx_run_dispatches_status_lease_created",
 }
 EXPECTED_MIGRATIONS = {
     MIGRATION_VERSION: "run-identity-backbone-v1",
     REVIEW_MIGRATION_VERSION: REVIEW_MIGRATION_CHECKSUM,
     RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION: RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
+    RUN_DISPATCH_MIGRATION_VERSION: RUN_DISPATCH_MIGRATION_CHECKSUM,
 }
 REQUIRED_COLUMNS = {
     "research_runs_v2": {
@@ -126,6 +134,17 @@ REQUIRED_COLUMNS = {
         "run_id",
         "created_at",
     },
+    "run_dispatches_v1": {
+        "run_id",
+        "status",
+        "lease_owner",
+        "lease_expires_at",
+        "attempt_count",
+        "last_error_code",
+        "created_at",
+        "updated_at",
+        "started_at",
+    },
 }
 VERIFICATION_TABLES = {
     "evidence_verification_preflights_v2",
@@ -196,6 +215,10 @@ def restore_database(*, backup_path: str, db_path: str) -> None:
     finally:
         destination.close()
         source.close()
+
+
+def _normalized_schema_sql(value: str | None) -> str:
+    return re.sub(r"\s+", " ", value or "").strip().lower()
 
 
 def verify_run_schema(
@@ -344,6 +367,77 @@ def verify_run_schema(
                     break
             if not run_id_unique:
                 missing_constraints.append("run_id_unique")
+        if "run_dispatches_v1" in tables:
+            dispatch_columns = conn.execute(
+                "PRAGMA table_info(run_dispatches_v1)"
+            ).fetchall()
+            dispatch_primary_key = [
+                row[1]
+                for row in sorted(dispatch_columns, key=lambda row: row[5])
+                if row[5] > 0
+            ]
+            if dispatch_primary_key != ["run_id"]:
+                missing_constraints.append("dispatch_run_id_primary_key")
+
+            dispatch_foreign_keys = conn.execute(
+                "PRAGMA foreign_key_list(run_dispatches_v1)"
+            ).fetchall()
+            if not any(
+                row[2] == "research_runs_v2"
+                and row[3] == "run_id"
+                and row[4] == "run_id"
+                and row[6].upper() == "CASCADE"
+                for row in dispatch_foreign_keys
+            ):
+                missing_constraints.append("dispatch_run_id_foreign_key")
+
+            dispatch_sql_row = conn.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'run_dispatches_v1'"
+            ).fetchone()
+            dispatch_sql = _normalized_schema_sql(
+                dispatch_sql_row[0] if dispatch_sql_row else None
+            )
+            if (
+                "check(status in ('pending', 'leased', 'started', 'failed'))"
+                not in dispatch_sql
+            ):
+                missing_constraints.append("dispatch_status_check")
+            if "check(attempt_count >= 0)" not in dispatch_sql:
+                missing_constraints.append("dispatch_attempt_check")
+            required_state_fragments = (
+                "status = 'leased' and lease_owner is not null and lease_expires_at is not null",
+                "status != 'leased' and lease_owner is null and lease_expires_at is null",
+                "status = 'started' and started_at is not null and last_error_code is null",
+                "status = 'failed' and started_at is null and last_error_code is not null",
+                "status in ('pending', 'leased') and started_at is null",
+            )
+            if not all(
+                fragment in dispatch_sql
+                for fragment in required_state_fragments
+            ):
+                missing_constraints.append("dispatch_state_check")
+
+            exact_dispatch_index = False
+            for index_row in conn.execute(
+                "PRAGMA index_list(run_dispatches_v1)"
+            ).fetchall():
+                if index_row[1] != "idx_run_dispatches_status_lease_created":
+                    continue
+                if index_row[2] != 0 or index_row[4] != 0:
+                    continue
+                escaped_name = str(index_row[1]).replace('"', '""')
+                index_columns = [
+                    row[2]
+                    for row in conn.execute(
+                        f'PRAGMA index_info("{escaped_name}")'
+                    ).fetchall()
+                ]
+                if index_columns == ["status", "lease_expires_at", "created_at"]:
+                    exact_dispatch_index = True
+                    break
+            if not exact_dispatch_index:
+                missing_constraints.append("dispatch_scan_index")
         if (
             missing_tables
             or missing_indexes
@@ -399,6 +493,7 @@ def _migration_markers(db_path: str) -> dict[str, str]:
     known = {
         PUBLICATION_MIGRATION_VERSION: PUBLICATION_MIGRATION_CHECKSUM,
         RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION: RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
+        RUN_DISPATCH_MIGRATION_VERSION: RUN_DISPATCH_MIGRATION_CHECKSUM,
     }
     invalid = [
         version
@@ -422,6 +517,10 @@ def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
         markers.get(RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION)
         == RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM
     )
+    dispatch_applied = (
+        markers.get(RUN_DISPATCH_MIGRATION_VERSION)
+        == RUN_DISPATCH_MIGRATION_CHECKSUM
+    )
 
     if not publication_applied:
         migrate_publication_with_backup(
@@ -431,6 +530,20 @@ def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
     elif not idempotency_applied:
         if Path(backup_path).exists():
             raise RuntimeError("run_idempotency_migration_backup_already_exists")
+        backup_database(db_path=db_path, backup_path=backup_path)
+        try:
+            init_run_schema(db_path)
+            verify_run_schema(
+                db_path=db_path,
+                include_evidence_verification=True,
+                include_publication=True,
+            )
+        except Exception:
+            restore_database(backup_path=backup_path, db_path=db_path)
+            raise
+    elif not dispatch_applied:
+        if Path(backup_path).exists():
+            raise RuntimeError("run_dispatch_migration_backup_already_exists")
         backup_database(db_path=db_path, backup_path=backup_path)
         try:
             init_run_schema(db_path)

@@ -1,9 +1,9 @@
 # Security Policy
 
-Decision Research Agent v0.1.2 ships the FastAPI backend, Python Tool Client,
-operator scripts, tests, documentation, and the separately built
-Agent Research Operations Console. The console does not accept credentials and
-is not a publicly hosted service.
+Decision Research Agent v0.1.3 ships the FastAPI backend, Python Tool Client,
+single-node application-owned run dispatch reconciliation, operator scripts,
+tests, documentation, and the separately built Agent Research Operations Console.
+The console does not accept credentials and is not a publicly hosted service.
 
 ## Reporting A Vulnerability
 
@@ -36,4 +36,4 @@ input.
 - Public bug bounty commitments.
 - Hosted service operations outside this repository.
 - Hosted console operations, RBAC, multi-tenant, or multi-replica deployments
-  that are not part of v0.1.2.
+  that are not part of v0.1.3.

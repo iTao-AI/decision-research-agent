@@ -266,6 +266,7 @@ python tools/decision_research_agent_tool.py doctor
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.3 Release Notes](docs/releases/v0.1.3.md)
 - [v0.1.2 Release Notes](docs/releases/v0.1.2.md)
 - [v0.1.1 Release Notes](docs/releases/v0.1.1.md)
 - [v0.1.0 Release Notes](docs/releases/v0.1.0.md)
@@ -274,7 +275,7 @@ python tools/decision_research_agent_tool.py doctor
 
 ## Known Boundaries
 
-- The current unreleased dispatch contract adds application-owned
+- The v0.1.3 dispatch contract adds application-owned
   `run_dispatches_v1` reconciliation before Agent invocation. The historical
   v0.1.2 identity proof remains unchanged and does not itself prove
   crash-before-schedule recovery; the newer dispatch proof does. Neither proof

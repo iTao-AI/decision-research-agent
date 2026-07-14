@@ -58,6 +58,15 @@ death. Controlled review is the current checkpoint-resumable path. Extending
 durability to main research requires a separate design for idempotency,
 side-effect replay, and tool re-execution.
 
+Pre-execution dispatch reconciliation remains application-owned because the
+commit-to-schedule gap occurs before DeepAgents, LangChain, or LangGraph is
+invoked. The application database stores `run_dispatches_v1`, a core worker
+claims private leases, and an atomic start fence advances dispatch, ResearchRun,
+and initial segment together. Agent middleware was rejected for this role: it
+cannot recover work that has not reached Agent invocation. LangGraph checkpoint
+and LangSmith tracing likewise remain workflow-position and diagnostics
+facilities, not application dispatch authority.
+
 LangSmith receives bounded metadata with inputs and outputs hidden by default.
 Trace availability never changes business readiness, Evidence authority,
 review resolution, publication, or delivery.

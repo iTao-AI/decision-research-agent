@@ -261,6 +261,11 @@ python tools/decision_research_agent_tool.py run \
 
 The same request/key returns the original run identity. Changing a canonical
 request field under the key returns `409`. The key is replay identity, not
-authentication. `status=started` acknowledges creation; read current state
-through `GET /api/runs/{run_id}`. A handler/process interruption before
-scheduling can leave execution unstarted and is not recovered by this design.
+authentication. `status=started` is an acceptance acknowledgement, not an
+Agent-start guarantee; read current state through `GET /api/runs/{run_id}`. A
+committed run has a private durable dispatch intent, so the single-node worker
+recovers handler/process interruption before execution start. Scheduling is
+asynchronous: an accepted HTTP 200 keeps the existing response shape even if
+the immediate targeted attempt fails. Retry is bounded to three attempts and
+stops at `running`; callers should poll rather than infer execution from the
+acknowledgement.

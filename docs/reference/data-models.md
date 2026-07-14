@@ -45,6 +45,24 @@ The v1 ledger has no TTL or cleanup job. The canonical request hash covers the
 validated query, caller-supplied nullable thread identity, profile ID, and
 normalized scope; it excludes server-generated identity and profile version.
 
+## Run dispatch intent
+
+`run_dispatches_v1` is private application-database authority for the gap
+between accepted creation and Agent invocation. Each `run_id` has exactly one
+row created atomically with `research_runs_v2` and its initial segment. Status
+is `pending`, `leased`, `started`, or `failed`; private lease owner/expiry,
+`attempt_count`, bounded `last_error_code`, timestamps, and the run foreign key
+support single-node reconciliation. Caller input never supplies worker IDs,
+leases, retry budgets, database paths, provider settings, credentials, or
+filesystem paths.
+
+Migration `008_run_dispatch_reconciliation` creates and exactly verifies the
+table, constraints, foreign key, marker/checksum, and ordered scan index. The
+lifespan migration uses a separate `.pre-run-dispatch.bak`, restores it on
+verification failure, and refuses to overwrite an existing backup. It performs
+no backfill: runs created before `008` retain identity replay but are not
+scheduled by the new worker.
+
 ## Evidence Entry
 
 证据条目是 append-only snapshot。核心字段包括：

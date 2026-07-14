@@ -139,16 +139,24 @@ same run-owned authority.
 The state-machine reference remains the contract source for transition detail:
 [State Machines](reference/state-machines.md).
 
-## Run creation reconciliation boundary
+## Run creation and dispatch reconciliation boundary
 
 The application database owns the optional idempotency-key hash, canonical
 request hash, and run/thread/segment binding. FastAPI owns header validation
 and stable transport errors. The Tool Client owns key preservation and the
-caller's retry choice. DeepAgents and LangGraph begin execution only for a new
-accepted create; LangGraph checkpoint state is not create-identity authority.
-LangSmith remains diagnostics only. Replays return before coroutine
-construction and scheduling. This boundary does not add crash-before-schedule
-recovery or exactly-once execution.
+caller's retry choice. The same transaction that creates the run and initial
+segment also creates a private `run_dispatches_v1` intent. An unconditional
+single-node worker reconciles pending or expired pre-start leases, while an
+application dispatch authority fence atomically moves dispatch, run, and
+segment to started/running before Agent invocation.
+
+This dispatch gap is before the Agent framework boundary, so no Agent middleware,
+LangGraph checkpoint, or LangSmith trace owns it. DeepAgents and
+LangGraph begin only after the application start fence; LangSmith remains
+diagnostics only. Keyed replays may wake targeted reconciliation but cannot win
+a second claim. The proof covers committed pre-start recovery, not exactly-once
+execution, recovery after running begins, provider/tool side effects,
+multi-instance high availability, or a live-provider result.
 
 ## EvidenceLedger, DecisionBrief, And Canonical Result Authority
 

@@ -25,8 +25,12 @@ single-service credential/development deployment.
 The first keyed acceptance returns the existing fields plus
 `idempotent_replay: false`. Reusing the same key with the same canonical
 query/profile/thread/scope returns the original identities with
-`idempotent_replay: true` and schedules nothing new. `status: started` is a
-create acknowledgement; use `GET /api/runs/{run_id}` for current state.
+`idempotent_replay: true`. Both new and replay acknowledgements may trigger a
+targeted private dispatch reconciliation attempt, but only one exact claim can
+cross the Agent start fence. `status: started` is an acceptance acknowledgement,
+not proof that Agent invocation has begun; use `GET /api/runs/{run_id}` for
+current state. Successful acceptance remains HTTP 200 with the existing response shape
+(plus the existing keyed-only `idempotent_replay` field).
 
 Stable direct error envelopes are:
 
@@ -36,9 +40,15 @@ Stable direct error envelopes are:
 - `503 run_idempotency_unavailable` when the durable ledger cannot be used;
   keyed requests never fall back to an unkeyed create.
 
-The raw key is not persisted, logged, or returned by the server. Durable
-identity lookup does not recover a handler/process interruption after commit
-but before scheduling and does not claim exactly-once execution.
+The raw key is not persisted, logged, or returned by the server. After commit,
+dispatch is asynchronous: scheduler or wake failure does not turn an accepted
+response into HTTP 500. The private worker records bounded codes such as
+`run_dispatch_schedule_failed` and `run_dispatch_start_timeout`, retries up to
+three attempts, and then atomically fails dispatch, run, and segment. If a
+worker dies after the third claim, the next scan records
+`run_dispatch_lease_expired` and performs the same terminal convergence without
+creating attempt 4. Recovery stops once execution is running and does not claim
+exactly-once execution.
 
 Start a canonical run-scoped research execution.
 

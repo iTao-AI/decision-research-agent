@@ -8,6 +8,42 @@ from api.server import app
 
 
 AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
+TEST_WORKER_ID = "dispatch_worker_0000000000000000000000000000000a"
+
+
+@pytest.fixture(autouse=True)
+def route_dispatch_worker(monkeypatch):
+    import api.server as server
+    from api.database import sqlite_db_path
+
+    class RouteWorker:
+        async def dispatch_run(self, run_id):
+            return await server.create_run_dispatch_worker(
+                sqlite_db_path()
+            ).dispatch_run(run_id)
+
+        def wake(self):
+            pass
+
+    monkeypatch.setattr(server.app.state, "run_dispatch_worker", RouteWorker())
+
+
+async def _run_v2_with_dispatch(server, **kwargs):
+    from api.database import sqlite_db_path
+    from api.run_dispatch_repository import claim_run_dispatch
+
+    claim = claim_run_dispatch(
+        db_path=sqlite_db_path(),
+        worker_id=TEST_WORKER_ID,
+        lease_seconds=30,
+        run_id=kwargs["run_id"],
+    )
+    assert claim is not None
+    await server._run_dispatched_with_persistence(
+        claim,
+        db_path=sqlite_db_path(),
+        outcome_box=kwargs["outcome_box"],
+    )
 
 
 def test_create_and_get_run_returns_distinct_thread_and_run_identity(
@@ -37,7 +73,7 @@ def test_create_and_get_run_returns_distinct_thread_and_run_identity(
     assert created["thread_id"] == "thread-1"
     assert created["run_id"].startswith("run_")
     assert created["segment_id"].endswith("_seg_000")
-    assert scheduled[0][1] == created["run_id"]
+    assert scheduled[0][1] == f"{created['run_id']}:dispatch:1"
     assert set(created) == {"status", "thread_id", "run_id", "segment_id"}
 
     fetched = client.get(f"/api/runs/{created['run_id']}", headers=AUTH_HEADERS)
@@ -68,25 +104,20 @@ def test_keyed_create_replays_identity_and_schedules_once(tmp_path, monkeypatch)
     assert {key: first.json()[key] for key in ("run_id", "thread_id", "segment_id")} == {
         key: second.json()[key] for key in ("run_id", "thread_id", "segment_id")
     }
-    assert scheduled == [first.json()["run_id"]]
+    assert scheduled == [f"{first.json()['run_id']}:dispatch:1"]
 
 
-def test_keyed_replay_does_not_construct_run_coroutine(tmp_path, monkeypatch):
+def test_keyed_replay_cannot_enter_agent_twice(tmp_path, monkeypatch):
     import api.server as server
 
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
     monkeypatch.setenv("API_SECRET", "test-integration-key")
-    constructed = []
-    real = server._run_v2_with_persistence
-
-    def capture_coroutine(**kwargs):
-        constructed.append(kwargs["run_id"])
-        return real(**kwargs)
+    scheduled = []
 
     def capture_task(coroutine, task_id, **kwargs):
+        scheduled.append(task_id)
         coroutine.close()
 
-    monkeypatch.setattr(server, "_run_v2_with_persistence", capture_coroutine)
     monkeypatch.setattr(server, "create_tracked_task", capture_task)
     client = TestClient(app)
     headers = {**AUTH_HEADERS, "Idempotency-Key": "run-key-api-fence-0001"}
@@ -94,7 +125,7 @@ def test_keyed_replay_does_not_construct_run_coroutine(tmp_path, monkeypatch):
     first = client.post("/api/runs", json=body, headers=headers)
     second = client.post("/api/runs", json=body, headers=headers)
     assert first.status_code == second.status_code == 200
-    assert constructed == [first.json()["run_id"]]
+    assert scheduled == [f"{first.json()['run_id']}:dispatch:1"]
 
 
 def test_keyed_create_conflict_is_stable_and_schedules_nothing_new(tmp_path, monkeypatch):
@@ -193,7 +224,7 @@ def test_unknown_run_creation_conflict_maps_to_safe_unavailable(monkeypatch):
     assert "unexpected_internal_code" not in response.text
 
 
-def test_keyed_scheduler_failure_remains_bound_and_replays_failed_run(
+def test_keyed_scheduler_failure_returns_ack_and_exhausts_durable_retries(
     tmp_path,
     monkeypatch,
 ):
@@ -209,17 +240,14 @@ def test_keyed_scheduler_failure_remains_bound_and_replays_failed_run(
     client = TestClient(app, raise_server_exceptions=False)
     headers = {**AUTH_HEADERS, "Idempotency-Key": "run-key-api-schedule-0001"}
     body = {"query": "research"}
-    first = client.post("/api/runs", json=body, headers=headers)
-    assert first.status_code == 500
-
-    monkeypatch.setattr(
-        server,
-        "create_tracked_task",
-        lambda *args, **kwargs: pytest.fail("replay must not schedule"),
-    )
-    replay = client.post("/api/runs", json=body, headers=headers)
-    assert replay.status_code == 200
-    assert replay.json()["idempotent_replay"] is True
+    responses = [client.post("/api/runs", json=body, headers=headers) for _ in range(3)]
+    assert [response.status_code for response in responses] == [200, 200, 200]
+    assert [response.json()["idempotent_replay"] for response in responses] == [
+        False,
+        True,
+        True,
+    ]
+    replay = responses[-1]
     fetched = client.get(
         f"/api/runs/{replay.json()['run_id']}",
         headers=AUTH_HEADERS,
@@ -250,7 +278,7 @@ def test_create_run_registers_run_scoped_timeout_callback(tmp_path, monkeypatch)
     assert response.status_code == 200
     coroutine, task_id, kwargs = scheduled[0]
     try:
-        assert task_id == response.json()["run_id"]
+        assert task_id == f"{response.json()['run_id']}:dispatch:1"
         assert callable(kwargs["on_timeout"])
     finally:
         coroutine.close()
@@ -361,7 +389,7 @@ async def test_run_v2_cancellation_without_outcome_still_finalizes_failed(
     monkeypatch.setattr(server, "run_deep_agent", cancelled)
 
     with pytest.raises(asyncio.CancelledError):
-        await server._run_v2_with_persistence(
+        await _run_v2_with_dispatch(server,
             query="query",
             thread_id="cancel-thread",
             run_id=created["run_id"],
@@ -382,11 +410,6 @@ async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch
     from api.run_repository import create_run
 
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
-    created = create_run(
-        thread_id="talent-thread",
-        query="query",
-        profile_id="talent-hiring-signal",
-    )
     captured = {}
     scope = {
         "target_roles": ["AI Agent Engineer"],
@@ -397,6 +420,12 @@ async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch
         "research_questions": ["question-1"],
         "requested_outputs": ["decision_brief"],
     }
+    created = create_run(
+        thread_id="talent-thread",
+        query="query",
+        profile_id="talent-hiring-signal",
+        scope=scope,
+    )
 
     async def capture_agent(*args, **kwargs):
         captured.update(kwargs)
@@ -419,7 +448,7 @@ async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch
 
     monkeypatch.setattr(server, "run_deep_agent", capture_agent)
 
-    await server._run_v2_with_persistence(
+    await _run_v2_with_dispatch(server,
         query="query",
         thread_id="talent-thread",
         run_id=created["run_id"],
@@ -487,7 +516,7 @@ async def test_talent_run_persists_review_and_canonical_artifacts(tmp_path, monk
         )
 
     monkeypatch.setattr(server, "run_deep_agent", capture_agent)
-    await server._run_v2_with_persistence(
+    await _run_v2_with_dispatch(server,
         query="query", thread_id="talent-thread", run_id=created["run_id"],
         segment_id=created["segment_id"], profile_id="talent-hiring-signal",
         scope=scope, outcome_box=server.OutcomeBox(),
@@ -534,7 +563,7 @@ async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypa
 
     monkeypatch.setattr(server, "run_deep_agent", capture_agent)
 
-    await server._run_v2_with_persistence(
+    await _run_v2_with_dispatch(server,
         query="query",
         thread_id="generic-thread",
         run_id=created["run_id"],
@@ -708,7 +737,7 @@ async def test_tracked_run_timeout_reaches_persisted_failed_state(tmp_path, monk
 
     monkeypatch.setattr(server, "run_deep_agent", hangs)
     outcome_box = server.OutcomeBox()
-    run_coroutine = server._run_v2_with_persistence(
+    run_coroutine = _run_v2_with_dispatch(server,
         query="query",
         thread_id="timeout-thread",
         run_id=created["run_id"],
@@ -734,7 +763,7 @@ async def test_tracked_run_timeout_reaches_persisted_failed_state(tmp_path, monk
     assert run["delivery_status"] == "failed"
 
 
-def test_create_run_scheduler_failure_releases_guard_and_marks_run_failed(
+def test_create_run_scheduler_failure_returns_ack_and_releases_for_retry(
     tmp_path, monkeypatch
 ):
     import api.server as server
@@ -762,6 +791,6 @@ def test_create_run_scheduler_failure_releases_guard_and_marks_run_failed(
         headers=AUTH_HEADERS,
     )
 
-    assert response.status_code == 500
+    assert response.status_code == 200
     runs = get_run(run_id=created_runs[0]["run_id"])
-    assert runs["execution_status"] == "failed"
+    assert runs["execution_status"] == "pending"

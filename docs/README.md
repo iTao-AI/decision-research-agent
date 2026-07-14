@@ -56,6 +56,7 @@ external evaluation of the public contract surface.
   — bounded profile and renderer gates.
 - [Evidence Index](evidence/README.md) — current bounded evidence.
 - [Run Creation Idempotency Proof](evidence/run-creation-idempotency-v1.md) — deterministic lost-response identity reconciliation and limits.
+- [Run Dispatch Reconciliation Proof](evidence/run-dispatch-reconciliation-v1.md) — deterministic committed pre-start recovery, migration safety, and explicit non-claims.
 - [Agent Evaluation Report](evidence/agent-evaluation-regression-v1.md) and
   [JSON baseline](evidence/agent-evaluation-regression-v1.json) — deterministic
   contract regression evidence and limits.

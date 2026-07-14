@@ -14,6 +14,16 @@ not grant independent verification authority.
 | [real-source-proof.md](real-source-proof.md) | Human-readable proof procedure, verification/publication outcome, and explicit limitations. |
 | [run-creation-idempotency-v1.json](run-creation-idempotency-v1.json) | Deterministic machine-readable lost-response identity reconciliation proof. |
 | [run-creation-idempotency-v1.md](run-creation-idempotency-v1.md) | Human-readable cases and limits, including `crash_before_schedule_recovery: not_proven`. |
+| [run-dispatch-reconciliation-v1.json](run-dispatch-reconciliation-v1.json) | Deterministic machine-readable single-node committed pre-start dispatch proof. |
+| [run-dispatch-reconciliation-v1.md](run-dispatch-reconciliation-v1.md) | Human-readable cases and limits, including `commit_before_execution_start_recovery: proven` and `crash_before_schedule_recovery: proven`. |
+
+The dispatch proof explicitly records `exactly_once_execution: not_claimed`,
+`running_execution_recovery: not_proven`,
+`provider_tool_side_effect_exactly_once: not_claimed`,
+`multi_instance_high_availability: not_proven`, and
+`live_provider_result: not_observed`. Its recovery cases exercise the
+production lifespan, worker, scheduler, start fence, handler cancellation, and
+fresh-worker restart boundaries rather than direct repository-only starts.
 
 The durable HITL artifact proves only the documented feasibility boundary; its
 feature flag remains disabled by default. The real-source artifact proves a

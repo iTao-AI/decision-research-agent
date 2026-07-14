@@ -2,6 +2,8 @@ import sys
 import os
 import asyncio
 import logging
+import sqlite3
+from functools import partial
 import uvicorn
 from pathlib import Path
 from datetime import datetime, timezone
@@ -29,6 +31,7 @@ from agent.telemetry import collector
 from api.monitor import monitor, manager
 from api.cors_config import get_allowed_origins
 from api.task_tracker import create_tracked_task
+from api.database import sqlite_db_path
 from api.thread_ids import validate_thread_id
 from api.run_repository import (
     RunCreationConflict,
@@ -37,8 +40,14 @@ from api.run_repository import (
     finalize_run_transaction,
     get_artifact,
     get_run,
-    transition_run,
 )
+from api.run_dispatch_models import RunDispatchClaim
+from api.run_dispatch_repository import (
+    reconcile_run_dispatch_timeout,
+    release_run_dispatch_for_retry,
+    start_run_dispatch,
+)
+from api.run_dispatch_worker import RunDispatchWorker
 from api.run_creation_models import validate_idempotency_key
 from api.run_result_service import (
     RunResultUnavailable,
@@ -133,26 +142,54 @@ def create_review_worker(
     )
 
 
+def create_run_dispatch_worker(application_db_path: str | Path) -> RunDispatchWorker:
+    return RunDispatchWorker(
+        db_path=str(application_db_path),
+        scheduler=partial(
+            _schedule_run_dispatch,
+            db_path=str(application_db_path),
+        ),
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = None
     worker = None
+    run_dispatch_task = None
+    run_dispatch_worker = None
     app.state.review_worker_task = None
+    app.state.run_dispatch_worker = None
+    app.state.run_dispatch_worker_task = None
     app.state.review_runtime_readiness = None
     app.state.evidence_verification_runtime_readiness = None
     try:
+        application_db_path = sqlite_db_path()
         runtime = validate_review_runtime(output_dir=output_dir)
         verification_runtime = validate_evidence_verification_runtime(
             review_runtime=runtime,
             output_dir=output_dir,
         )
+        try:
+            migrate_with_backup(
+                db_path=application_db_path,
+                backup_path=f"{application_db_path}.pre-run-dispatch.bak",
+            )
+        except sqlite3.DatabaseError as exc:
+            if runtime.enabled:
+                raise ReviewConfigurationError(
+                    "review_runtime_not_ready"
+                ) from exc
+            raise
+        run_dispatch_worker = create_run_dispatch_worker(application_db_path)
+        run_dispatch_task = asyncio.create_task(run_dispatch_worker.run_forever())
+        await asyncio.sleep(0)
+        if run_dispatch_task.done():
+            run_dispatch_task.result()
+        app.state.run_dispatch_worker = run_dispatch_worker
+        app.state.run_dispatch_worker_task = run_dispatch_task
+
         if runtime.enabled:
-            if verification_runtime.enabled:
-                application_db_path = str(runtime.application_db_path)
-                migrate_with_backup(
-                    db_path=application_db_path,
-                    backup_path=f"{application_db_path}.pre-run-idempotency.bak",
-                )
             readiness = check_review_readiness(
                 runtime=runtime,
                 gate_report_path=(
@@ -195,6 +232,8 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         app.state.review_worker_task = None
+        app.state.run_dispatch_worker = None
+        app.state.run_dispatch_worker_task = None
         app.state.review_runtime_readiness = None
         app.state.evidence_verification_runtime_readiness = None
         if worker is not None:
@@ -205,6 +244,14 @@ async def lifespan(app: FastAPI):
                     task.exception()
             else:
                 await task
+        if run_dispatch_worker is not None:
+            run_dispatch_worker.stop()
+        if run_dispatch_task is not None:
+            if run_dispatch_task.done():
+                if not run_dispatch_task.cancelled():
+                    run_dispatch_task.exception()
+            else:
+                await run_dispatch_task
 
 
 app = FastAPI(
@@ -254,7 +301,7 @@ def _validated_thread_id(thread_id: str) -> str:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-async def _run_v2_with_persistence(
+async def _run_started_v2_with_persistence(
     *,
     query: str,
     thread_id: str,
@@ -265,20 +312,9 @@ async def _run_v2_with_persistence(
     scope: dict | None = None,
 ) -> None:
     """Execute one run-scoped request while preserving LangGraph thread identity."""
-    state_version = 0
-    allowed_previous_statuses = {"pending"}
+    state_version = 1
+    allowed_previous_statuses = {"running"}
     try:
-        transitioned = await asyncio.to_thread(
-            transition_run,
-            run_id=run_id,
-            expected_state_version=0,
-            allowed_previous_statuses={"pending"},
-            execution_status="running",
-        )
-        if not transitioned:
-            raise RuntimeError("stale_run_write")
-        state_version = 1
-        allowed_previous_statuses = {"running"}
         result = await run_deep_agent(
             query,
             thread_id,
@@ -365,6 +401,43 @@ async def _run_v2_with_persistence(
         raise
 
 
+async def _run_dispatched_with_persistence(
+    claim: RunDispatchClaim,
+    *,
+    db_path: str,
+    outcome_box: OutcomeBox,
+) -> None:
+    """Cross the application-owned start fence before invoking the Agent."""
+    try:
+        started = await asyncio.to_thread(
+            start_run_dispatch,
+            db_path=db_path,
+            claim=claim,
+        )
+    except Exception:
+        try:
+            await asyncio.to_thread(
+                release_run_dispatch_for_retry,
+                db_path=db_path,
+                claim=claim,
+                error_code="run_dispatch_start_failed",
+            )
+        except Exception:
+            logging.error("Run dispatch start recovery failed")
+        return
+    if not started:
+        return
+    await _run_started_v2_with_persistence(
+        query=claim.query,
+        thread_id=claim.thread_id,
+        run_id=claim.run_id,
+        segment_id=claim.segment_id,
+        outcome_box=outcome_box,
+        profile_id=claim.profile_id,
+        scope=claim.scope,
+    )
+
+
 async def _finalize_failed_run_v2(
     *,
     run_id: str,
@@ -427,6 +500,57 @@ async def _mark_run_timeout(
         run_id=run_id,
         segment_id=segment_id,
     )
+
+
+async def _mark_dispatched_timeout(
+    claim: RunDispatchClaim,
+    *,
+    db_path: str,
+    outcome_box: OutcomeBox,
+    timeout_seconds: int,
+) -> None:
+    """Fence timeout handling to the exact dispatch attempt."""
+    try:
+        timeout_outcome = await asyncio.to_thread(
+            reconcile_run_dispatch_timeout,
+            db_path=db_path,
+            claim=claim,
+        )
+        if timeout_outcome != "started":
+            return
+    except Exception:
+        logging.error("Run dispatch timeout inspection failed")
+        return
+    await _mark_run_timeout(
+        claim.run_id,
+        timeout_seconds,
+        segment_id=claim.segment_id,
+        outcome_box=outcome_box,
+    )
+
+
+def _schedule_run_dispatch(claim: RunDispatchClaim, *, db_path: str) -> None:
+    outcome_box = OutcomeBox()
+    coroutine = _run_dispatched_with_persistence(
+        claim,
+        db_path=db_path,
+        outcome_box=outcome_box,
+    )
+    task_id = f"{claim.run_id}:dispatch:{claim.attempt_count}"
+    try:
+        create_tracked_task(
+            coroutine,
+            task_id,
+            on_timeout=lambda _task_id, timeout_seconds: _mark_dispatched_timeout(
+                claim,
+                db_path=db_path,
+                outcome_box=outcome_box,
+                timeout_seconds=timeout_seconds,
+            ),
+        )
+    except Exception:
+        coroutine.close()
+        raise
 
 
 def _run_creation_error(
@@ -550,39 +674,9 @@ async def create_research_run(
     response = {"status": "started", **created}
     if idempotency_key is not None:
         response["idempotent_replay"] = replay
-    if replay:
-        return response
-    outcome_box = OutcomeBox()
-    run_coroutine = _run_v2_with_persistence(
-        query=request.query,
-        thread_id=thread_id,
-        run_id=created["run_id"],
-        segment_id=created["segment_id"],
-        outcome_box=outcome_box,
-        profile_id=request.profile_id,
-        scope=validated_scope,
-    )
-    try:
-        create_tracked_task(
-            run_coroutine,
-            created["run_id"],
-            on_timeout=lambda run_id, timeout_seconds: _mark_run_timeout(
-                run_id,
-                timeout_seconds,
-                segment_id=created["segment_id"],
-                outcome_box=outcome_box,
-            ),
-        )
-    except Exception:
-        run_coroutine.close()
-        await _finalize_failed_run_v2(
-            run_id=created["run_id"],
-            segment_id=created["segment_id"],
-            expected_state_version=0,
-            allowed_previous_statuses={"pending"},
-            evidence_entries=[],
-        )
-        raise
+    worker = app.state.run_dispatch_worker
+    await worker.dispatch_run(created["run_id"])
+    worker.wake()
     return response
 
 

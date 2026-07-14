@@ -72,6 +72,109 @@ def test_healthcheck_calls_health_endpoint(monkeypatch):
     assert captured == {"url": "http://127.0.0.1:9000/health", "timeout": 2}
 
 
+def test_start_run_forwards_idempotency_key_only_in_header(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["idempotency_key"] = req.get_header("Idempotency-key")
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return FakeResponse({"status": "started", "run_id": "run_1"})
+
+    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
+    tool.start_run(
+        query="query",
+        thread_id=None,
+        profile_id="generic",
+        scope={},
+        idempotency_key="run-key-client-0001",
+        config=tool.ToolConfig(),
+    )
+    assert captured["idempotency_key"] == "run-key-client-0001"
+    assert "idempotency_key" not in captured["body"]
+
+
+def test_cli_run_generates_and_returns_reusable_key(monkeypatch, capsys):
+    received = []
+
+    def fake_start_run(**kwargs):
+        received.append(kwargs["idempotency_key"])
+        return {"status": "started", "run_id": "run_1"}
+
+    monkeypatch.setattr(tool, "start_run", fake_start_run)
+    assert tool.main(["run", "--query", "query"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert received == [payload["idempotency_key"]]
+    assert payload["idempotency_key"].startswith("run-create-")
+
+
+@pytest.mark.parametrize("error_code", ["request_timeout", "connection_failed"])
+def test_cli_ambiguous_create_failure_returns_exact_recovery_key(
+    monkeypatch, capsys, error_code
+):
+    def fail(**kwargs):
+        raise tool.ToolClientError(error_code)
+
+    monkeypatch.setattr(tool, "start_run", fail)
+    assert tool.main(
+        [
+            "run",
+            "--query",
+            "private query",
+            "--idempotency-key",
+            "run-key-client-0002",
+        ]
+    ) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["code"] == error_code
+    assert payload["idempotency_key"] == "run-key-client-0002"
+    assert "private query" not in json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (409, "run_idempotency_conflict"),
+        (422, "run_idempotency_key_invalid"),
+        (503, "run_idempotency_unavailable"),
+    ],
+)
+def test_tool_client_preserves_run_idempotency_service_errors(
+    monkeypatch, status, code
+):
+    body = io.BytesIO(
+        json.dumps(
+            {
+                "code": code,
+                "problem": "bounded",
+                "cause": "bounded",
+                "fix": "bounded",
+                "retryable": status == 503,
+                "run_id": None,
+                "request_id": "request_1",
+            }
+        ).encode("utf-8")
+    )
+    http_error = tool.error.HTTPError(
+        "http://127.0.0.1:8000/api/runs", status, "error", {}, body
+    )
+    monkeypatch.setattr(
+        tool.request,
+        "urlopen",
+        lambda req, timeout: (_ for _ in ()).throw(http_error),
+    )
+    with pytest.raises(tool.ToolClientHTTPError) as captured:
+        tool.start_run(
+            query="query",
+            thread_id=None,
+            profile_id="generic",
+            scope={},
+            idempotency_key="run-key-client-0003",
+            config=tool.ToolConfig(),
+        )
+    assert captured.value.status == status
+    assert captured.value.payload["code"] == code
+
+
 @pytest.mark.parametrize(
     "argv",
     [

@@ -23,6 +23,8 @@ health service identifier use `decision-research-agent`.
 - Runs research through canonical `run_id` scoped execution.
 - Persists ResearchRun, EvidenceLedger, review, verification, publication, and
   canonical result state in the application database.
+- Supports lost-response run identity reconciliation through an optional
+  durable `Idempotency-Key`, without claiming crash recovery or exactly-once execution.
 - Produces bounded result artifacts through `GET /api/runs/{run_id}/result`.
 - Supports Talent Hiring Signal as the first benchmarked research profile.
 - Provides controlled durable review and evidence verification workflows behind

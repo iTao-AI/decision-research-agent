@@ -113,6 +113,30 @@ def test_relative_markdown_link_accepts_path_inside_root(tmp_path: Path) -> None
     assert relative_markdown_link_violations(tmp_path) == []
 
 
+def test_relative_markdown_link_ignores_fenced_code_and_checks_real_links(
+    tmp_path: Path,
+) -> None:
+    from scripts.final_presentation_audit import relative_markdown_link_violations
+
+    (tmp_path / "README.md").write_text(
+        """```python
+globals()["result"](run_id, config)
+```
+
+[missing](missing.md)
+""",
+        encoding="utf-8",
+    )
+
+    assert relative_markdown_link_violations(tmp_path) == [
+        {
+            "path": "README.md",
+            "rule": "missing-relative-link",
+            "target": "missing.md",
+        }
+    ]
+
+
 def test_markdown_audit_does_not_read_tracked_symlink_outside_root(
     tmp_path: Path,
     monkeypatch,

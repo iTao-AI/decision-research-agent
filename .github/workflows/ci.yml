@@ -33,6 +33,10 @@ jobs:
         env:
           PYTHON_DOTENV_DISABLED: '1'
         run: python scripts/agent_evaluation_gate.py check
+      - name: Run deterministic run creation idempotency proof
+        env:
+          PYTHON_DOTENV_DISABLED: '1'
+        run: python scripts/run_creation_idempotency_proof.py check
       - name: Run tests
         run: python -m pytest -q
 

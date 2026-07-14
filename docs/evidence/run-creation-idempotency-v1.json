@@ -1,0 +1,81 @@
+{
+  "boundaries": {
+    "client_response_loss_after_scheduling": "proven",
+    "crash_before_schedule_recovery": "not_proven",
+    "durable_identity_lookup_after_restart": "proven",
+    "exactly_once_execution": "not_claimed"
+  },
+  "cases": [
+    {
+      "case_id": "lost_response_replay",
+      "observations": {
+        "persisted_run_count": 1,
+        "replay_marked": true,
+        "same_identity": true,
+        "schedule_count": 1
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "request_conflict",
+      "observations": {
+        "identity_hidden": true,
+        "schedule_count": 1,
+        "stable_code": true,
+        "status_is_409": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "concurrent_duplicate_serialization",
+      "observations": {
+        "ledger_count": 1,
+        "new_count": 1,
+        "persisted_run_count": 1,
+        "replay_count": 5
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "durable_restart_lookup",
+      "observations": {
+        "replay_marked": true,
+        "same_identity": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "unkeyed_independence",
+      "observations": {
+        "distinct_runs": true,
+        "persisted_run_count": 2
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "raw_key_non_persistence",
+      "observations": {
+        "hashes_present": true,
+        "raw_key_absent": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "tool_client_key_recovery",
+      "observations": {
+        "ambiguous_failure": true,
+        "exact_header_reused": true,
+        "reusable_key_present": true
+      },
+      "status": "passed"
+    }
+  ],
+  "limits": [
+    "Deterministic local contract proof, not a provider or production measurement.",
+    "Response loss is simulated only after current-process scheduling completes.",
+    "Process or handler failure before scheduling is not recovered by this design."
+  ],
+  "schema_version": "dra.run-creation-idempotency-proof.v1",
+  "source": "deterministic_local",
+  "status": "valid"
+}

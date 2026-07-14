@@ -1,3 +1,6 @@
+import concurrent.futures
+import sqlite3
+
 import pytest
 
 
@@ -12,6 +15,179 @@ def test_same_thread_can_own_multiple_independent_runs(tmp_path):
     assert first["segment_id"] != second["segment_id"]
     assert get_run(db_path=db_path, run_id=first["run_id"])["query"] == "first"
     assert get_run(db_path=db_path, run_id=second["run_id"])["query"] == "second"
+
+
+def test_keyed_run_create_replays_original_generated_identity(tmp_path):
+    from api.run_repository import create_or_replay_run
+
+    db_path = str(tmp_path / "runs.db")
+    kwargs = dict(
+        db_path=db_path,
+        idempotency_key="run-key-00000001",
+        thread_id=None,
+        query="query",
+        profile_id="generic",
+        profile_version="1",
+        scope={},
+    )
+    first = create_or_replay_run(**kwargs)
+    second = create_or_replay_run(**kwargs)
+    assert first.idempotent_replay is False
+    assert second.idempotent_replay is True
+    assert second.model_copy(update={"idempotent_replay": False}) == first
+
+
+def test_keyed_explicit_thread_replays_and_profile_version_is_not_fingerprinted(tmp_path):
+    from api.run_repository import create_or_replay_run
+
+    db_path = str(tmp_path / "runs.db")
+    first = create_or_replay_run(
+        db_path=db_path,
+        idempotency_key="run-key-explicit-0001",
+        thread_id="thread-1",
+        query="query",
+        profile_version="1",
+        scope={},
+    )
+    second = create_or_replay_run(
+        db_path=db_path,
+        idempotency_key="run-key-explicit-0001",
+        thread_id="thread-1",
+        query="query",
+        profile_version="2",
+        scope={},
+    )
+    assert first.thread_id == second.thread_id == "thread-1"
+    assert first.run_id == second.run_id
+    assert second.idempotent_replay is True
+
+
+def test_same_key_with_different_request_conflicts_and_creates_nothing(tmp_path):
+    from api.run_repository import RunCreationConflict, create_or_replay_run
+
+    db_path = str(tmp_path / "runs.db")
+    base = dict(
+        db_path=db_path,
+        idempotency_key="run-key-00000002",
+        thread_id="thread-1",
+        profile_id="generic",
+        profile_version="1",
+        scope={},
+    )
+    create_or_replay_run(query="first", **base)
+    with pytest.raises(RunCreationConflict, match="run_idempotency_conflict"):
+        create_or_replay_run(query="second", **base)
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute("SELECT COUNT(*) FROM research_runs_v2").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM run_segments").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM run_create_idempotency_v1").fetchone()[0] == 1
+    finally:
+        connection.close()
+
+
+def test_raw_key_is_not_persisted(tmp_path):
+    from api.run_repository import create_or_replay_run
+
+    db_path = str(tmp_path / "runs.db")
+    raw_key = "raw-key-should-not-persist"
+    create_or_replay_run(
+        db_path=db_path,
+        idempotency_key=raw_key,
+        thread_id=None,
+        query="query",
+        scope={},
+    )
+    assert raw_key.encode("utf-8") not in (tmp_path / "runs.db").read_bytes()
+    connection = sqlite3.connect(db_path)
+    try:
+        row = connection.execute(
+            "SELECT key_hash, request_schema_version, request_hash "
+            "FROM run_create_idempotency_v1"
+        ).fetchone()
+        assert len(row[0]) == len(row[2]) == 64
+        assert row[1] == "dra.run-create-request.v1"
+    finally:
+        connection.close()
+
+
+def test_concurrent_duplicate_create_serializes_to_one_run(tmp_path):
+    from api.run_repository import create_or_replay_run
+
+    db_path = str(tmp_path / "runs.db")
+    kwargs = dict(
+        db_path=db_path,
+        idempotency_key="run-key-concurrent-0001",
+        thread_id=None,
+        query="query",
+        profile_id="generic",
+        profile_version="1",
+        scope={},
+    )
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        accepted = list(pool.map(lambda _: create_or_replay_run(**kwargs), range(8)))
+    assert sum(not item.idempotent_replay for item in accepted) == 1
+    assert len({item.run_id for item in accepted}) == 1
+    assert len({item.thread_id for item in accepted}) == 1
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute("SELECT COUNT(*) FROM research_runs_v2").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM run_segments").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM run_create_idempotency_v1").fetchone()[0] == 1
+    finally:
+        connection.close()
+
+
+def test_corrupt_ledger_binding_fails_closed(tmp_path):
+    from api.run_repository import RunCreationConflict, create_or_replay_run
+
+    db_path = str(tmp_path / "runs.db")
+    kwargs = dict(
+        db_path=db_path,
+        idempotency_key="run-key-corrupt-0001",
+        thread_id=None,
+        query="query",
+        scope={},
+    )
+    created = create_or_replay_run(**kwargs)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute("DELETE FROM research_runs_v2 WHERE run_id = ?", (created.run_id,))
+        connection.commit()
+    finally:
+        connection.close()
+    with pytest.raises(RunCreationConflict, match="run_idempotency_unavailable"):
+        create_or_replay_run(**kwargs)
+
+
+def test_keyed_path_rejects_wrong_007_checksum_without_creating_run(tmp_path):
+    from api.run_repository import RunCreationConflict, create_or_replay_run, init_run_schema
+
+    db_path = str(tmp_path / "runs.db")
+    init_run_schema(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            "UPDATE schema_migrations SET checksum = 'forged' "
+            "WHERE version = '007_run_create_idempotency'"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    with pytest.raises(RunCreationConflict, match="run_idempotency_unavailable"):
+        create_or_replay_run(
+            db_path=db_path,
+            idempotency_key="run-key-marker-0001",
+            thread_id=None,
+            query="query",
+            scope={},
+        )
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute("SELECT COUNT(*) FROM research_runs_v2").fetchone()[0] == 0
+    finally:
+        connection.close()
 
 
 def test_run_identity_keeps_segment_and_attempt_separate(tmp_path):

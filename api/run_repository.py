@@ -4,10 +4,19 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import sqlite3
+import threading
 import uuid
 from typing import Any
 
 from api.database import sqlite_db_path
+from api.run_creation_models import (
+    RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
+    RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,
+    RUN_CREATE_REQUEST_SCHEMA_VERSION,
+    RunCreationAcceptance,
+    idempotency_key_hash,
+    run_create_request_hash,
+)
 
 
 EXECUTION_STATUSES = {
@@ -26,6 +35,13 @@ DELIVERY_STATUSES = {
     "failed",
 }
 MIGRATION_VERSION = "003_run_identity_backbone"
+_SCHEMA_INIT_LOCK = threading.Lock()
+
+
+class RunCreationConflict(RuntimeError):
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
 
 
 def _now() -> str:
@@ -35,12 +51,13 @@ def _now() -> str:
 def _connect(db_path: str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(sqlite_db_path(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
-def init_run_schema(db_path: str | None = None) -> None:
+def _init_run_schema_unlocked(db_path: str | None = None) -> None:
     """Apply the additive run identity migration idempotently."""
     conn = _connect(db_path)
     try:
@@ -84,6 +101,18 @@ def init_run_schema(db_path: str | None = None) -> None:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(run_id, sequence)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS run_create_idempotency_v1 (
+                    key_hash TEXT PRIMARY KEY,
+                    request_schema_version TEXT NOT NULL,
+                    request_hash TEXT NOT NULL,
+                    run_id TEXT NOT NULL UNIQUE
+                        REFERENCES research_runs_v2(run_id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL
                 )
                 """
             )
@@ -164,8 +193,25 @@ def init_run_schema(db_path: str | None = None) -> None:
                 """,
                 (MIGRATION_VERSION, _now(), "run-identity-backbone-v1"),
             )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO schema_migrations(version, applied_at, checksum)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,
+                    _now(),
+                    RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
+                ),
+            )
     finally:
         conn.close()
+
+
+def init_run_schema(db_path: str | None = None) -> None:
+    """Apply the additive schema once at a time within this process."""
+    with _SCHEMA_INIT_LOCK:
+        _init_run_schema_unlocked(db_path)
 
 
 def _ensure_baseline_origin_column(
@@ -190,6 +236,48 @@ def _ensure_baseline_origin_column(
         )
 
 
+def _insert_run_identity(
+    connection: sqlite3.Connection,
+    *,
+    thread_id: str,
+    query: str,
+    profile_id: str,
+    profile_version: str,
+    scope: dict[str, Any],
+    now: str,
+) -> dict[str, str]:
+    run_id = f"run_{uuid.uuid4().hex}"
+    segment_id = f"{run_id}_seg_000"
+    connection.execute(
+        """
+        INSERT INTO research_runs_v2 (
+            run_id, thread_id, query, profile_id, profile_version, scope_json,
+            execution_status, review_status, delivery_status, state_version,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 'not_required', 'pending', 0, ?, ?)
+        """,
+        (
+            run_id,
+            thread_id,
+            query,
+            profile_id,
+            profile_version,
+            json.dumps(scope, ensure_ascii=False, sort_keys=True),
+            now,
+            now,
+        ),
+    )
+    connection.execute(
+        """
+        INSERT INTO run_segments (
+            segment_id, run_id, kind, sequence, attempt, status, created_at, updated_at
+        ) VALUES (?, ?, 'initial', 0, 1, 'pending', ?, ?)
+        """,
+        (segment_id, run_id, now, now),
+    )
+    return {"run_id": run_id, "thread_id": thread_id, "segment_id": segment_id}
+
+
 def create_run(
     *,
     thread_id: str,
@@ -201,42 +289,124 @@ def create_run(
 ) -> dict[str, Any]:
     """Create one immutable run identity and its initial business segment."""
     init_run_schema(db_path)
-    run_id = f"run_{uuid.uuid4().hex}"
-    segment_id = f"{run_id}_seg_000"
     now = _now()
     conn = _connect(db_path)
     try:
         with conn:
-            conn.execute(
-                """
-                INSERT INTO research_runs_v2 (
-                    run_id, thread_id, query, profile_id, profile_version, scope_json,
-                    execution_status, review_status, delivery_status, state_version,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 'not_required', 'pending', 0, ?, ?)
-                """,
-                (
-                    run_id,
-                    thread_id,
-                    query,
-                    profile_id,
-                    profile_version,
-                    json.dumps(scope or {}, ensure_ascii=False, sort_keys=True),
-                    now,
-                    now,
-                ),
-            )
-            conn.execute(
-                """
-                INSERT INTO run_segments (
-                    segment_id, run_id, kind, sequence, attempt, status, created_at, updated_at
-                ) VALUES (?, ?, 'initial', 0, 1, 'pending', ?, ?)
-                """,
-                (segment_id, run_id, now, now),
+            return _insert_run_identity(
+                conn,
+                thread_id=thread_id,
+                query=query,
+                profile_id=profile_id,
+                profile_version=profile_version,
+                scope=scope or {},
+                now=now,
             )
     finally:
         conn.close()
-    return {"run_id": run_id, "thread_id": thread_id, "segment_id": segment_id}
+
+
+def create_or_replay_run(
+    *,
+    idempotency_key: str,
+    thread_id: str | None,
+    query: str,
+    db_path: str | None = None,
+    profile_id: str = "generic",
+    profile_version: str = "1",
+    scope: dict[str, Any] | None = None,
+) -> RunCreationAcceptance:
+    key_hash = idempotency_key_hash(idempotency_key)
+    normalized_scope = scope or {}
+    request_hash = run_create_request_hash(
+        query=query,
+        thread_id=thread_id,
+        profile_id=profile_id,
+        scope=normalized_scope,
+    )
+    connection = None
+    try:
+        init_run_schema(db_path)
+        connection = _connect(db_path)
+        with connection:
+            connection.execute("BEGIN IMMEDIATE")
+            marker = connection.execute(
+                "SELECT checksum FROM schema_migrations WHERE version = ?",
+                (RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,),
+            ).fetchone()
+            if (
+                marker is None
+                or marker["checksum"] != RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM
+            ):
+                raise RunCreationConflict("run_idempotency_unavailable")
+            existing = connection.execute(
+                """
+                SELECT request_schema_version, request_hash, run_id
+                FROM run_create_idempotency_v1
+                WHERE key_hash = ?
+                """,
+                (key_hash,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["request_schema_version"]
+                    != RUN_CREATE_REQUEST_SCHEMA_VERSION
+                    or existing["request_hash"] != request_hash
+                ):
+                    raise RunCreationConflict("run_idempotency_conflict")
+                identity = connection.execute(
+                    """
+                    SELECT run.run_id, run.thread_id, segment.segment_id
+                    FROM research_runs_v2 AS run
+                    JOIN run_segments AS segment
+                      ON segment.run_id = run.run_id
+                     AND segment.sequence = 0
+                     AND segment.kind = 'initial'
+                    WHERE run.run_id = ?
+                    """,
+                    (existing["run_id"],),
+                ).fetchone()
+                if identity is None:
+                    raise RunCreationConflict("run_idempotency_unavailable")
+                return RunCreationAcceptance(
+                    run_id=identity["run_id"],
+                    thread_id=identity["thread_id"],
+                    segment_id=identity["segment_id"],
+                    idempotent_replay=True,
+                )
+
+            now = _now()
+            created = _insert_run_identity(
+                connection,
+                thread_id=thread_id or str(uuid.uuid4()),
+                query=query,
+                profile_id=profile_id,
+                profile_version=profile_version,
+                scope=normalized_scope,
+                now=now,
+            )
+            connection.execute(
+                """
+                INSERT INTO run_create_idempotency_v1 (
+                    key_hash, request_schema_version, request_hash, run_id, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    key_hash,
+                    RUN_CREATE_REQUEST_SCHEMA_VERSION,
+                    request_hash,
+                    created["run_id"],
+                    now,
+                ),
+            )
+            return RunCreationAcceptance(**created, idempotent_replay=False)
+    except RunCreationConflict:
+        raise
+    except sqlite3.Error as exc:
+        raise RunCreationConflict("run_idempotency_unavailable") from exc
+    finally:
+        if connection is not None:
+            connection.close()
 
 
 def _run_row(row: sqlite3.Row) -> dict[str, Any]:

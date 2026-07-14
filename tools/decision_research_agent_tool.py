@@ -221,10 +221,15 @@ def _join_url(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
-def _headers(config: ToolConfig) -> dict[str, str]:
+def _headers(
+    config: ToolConfig,
+    extra: dict[str, str] | None = None,
+) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     if config.api_key:
         headers["X-API-Key"] = config.api_key
+    if extra:
+        headers.update(extra)
     return headers
 
 
@@ -252,9 +257,15 @@ def _request_json(
     *,
     config: ToolConfig,
     payload: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = request.Request(url, data=body, method=method, headers=_headers(config))
+    req = request.Request(
+        url,
+        data=body,
+        method=method,
+        headers=_headers(config, headers),
+    )
     try:
         with request.urlopen(req, timeout=config.timeout_seconds) as response:
             status = response.getcode()
@@ -397,6 +408,7 @@ def start_run(
     thread_id: str | None,
     profile_id: str,
     scope: dict[str, Any],
+    idempotency_key: str | None = None,
     config: ToolConfig,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
@@ -406,8 +418,17 @@ def start_run(
     }
     if thread_id:
         payload["thread_id"] = thread_id
+    extra_headers = (
+        {"Idempotency-Key": idempotency_key}
+        if idempotency_key is not None
+        else None
+    )
     return _request_json(
-        "POST", _join_url(config.base_url, "/api/runs"), config=config, payload=payload
+        "POST",
+        _join_url(config.base_url, "/api/runs"),
+        config=config,
+        payload=payload,
+        headers=extra_headers,
     )
 
 
@@ -849,6 +870,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--thread-id")
     run.add_argument("--profile", default="generic")
     run.add_argument("--scope-file")
+    run.add_argument("--idempotency-key")
     run.add_argument("--wait", action="store_true")
     run.add_argument("--result", action="store_true")
     run.add_argument("--poll-seconds", type=float, default=1)
@@ -960,15 +982,28 @@ def main(argv: list[str] | None = None) -> int:
             if args.result and not args.wait:
                 raise ToolClientError("result_requires_wait")
             scope = read_scope_file(Path(args.scope_file)) if args.scope_file else {}
-            created = start_run(
-                query=args.query,
-                thread_id=args.thread_id,
-                profile_id=args.profile,
-                scope=scope,
-                config=config,
-            )
+            idempotency_key = args.idempotency_key or f"run-create-{uuid.uuid4()}"
+            try:
+                created = start_run(
+                    query=args.query,
+                    thread_id=args.thread_id,
+                    profile_id=args.profile,
+                    scope=scope,
+                    idempotency_key=idempotency_key,
+                    config=config,
+                )
+            except ToolClientError as exc:
+                if exc.payload.get("code") in {
+                    "request_timeout",
+                    "connection_failed",
+                }:
+                    raise _with_error_context(
+                        exc,
+                        context={"idempotency_key": idempotency_key},
+                    ) from exc
+                raise
             if not args.wait:
-                result = created
+                result = {**created, "idempotency_key": idempotency_key}
             else:
                 run_id = created.get("run_id")
                 if not isinstance(run_id, str) or not run_id:

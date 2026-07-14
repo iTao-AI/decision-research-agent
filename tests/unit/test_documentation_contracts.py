@@ -285,3 +285,58 @@ def test_agent_evaluation_regression_gate_is_documented_and_required_in_ci():
     pytest_step = workflow.index("python -m pytest -q")
     assert install < gate < pytest_step
     assert "PYTHON_DOTENV_DISABLED: '1'" in workflow
+
+
+def test_run_creation_idempotency_contract_is_public_and_bounded():
+    api = (PROJECT_ROOT / "docs/reference/api-contract.md").read_text(encoding="utf-8")
+    integration = (PROJECT_ROOT / "docs/AGENT_INTEGRATION.md").read_text(encoding="utf-8")
+    data_models = (PROJECT_ROOT / "docs/reference/data-models.md").read_text(encoding="utf-8")
+    identity = (PROJECT_ROOT / "docs/decisions/run-identity-boundaries.md").read_text(encoding="utf-8")
+    architecture = (PROJECT_ROOT / "docs/architecture.md").read_text(encoding="utf-8")
+    evidence = (PROJECT_ROOT / "docs/evidence/README.md").read_text(encoding="utf-8")
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    readme_cn = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")
+    changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    for phrase in (
+        "Idempotency-Key",
+        "[A-Za-z0-9][A-Za-z0-9._:-]{7,127}",
+        "run_idempotency_conflict",
+        "run_idempotency_key_invalid",
+        "run_idempotency_unavailable",
+        "idempotent_replay",
+        "service-wide",
+        "GET /api/runs/{run_id}",
+    ):
+        assert phrase in api
+    for phrase in (
+        "--idempotency-key",
+        "no automatic retry",
+        "same query/profile/thread/scope",
+        "request_timeout",
+        "connection_failed",
+    ):
+        assert phrase in integration
+    for phrase in (
+        "run_create_idempotency_v1",
+        "request_schema_version",
+        "request_hash",
+        "ON DELETE CASCADE",
+        "no TTL",
+    ):
+        assert phrase in data_models
+    assert "same-thread independent runs" in identity
+    assert "LangGraph" in architecture and "LangSmith" in architecture
+    assert "run-creation-idempotency-v1.json" in evidence
+    assert "run-creation-idempotency-v1.md" in evidence
+    assert "crash_before_schedule_recovery: not_proven" in evidence
+    assert "lost-response run identity reconciliation" in readme
+    assert "丢失响应后的 run identity reconciliation" in readme_cn
+    assert "### Run creation reliability" in changelog
+    assert "v0.1.2" not in changelog
+
+    workflow = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    proof = "python scripts/run_creation_idempotency_proof.py check"
+    assert workflow.count(proof) == 1
+    assert workflow.index("python scripts/agent_evaluation_gate.py check") < workflow.index(proof)
+    assert workflow.index(proof) < workflow.index("python -m pytest -q")

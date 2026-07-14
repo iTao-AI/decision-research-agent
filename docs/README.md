@@ -55,6 +55,7 @@ external evaluation of the public contract surface.
 - [Talent Hiring Signal Benchmark v1](../benchmarks/talent-hiring-signal-v1/README.md)
   — bounded profile and renderer gates.
 - [Evidence Index](evidence/README.md) — current bounded evidence.
+- [Run Creation Idempotency Proof](evidence/run-creation-idempotency-v1.md) — deterministic lost-response identity reconciliation and limits.
 - [Agent Evaluation Report](evidence/agent-evaluation-regression-v1.md) and
   [JSON baseline](evidence/agent-evaluation-regression-v1.json) — deterministic
   contract regression evidence and limits.

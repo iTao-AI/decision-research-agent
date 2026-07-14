@@ -138,6 +138,39 @@ def _link_target(raw_target: str) -> str:
     return target.split(maxsplit=1)[0]
 
 
+def _markdown_without_fenced_code(text: str) -> str:
+    visible_lines: list[str] = []
+    fence_character: str | None = None
+    fence_length = 0
+    for line in text.splitlines(keepends=True):
+        content = line.rstrip("\r\n")
+        leading_spaces = len(content) - len(content.lstrip(" "))
+        candidate = content[leading_spaces:] if leading_spaces <= 3 else ""
+        marker_length = 0
+        if candidate and candidate[0] in {"`", "~"}:
+            marker_length = len(candidate) - len(candidate.lstrip(candidate[0]))
+
+        if fence_character is None:
+            if marker_length >= 3:
+                fence_character = candidate[0]
+                fence_length = marker_length
+                visible_lines.append("\n" if line.endswith(("\n", "\r")) else "")
+                continue
+            visible_lines.append(line)
+            continue
+
+        is_closing_fence = (
+            candidate.startswith(fence_character * fence_length)
+            and marker_length >= fence_length
+            and not candidate[marker_length:].strip()
+        )
+        if is_closing_fence:
+            fence_character = None
+            fence_length = 0
+        visible_lines.append("\n" if line.endswith(("\n", "\r")) else "")
+    return "".join(visible_lines)
+
+
 def relative_markdown_link_violations(root: Path) -> list[dict[str, str]]:
     violations: list[dict[str, str]] = []
     resolved_root = root.resolve()
@@ -151,7 +184,7 @@ def relative_markdown_link_violations(root: Path) -> list[dict[str, str]]:
                 {"path": relative_path, "rule": "tracked-markdown-outside-root"}
             )
             continue
-        text = source.read_text(encoding="utf-8")
+        text = _markdown_without_fenced_code(source.read_text(encoding="utf-8"))
         for match in _MARKDOWN_LINK.finditer(text):
             target = _link_target(match.group(1))
             parsed = urlsplit(target)

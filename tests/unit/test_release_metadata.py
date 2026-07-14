@@ -28,12 +28,17 @@ def test_current_release_version_is_consistent() -> None:
     assert lock["packages"][""]["version"] == "0.1.1"
 
 
-def test_changelog_has_empty_unreleased_and_complete_v0_1_1_entry() -> None:
+def test_changelog_orders_unreleased_before_complete_v0_1_1_entry() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
-    unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [0.1.1]", 1)[0]
+    unreleased_heading = "## [Unreleased]"
+    v0_1_1_heading = "## [0.1.1] - 2026-07-13"
+    v0_1_0_heading = "## [0.1.0] - 2026-06-28"
 
-    assert unreleased.strip() == ""
-    assert "## [0.1.1] - 2026-07-13" in changelog
+    assert unreleased_heading in changelog
+    assert v0_1_1_heading in changelog
+    assert v0_1_0_heading in changelog
+    assert changelog.index(unreleased_heading) < changelog.index(v0_1_1_heading)
+    v0_1_1 = changelog.split(v0_1_1_heading, 1)[1].split(v0_1_0_heading, 1)[0]
     for phrase in (
         "structured Tool Client",
         "Agent Research Operations Console",
@@ -42,7 +47,7 @@ def test_changelog_has_empty_unreleased_and_complete_v0_1_1_entry() -> None:
         "six policy evaluators",
         "frontend and CI maintenance",
     ):
-        assert phrase in changelog
+        assert phrase in v0_1_1
 
 
 def test_changelog_contains_v0_1_0_release_entry() -> None:

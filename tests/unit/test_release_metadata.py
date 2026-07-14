@@ -45,7 +45,7 @@ def test_changelog_preserves_published_release_boundary() -> None:
     assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
 
     unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_2_heading, 1)[0]
-    assert unreleased.strip() == """### Durable run dispatch
+    durable_subsection = """### Durable run dispatch
 
 - Added atomic `run_dispatches_v1` intent creation and migration
   `008_run_dispatch_reconciliation`, with exact verification, no backfill, and
@@ -54,6 +54,13 @@ def test_changelog_preserves_published_release_boundary() -> None:
   asynchronous retry through three attempts, and deterministic public proof
   artifacts. `status: started` remains an acceptance acknowledgement; the
   contract does not claim exactly-once or running-execution recovery."""
+    assert unreleased.count(durable_subsection) == 1
+
+    unreleased_with_future_entry = (
+        unreleased
+        + "\n### Future maintenance\n\n- A valid future Unreleased entry.\n"
+    )
+    assert unreleased_with_future_entry.count(durable_subsection) == 1
 
     v0_1_2 = changelog.split(v0_1_2_heading, 1)[1].split(v0_1_1_heading, 1)[0]
     assert "### Run creation reliability" in v0_1_2

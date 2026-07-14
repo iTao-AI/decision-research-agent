@@ -29,7 +29,7 @@ def test_current_release_version_is_consistent() -> None:
     assert lock["packages"][""]["version"] == "0.1.2"
 
 
-def test_changelog_orders_empty_unreleased_and_complete_release_entries() -> None:
+def test_changelog_preserves_published_release_boundary() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     unreleased_heading = "## [Unreleased]"
     v0_1_2_heading = "## [0.1.2] - 2026-07-14"
@@ -45,9 +45,31 @@ def test_changelog_orders_empty_unreleased_and_complete_release_entries() -> Non
     assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
 
     unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_2_heading, 1)[0]
-    assert unreleased.strip() == ""
+    durable_subsection = """### Durable run dispatch
+
+- Added atomic `run_dispatches_v1` intent creation and migration
+  `008_run_dispatch_reconciliation`, with exact verification, no backfill, and
+  isolated `.pre-run-dispatch.bak` restore protection.
+- Added single-node pre-execution reconciliation, exact start fencing, bounded
+  asynchronous retry through three attempts, and deterministic public proof
+  artifacts. `status: started` remains an acceptance acknowledgement; the
+  contract does not claim exactly-once or running-execution recovery."""
+    assert unreleased.count(durable_subsection) == 1
+
+    unreleased_with_future_entry = (
+        unreleased
+        + "\n### Future maintenance\n\n- A valid future Unreleased entry.\n"
+    )
+    assert unreleased_with_future_entry.count(durable_subsection) == 1
 
     v0_1_2 = changelog.split(v0_1_2_heading, 1)[1].split(v0_1_1_heading, 1)[0]
+    assert "### Run creation reliability" in v0_1_2
+    for phrase in (
+        "### Durable run dispatch",
+        "run_dispatches_v1",
+        "008_run_dispatch_reconciliation",
+    ):
+        assert phrase not in v0_1_2
     for phrase in (
         "Idempotency-Key",
         "atomic replay/conflict behavior",

@@ -11,6 +11,7 @@ from packaging.specifiers import SpecifierSet
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 V010_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.0.md"
 V011_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.1.md"
+V012_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.2.md"
 PYTEST_FIXED_FLOOR = "9.0.3"
 
 
@@ -22,23 +23,42 @@ def test_current_release_version_is_consistent() -> None:
     package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
     lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
 
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.1"
-    assert package["version"] == "0.1.1"
-    assert lock["version"] == "0.1.1"
-    assert lock["packages"][""]["version"] == "0.1.1"
+    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.2"
+    assert package["version"] == "0.1.2"
+    assert lock["version"] == "0.1.2"
+    assert lock["packages"][""]["version"] == "0.1.2"
 
 
-def test_changelog_orders_unreleased_before_complete_v0_1_1_entry() -> None:
+def test_changelog_orders_empty_unreleased_and_complete_release_entries() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     unreleased_heading = "## [Unreleased]"
+    v0_1_2_heading = "## [0.1.2] - 2026-07-14"
     v0_1_1_heading = "## [0.1.1] - 2026-07-13"
     v0_1_0_heading = "## [0.1.0] - 2026-06-28"
 
     assert unreleased_heading in changelog
+    assert v0_1_2_heading in changelog
     assert v0_1_1_heading in changelog
     assert v0_1_0_heading in changelog
-    assert changelog.index(unreleased_heading) < changelog.index(v0_1_1_heading)
+    assert changelog.index(unreleased_heading) < changelog.index(v0_1_2_heading)
+    assert changelog.index(v0_1_2_heading) < changelog.index(v0_1_1_heading)
     assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
+
+    unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_2_heading, 1)[0]
+    assert unreleased.strip() == ""
+
+    v0_1_2 = changelog.split(v0_1_2_heading, 1)[1].split(v0_1_1_heading, 1)[0]
+    for phrase in (
+        "Idempotency-Key",
+        "atomic replay/conflict behavior",
+        "concurrent duplicate serialization",
+        "Tool Client recovery after a lost response",
+        "deterministic public reconciliation proof",
+        "crash-before-schedule recovery",
+        "exactly-once execution",
+    ):
+        assert phrase in v0_1_2
+
     v0_1_1 = changelog.split(v0_1_1_heading, 1)[1].split(v0_1_0_heading, 1)[0]
     for phrase in (
         "structured Tool Client",
@@ -65,7 +85,7 @@ def test_security_policy_matches_current_release_surface() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
 
     required = [
-        "Decision Research Agent v0.1.1",
+        "Decision Research Agent v0.1.2",
         "Agent Research Operations Console",
         "does not accept credentials",
         "not a publicly hosted service",
@@ -147,20 +167,68 @@ def test_v0_1_1_release_notes_cover_surface_compatibility_and_limits() -> None:
         assert phrase in notes
 
 
-def test_v0_1_1_release_is_discoverable_without_claiming_publication() -> None:
+def test_v0_1_2_release_notes_cover_surface_compatibility_and_limits() -> None:
+    notes = _read(V012_RELEASE_NOTES)
+
+    required = [
+        "# Decision Research Agent v0.1.2",
+        "## Supported Surface",
+        "## Changes",
+        "optional `Idempotency-Key`",
+        "`POST /api/runs`",
+        "durable replay",
+        "concurrent duplicate",
+        "Tool Client",
+        "lost response",
+        "deterministic reconciliation proof",
+        "run_idempotency_conflict",
+        "run_idempotency_key_invalid",
+        "run_idempotency_unavailable",
+        "## Compatibility And Migration",
+        "v0.1.1",
+        "007_run_create_idempotency",
+        "## Rollback",
+        "## Required Verification",
+        "## Known Limits",
+        "crash_before_schedule_recovery: not_proven",
+        "exactly_once_execution: not_claimed",
+        "not a provider or production measurement",
+    ]
+    for phrase in required:
+        assert phrase in notes
+
+
+def test_v0_1_2_release_is_discoverable_without_claiming_publication() -> None:
     readme = _read(PROJECT_ROOT / "README.md")
     readme_cn = _read(PROJECT_ROOT / "README_CN.md")
     docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
-    combined = "\n".join((readme, readme_cn, docs_index, _read(V011_RELEASE_NOTES)))
+    combined = "\n".join((readme, readme_cn, docs_index, _read(V012_RELEASE_NOTES)))
 
+    assert "[v0.1.2 Release Notes](docs/releases/v0.1.2.md)" in readme
+    assert "[v0.1.2 Release Notes](docs/releases/v0.1.2.md)" in readme_cn
+    assert "[v0.1.2 Release Notes](releases/v0.1.2.md)" in docs_index
     assert "[v0.1.1 Release Notes](docs/releases/v0.1.1.md)" in readme
     assert "[v0.1.1 Release Notes](docs/releases/v0.1.1.md)" in readme_cn
     assert "[v0.1.1 Release Notes](releases/v0.1.1.md)" in docs_index
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
     assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
+    assert (
+        "- [v0.1.2 Release Notes](releases/v0.1.2.md) — current supported surface,"
+        in docs_index
+    )
+    assert (
+        "- [v0.1.1 Release Notes](releases/v0.1.1.md) — historical console,"
+        in docs_index
+    )
+    assert "downstream-consumer and Agent evaluation contract gates." in docs_index
+    assert docs_index.count("current supported surface") == 1
+    assert (
+        "[v0.1.1 Release Notes](releases/v0.1.1.md) — current supported surface"
+        not in docs_index
+    )
     for forbidden in (
-        "v0.1.1 is published",
+        "v0.1.2 is published",
         "release tag created",
         "GitHub Release published",
         "deployment completed",

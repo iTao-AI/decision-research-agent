@@ -4,16 +4,6 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-## [0.1.2] - 2026-07-14
-
-### Run creation reliability
-
-- Added optional durable `Idempotency-Key` handling for run creation, including
-  atomic replay/conflict behavior, concurrent duplicate serialization, and
-  Tool Client recovery after a lost response.
-- Added a deterministic public reconciliation proof while explicitly excluding
-  crash-before-schedule recovery and exactly-once execution claims.
-
 ### Durable run dispatch
 
 - Added atomic `run_dispatches_v1` intent creation and migration
@@ -23,6 +13,16 @@ All notable changes to this project are documented in this file.
   asynchronous retry through three attempts, and deterministic public proof
   artifacts. `status: started` remains an acceptance acknowledgement; the
   contract does not claim exactly-once or running-execution recovery.
+
+## [0.1.2] - 2026-07-14
+
+### Run creation reliability
+
+- Added optional durable `Idempotency-Key` handling for run creation, including
+  atomic replay/conflict behavior, concurrent duplicate serialization, and
+  Tool Client recovery after a lost response.
+- Added a deterministic public reconciliation proof while explicitly excluding
+  crash-before-schedule recovery and exactly-once execution claims.
 
 ## [0.1.1] - 2026-07-13
 

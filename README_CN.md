@@ -242,6 +242,7 @@ python tools/decision_research_agent_tool.py doctor
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.3 Release Notes](docs/releases/v0.1.3.md)
 - [v0.1.2 Release Notes](docs/releases/v0.1.2.md)
 - [v0.1.1 Release Notes](docs/releases/v0.1.1.md)
 - [v0.1.0 Release Notes](docs/releases/v0.1.0.md)
@@ -250,7 +251,7 @@ python tools/decision_research_agent_tool.py doctor
 
 ## 已知边界
 
-- 当前 unreleased dispatch contract 增加 Agent invocation 前由应用拥有的
+- v0.1.3 dispatch contract 增加 Agent invocation 前由应用拥有的
   `run_dispatches_v1` reconciliation。历史 v0.1.2 identity proof 保持不变，
   其自身不证明 crash-before-schedule recovery；新的 dispatch proof 完成该
   有界证明。两者都不声称 exactly-once execution、running recovery、

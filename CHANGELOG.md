@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-14
+
 ### Durable run dispatch
 
 - Added atomic `run_dispatches_v1` intent creation and migration

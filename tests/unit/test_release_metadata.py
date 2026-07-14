@@ -12,6 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 V010_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.0.md"
 V011_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.1.md"
 V012_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.2.md"
+V013_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.3.md"
 PYTEST_FIXED_FLOOR = "9.0.3"
 
 
@@ -23,28 +24,34 @@ def test_current_release_version_is_consistent() -> None:
     package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
     lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
 
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.2"
-    assert package["version"] == "0.1.2"
-    assert lock["version"] == "0.1.2"
-    assert lock["packages"][""]["version"] == "0.1.2"
+    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.3"
+    assert package["version"] == "0.1.3"
+    assert lock["version"] == "0.1.3"
+    assert lock["packages"][""]["version"] == "0.1.3"
 
 
 def test_changelog_preserves_published_release_boundary() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     unreleased_heading = "## [Unreleased]"
+    v0_1_3_heading = "## [0.1.3] - 2026-07-14"
     v0_1_2_heading = "## [0.1.2] - 2026-07-14"
     v0_1_1_heading = "## [0.1.1] - 2026-07-13"
     v0_1_0_heading = "## [0.1.0] - 2026-06-28"
 
     assert unreleased_heading in changelog
+    assert v0_1_3_heading in changelog
     assert v0_1_2_heading in changelog
     assert v0_1_1_heading in changelog
     assert v0_1_0_heading in changelog
-    assert changelog.index(unreleased_heading) < changelog.index(v0_1_2_heading)
+    assert changelog.index(unreleased_heading) < changelog.index(v0_1_3_heading)
+    assert changelog.index(v0_1_3_heading) < changelog.index(v0_1_2_heading)
     assert changelog.index(v0_1_2_heading) < changelog.index(v0_1_1_heading)
     assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
 
-    unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_2_heading, 1)[0]
+    unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_3_heading, 1)[0]
+    assert unreleased.strip() == ""
+
+    v0_1_3 = changelog.split(v0_1_3_heading, 1)[1].split(v0_1_2_heading, 1)[0]
     durable_subsection = """### Durable run dispatch
 
 - Added atomic `run_dispatches_v1` intent creation and migration
@@ -54,13 +61,7 @@ def test_changelog_preserves_published_release_boundary() -> None:
   asynchronous retry through three attempts, and deterministic public proof
   artifacts. `status: started` remains an acceptance acknowledgement; the
   contract does not claim exactly-once or running-execution recovery."""
-    assert unreleased.count(durable_subsection) == 1
-
-    unreleased_with_future_entry = (
-        unreleased
-        + "\n### Future maintenance\n\n- A valid future Unreleased entry.\n"
-    )
-    assert unreleased_with_future_entry.count(durable_subsection) == 1
+    assert v0_1_3.strip() == durable_subsection
 
     v0_1_2 = changelog.split(v0_1_2_heading, 1)[1].split(v0_1_1_heading, 1)[0]
     assert "### Run creation reliability" in v0_1_2
@@ -107,7 +108,9 @@ def test_security_policy_matches_current_release_surface() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
 
     required = [
-        "Decision Research Agent v0.1.2",
+        "Decision Research Agent v0.1.3",
+        "single-node",
+        "run dispatch",
         "Agent Research Operations Console",
         "does not accept credentials",
         "not a publicly hosted service",
@@ -220,12 +223,47 @@ def test_v0_1_2_release_notes_cover_surface_compatibility_and_limits() -> None:
         assert phrase in notes
 
 
-def test_v0_1_2_release_is_discoverable_without_claiming_publication() -> None:
+def test_v0_1_3_release_notes_cover_surface_compatibility_and_limits() -> None:
+    notes = _read(V013_RELEASE_NOTES)
+
+    required = [
+        "# Decision Research Agent v0.1.3",
+        "## Supported Surface",
+        "## Changes",
+        "application-owned dispatch authority",
+        "before Agent invocation",
+        "exact start fencing",
+        "three attempts",
+        "startup",
+        "expired lease",
+        "deterministic public proof",
+        "status: started",
+        "acceptance acknowledgement",
+        "## Compatibility And Migration",
+        "008_run_dispatch_reconciliation",
+        "no backfill",
+        "## Rollback",
+        "## Required Verification",
+        "## Known Limits",
+        "exactly-once execution",
+        "running execution recovery",
+        "provider/tool side-effect exactly-once",
+        "multi-instance high availability",
+        "live-provider result",
+    ]
+    for phrase in required:
+        assert phrase in notes
+
+
+def test_v0_1_3_release_is_discoverable_without_claiming_publication() -> None:
     readme = _read(PROJECT_ROOT / "README.md")
     readme_cn = _read(PROJECT_ROOT / "README_CN.md")
     docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
-    combined = "\n".join((readme, readme_cn, docs_index, _read(V012_RELEASE_NOTES)))
+    combined = "\n".join((readme, readme_cn, docs_index, _read(V013_RELEASE_NOTES)))
 
+    assert "[v0.1.3 Release Notes](docs/releases/v0.1.3.md)" in readme
+    assert "[v0.1.3 Release Notes](docs/releases/v0.1.3.md)" in readme_cn
+    assert "[v0.1.3 Release Notes](releases/v0.1.3.md)" in docs_index
     assert "[v0.1.2 Release Notes](docs/releases/v0.1.2.md)" in readme
     assert "[v0.1.2 Release Notes](docs/releases/v0.1.2.md)" in readme_cn
     assert "[v0.1.2 Release Notes](releases/v0.1.2.md)" in docs_index
@@ -236,7 +274,11 @@ def test_v0_1_2_release_is_discoverable_without_claiming_publication() -> None:
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
     assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
     assert (
-        "- [v0.1.2 Release Notes](releases/v0.1.2.md) — current supported surface,"
+        "- [v0.1.3 Release Notes](releases/v0.1.3.md) — current supported surface,"
+        in docs_index
+    )
+    assert (
+        "- [v0.1.2 Release Notes](releases/v0.1.2.md) — historical run-creation"
         in docs_index
     )
     assert (
@@ -250,7 +292,8 @@ def test_v0_1_2_release_is_discoverable_without_claiming_publication() -> None:
         not in docs_index
     )
     for forbidden in (
-        "v0.1.2 is published",
+        "v0.1.3 is published",
+        "v0.1.3 tag created",
         "release tag created",
         "GitHub Release published",
         "deployment completed",

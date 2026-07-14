@@ -183,6 +183,9 @@ def _build_api_cases(db_path: str) -> tuple[dict[str, Any], dict[str, Any]]:
     with patch.dict(os.environ, environment, clear=False), patch.object(
         server, "create_tracked_task", capture_task
     ):
+        server.app.state.run_dispatch_worker = server.create_run_dispatch_worker(
+            db_path
+        )
         client = TestClient(server.app)
         first = client.post("/api/runs", json=body, headers=headers)
         first_identity = {

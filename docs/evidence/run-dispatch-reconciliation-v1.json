@@ -1,0 +1,128 @@
+{
+  "boundaries": {
+    "commit_before_execution_start_recovery": "proven",
+    "crash_before_schedule_recovery": "proven",
+    "exactly_once_execution": "not_claimed",
+    "live_provider_result": "not_observed",
+    "multi_instance_high_availability": "not_proven",
+    "provider_tool_side_effect_exactly_once": "not_claimed",
+    "running_execution_recovery": "not_proven",
+    "single_node_sqlite_dispatch_reconciliation": "proven"
+  },
+  "cases": [
+    {
+      "case_id": "atomic_create",
+      "observations": {
+        "dispatch_pending": true,
+        "run_pending": true,
+        "segment_pending": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "commit_before_schedule_recovery",
+      "observations": {
+        "agent_entries": 1,
+        "fresh_worker_claimed": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "handler_cancellation_recovery",
+      "observations": {
+        "agent_entries": 1,
+        "committed_identity_recovered": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "worker_restart_recovery",
+      "observations": {
+        "agent_entries": 1,
+        "second_worker_reclaimed": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "expired_lease_reclaim",
+      "observations": {
+        "attempt_count": 2,
+        "fresh_start_won": true,
+        "stale_start_blocked": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "concurrent_dispatch_fence",
+      "observations": {
+        "agent_entries": 1,
+        "winning_starts": 1
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "stale_task_blocked",
+      "observations": {
+        "fresh_agent_entries": 1,
+        "stale_agent_entries": 0
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "scheduler_exhaustion",
+      "observations": {
+        "attempt_count": 3,
+        "dispatch_failed": true,
+        "run_failed": true,
+        "segment_failed": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "keyed_replay_single_agent_entry",
+      "observations": {
+        "agent_entries": 1,
+        "replay_marked": true,
+        "same_identity": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "unkeyed_compatibility",
+      "observations": {
+        "dispatch_rows": 2,
+        "distinct_runs": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "contract_compatibility",
+      "observations": {
+        "agent_entries": 1,
+        "downstream_fixture_valid": true,
+        "result_shape_preserved": true,
+        "status_shape_preserved": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "migration_safety",
+      "observations": {
+        "exact_verification": true,
+        "existing_backup_protected": true,
+        "no_backfill": true,
+        "repeat_apply_safe": true,
+        "restore_on_failure": true
+      },
+      "status": "passed"
+    }
+  ],
+  "limits": [
+    "Deterministic single-node SQLite contract proof, not a provider or production measurement.",
+    "Recovery is proven only before application-owned execution start.",
+    "Agent, provider, and tool side effects remain outside an exactly-once guarantee."
+  ],
+  "schema_version": "dra.run-dispatch-reconciliation-proof.v1",
+  "source": "deterministic_local",
+  "status": "valid"
+}

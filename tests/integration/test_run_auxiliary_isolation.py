@@ -14,6 +14,23 @@ from api.server import app
 AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
 
 
+@pytest.fixture(autouse=True)
+def route_dispatch_worker(monkeypatch):
+    import api.server as server
+    from api.database import sqlite_db_path
+
+    class RouteWorker:
+        async def dispatch_run(self, run_id):
+            return await server.create_run_dispatch_worker(
+                sqlite_db_path()
+            ).dispatch_run(run_id)
+
+        def wake(self):
+            pass
+
+    monkeypatch.setattr(server.app.state, "run_dispatch_worker", RouteWorker())
+
+
 def test_same_thread_can_schedule_two_run_scoped_requests(tmp_path, monkeypatch):
     import api.server as server
 
@@ -42,8 +59,8 @@ def test_same_thread_can_schedule_two_run_scoped_requests(tmp_path, monkeypatch)
     assert second.status_code == 200
     assert first.json()["run_id"] != second.json()["run_id"]
     assert [task_id for _, task_id in scheduled] == [
-        first.json()["run_id"],
-        second.json()["run_id"],
+        f"{first.json()['run_id']}:dispatch:1",
+        f"{second.json()['run_id']}:dispatch:1",
     ]
 
     for coroutine, _ in scheduled:

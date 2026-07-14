@@ -213,6 +213,20 @@ def test_v0_1_2_release_is_discoverable_without_claiming_publication() -> None:
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
     assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
+    assert (
+        "- [v0.1.2 Release Notes](releases/v0.1.2.md) — current supported surface,"
+        in docs_index
+    )
+    assert (
+        "- [v0.1.1 Release Notes](releases/v0.1.1.md) — historical console,"
+        in docs_index
+    )
+    assert "downstream-consumer and Agent evaluation contract gates." in docs_index
+    assert docs_index.count("current supported surface") == 1
+    assert (
+        "[v0.1.1 Release Notes](releases/v0.1.1.md) — current supported surface"
+        not in docs_index
+    )
     for forbidden in (
         "v0.1.2 is published",
         "release tag created",

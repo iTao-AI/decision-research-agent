@@ -20,6 +20,66 @@ WORKER_1 = "dispatch_worker_00000000000000000000000000000001"
 WORKER_2 = "dispatch_worker_00000000000000000000000000000002"
 
 
+def _dispatch_failure_snapshot(db_path, *, run_id, segment_id):
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    try:
+        dispatch = connection.execute(
+            """
+            SELECT status, attempt_count, last_error_code, updated_at
+            FROM run_dispatches_v1 WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        run = connection.execute(
+            """
+            SELECT execution_status, state_version, updated_at
+            FROM research_runs_v2 WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        segment = connection.execute(
+            "SELECT status, updated_at FROM run_segments WHERE segment_id = ?",
+            (segment_id,),
+        ).fetchone()
+        cause = connection.execute(
+            """
+            SELECT observation_status, terminal_state_version, phase, code,
+                   recorded_at
+            FROM run_failure_causes_v1 WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+    return {
+        "dispatch": dict(dispatch),
+        "run": dict(run),
+        "segment": dict(segment),
+        "cause": dict(cause) if cause is not None else None,
+    }
+
+
+def _assert_dispatch_failure(snapshot, *, code):
+    assert snapshot["dispatch"]["status"] == "failed"
+    assert snapshot["dispatch"]["attempt_count"] == 3
+    assert snapshot["dispatch"]["last_error_code"] == code
+    assert snapshot["run"]["execution_status"] == "failed"
+    assert snapshot["run"]["state_version"] == 1
+    assert snapshot["segment"]["status"] == "failed"
+    assert snapshot["cause"] is not None
+    assert snapshot["cause"]["observation_status"] == "observed"
+    assert snapshot["cause"]["terminal_state_version"] == 1
+    assert snapshot["cause"]["phase"] == "dispatch"
+    assert snapshot["cause"]["code"] == code
+    assert {
+        snapshot["dispatch"]["updated_at"],
+        snapshot["run"]["updated_at"],
+        snapshot["segment"]["updated_at"],
+        snapshot["cause"]["recorded_at"],
+    } == {snapshot["cause"]["recorded_at"]}
+
+
 @pytest.mark.asyncio
 async def test_lifespan_unconditionally_starts_and_stops_dispatch_worker(
     tmp_path,
@@ -290,10 +350,82 @@ async def test_same_attempt_start_between_timeout_read_and_release_is_not_orphan
         timeout_seconds=1,
     )
 
-    dispatch = get_run_dispatch(db_path=db_path, run_id=created["run_id"])
-    run = get_run(db_path=db_path, run_id=created["run_id"])
-    assert dispatch["status"] == "started"
-    assert run["execution_status"] == "failed"
+    snapshot = _dispatch_failure_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    assert snapshot["dispatch"]["status"] == "started"
+    assert snapshot["run"]["execution_status"] == "failed"
+    assert snapshot["cause"] is None or snapshot["cause"]["phase"] != "dispatch"
+
+
+@pytest.mark.asyncio
+async def test_third_pre_start_timeout_records_dispatch_cause(tmp_path):
+    import api.server as server
+
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="query")
+
+    for attempt in (1, 2, 3):
+        claim = claim_run_dispatch(
+            db_path=db_path,
+            worker_id=WORKER_1,
+            lease_seconds=30,
+            run_id=created["run_id"],
+            now=datetime(2026, 7, 14, attempt, tzinfo=timezone.utc),
+        )
+        await server._mark_dispatched_timeout(
+            claim,
+            db_path=db_path,
+            outcome_box=server.OutcomeBox(),
+            timeout_seconds=1,
+        )
+
+    snapshot = _dispatch_failure_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    _assert_dispatch_failure(snapshot, code="run_dispatch_start_timeout")
+
+
+@pytest.mark.asyncio
+async def test_third_start_failure_records_dispatch_cause(tmp_path, monkeypatch):
+    import api.server as server
+
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="query")
+
+    def fail_start(**_kwargs):
+        raise RuntimeError("start fence unavailable")
+
+    monkeypatch.setattr(server, "start_run_dispatch", fail_start)
+    monkeypatch.setattr(
+        server,
+        "_run_started_v2_with_persistence",
+        lambda **_kwargs: pytest.fail("failed start must not enter the agent"),
+    )
+    for attempt in (1, 2, 3):
+        claim = claim_run_dispatch(
+            db_path=db_path,
+            worker_id=WORKER_1,
+            lease_seconds=30,
+            run_id=created["run_id"],
+            now=datetime(2026, 7, 14, attempt, tzinfo=timezone.utc),
+        )
+        await server._run_dispatched_with_persistence(
+            claim,
+            db_path=db_path,
+            outcome_box=server.OutcomeBox(),
+        )
+
+    snapshot = _dispatch_failure_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    _assert_dispatch_failure(snapshot, code="run_dispatch_start_failed")
 
 
 def test_route_post_commit_dispatch_failure_still_returns_ack(tmp_path, monkeypatch):

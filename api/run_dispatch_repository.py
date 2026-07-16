@@ -13,6 +13,7 @@ from api.run_dispatch_models import (
     RunDispatchClaim,
     RunDispatchConflict,
 )
+from api.run_failure_cause_models import RunFailureCauseWrite
 from api.run_repository import _connect, _now, init_run_schema
 
 
@@ -100,7 +101,9 @@ def claim_run_dispatch(
         raise ValueError("run_dispatch_worker_invalid")
     if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or lease_seconds <= 0:
         raise ValueError("run_dispatch_lease_invalid")
-    claimed_at = _require_aware(now or datetime.now(timezone.utc))
+    claimed_at = _require_aware(now or datetime.now(timezone.utc)).astimezone(
+        timezone.utc
+    )
     lease_expires_at = claimed_at + timedelta(seconds=lease_seconds)
     now_text = claimed_at.isoformat()
     lease_text = lease_expires_at.isoformat()
@@ -130,10 +133,15 @@ def claim_run_dispatch(
                 return None
             if joined["attempt_count"] < MAX_RUN_DISPATCH_ATTEMPTS:
                 break
+            if joined["attempt_count"] != MAX_RUN_DISPATCH_ATTEMPTS:
+                raise RunDispatchConflict("run_dispatch_state_invalid")
             if not _terminalize_leased_dispatch(
                 connection,
                 row=joined,
-                error_code="run_dispatch_lease_expired",
+                failure_cause=RunFailureCauseWrite(
+                    phase="dispatch",
+                    code="run_dispatch_lease_expired",
+                ),
                 now=now_text,
             ):
                 raise RunDispatchConflict("run_dispatch_state_invalid")
@@ -227,13 +235,15 @@ def _terminalize_leased_dispatch(
     connection: sqlite3.Connection,
     *,
     row: sqlite3.Row,
-    error_code: str,
+    failure_cause: RunFailureCauseWrite,
     now: str,
 ) -> bool:
     if (
         row["execution_status"] != "pending"
         or row["state_version"] != 0
         or row["segment_status"] != "pending"
+        or row["attempt_count"] != MAX_RUN_DISPATCH_ATTEMPTS
+        or failure_cause.phase != "dispatch"
     ):
         return False
     dispatch_cursor = connection.execute(
@@ -245,7 +255,7 @@ def _terminalize_leased_dispatch(
           AND lease_owner = ? AND attempt_count = ?
         """,
         (
-            error_code,
+            failure_cause.code,
             now,
             row["run_id"],
             row["lease_owner"],
@@ -269,11 +279,27 @@ def _terminalize_leased_dispatch(
         """,
         (now, row["segment_id"], row["run_id"]),
     )
-    return (
-        dispatch_cursor.rowcount == 1
-        and run_cursor.rowcount == 1
-        and segment_cursor.rowcount == 1
+    if (
+        dispatch_cursor.rowcount != 1
+        or run_cursor.rowcount != 1
+        or segment_cursor.rowcount != 1
+    ):
+        return False
+    cause_cursor = connection.execute(
+        """
+        INSERT INTO run_failure_causes_v1(
+            run_id, observation_status, terminal_state_version,
+            phase, code, recorded_at
+        ) VALUES (?, 'observed', 1, ?, ?, ?)
+        """,
+        (
+            row["run_id"],
+            failure_cause.phase,
+            failure_cause.code,
+            now,
+        ),
     )
+    return cause_cursor.rowcount == 1
 
 
 def start_run_dispatch(
@@ -351,9 +377,7 @@ def release_run_dispatch_for_retry(
         if (
             row is None
             or row["segment_id"] is None
-            or row["dispatch_status"] != "leased"
-            or row["lease_owner"] != claim.lease_owner
-            or row["attempt_count"] != claim.attempt_count
+            or not _claim_matches_joined(row, claim)
         ):
             connection.commit()
             return "stale"
@@ -375,10 +399,16 @@ def release_run_dispatch_for_retry(
             connection.commit()
             return "retry"
 
+        if claim.attempt_count != MAX_RUN_DISPATCH_ATTEMPTS:
+            connection.commit()
+            return "stale"
         if not _terminalize_leased_dispatch(
             connection,
             row=row,
-            error_code=error_code,
+            failure_cause=RunFailureCauseWrite(
+                phase="dispatch",
+                code=error_code,
+            ),
             now=now,
         ):
             connection.rollback()
@@ -396,7 +426,7 @@ def reconcile_run_dispatch_timeout(
     *,
     db_path: str | None,
     claim: RunDispatchClaim,
-) -> Literal["released", "started", "stale"]:
+) -> Literal["retry", "failed", "started", "stale"]:
     """Atomically classify or release the exact attempt after pre-start timeout."""
     init_run_schema(db_path)
     connection = _connect(db_path)
@@ -432,16 +462,78 @@ def reconcile_run_dispatch_timeout(
             if cursor.rowcount != 1:
                 connection.rollback()
                 return "stale"
-        elif not _terminalize_leased_dispatch(
+            connection.commit()
+            return "retry"
+        if claim.attempt_count != MAX_RUN_DISPATCH_ATTEMPTS:
+            connection.commit()
+            return "stale"
+        if not _terminalize_leased_dispatch(
             connection,
             row=row,
-            error_code="run_dispatch_start_timeout",
+            failure_cause=RunFailureCauseWrite(
+                phase="dispatch",
+                code="run_dispatch_start_timeout",
+            ),
             now=now,
         ):
             connection.rollback()
             return "stale"
         connection.commit()
-        return "released"
+        return "failed"
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def reconcile_run_dispatch_cancellation(
+    *,
+    db_path: str | None,
+    claim: RunDispatchClaim,
+) -> Literal["retry", "deferred", "started", "stale"]:
+    """Release retryable cancellation or defer the exact exhausted lease."""
+    init_run_schema(db_path)
+    connection = _connect(db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = _joined_claim_row(connection, run_id=claim.run_id)
+        if (
+            row is None
+            or row["segment_id"] is None
+            or not _claim_payload_matches_joined(row, claim)
+        ):
+            connection.commit()
+            return "stale"
+        if row["dispatch_status"] == "started":
+            connection.commit()
+            return "started"
+        if not _claim_matches_joined(row, claim):
+            connection.commit()
+            return "stale"
+
+        if claim.attempt_count < MAX_RUN_DISPATCH_ATTEMPTS:
+            now = _now()
+            cursor = connection.execute(
+                """
+                UPDATE run_dispatches_v1
+                SET status = 'pending', lease_owner = NULL, lease_expires_at = NULL,
+                    last_error_code = 'run_dispatch_interrupted', updated_at = ?
+                WHERE run_id = ? AND status = 'leased'
+                  AND lease_owner = ? AND attempt_count = ?
+                """,
+                (now, claim.run_id, claim.lease_owner, claim.attempt_count),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                return "stale"
+            connection.commit()
+            return "retry"
+        if claim.attempt_count != MAX_RUN_DISPATCH_ATTEMPTS:
+            connection.commit()
+            return "stale"
+        connection.commit()
+        return "deferred"
     except Exception:
         connection.rollback()
         raise

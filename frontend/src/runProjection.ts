@@ -102,7 +102,7 @@ export type RunProjection = Readonly<{
   review: ReviewPresenceProjection;
   verification?: VerificationSummaryProjection;
   currentPublication?: CurrentPublicationProjection;
-  currentArtifacts: readonly ArtifactMetadataProjection[];
+  currentArtifacts?: readonly ArtifactMetadataProjection[];
   failureCause: FailureCauseAvailability;
 }>;
 
@@ -143,17 +143,22 @@ const FAILURE_CAUSE_CODES = {
 
 type FailureCausePhase = keyof typeof FAILURE_CAUSE_CODES;
 
-export function parseRunProjection(value: unknown): RunProjection {
+export function parseRunProjection(value: unknown, expectedRunId?: string): RunProjection {
   const record = expectRecord(value);
+  const runId = expectString(record.run_id);
+  expectRunIdentity(runId, expectedRunId);
   const verification = hasOwn(record, "verification_summary")
     ? parseVerificationSummary(record.verification_summary)
     : undefined;
   const currentPublication = hasOwn(record, "current_publication")
     ? parseCurrentPublication(record.current_publication)
     : undefined;
+  const currentArtifacts = hasOwn(record, "current_artifacts")
+    ? Object.freeze(expectArray(record.current_artifacts).map(parseArtifactMetadata))
+    : undefined;
 
   return Object.freeze({
-    run_id: expectString(record.run_id),
+    run_id: runId,
     thread_id: expectString(record.thread_id),
     profile_id: expectString(record.profile_id),
     execution_status: expectString(record.execution_status),
@@ -169,19 +174,19 @@ export function parseRunProjection(value: unknown): RunProjection {
     }),
     ...(verification === undefined ? {} : { verification }),
     ...(currentPublication === undefined ? {} : { currentPublication }),
-    currentArtifacts: hasOwn(record, "current_artifacts")
-      ? Object.freeze(expectArray(record.current_artifacts).map(parseArtifactMetadata))
-      : Object.freeze([] as ArtifactMetadataProjection[]),
+    ...(currentArtifacts === undefined ? {} : { currentArtifacts }),
     failureCause: parseFailureCause(record)
   });
 }
 
-export function parseRunResult(value: unknown): RunResultResponse {
+export function parseRunResult(value: unknown, expectedRunId?: string): RunResultResponse {
   const record = expectRecord(value);
+  const runId = expectString(record.run_id);
+  expectRunIdentity(runId, expectedRunId);
   const artifact = expectRecord(record.artifact);
 
   return Object.freeze({
-    run_id: expectString(record.run_id),
+    run_id: runId,
     execution_status: expectString(record.execution_status),
     delivery_status: expectString(record.delivery_status),
     artifact: Object.freeze({
@@ -397,6 +402,12 @@ function parseStringArray(value: unknown): readonly string[] {
 
 function hasOwn(record: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function expectRunIdentity(actualRunId: string, expectedRunId: string | undefined) {
+  if (expectedRunId !== undefined && actualRunId !== expectedRunId) {
+    return invalidResponse();
+  }
 }
 
 function invalidResponse(): never {

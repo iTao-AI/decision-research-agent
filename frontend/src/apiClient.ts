@@ -52,7 +52,7 @@ export class ClientRequestError extends Error {
   }
 }
 
-const fetchLevelConnectionErrors = new WeakSet<ClientRequestError>();
+const ambiguousTransportErrors = new WeakSet<ClientRequestError>();
 
 export function createRunIntent(
   randomUUID: () => string = () => crypto.randomUUID()
@@ -124,6 +124,11 @@ export async function startRun(
   ) {
     throw new ClientRequestError(invalidResponse("Run creation response did not include run identity."));
   }
+  if (value.thread_id !== intent.payload.thread_id) {
+    throw new ClientRequestError(
+      invalidResponse("Run creation response did not match the requested thread identity.")
+    );
+  }
   return {
     run_id: value.run_id,
     segment_id: value.segment_id,
@@ -144,7 +149,7 @@ export async function getRun(
     { method: "GET", signal }
   );
   try {
-    return parseRunProjection(value);
+    return parseRunProjection(value, runId);
   } catch {
     throw new ClientRequestError(
       invalidResponse("Run projection selected fields were malformed.")
@@ -163,7 +168,7 @@ export async function getResult(
     { method: "GET", signal }
   );
   try {
-    return parseRunResult(value);
+    return parseRunResult(value, runId);
   } catch {
     throw new ClientRequestError(
       invalidResponse("Canonical result selected fields were malformed.")
@@ -190,7 +195,7 @@ export function isAmbiguousCreateError(error: unknown) {
     isAbortError(error) ||
     (error instanceof ClientRequestError &&
       error.details.code === "connection_failed" &&
-      fetchLevelConnectionErrors.has(error))
+      ambiguousTransportErrors.has(error))
   );
 }
 
@@ -203,7 +208,7 @@ async function requestJson<T>(baseUrl: string, path: string, init?: RequestInit)
       throw error;
     }
     const clientError = new ClientRequestError(normalizeClientError(error));
-    fetchLevelConnectionErrors.add(clientError);
+    ambiguousTransportErrors.add(clientError);
     throw clientError;
   }
 
@@ -246,7 +251,15 @@ function buildUrl(baseUrl: string, path: string) {
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    if (error instanceof TypeError) {
+      const clientError = new ClientRequestError(normalizeClientError(error));
+      ambiguousTransportErrors.add(clientError);
+      throw clientError;
+    }
     return null;
   }
 }

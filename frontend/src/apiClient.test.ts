@@ -73,6 +73,23 @@ describe("keyed live run creation", () => {
     expect(String(request.body)).not.toContain(intent.idempotencyKey);
   });
 
+  it("rejects a create acknowledgement for a different thread identity", async () => {
+    const intent = createRunIntent(() => FIXED_UUID);
+    stubFetch(
+      jsonResponse({
+        run_id: "run_live_wrong_thread",
+        segment_id: "run_live_wrong_thread_seg_000",
+        status: "started",
+        thread_id: "demo-console-different-thread",
+        idempotent_replay: false
+      })
+    );
+
+    const error = await captureError(startRun(BASE_URL, intent));
+
+    expect(error).toMatchObject({ details: { code: "invalid_response" } });
+  });
+
   it.each([undefined, "false", 0, null])(
     "rejects a non-boolean idempotent_replay value: %s",
     async (idempotentReplay) => {
@@ -106,6 +123,33 @@ describe("keyed live run creation", () => {
 
   it("marks a pre-acknowledgement AbortError ambiguous", () => {
     expect(isAmbiguousCreateError(new DOMException("Aborted", "AbortError"))).toBe(true);
+  });
+
+  it.each([
+    ["transport failure", new TypeError("response body stream failed")],
+    ["abort", new DOMException("Aborted", "AbortError")]
+  ])("marks a create response body-read %s ambiguous", async (_label, bodyError) => {
+    const intent = createRunIntent(() => FIXED_UUID);
+    stubFetch(jsonReadFailureResponse(bodyError));
+
+    const error = await captureError(startRun(BASE_URL, intent));
+
+    expect(isAmbiguousCreateError(error)).toBe(true);
+  });
+
+  it("keeps malformed create JSON as a bounded stable invalid_response", async () => {
+    const intent = createRunIntent(() => FIXED_UUID);
+    stubFetch(
+      new Response("{not-json", {
+        headers: { "Content-Type": "application/json" },
+        status: 200
+      })
+    );
+
+    const error = await captureError(startRun(BASE_URL, intent));
+
+    expect(error).toMatchObject({ details: { code: "invalid_response" } });
+    expect(isAmbiguousCreateError(error)).toBe(false);
   });
 
   it.each([
@@ -205,10 +249,10 @@ describe("strict live response parsing", () => {
       ],
       evidence: [],
       review: { workflow: null, decision: null, resolution: null },
-      currentArtifacts: [],
       failureCause: { kind: "not_applicable" }
     });
     expect("query" in run).toBe(false);
+    expect("currentArtifacts" in run).toBe(false);
     expect(Object.isFrozen(run)).toBe(true);
   });
 
@@ -237,6 +281,30 @@ describe("strict live response parsing", () => {
     expect(JSON.stringify((error as ClientRequestError).details)).not.toContain(
       "opaque selected-field leak"
     );
+  });
+
+  it("rejects a status response for a different requested run", async () => {
+    stubFetch(
+      jsonResponse({
+        run_id: "run_live_wrong",
+        thread_id: "demo-console-thread",
+        profile_id: "generic",
+        execution_status: "completed",
+        review_status: "not_required",
+        delivery_status: "ready",
+        state_version: 2,
+        segments: [],
+        evidence: [],
+        review_workflow: null,
+        review_decision: null,
+        review_resolution: null,
+        failure_cause: null
+      })
+    );
+
+    const error = await captureError(getRun(BASE_URL, "run_live_expected"));
+
+    expect(error).toMatchObject({ details: { code: "invalid_response" } });
   });
 
   it("returns only the parsed immutable canonical result", async () => {
@@ -299,6 +367,27 @@ describe("strict live response parsing", () => {
       "opaque artifact leak"
     );
   });
+
+  it("rejects a canonical result for a different requested run", async () => {
+    stubFetch(
+      jsonResponse({
+        run_id: "run_live_wrong",
+        execution_status: "completed",
+        delivery_status: "ready",
+        artifact: {
+          artifact_id: "research-report.md",
+          kind: "research_report_markdown",
+          media_type: "text/markdown",
+          content: "# Wrong run result",
+          content_hash: "sha256:wrong"
+        }
+      })
+    );
+
+    const error = await captureError(getResult(BASE_URL, "run_live_expected"));
+
+    expect(error).toMatchObject({ details: { code: "invalid_response" } });
+  });
 });
 
 function jsonResponse(body: unknown, status = 200) {
@@ -306,6 +395,14 @@ function jsonResponse(body: unknown, status = 200) {
     headers: { "Content-Type": "application/json" },
     status
   });
+}
+
+function jsonReadFailureResponse(error: unknown): Response {
+  return {
+    json: () => Promise.reject(error),
+    ok: true,
+    status: 200
+  } as Response;
 }
 
 function stubFetch(response: Response | Promise<Response>) {

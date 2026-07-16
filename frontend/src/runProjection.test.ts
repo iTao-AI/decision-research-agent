@@ -90,7 +90,6 @@ describe("parseRunProjection", () => {
         decision: null,
         resolution: null
       },
-      currentArtifacts: [],
       failureCause: { kind: "not_applicable" }
     });
     expect("query" in projection).toBe(false);
@@ -102,8 +101,24 @@ describe("parseRunProjection", () => {
     expect(Object.isFrozen(projection.evidence)).toBe(true);
     expect(Object.isFrozen(projection.evidence[0])).toBe(true);
     expect(Object.isFrozen(projection.review)).toBe(true);
-    expect(Object.isFrozen(projection.currentArtifacts)).toBe(true);
+    expect("currentArtifacts" in projection).toBe(false);
     expect(Object.isFrozen(projection.failureCause)).toBe(true);
+  });
+
+  it("distinguishes absent current artifacts from an observed empty list", () => {
+    const absent = parseRunProjection(structuredClone(STATUS));
+    const explicitEmpty = parseRunProjection({
+      ...structuredClone(STATUS),
+      current_artifacts: []
+    });
+
+    expect("currentArtifacts" in absent).toBe(false);
+    expect(explicitEmpty.currentArtifacts).toEqual([]);
+    expect(Object.isFrozen(explicitEmpty.currentArtifacts)).toBe(true);
+  });
+
+  it("rejects a run projection that does not match the requested run identity", () => {
+    expectInvalid(() => parseRunProjection(structuredClone(STATUS), "run_expected"));
   });
 
   it.each([
@@ -225,7 +240,7 @@ describe("parseRunProjection", () => {
     expect(Object.isFrozen(projection.verification?.origin_counts)).toBe(true);
     expect(Object.isFrozen(projection.currentPublication)).toBe(true);
     expect(Object.isFrozen(projection.currentPublication?.artifact_ids)).toBe(true);
-    expect(Object.isFrozen(projection.currentArtifacts[0])).toBe(true);
+    expect(Object.isFrozen(projection.currentArtifacts?.[0])).toBe(true);
   });
 
   it.each(["review_workflow", "review_decision", "review_resolution"])(
@@ -470,6 +485,10 @@ describe("parseRunResult", () => {
     expect("local_path" in result.artifact).toBe(false);
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.artifact)).toBe(true);
+  });
+
+  it("rejects a canonical result that does not match the requested run identity", () => {
+    expectInvalid(() => parseRunResult(structuredClone(RESULT), "run_expected"));
   });
 
   it.each([

@@ -269,6 +269,21 @@ describe("Live observation semantics", () => {
     expect(Object.isFrozen(observedValue(observedEmpty))).toBe(true);
   });
 
+  it("distinguishes absent current artifacts from an observed empty list", () => {
+    const runWithoutArtifacts = { ...LIVE_RUN } as unknown as Record<string, unknown>;
+    delete runWithoutArtifacts.currentArtifacts;
+    const absent = buildLiveConsoleProjection(
+      liveInput({ run: runWithoutArtifacts as RunProjection, status: "terminal" })
+    ).command.artifacts;
+    const explicitEmpty = buildLiveConsoleProjection(
+      liveInput({ run: { ...LIVE_RUN, currentArtifacts: [] }, status: "terminal" })
+    ).command.artifacts;
+
+    expect(absent).toEqual({ kind: "not_observed" });
+    expect(explicitEmpty).toEqual({ kind: "observed", value: [] });
+    expect(Object.isFrozen(observedValue(explicitEmpty))).toBe(true);
+  });
+
   it("accepts canonical result content only from the supplied RunResultResponse", () => {
     const withoutResult = buildLiveConsoleProjection(
       liveInput({ run: LIVE_RUN, status: "polling" })

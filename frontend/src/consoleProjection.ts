@@ -381,7 +381,7 @@ function copyPublication(publication: CurrentPublicationProjection): Publication
 function buildArtifactObservation(
   run: RunProjection | undefined
 ): Observation<readonly ArtifactMetadataView[]> {
-  if (run === undefined) {
+  if (run === undefined || run.currentArtifacts === undefined) {
     return notObserved();
   }
   return observed(freezeArray(run.currentArtifacts.map(copyArtifactMetadata)));

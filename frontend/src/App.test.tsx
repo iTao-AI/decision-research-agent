@@ -1,8 +1,15 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+
+const BASE_URL = "http://127.0.0.1:8000";
+const FIXED_UUID = "11111111-2222-4333-8444-555555555555";
+
+beforeEach(() => {
+  vi.spyOn(crypto, "randomUUID").mockReturnValue(FIXED_UUID);
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -80,6 +87,30 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.queryByPlaceholderText(/message|chat|输入消息|聊天/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: /message|chat|输入消息|聊天/i })).not.toBeInTheDocument();
     expect(document.querySelector(".chat-bubble")).not.toBeInTheDocument();
+  });
+
+  it("lets each definition row span the parent grid and own its two-column layout", () => {
+    const process = (
+      globalThis as typeof globalThis & {
+        process: {
+          cwd(): string;
+          getBuiltinModule(name: "fs"): {
+            readFileSync(path: string, encoding: "utf8"): string;
+          };
+        };
+      }
+    ).process;
+    const styles = process
+      .getBuiltinModule("fs")
+      .readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+    const definitionRowRule = styles.match(/\.definition-row\s*\{([^}]*)\}/)?.[1];
+
+    expect(definitionRowRule).toBeDefined();
+    expect(definitionRowRule).toMatch(/grid-column:\s*1\s*\/\s*-1/);
+    expect(definitionRowRule).toMatch(/display:\s*grid/);
+    expect(definitionRowRule).toMatch(
+      /grid-template-columns:\s*minmax\(120px,\s*0\.45fr\)\s+minmax\(0,\s*1fr\)/
+    );
   });
 
   it("shows static demo data for lifecycle, evidence, review, verification, and result", async () => {
@@ -220,7 +251,7 @@ describe("Decision Research Agent demo console", () => {
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
       jsonResponse({
         status: "started",
-        thread_id: "demo-ui-thread",
+        thread_id: `demo-console-${FIXED_UUID}`,
         run_id: "run_live_001",
         segment_id: "run_live_001_seg_000",
         idempotent_replay: false
@@ -261,7 +292,7 @@ describe("Decision Research Agent demo console", () => {
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
       jsonResponse({
         status: "started",
-        thread_id: "demo-ui-thread",
+        thread_id: `demo-console-${FIXED_UUID}`,
         run_id: "run_live_fallback",
         segment_id: "run_live_fallback_seg_000",
         idempotent_replay: false
@@ -299,7 +330,7 @@ describe("Decision Research Agent demo console", () => {
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
       jsonResponse({
         status: "started",
-        thread_id: "demo-ui-thread",
+        thread_id: `demo-console-${FIXED_UUID}`,
         run_id: "run_live_hanging",
         segment_id: "run_live_hanging_seg_000",
         idempotent_replay: false
@@ -331,7 +362,7 @@ describe("Decision Research Agent demo console", () => {
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
       jsonResponse({
         status: "started",
-        thread_id: "demo-ui-thread",
+        thread_id: `demo-console-${FIXED_UUID}`,
         run_id: "run_live_deadline",
         segment_id: "run_live_deadline_seg_000",
         idempotent_replay: false
@@ -502,6 +533,48 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.getByText("not_required")).toBeInTheDocument();
     expect(screen.getAllByText("不适用").length).toBeGreaterThan(0);
     expect(screen.getAllByText("尚未观察到").length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["absent", undefined, "尚未观察到"],
+    ["explicit empty", [], "已观察：列表为空"]
+  ])("renders current artifact metadata as %s", async (_label, currentArtifacts, expected) => {
+    const user = userEvent.setup();
+    const runId = "run_live_artifact_availability";
+    mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse({
+        status: "started",
+        thread_id: `demo-console-${FIXED_UUID}`,
+        run_id: runId,
+        segment_id: `${runId}_seg_000`,
+        idempotent_replay: false
+      }),
+      jsonResponse({
+        ...runStatus(runId, "failed", "blocked"),
+        ...(currentArtifacts === undefined ? {} : { current_artifacts: currentArtifacts })
+      })
+    ]);
+
+    render(
+      <App
+        liveOptions={{
+          pollIntervalMs: 1,
+          randomUUID: () => FIXED_UUID,
+          waitTimeoutMs: 100
+        }}
+      />
+    );
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findAllByText(runId);
+
+    const heading = screen.getByRole("heading", { name: "Artifact metadata" });
+    const card = heading.closest("article");
+    if (!card) {
+      throw new Error("Expected Artifact metadata card.");
+    }
+    expect(within(card).getByText(expected)).toBeInTheDocument();
   });
 
   it.each(["failed", "cancelled", "timeout", "review_required", "blocked"])(
@@ -701,8 +774,6 @@ describe("Decision Research Agent demo console", () => {
   });
 });
 
-const BASE_URL = "http://127.0.0.1:8000";
-
 async function enterLiveMode(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "真实后端" }));
   await user.click(screen.getByRole("button", { name: "检查后端" }));
@@ -736,7 +807,7 @@ function completedLiveSequence(runId: string, content: string) {
     jsonResponse({ status: "ok", service: "decision-research-agent" }),
     jsonResponse({
       status: "started",
-      thread_id: "demo-ui-thread",
+      thread_id: `demo-console-${FIXED_UUID}`,
       run_id: runId,
       segment_id: `${runId}_seg_000`,
       idempotent_replay: false
@@ -769,7 +840,7 @@ function completedAuthoritySequence(runId: string) {
 function createAcknowledgement(runId: string, idempotentReplay: boolean) {
   return {
     status: "started",
-    thread_id: "thread_live_authority",
+    thread_id: `demo-console-${FIXED_UUID}`,
     run_id: runId,
     segment_id: "segment_live_authority",
     idempotent_replay: idempotentReplay
@@ -794,7 +865,7 @@ function runResult(runId: string, content: string) {
 function authorityRunStatus(runId: string) {
   return {
     ...runStatus(runId, "completed", "ready"),
-    thread_id: "thread_live_authority",
+    thread_id: `demo-console-${FIXED_UUID}`,
     review_status: "approved",
     state_version: 42,
     segments: [
@@ -878,7 +949,7 @@ function authorityRunStatus(runId: string) {
 function runStatus(runId: string, executionStatus: string, deliveryStatus: string) {
   return {
     run_id: runId,
-    thread_id: "demo-ui-thread",
+    thread_id: `demo-console-${FIXED_UUID}`,
     profile_id: "generic",
     execution_status: executionStatus,
     review_status: "not_required",

@@ -100,6 +100,81 @@ describe("useLiveRun", () => {
     ]);
   });
 
+  it("rejects a create acknowledgement for a different intent thread", async () => {
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse({
+        ...createAcknowledgement("run_live_wrong_thread", false),
+        thread_id: "demo-console-different-thread"
+      })
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.startNewRun();
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(result.current.state.error?.code).toBe("invalid_response");
+    expect(result.current.state.created).toBeUndefined();
+    expect(result.current.state.run).toBeUndefined();
+    expect(requests).toHaveLength(2);
+  });
+
+  it("rejects a status projection for a different acknowledged run", async () => {
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_expected", false)),
+      jsonResponse(runStatus("run_live_wrong", "failed", "blocked"))
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.startNewRun();
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(result.current.state.error).toMatchObject({
+      code: "invalid_response",
+      run_id: "run_live_expected"
+    });
+    expect(result.current.state.created?.run_id).toBe("run_live_expected");
+    expect(result.current.state.run).toBeUndefined();
+    expect(requests).toHaveLength(3);
+  });
+
+  it("rejects a canonical result for a different acknowledged run", async () => {
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_expected", false)),
+      jsonResponse(runStatus("run_live_expected", "completed", "ready")),
+      jsonResponse(runResult("run_live_wrong"))
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.startNewRun();
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(result.current.state.error).toMatchObject({
+      code: "invalid_response",
+      run_id: "run_live_expected"
+    });
+    expect(result.current.state.run?.run_id).toBe("run_live_expected");
+    expect(result.current.state.result).toBeUndefined();
+    expect(requests).toHaveLength(4);
+  });
+
   it("retries an ambiguous create with the same immutable body and key", async () => {
     const requests = mockFetchSequence([
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
@@ -136,6 +211,41 @@ describe("useLiveRun", () => {
     );
     expect(createRequests[0].headers.get("Idempotency-Key")).toBe(
       `run-create-console-${FIXED_UUID}`
+    );
+  });
+
+  it("retries a create body-read transport failure with the same body and key", async () => {
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonReadFailure(new TypeError("create response body stream failed")),
+      jsonResponse(createAcknowledgement("run_live_body_replayed", true)),
+      jsonResponse(runStatus("run_live_body_replayed", "completed", "ready")),
+      jsonResponse(runResult("run_live_body_replayed"))
+    ]);
+    const randomUUID = vi.fn(() => FIXED_UUID);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.startNewRun();
+    });
+
+    expect(result.current.state.status).toBe("reconciliation_required");
+    expect(result.current.state.error?.code).toBe("connection_failed");
+
+    await act(async () => {
+      await result.current.retryCreate();
+    });
+
+    expect(result.current.state.status).toBe("result");
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+    const createRequests = requests.filter(({ method }) => method === "POST");
+    expect(createRequests).toHaveLength(2);
+    expect(createRequests[1].body).toBe(createRequests[0].body);
+    expect(createRequests[1].headers.get("Idempotency-Key")).toBe(
+      createRequests[0].headers.get("Idempotency-Key")
     );
   });
 
@@ -623,6 +733,15 @@ function jsonResponseValue(body: unknown, status = 200) {
     headers: { "Content-Type": "application/json" },
     status
   });
+}
+
+function jsonReadFailure(error: unknown): FetchStep {
+  return () =>
+    Promise.resolve({
+      json: () => Promise.reject(error),
+      ok: true,
+      status: 200
+    } as Response);
 }
 
 function createAcknowledgement(runId: string, idempotentReplay: boolean) {

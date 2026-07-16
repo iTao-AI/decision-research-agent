@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   DEFAULT_BACKEND_BASE_URL,
   ClientRequestError,
+  createRunIntent,
   getHealth,
   getResult,
   getRun,
@@ -146,7 +147,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       status: "starting"
     }));
     try {
-      const created = await startRun(baseUrl, deadline.signal);
+      const created = await startRun(baseUrl, createRunIntent(), deadline.signal);
       activeRunId = created.run_id;
       if (!isCurrent(version)) {
         return;

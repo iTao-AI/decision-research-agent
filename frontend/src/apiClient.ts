@@ -1,4 +1,6 @@
 export const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8000";
+export const LIVE_DEMO_QUERY =
+  "Generate a short evidence-bound result for the Agent Research Operations Console.";
 
 export type ClientError = {
   code: string;
@@ -14,11 +16,22 @@ export type HealthResponse = {
   status: string;
 };
 
+export type RunCreateIntent = Readonly<{
+  idempotencyKey: string;
+  payload: Readonly<{
+    query: string;
+    thread_id: string;
+    profile_id: "generic";
+    scope: Readonly<Record<string, never>>;
+  }>;
+}>;
+
 export type RunCreationResponse = {
   run_id: string;
   segment_id: string;
   status: string;
   thread_id: string;
+  idempotent_replay: boolean;
 };
 
 export type RunProjection = {
@@ -49,6 +62,23 @@ export class ClientRequestError extends Error {
     super(details.code);
     this.details = details;
   }
+}
+
+const fetchLevelConnectionErrors = new WeakSet<ClientRequestError>();
+
+export function createRunIntent(
+  randomUUID: () => string = () => crypto.randomUUID()
+): RunCreateIntent {
+  const uuid = randomUUID();
+  return Object.freeze({
+    idempotencyKey: `run-create-console-${uuid}`,
+    payload: Object.freeze({
+      query: LIVE_DEMO_QUERY,
+      thread_id: `demo-console-${uuid}`,
+      profile_id: "generic" as const,
+      scope: Object.freeze({})
+    })
+  });
 }
 
 export async function getHealth(baseUrl: string, signal?: AbortSignal): Promise<HealthResponse> {
@@ -83,15 +113,17 @@ export async function getHealth(baseUrl: string, signal?: AbortSignal): Promise<
   };
 }
 
-export async function startRun(baseUrl: string, signal?: AbortSignal): Promise<RunCreationResponse> {
+export async function startRun(
+  baseUrl: string,
+  intent: RunCreateIntent,
+  signal?: AbortSignal
+): Promise<RunCreationResponse> {
   const value = await requestJson<Partial<RunCreationResponse>>(baseUrl, "/api/runs", {
-    body: JSON.stringify({
-      profile_id: "generic",
-      query: "Generate a short evidence-bound result for the Agent Research Operations Console.",
-      scope: {},
-      thread_id: `demo-console-${Date.now()}`
-    }),
-    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(intent.payload),
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": intent.idempotencyKey
+    },
     method: "POST",
     signal
   });
@@ -99,7 +131,8 @@ export async function startRun(baseUrl: string, signal?: AbortSignal): Promise<R
     typeof value.run_id !== "string" ||
     typeof value.segment_id !== "string" ||
     typeof value.status !== "string" ||
-    typeof value.thread_id !== "string"
+    typeof value.thread_id !== "string" ||
+    typeof value.idempotent_replay !== "boolean"
   ) {
     throw new ClientRequestError(invalidResponse("Run creation response did not include run identity."));
   }
@@ -107,7 +140,8 @@ export async function startRun(baseUrl: string, signal?: AbortSignal): Promise<R
     run_id: value.run_id,
     segment_id: value.segment_id,
     status: value.status,
-    thread_id: value.thread_id
+    thread_id: value.thread_id,
+    idempotent_replay: value.idempotent_replay
   };
 }
 
@@ -168,6 +202,15 @@ export function normalizeClientError(error: unknown, runId?: string): ClientErro
   };
 }
 
+export function isAmbiguousCreateError(error: unknown) {
+  return (
+    isAbortError(error) ||
+    (error instanceof ClientRequestError &&
+      error.details.code === "connection_failed" &&
+      fetchLevelConnectionErrors.has(error))
+  );
+}
+
 async function requestJson<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -176,7 +219,9 @@ async function requestJson<T>(baseUrl: string, path: string, init?: RequestInit)
     if (isAbortError(error)) {
       throw error;
     }
-    throw new ClientRequestError(normalizeClientError(error));
+    const clientError = new ClientRequestError(normalizeClientError(error));
+    fetchLevelConnectionErrors.add(clientError);
+    throw clientError;
   }
 
   const body = await readJson(response);

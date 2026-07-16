@@ -213,7 +213,8 @@ describe("Decision Research Agent demo console", () => {
         status: "started",
         thread_id: "demo-ui-thread",
         run_id: "run_live_001",
-        segment_id: "run_live_001_seg_000"
+        segment_id: "run_live_001_seg_000",
+        idempotent_replay: false
       }),
       jsonResponse({
         run_id: "run_live_001",
@@ -257,7 +258,8 @@ describe("Decision Research Agent demo console", () => {
         status: "started",
         thread_id: "demo-ui-thread",
         run_id: "run_live_fallback",
-        segment_id: "run_live_fallback_seg_000"
+        segment_id: "run_live_fallback_seg_000",
+        idempotent_replay: false
       }),
       jsonResponse({
         run_id: "run_live_fallback",
@@ -295,7 +297,8 @@ describe("Decision Research Agent demo console", () => {
         status: "started",
         thread_id: "demo-ui-thread",
         run_id: "run_live_hanging",
-        segment_id: "run_live_hanging_seg_000"
+        segment_id: "run_live_hanging_seg_000",
+        idempotent_replay: false
       }),
       (_input, init) => {
         pollSignal = init?.signal ?? undefined;
@@ -326,7 +329,8 @@ describe("Decision Research Agent demo console", () => {
         status: "started",
         thread_id: "demo-ui-thread",
         run_id: "run_live_deadline",
-        segment_id: "run_live_deadline_seg_000"
+        segment_id: "run_live_deadline_seg_000",
+        idempotent_replay: false
       }),
       jsonResponse({
         run_id: "run_live_deadline",
@@ -472,7 +476,8 @@ function completedLiveSequence(runId: string, content: string) {
       status: "started",
       thread_id: "demo-ui-thread",
       run_id: runId,
-      segment_id: `${runId}_seg_000`
+      segment_id: `${runId}_seg_000`,
+      idempotent_replay: false
     }),
     jsonResponse({
       run_id: runId,

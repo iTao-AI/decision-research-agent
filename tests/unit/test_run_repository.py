@@ -780,3 +780,62 @@ def test_key_binding_failure_rolls_back_run_segment_and_dispatch(tmp_path):
         assert connection.execute("SELECT COUNT(*) FROM run_create_idempotency_v1").fetchone()[0] == 0
     finally:
         connection.close()
+
+
+def test_run_creation_rejects_missing_or_wrong_009_marker_before_insert(
+    tmp_path,
+    monkeypatch,
+):
+    import api.run_repository as repository
+    from api.run_failure_cause_models import (
+        RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,
+        RUN_FAILURE_CAUSE_MIGRATION_VERSION,
+        RunFailureCauseConflict,
+    )
+
+    db_path = str(tmp_path / "runs.db")
+    repository.init_run_schema(db_path)
+    monkeypatch.setattr(repository, "init_run_schema", lambda _path: None)
+
+    for checksum in (None, "wrong"):
+        connection = sqlite3.connect(db_path)
+        try:
+            with connection:
+                connection.execute(
+                    "DELETE FROM schema_migrations WHERE version = ?",
+                    (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+                )
+                if checksum is not None:
+                    connection.execute(
+                        """
+                        INSERT INTO schema_migrations(version, applied_at, checksum)
+                        VALUES (?, '2026-07-16T00:00:00+00:00', ?)
+                        """,
+                        (RUN_FAILURE_CAUSE_MIGRATION_VERSION, checksum),
+                    )
+        finally:
+            connection.close()
+
+        with pytest.raises(
+            RunFailureCauseConflict,
+            match="run_failure_cause_unavailable",
+        ):
+            repository.create_run(
+                db_path=db_path,
+                thread_id="thread-1",
+                query="query",
+            )
+
+        connection = sqlite3.connect(db_path)
+        try:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM research_runs_v2"
+            ).fetchone()[0] == 0
+            assert connection.execute(
+                "SELECT COUNT(*) FROM run_segments"
+            ).fetchone()[0] == 0
+            assert connection.execute(
+                "SELECT COUNT(*) FROM run_dispatches_v1"
+            ).fetchone()[0] == 0
+        finally:
+            connection.close()

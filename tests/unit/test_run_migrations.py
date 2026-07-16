@@ -13,6 +13,216 @@ from api.run_migrations import (
 from api.review_repository import init_review_schema
 
 
+RUN_FAILURE_CAUSE_MIGRATION_VERSION = "009_run_failure_cause_v1"
+RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM = "run-failure-cause-v1"
+RUN_FAILURE_CAUSE_TABLE_SQL = """
+CREATE TABLE run_failure_causes_v1 (
+    run_id TEXT NOT NULL PRIMARY KEY
+        REFERENCES research_runs_v2(run_id) ON DELETE CASCADE,
+    observation_status TEXT NOT NULL
+        CHECK(observation_status IN ('observed', 'not_observed')),
+    terminal_state_version INTEGER,
+    phase TEXT,
+    code TEXT,
+    recorded_at TEXT,
+    CHECK(
+        (
+            observation_status = 'not_observed'
+            AND terminal_state_version IS NULL
+            AND phase IS NULL
+            AND code IS NULL
+            AND recorded_at IS NULL
+        )
+        OR
+        (
+            observation_status = 'observed'
+            AND typeof(terminal_state_version) = 'integer'
+            AND terminal_state_version > 0
+            AND phase IS NOT NULL
+            AND code IS NOT NULL
+            AND recorded_at IS NOT NULL
+            AND (
+                (phase = 'dispatch' AND code IN (
+                    'run_dispatch_schedule_failed',
+                    'run_dispatch_start_failed',
+                    'run_dispatch_start_timeout',
+                    'run_dispatch_lease_expired'
+                ))
+                OR
+                (phase = 'execution' AND code IN (
+                    'call_budget_exceeded',
+                    'recursion_limit_exceeded',
+                    'invalid_research_packet',
+                    'missing_research_packet',
+                    'run_timeout',
+                    'cancelled',
+                    'execution_error'
+                ))
+                OR
+                (phase = 'finalization' AND code IN (
+                    'run_timeout',
+                    'cancelled',
+                    'run_finalization_failed'
+                ))
+            )
+        )
+    )
+)
+"""
+
+
+def _database_dump(db_path):
+    connection = sqlite3.connect(db_path)
+    try:
+        return "\n".join(connection.iterdump())
+    finally:
+        connection.close()
+
+
+def _failure_backup_path(db_path):
+    return Path(f"{db_path}.pre-run-failure-cause.bak")
+
+
+def _remove_failure_cause_migration(db_path):
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute("DROP TABLE IF EXISTS run_failure_causes_v1")
+            has_markers = connection.execute(
+                """
+                SELECT 1 FROM sqlite_master
+                WHERE type = 'table' AND name = 'schema_migrations'
+                """
+            ).fetchone()
+            if has_markers is not None:
+                connection.execute(
+                    "DELETE FROM schema_migrations WHERE version = ?",
+                    (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+                )
+    finally:
+        connection.close()
+    _failure_backup_path(db_path).unlink(missing_ok=True)
+
+
+def _seed_pre_009_runs(db_path, *, statuses=()):
+    init_legacy_db(db_path).close()
+    migrate_with_backup(
+        db_path=db_path,
+        backup_path=f"{db_path}.pre-seed-chain.bak",
+    )
+    _remove_failure_cause_migration(db_path)
+
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            for index, status in enumerate(statuses):
+                run_id = f"run_{status}_{index}"
+                now = f"2026-07-15T00:00:0{index}+00:00"
+                state_version = 3 if status == "failed" else 0
+                delivery_status = (
+                    "ready"
+                    if status in {"completed", "completed_with_fallback"}
+                    else "failed"
+                    if status == "failed"
+                    else "pending"
+                )
+                connection.execute(
+                    """
+                    INSERT INTO research_runs_v2 (
+                        run_id, thread_id, query, profile_id, profile_version,
+                        scope_json, execution_status, review_status,
+                        delivery_status, state_version, created_at, updated_at
+                    ) VALUES (?, ?, ?, 'generic', '1', '{}', ?,
+                              'not_required', ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        f"thread-{index}",
+                        f"query-{index}",
+                        status,
+                        delivery_status,
+                        state_version,
+                        now,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO run_segments (
+                        segment_id, run_id, kind, sequence, attempt, status,
+                        created_at, updated_at
+                    ) VALUES (?, ?, 'initial', 0, 1, ?, ?, ?)
+                    """,
+                    (f"{run_id}_seg_000", run_id, status, now, now),
+                )
+    finally:
+        connection.close()
+
+
+def _apply_009(db_path):
+    return migrate_with_backup(
+        db_path=db_path,
+        backup_path=f"{db_path}.pre-run-dispatch.bak",
+    )
+
+
+def _replace_failure_cause_table(db_path, table_sql):
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        with connection:
+            connection.execute("DROP TABLE run_failure_causes_v1")
+            connection.execute(table_sql)
+        connection.execute("PRAGMA foreign_keys=ON")
+    finally:
+        connection.close()
+
+
+def _normalized_sql(value):
+    return " ".join((value or "").split()).lower()
+
+
+def _seed_observed_failure(db_path):
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+    _apply_009(db_path)
+    run_id = "run_failed_0"
+    recorded_at = "2026-07-15T00:00:00+00:00"
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET state_version = 3, execution_status = 'failed', updated_at = ?
+                WHERE run_id = ?
+                """,
+                (recorded_at, run_id),
+            )
+            connection.execute(
+                """
+                UPDATE run_segments
+                SET status = 'failed', updated_at = ?
+                WHERE run_id = ?
+                """,
+                (recorded_at, run_id),
+            )
+            connection.execute(
+                """
+                UPDATE run_failure_causes_v1
+                SET observation_status = 'observed',
+                    terminal_state_version = 3,
+                    phase = 'execution',
+                    code = 'execution_error',
+                    recorded_at = ?
+                WHERE run_id = ?
+                """,
+                (recorded_at, run_id),
+            )
+    finally:
+        connection.close()
+    return run_id
+
+
 def _table_names(db_path):
     conn = sqlite3.connect(db_path)
     try:
@@ -605,3 +815,644 @@ def test_verifier_rejects_wrong_dispatch_scan_index(tmp_path):
         match="missing_constraints=.*dispatch_scan_index",
     ):
         verify_run_schema(db_path=db_path)
+
+
+def test_009_marks_only_preexisting_failed_runs_not_observed(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(
+        db_path,
+        statuses=("completed", "pending", "running", "failed"),
+    )
+
+    _apply_009(db_path)
+
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    try:
+        rows = connection.execute(
+            "SELECT * FROM run_failure_causes_v1 ORDER BY run_id"
+        ).fetchall()
+        marker_count = connection.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = ?",
+            (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+    assert marker_count == 1
+    assert len(rows) == 1
+    assert rows[0]["run_id"] == "run_failed_3"
+    assert rows[0]["observation_status"] == "not_observed"
+    assert rows[0]["terminal_state_version"] is None
+    assert rows[0]["phase"] is None
+    assert rows[0]["code"] is None
+    assert rows[0]["recorded_at"] is None
+
+
+def test_009_schema_marker_fk_and_variant_check_are_exact(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path)
+
+    result = _apply_009(db_path)
+
+    connection = sqlite3.connect(db_path)
+    try:
+        marker = connection.execute(
+            "SELECT checksum FROM schema_migrations WHERE version = ?",
+            (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+        ).fetchall()
+        columns = connection.execute(
+            "PRAGMA table_info(run_failure_causes_v1)"
+        ).fetchall()
+        foreign_keys = connection.execute(
+            "PRAGMA foreign_key_list(run_failure_causes_v1)"
+        ).fetchall()
+        table_sql = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'table' AND name = 'run_failure_causes_v1'
+            """
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+    assert marker == [(RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,)]
+    assert [tuple(row[1:6]) for row in columns] == [
+        ("run_id", "TEXT", 1, None, 1),
+        ("observation_status", "TEXT", 1, None, 0),
+        ("terminal_state_version", "INTEGER", 0, None, 0),
+        ("phase", "TEXT", 0, None, 0),
+        ("code", "TEXT", 0, None, 0),
+        ("recorded_at", "TEXT", 0, None, 0),
+    ]
+    assert len(foreign_keys) == 1
+    assert foreign_keys[0][2:7] == (
+        "research_runs_v2",
+        "run_id",
+        "run_id",
+        "NO ACTION",
+        "CASCADE",
+    )
+    assert _normalized_sql(table_sql) == _normalized_sql(
+        RUN_FAILURE_CAUSE_TABLE_SQL
+    )
+    assert RUN_FAILURE_CAUSE_MIGRATION_VERSION in result["migration_versions"]
+    assert "run_failure_causes_v1" in result["tables"]
+    assert result["columns"]["run_failure_causes_v1"] == [
+        "code",
+        "observation_status",
+        "phase",
+        "recorded_at",
+        "run_id",
+        "terminal_state_version",
+    ]
+
+
+def test_009_inserts_historical_rows_before_single_marker(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                CREATE TRIGGER require_009_history_before_marker
+                BEFORE INSERT ON schema_migrations
+                WHEN NEW.version = '009_run_failure_cause_v1'
+                BEGIN
+                    SELECT CASE
+                        WHEN (
+                            SELECT COUNT(*) FROM run_failure_causes_v1
+                        ) != (
+                            SELECT COUNT(*) FROM research_runs_v2
+                            WHERE execution_status = 'failed'
+                        )
+                        THEN RAISE(ABORT, '009 history missing')
+                    END;
+                END
+                """
+            )
+    finally:
+        connection.close()
+
+    _apply_009(db_path)
+
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM run_failure_causes_v1"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = ?",
+            (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+        ).fetchone()[0] == 1
+    finally:
+        connection.close()
+
+
+def test_009_marker_present_is_verify_only_and_never_repairs(tmp_path):
+    from api.run_failure_cause_models import RunFailureCauseConflict
+    from api.run_repository import init_run_schema
+
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+    _apply_009(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                "DELETE FROM run_failure_causes_v1 WHERE run_id = 'run_failed_0'"
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(
+        RunFailureCauseConflict,
+        match="run_failure_cause_corrupt",
+    ):
+        init_run_schema(db_path)
+
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM run_failure_causes_v1"
+        ).fetchone()[0] == 0
+    finally:
+        connection.close()
+
+
+def test_009_rejects_nullable_run_id_or_observation_status(tmp_path):
+    from api.run_failure_cause_models import RunFailureCauseConflict
+    from api.run_repository import init_run_schema
+
+    mutations = (
+        ("run_id TEXT NOT NULL PRIMARY KEY", "run_id TEXT PRIMARY KEY"),
+        (
+            "observation_status TEXT NOT NULL",
+            "observation_status TEXT",
+        ),
+    )
+    for index, (old, new) in enumerate(mutations):
+        db_path = str(tmp_path / f"nullable-{index}.db")
+        _seed_pre_009_runs(db_path)
+        _apply_009(db_path)
+        _replace_failure_cause_table(
+            db_path,
+            RUN_FAILURE_CAUSE_TABLE_SQL.replace(old, new, 1),
+        )
+
+        with pytest.raises(
+            RunFailureCauseConflict,
+            match="run_failure_cause_corrupt",
+        ):
+            init_run_schema(db_path)
+
+
+def test_009_rejects_null_observed_fields_and_noninteger_terminal_version(
+    tmp_path,
+):
+    from api.run_failure_cause_models import RunFailureCauseConflict
+    from api.run_repository import init_run_schema
+
+    invalid_values = (
+        (None, "execution", "execution_error", "2026-07-15T00:00:00+00:00"),
+        (3, None, "execution_error", "2026-07-15T00:00:00+00:00"),
+        (3, "execution", None, "2026-07-15T00:00:00+00:00"),
+        (3, "execution", "execution_error", None),
+        (
+            "not-an-integer",
+            "execution",
+            "execution_error",
+            "2026-07-15T00:00:00+00:00",
+        ),
+    )
+    for index, values in enumerate(invalid_values):
+        db_path = str(tmp_path / f"invalid-observed-{index}.db")
+        run_id = _seed_observed_failure(db_path)
+        connection = sqlite3.connect(db_path)
+        try:
+            connection.execute("PRAGMA ignore_check_constraints=ON")
+            with connection:
+                connection.execute(
+                    """
+                    UPDATE run_failure_causes_v1
+                    SET terminal_state_version = ?, phase = ?, code = ?,
+                        recorded_at = ?
+                    WHERE run_id = ?
+                    """,
+                    (*values, run_id),
+                )
+            connection.execute("PRAGMA ignore_check_constraints=OFF")
+        finally:
+            connection.close()
+
+        with pytest.raises(
+            RunFailureCauseConflict,
+            match="run_failure_cause_corrupt",
+        ):
+            init_run_schema(db_path)
+
+
+def test_009_rejects_zero_and_negative_terminal_version(tmp_path):
+    from api.run_failure_cause_models import RunFailureCauseConflict
+    from api.run_repository import init_run_schema
+
+    for value in (0, -1):
+        db_path = str(tmp_path / f"terminal-version-{value}.db")
+        run_id = _seed_observed_failure(db_path)
+        connection = sqlite3.connect(db_path)
+        try:
+            connection.execute("PRAGMA ignore_check_constraints=ON")
+            with connection:
+                connection.execute(
+                    """
+                    UPDATE run_failure_causes_v1
+                    SET terminal_state_version = ? WHERE run_id = ?
+                    """,
+                    (value, run_id),
+                )
+            connection.execute("PRAGMA ignore_check_constraints=OFF")
+        finally:
+            connection.close()
+
+        with pytest.raises(
+            RunFailureCauseConflict,
+            match="run_failure_cause_corrupt",
+        ):
+            init_run_schema(db_path)
+
+
+def test_009_rejects_observed_terminal_version_mismatch(tmp_path):
+    from api.run_failure_cause_models import RunFailureCauseConflict
+    from api.run_repository import init_run_schema
+
+    db_path = str(tmp_path / "tasks.db")
+    run_id = _seed_observed_failure(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                UPDATE research_runs_v2 SET state_version = 4 WHERE run_id = ?
+                """,
+                (run_id,),
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(
+        RunFailureCauseConflict,
+        match="run_failure_cause_corrupt",
+    ):
+        init_run_schema(db_path)
+
+
+def test_009_rejects_observed_recorded_at_or_segment_timestamp_mismatch(
+    tmp_path,
+):
+    from api.run_failure_cause_models import RunFailureCauseConflict
+    from api.run_repository import init_run_schema
+
+    cases = (
+        (
+            "2026-07-15T00:00:00+00:00",
+            "2026-07-15T00:00:01+00:00",
+            "2026-07-15T00:00:00+00:00",
+        ),
+        (
+            "2026-07-15T00:00:00+00:00",
+            "2026-07-15T00:00:00+00:00",
+            "2026-07-15T00:00:01+00:00",
+        ),
+        ("not-a-timestamp", "not-a-timestamp", "not-a-timestamp"),
+    )
+    for index, (recorded_at, run_updated_at, segment_updated_at) in enumerate(
+        cases
+    ):
+        db_path = str(tmp_path / f"timestamp-{index}.db")
+        run_id = _seed_observed_failure(db_path)
+        connection = sqlite3.connect(db_path)
+        try:
+            with connection:
+                connection.execute(
+                    "UPDATE research_runs_v2 SET updated_at = ? WHERE run_id = ?",
+                    (run_updated_at, run_id),
+                )
+                connection.execute(
+                    "UPDATE run_segments SET updated_at = ? WHERE run_id = ?",
+                    (segment_updated_at, run_id),
+                )
+                connection.execute(
+                    """
+                    UPDATE run_failure_causes_v1
+                    SET recorded_at = ? WHERE run_id = ?
+                    """,
+                    (recorded_at, run_id),
+                )
+        finally:
+            connection.close()
+
+        with pytest.raises(
+            RunFailureCauseConflict,
+            match="run_failure_cause_corrupt",
+        ):
+            init_run_schema(db_path)
+
+
+def test_009_repeated_apply_is_idempotent(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+
+    first = _apply_009(db_path)
+    before = _database_dump(db_path)
+    second = _apply_009(db_path)
+
+    assert first == second
+    assert RUN_FAILURE_CAUSE_MIGRATION_VERSION in first["migration_versions"]
+    assert "run_failure_causes_v1" in first["tables"]
+    assert _database_dump(db_path) == before
+
+
+def test_fresh_pre_003_database_applies_legacy_chain_then_009_without_nested_transaction(
+    tmp_path,
+):
+    from api.run_repository import init_run_schema
+
+    db_path = str(tmp_path / "tasks.db")
+    init_legacy_db(db_path).close()
+
+    init_run_schema(db_path)
+
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute(
+            "SELECT checksum FROM schema_migrations WHERE version = ?",
+            (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+        ).fetchone() == (RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,)
+        assert connection.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'run_failure_causes_v1'
+            """
+        ).fetchone() == (1,)
+    finally:
+        connection.close()
+
+
+def _deny_009_operation(monkeypatch, *, action_code, table_name):
+    import api.run_repository as repository
+
+    original_connect = repository._connect
+    connection_count = 0
+
+    def connect_with_denied_009_operation(db_path=None):
+        nonlocal connection_count
+        connection = original_connect(db_path)
+        connection_count += 1
+        if connection_count == 2:
+            connection.set_authorizer(
+                lambda action, arg1, _arg2, _database, _trigger: (
+                    sqlite3.SQLITE_DENY
+                    if action == action_code and arg1 == table_name
+                    else sqlite3.SQLITE_OK
+                )
+            )
+        return connection
+
+    monkeypatch.setattr(repository, "_connect", connect_with_denied_009_operation)
+
+
+def _assert_009_failure_restores_complete_backup(db_path):
+    from api.run_failure_cause_models import RunFailureCauseConflict
+    from api.run_repository import init_run_schema
+
+    before = _database_dump(db_path)
+    with pytest.raises(
+        RunFailureCauseConflict,
+        match="run_failure_cause_corrupt",
+    ):
+        init_run_schema(db_path)
+
+    backup_path = _failure_backup_path(db_path)
+    assert backup_path.exists()
+    assert _database_dump(db_path) == before
+    assert _database_dump(backup_path) == before
+
+
+def test_009_table_create_failure_restores_complete_dedicated_backup(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+    _deny_009_operation(
+        monkeypatch,
+        action_code=sqlite3.SQLITE_CREATE_TABLE,
+        table_name="run_failure_causes_v1",
+    )
+
+    _assert_009_failure_restores_complete_backup(db_path)
+
+
+def test_009_historical_insert_failure_restores_complete_dedicated_backup(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+    _deny_009_operation(
+        monkeypatch,
+        action_code=sqlite3.SQLITE_INSERT,
+        table_name="run_failure_causes_v1",
+    )
+
+    _assert_009_failure_restores_complete_backup(db_path)
+
+
+def test_009_marker_insert_failure_restores_complete_dedicated_backup(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+    _deny_009_operation(
+        monkeypatch,
+        action_code=sqlite3.SQLITE_INSERT,
+        table_name="schema_migrations",
+    )
+
+    _assert_009_failure_restores_complete_backup(db_path)
+
+
+def test_009_post_verify_failure_restores_complete_dedicated_backup(
+    tmp_path,
+    monkeypatch,
+):
+    import api.run_repository as repository
+    from api.run_failure_cause_models import RunFailureCauseConflict
+
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+
+    def fail_row_verification(_connection):
+        raise RunFailureCauseConflict("run_failure_cause_corrupt")
+
+    monkeypatch.setattr(
+        repository,
+        "_verify_run_failure_cause_rows",
+        fail_row_verification,
+        raising=False,
+    )
+
+    _assert_009_failure_restores_complete_backup(db_path)
+
+
+def test_009_existing_dedicated_backup_is_not_overwritten(tmp_path):
+    from api.run_repository import init_run_schema
+
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+    backup_path = _failure_backup_path(db_path)
+    backup_path.write_bytes(b"keep-dedicated-backup")
+    before = _database_dump(db_path)
+
+    with pytest.raises(
+        RuntimeError,
+        match="run_failure_cause_migration_backup_already_exists",
+    ):
+        init_run_schema(db_path)
+
+    assert backup_path.read_bytes() == b"keep-dedicated-backup"
+    assert _database_dump(db_path) == before
+
+
+def test_direct_init_on_pre_009_database_creates_dedicated_backup_before_writes(
+    tmp_path,
+    monkeypatch,
+):
+    import api.run_repository as repository
+
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+    before = _database_dump(db_path)
+    observed = {}
+    original = repository._init_run_schema_unlocked
+
+    def assert_backup_then_initialize(path):
+        backup_path = _failure_backup_path(path)
+        observed["exists"] = backup_path.exists()
+        observed["dump"] = _database_dump(backup_path)
+        return original(path)
+
+    monkeypatch.setattr(
+        repository,
+        "_init_run_schema_unlocked",
+        assert_backup_then_initialize,
+    )
+
+    repository.init_run_schema(db_path)
+
+    assert observed == {"exists": True, "dump": before}
+
+
+def test_create_run_cannot_bypass_009_backup_or_verification(tmp_path):
+    from api.run_repository import create_run
+
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path)
+
+    created = create_run(db_path=db_path, thread_id="thread-new", query="query")
+
+    backup_path = _failure_backup_path(db_path)
+    assert backup_path.exists()
+    backup_dump = _database_dump(backup_path)
+    assert RUN_FAILURE_CAUSE_MIGRATION_VERSION not in backup_dump
+    assert created["run_id"] not in backup_dump
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = ?",
+            (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM research_runs_v2 WHERE run_id = ?",
+            (created["run_id"],),
+        ).fetchone()[0] == 1
+    finally:
+        connection.close()
+
+
+def test_dispatch_review_and_publication_init_cannot_bypass_009_backup(
+    tmp_path,
+):
+    from api.publication_repository import init_publication_schema
+    from api.review_repository import init_review_schema
+    from api.run_dispatch_repository import get_run_dispatch
+
+    initializers = (
+        lambda path: get_run_dispatch(db_path=path, run_id="run-missing"),
+        init_review_schema,
+        init_publication_schema,
+    )
+    for index, initialize in enumerate(initializers):
+        db_path = str(tmp_path / f"initializer-{index}.db")
+        _seed_pre_009_runs(db_path)
+
+        initialize(db_path)
+
+        backup_path = _failure_backup_path(db_path)
+        assert backup_path.exists()
+        assert RUN_FAILURE_CAUSE_MIGRATION_VERSION not in _database_dump(
+            backup_path
+        )
+        connection = sqlite3.connect(db_path)
+        try:
+            assert connection.execute(
+                "SELECT checksum FROM schema_migrations WHERE version = ?",
+                (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+            ).fetchone() == (RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,)
+        finally:
+            connection.close()
+
+
+def test_wrong_009_checksum_fails_init_migration_and_creation_without_repair(
+    tmp_path,
+):
+    from api.run_failure_cause_models import RunFailureCauseConflict
+    from api.run_repository import create_run, init_run_schema
+
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path)
+    _apply_009(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE schema_migrations SET checksum = 'wrong' WHERE version = ?",
+                (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+            )
+    finally:
+        connection.close()
+    before = _database_dump(db_path)
+    caller_backup = tmp_path / "wrong-checksum-caller.bak"
+
+    for operation in (
+        lambda: init_run_schema(db_path),
+        lambda: migrate_with_backup(
+            db_path=db_path,
+            backup_path=str(caller_backup),
+        ),
+        lambda: create_run(
+            db_path=db_path,
+            thread_id="thread-new",
+            query="query",
+        ),
+    ):
+        with pytest.raises(
+            RunFailureCauseConflict,
+            match="run_failure_cause_unavailable",
+        ):
+            operation()
+
+    assert not caller_backup.exists()
+    assert _database_dump(db_path) == before

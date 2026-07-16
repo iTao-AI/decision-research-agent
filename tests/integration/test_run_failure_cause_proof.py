@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import importlib
 import json
 import os
 from pathlib import Path
@@ -167,6 +168,30 @@ def test_serializers_are_stable_and_markdown_carries_exact_contract():
     assert markdown.startswith("# Durable Run Failure Cause v1 Proof\n")
     assert all(case_id in markdown for case_id in EXPECTED_CASE_IDS)
     assert all(invariant_id in markdown for invariant_id in EXPECTED_INVARIANT_IDS)
+
+
+def test_loader_resolves_task_tracker_patch_owners_from_cached_server():
+    before_reload = proof._load_production_modules()
+    tracker_module = importlib.import_module("api.task_tracker")
+    cached_checkpoint_owner = before_reload.server.FinalizationCheckpoint
+    cached_origin_owner = before_reload.server.TerminationOrigin
+
+    importlib.reload(tracker_module)
+    after_reload = proof._load_production_modules()
+
+    assert after_reload.server is before_reload.server
+    assert (
+        after_reload.tracker.FinalizationCheckpoint
+        is cached_checkpoint_owner
+        is after_reload.server.FinalizationCheckpoint
+    )
+    assert (
+        after_reload.tracker.TerminationOrigin
+        is cached_origin_owner
+        is after_reload.server.TerminationOrigin
+    )
+    assert after_reload.tracker.get_active_task is tracker_module.get_active_task
+    assert after_reload.tracker.logger is tracker_module.logger
 
 
 @pytest.mark.parametrize(
@@ -859,6 +884,69 @@ def test_check_fails_when_any_serialized_clock_patch_alias_is_removed(
         ]
     ) == 1
     _assert_invalid_cli(capsys)
+
+
+def test_standalone_check_fails_when_bounded_reader_authority_is_removed(
+    mutation_baselines,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setattr(
+        proof,
+        "_bounded_read",
+        lambda path: Path(path).read_bytes(),
+    )
+    json_path, markdown_path = mutation_baselines
+    assert proof.main(
+        [
+            "check",
+            "--json-baseline",
+            str(json_path),
+            "--markdown-baseline",
+            str(markdown_path),
+        ]
+    ) == 1
+    _assert_invalid_cli(capsys)
+
+
+@pytest.mark.parametrize("second_cycle", ("failure", "drift"))
+def test_standalone_check_requires_two_matching_production_cycles(
+    second_cycle,
+    mutation_baselines,
+    monkeypatch,
+    capsys,
+):
+    real_build_production_cases = proof._build_production_cases
+    calls = 0
+
+    async def fail_or_drift_second_cycle(modules, root):
+        nonlocal calls
+        calls += 1
+        if calls == 2 and second_cycle == "failure":
+            raise RuntimeError("injected second production cycle failure")
+        cases, invariants = await real_build_production_cases(modules, root)
+        if calls == 2:
+            cases = deepcopy(cases)
+            cases[0]["observations"]["artifact_count"] = 2
+        return cases, invariants
+
+    monkeypatch.setattr(
+        proof,
+        "_build_production_cases",
+        fail_or_drift_second_cycle,
+    )
+    json_path, markdown_path = mutation_baselines
+    assert proof.main(
+        [
+            "check",
+            "--json-baseline",
+            str(json_path),
+            "--markdown-baseline",
+            str(markdown_path),
+        ]
+    ) == 1
+    _assert_invalid_cli(capsys)
+    assert calls == 2
 
 
 def test_two_fresh_cli_builds_are_byte_identical_and_public_safe(

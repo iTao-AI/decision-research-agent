@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import importlib
+import io
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -67,6 +68,8 @@ EXPECTED_INVARIANT_IDS = (
     "bounded_cli_inputs_fail_closed",
     "fresh_outputs_are_byte_identical",
 )
+_PRODUCTION_INVARIANT_IDS = EXPECTED_INVARIANT_IDS[:-2]
+_META_INVARIANT_IDS = EXPECTED_INVARIANT_IDS[-2:]
 
 BOUNDARIES = {
     "application_database_terminal_authority": "proven",
@@ -235,12 +238,20 @@ CLOCK_PATCH_TARGETS = (
 
 
 @dataclass(frozen=True)
+class _TaskTrackerOwners:
+    logger: Any
+    get_active_task: Any
+    FinalizationCheckpoint: type[Any]
+    TerminationOrigin: type[Any]
+
+
+@dataclass(frozen=True)
 class _ProductionModules:
     repository: ModuleType
     migrations: ModuleType
     dispatch: ModuleType
     worker: ModuleType
-    tracker: ModuleType
+    tracker: _TaskTrackerOwners
     server: ModuleType
 
 
@@ -251,7 +262,7 @@ def _load_production_modules() -> _ProductionModules:
     migrations = importlib.import_module("api.run_migrations")
     dispatch = importlib.import_module("api.run_dispatch_repository")
     worker = importlib.import_module("api.run_dispatch_worker")
-    tracker = importlib.import_module("api.task_tracker")
+    tracker_module = importlib.import_module("api.task_tracker")
 
     stub_created = "agent.main_agent" not in sys.modules
     if stub_created:
@@ -272,7 +283,12 @@ def _load_production_modules() -> _ProductionModules:
         migrations=migrations,
         dispatch=dispatch,
         worker=worker,
-        tracker=tracker,
+        tracker=_TaskTrackerOwners(
+            logger=tracker_module.logger,
+            get_active_task=tracker_module.get_active_task,
+            FinalizationCheckpoint=server.FinalizationCheckpoint,
+            TerminationOrigin=server.TerminationOrigin,
+        ),
         server=server,
     )
 
@@ -2120,7 +2136,7 @@ async def _prove_invariants(
     _prove_public_safety(root, cases)
     return [
         {"invariant_id": invariant_id, "status": "passed"}
-        for invariant_id in EXPECTED_INVARIANT_IDS
+        for invariant_id in _PRODUCTION_INVARIANT_IDS
     ]
 
 
@@ -2263,7 +2279,7 @@ def validate_report(report: dict[str, Any]) -> dict[str, Any]:
     return report
 
 
-def build_report() -> dict[str, Any]:
+def _build_report_once() -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     modules = _load_production_modules()
     with TemporaryDirectory(prefix="dra-failure-cause-proof-") as directory:
         root = Path(directory)
@@ -2277,14 +2293,32 @@ def build_report() -> dict[str, Any]:
             production_cases, invariants = asyncio.run(
                 _build_production_cases(modules, root)
             )
-    cases = list(production_cases)
+    return list(production_cases), list(invariants)
+
+
+def _candidate_report(
+    cases: list[dict[str, Any]],
+    production_invariants: list[dict[str, str]],
+) -> dict[str, Any]:
+    if [
+        item.get("invariant_id")
+        for item in production_invariants
+        if isinstance(item, dict)
+    ] != list(_PRODUCTION_INVARIANT_IDS):
+        _invalid_report()
     report = {
         "schema_version": REPORT_SCHEMA_VERSION,
         "status": "valid",
         "source": "production_path_deterministic_local",
         "fixed_time": FIXED_TIME,
         "cases": cases,
-        "invariants": invariants,
+        "invariants": [
+            *production_invariants,
+            *(
+                {"invariant_id": invariant_id, "status": "passed"}
+                for invariant_id in _META_INVARIANT_IDS
+            ),
+        ],
         "boundaries": dict(BOUNDARIES),
         "limits": list(LIMITS),
     }
@@ -2480,6 +2514,90 @@ def _write_outputs(
     finally:
         for temporary_path in staged:
             temporary_path.unlink(missing_ok=True)
+
+
+def _captured_internal_cli(argv: list[str]) -> tuple[int, str, str]:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    try:
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            exit_code = main(argv)
+    except SystemExit as error:
+        exit_code = error.code if isinstance(error.code, int) else 1
+    return exit_code, stdout.getvalue(), stderr.getvalue()
+
+
+def _verify_bounded_cli_contract() -> None:
+    invalid_line = (
+        '{"status":"invalid","code":"run_failure_cause_proof_invalid"}\n'
+    )
+    with TemporaryDirectory(prefix="dra-failure-cause-cli-meta-") as directory:
+        root = Path(directory)
+        missing_json = root / "missing.json"
+        missing_markdown = root / "missing.md"
+        corrupt_json = root / "corrupt.json"
+        corrupt_markdown = root / "corrupt.md"
+        corrupt_json.write_bytes(b"{not-json")
+        corrupt_markdown.write_text("# corrupt\n", encoding="utf-8")
+        oversized_json = root / "oversized.json"
+        oversized_markdown = root / "oversized.md"
+        with oversized_json.open("wb") as handle:
+            handle.truncate(MAX_BASELINE_BYTES + 1)
+        oversized_markdown.write_text("# oversized\n", encoding="utf-8")
+
+        try:
+            _bounded_read(oversized_json)
+        except _ProofError:
+            pass
+        else:
+            raise _ProofError(_INVALID_CODE)
+
+        invalid_invocations = (
+            [],
+            [
+                "check",
+                "--json-baseline",
+                str(missing_json),
+                "--markdown-baseline",
+                str(missing_markdown),
+            ],
+            [
+                "check",
+                "--json-baseline",
+                str(corrupt_json),
+                "--markdown-baseline",
+                str(corrupt_markdown),
+            ],
+            [
+                "check",
+                "--json-baseline",
+                str(oversized_json),
+                "--markdown-baseline",
+                str(oversized_markdown),
+            ],
+        )
+        for invocation in invalid_invocations:
+            if _captured_internal_cli(list(invocation)) != (1, "", invalid_line):
+                raise _ProofError(_INVALID_CODE)
+
+    help_code, help_stdout, help_stderr = _captured_internal_cli(["--help"])
+    if help_code != 0 or not help_stdout.startswith("usage:") or help_stderr:
+        raise _ProofError(_INVALID_CODE)
+
+
+def build_report() -> dict[str, Any]:
+    _verify_bounded_cli_contract()
+    first_cases, first_invariants = _build_report_once()
+    second_cases, second_invariants = _build_report_once()
+    first_report = _candidate_report(first_cases, first_invariants)
+    second_report = _candidate_report(second_cases, second_invariants)
+    if (
+        serialize_report(first_report) != serialize_report(second_report)
+        or render_markdown(first_report).encode("utf-8")
+        != render_markdown(second_report).encode("utf-8")
+    ):
+        raise _ProofError(_INVALID_CODE)
+    return first_report
 
 
 def _parser() -> _ArgumentParser:

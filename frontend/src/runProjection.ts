@@ -89,13 +89,23 @@ export type ArtifactMetadataProjection = Readonly<{
   created_at: string;
 }>;
 
+export type ExecutionStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "completed_with_fallback"
+  | "failed";
+export type ReviewStatus = "not_required" | "required" | "resolved";
+export type DeliveryStatus = "pending" | "ready" | "review_required" | "blocked" | "failed";
+export type DeliverableExecutionStatus = "completed" | "completed_with_fallback";
+
 export type RunProjection = Readonly<{
   run_id: string;
   thread_id: string;
   profile_id: string;
-  execution_status: string;
-  review_status: string;
-  delivery_status: string;
+  execution_status: ExecutionStatus;
+  review_status: ReviewStatus;
+  delivery_status: DeliveryStatus;
   state_version: number;
   segments: readonly RunSegmentProjection[];
   evidence: readonly RunEvidenceProjection[];
@@ -116,10 +126,30 @@ export type CanonicalArtifactProjection = Readonly<{
 
 export type RunResultResponse = Readonly<{
   run_id: string;
-  execution_status: string;
-  delivery_status: string;
+  execution_status: DeliverableExecutionStatus;
+  delivery_status: "ready";
   artifact: CanonicalArtifactProjection;
 }>;
+
+const EXECUTION_STATUSES = new Set<ExecutionStatus>([
+  "pending",
+  "running",
+  "completed",
+  "completed_with_fallback",
+  "failed"
+]);
+const REVIEW_STATUSES = new Set<ReviewStatus>(["not_required", "required", "resolved"]);
+const DELIVERY_STATUSES = new Set<DeliveryStatus>([
+  "pending",
+  "ready",
+  "review_required",
+  "blocked",
+  "failed"
+]);
+const DELIVERABLE_EXECUTION_STATUSES = new Set<DeliverableExecutionStatus>([
+  "completed",
+  "completed_with_fallback"
+]);
 
 const FAILURE_CAUSE_SCHEMA_VERSION = "dra.run-failure-cause.v1" as const;
 const FAILURE_CAUSE_CODES = {
@@ -161,9 +191,9 @@ export function parseRunProjection(value: unknown, expectedRunId?: string): RunP
     run_id: runId,
     thread_id: expectString(record.thread_id),
     profile_id: expectString(record.profile_id),
-    execution_status: expectString(record.execution_status),
-    review_status: expectString(record.review_status),
-    delivery_status: expectString(record.delivery_status),
+    execution_status: expectEnum(record.execution_status, EXECUTION_STATUSES),
+    review_status: expectEnum(record.review_status, REVIEW_STATUSES),
+    delivery_status: expectEnum(record.delivery_status, DELIVERY_STATUSES),
     state_version: expectInteger(record.state_version),
     segments: Object.freeze(expectArray(record.segments).map(parseRunSegment)),
     evidence: Object.freeze(expectArray(record.evidence).map(parseRunEvidence)),
@@ -184,11 +214,19 @@ export function parseRunResult(value: unknown, expectedRunId?: string): RunResul
   const runId = expectString(record.run_id);
   expectRunIdentity(runId, expectedRunId);
   const artifact = expectRecord(record.artifact);
+  const executionStatus = expectEnum(record.execution_status, EXECUTION_STATUSES);
+  const deliveryStatus = expectEnum(record.delivery_status, DELIVERY_STATUSES);
+  if (!DELIVERABLE_EXECUTION_STATUSES.has(executionStatus as DeliverableExecutionStatus)) {
+    return invalidResponse();
+  }
+  if (deliveryStatus !== "ready") {
+    return invalidResponse();
+  }
 
   return Object.freeze({
     run_id: runId,
-    execution_status: expectString(record.execution_status),
-    delivery_status: expectString(record.delivery_status),
+    execution_status: executionStatus as DeliverableExecutionStatus,
+    delivery_status: deliveryStatus,
     artifact: Object.freeze({
       artifact_id: expectString(artifact.artifact_id),
       kind: expectString(artifact.kind),
@@ -361,6 +399,14 @@ function expectInteger(value: unknown): number {
     return invalidResponse();
   }
   return value;
+}
+
+function expectEnum<T extends string>(value: unknown, allowed: ReadonlySet<T>): T {
+  const parsed = expectString(value);
+  if (!allowed.has(parsed as T)) {
+    return invalidResponse();
+  }
+  return parsed as T;
 }
 
 function expectNullableString(value: unknown): string | null {

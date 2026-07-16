@@ -721,4 +721,13 @@ pre {
   .execution-path {
     grid-template-columns: 1fr;
   }
+
+  .recovery-actions {
+    flex-direction: column;
+  }
+
+  .recovery-actions button {
+    min-width: 0;
+    width: 100%;
+  }
 }

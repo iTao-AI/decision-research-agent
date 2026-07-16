@@ -317,7 +317,7 @@ describe("Live observation semantics", () => {
   it("marks a terminal non-ready run result as not applicable", () => {
     const projection = buildLiveConsoleProjection(
       liveInput({
-        run: { ...LIVE_RUN, delivery_status: "blocked" },
+        run: { ...LIVE_RUN, review_status: "resolved", delivery_status: "blocked" },
         status: "terminal"
       })
     );

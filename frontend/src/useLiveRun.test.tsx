@@ -128,7 +128,16 @@ describe("useLiveRun", () => {
     const requests = mockFetchSequence([
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
       jsonResponse(createAcknowledgement("run_live_expected", false)),
-      jsonResponse(runStatus("run_live_wrong", "failed", "blocked"))
+      jsonResponse(
+        runStatus(
+          "run_live_wrong",
+          "failed",
+          "failed",
+          1,
+          "not_required",
+          observedFailureCause("execution", "execution_error")
+        )
+      )
     ]);
     const { result } = renderHook(() =>
       useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
@@ -174,6 +183,50 @@ describe("useLiveRun", () => {
     expect(result.current.state.result).toBeUndefined();
     expect(requests).toHaveLength(4);
   });
+
+  it.each([
+    {
+      label: "status",
+      steps: [mismatchedRunError("run_live_other")]
+    },
+    {
+      label: "status with an empty identity",
+      steps: [mismatchedRunError("")]
+    },
+    {
+      label: "result",
+      steps: [
+        jsonResponse(runStatus("run_live_expected", "completed", "ready")),
+        mismatchedRunError("run_live_other")
+      ]
+    }
+  ])(
+    "fails closed when a known-run $label error names another run",
+    async ({ steps }) => {
+      const requests = mockFetchSequence([
+        jsonResponse({ status: "ok", service: "decision-research-agent" }),
+        jsonResponse(createAcknowledgement("run_live_expected", false)),
+        ...steps
+      ]);
+      const { result } = renderHook(() =>
+        useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+      );
+      await makeReady(result);
+
+      await act(async () => {
+        await result.current.startNewRun();
+      });
+
+      expect(result.current.state.status).toBe("error");
+      expect(result.current.state.error).toMatchObject({
+        code: "invalid_response",
+        retryable: false,
+        run_id: "run_live_expected"
+      });
+      expect(JSON.stringify(result.current.state)).not.toContain("run_live_other");
+      expect(requests.filter(({ method }) => method === "POST")).toHaveLength(1);
+    }
+  );
 
   it("retries an ambiguous create with the same immutable body and key", async () => {
     const requests = mockFetchSequence([
@@ -345,6 +398,39 @@ describe("useLiveRun", () => {
     expect(requests.filter(({ method }) => method === "POST")).toHaveLength(1);
     expect(requests.slice(2).map(({ method }) => method)).toEqual(["GET", "GET", "GET", "GET"]);
     expect(requests.at(-1)?.url).toBe(`${BASE_URL}/api/runs/run_live_resume/result`);
+  });
+
+  it("fails closed when a GET-only resume error names another run", async () => {
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_resume_expected", false)),
+      jsonResponse(runStatus("run_live_resume_expected", "running", "pending", 1)),
+      () => Promise.reject(new TypeError("poll connection dropped")),
+      mismatchedRunError("run_live_resume_other")
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.startNewRun();
+    });
+    expect(result.current.state.status).toBe("observation_interrupted");
+
+    await act(async () => {
+      await result.current.resumeObservation();
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(result.current.state.error).toMatchObject({
+      code: "invalid_response",
+      retryable: false,
+      run_id: "run_live_resume_expected"
+    });
+    expect(JSON.stringify(result.current.state)).not.toContain("run_live_resume_other");
+    expect(requests.filter(({ method }) => method === "POST")).toHaveLength(1);
+    expect(requests.at(-1)?.method).toBe("GET");
   });
 
   it.each([
@@ -585,33 +671,123 @@ describe("useLiveRun", () => {
     });
   });
 
-  it("stops at a terminal non-ready projection without requesting a result", async () => {
+  it.each([
+    ["review_required", "completed", "required", "review_required", null],
+    ["blocked", "completed", "resolved", "blocked", null],
+    [
+      "execution_error",
+      "failed",
+      "not_required",
+      "failed",
+      observedFailureCause("execution", "execution_error")
+    ],
+    [
+      "cancelled",
+      "failed",
+      "not_required",
+      "failed",
+      observedFailureCause("execution", "cancelled")
+    ],
+    [
+      "run_timeout",
+      "failed",
+      "not_required",
+      "failed",
+      observedFailureCause("execution", "run_timeout")
+    ]
+  ] as const)(
+    "stops at the real %s terminal tuple without requesting a result",
+    async (label, executionStatus, reviewStatus, deliveryStatus, failureCause) => {
+      const runId = `run_live_terminal_${label}`;
+      const requests = mockFetchSequence([
+        jsonResponse({ status: "ok", service: "decision-research-agent" }),
+        jsonResponse(createAcknowledgement(runId, false)),
+        jsonResponse(
+          runStatus(runId, executionStatus, deliveryStatus, 1, reviewStatus, failureCause)
+        )
+      ]);
+      const { result } = renderHook(() =>
+        useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+      );
+      await makeReady(result);
+
+      await act(async () => {
+        await result.current.startNewRun();
+      });
+
+      expect(result.current.state.status).toBe("terminal");
+      expect(result.current.state.run).toMatchObject({
+        delivery_status: deliveryStatus,
+        execution_status: executionStatus,
+        review_status: reviewStatus,
+        run_id: runId
+      });
+      if (failureCause !== null) {
+        expect(result.current.state.run?.failureCause).toMatchObject({
+          kind: "observed",
+          phase: failureCause.phase,
+          code: failureCause.code
+        });
+      }
+      expect(result.current.state.result).toBeUndefined();
+      expect(requests.map(({ url }) => url)).toEqual([
+        `${BASE_URL}/health`,
+        `${BASE_URL}/api/runs`,
+        `${BASE_URL}/api/runs/${runId}`
+      ]);
+    }
+  );
+
+  it("aborts and invalidates observation on unmount without issuing a later GET", async () => {
+    let observationSignal: AbortSignal | undefined;
+    const runId = "run_live_unmount";
     const requests = mockFetchSequence([
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
-      jsonResponse(createAcknowledgement("run_live_failed", false)),
-      jsonResponse(runStatus("run_live_failed", "failed", "blocked"))
+      jsonResponse(createAcknowledgement(runId, false)),
+      (_input, init) => {
+        observationSignal = init?.signal ?? undefined;
+        return Promise.resolve(
+          jsonResponseValue(runStatus(runId, "running", "pending", 1))
+        );
+      },
+      jsonResponse(
+        runStatus(
+          runId,
+          "failed",
+          "failed",
+          2,
+          "not_required",
+          observedFailureCause("execution", "execution_error")
+        )
+      )
     ]);
-    const { result } = renderHook(() =>
-      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    const { result, unmount } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 20, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
     );
     await makeReady(result);
+    vi.useFakeTimers();
 
+    let startPromise!: Promise<void>;
+    act(() => {
+      startPromise = result.current.startNewRun();
+    });
     await act(async () => {
-      await result.current.startNewRun();
+      for (let iteration = 0; iteration < 10; iteration += 1) {
+        await Promise.resolve();
+      }
+    });
+    expect(result.current.state.run?.state_version).toBe(1);
+    expect(requests).toHaveLength(3);
+
+    unmount();
+    const abortedOnUnmount = observationSignal?.aborted;
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+      await startPromise;
     });
 
-    expect(result.current.state.status).toBe("terminal");
-    expect(result.current.state.run).toMatchObject({
-      delivery_status: "blocked",
-      execution_status: "failed",
-      run_id: "run_live_failed"
-    });
-    expect(result.current.state.result).toBeUndefined();
-    expect(requests.map(({ url }) => url)).toEqual([
-      `${BASE_URL}/health`,
-      `${BASE_URL}/api/runs`,
-      `${BASE_URL}/api/runs/run_live_failed`
-    ]);
+    expect(abortedOnUnmount).toBe(true);
+    expect(requests).toHaveLength(3);
   });
 
   it.each([
@@ -754,13 +930,20 @@ function createAcknowledgement(runId: string, idempotentReplay: boolean) {
   };
 }
 
-function runStatus(runId: string, executionStatus: string, deliveryStatus: string, stateVersion = 1) {
+function runStatus(
+  runId: string,
+  executionStatus: string,
+  deliveryStatus: string,
+  stateVersion = 1,
+  reviewStatus = "not_required",
+  failureCause: unknown = null
+) {
   return {
     run_id: runId,
     thread_id: `demo-console-${FIXED_UUID}`,
     profile_id: "generic",
     execution_status: executionStatus,
-    review_status: "not_required",
+    review_status: reviewStatus,
     delivery_status: deliveryStatus,
     state_version: stateVersion,
     segments: [
@@ -776,8 +959,32 @@ function runStatus(runId: string, executionStatus: string, deliveryStatus: strin
     review_workflow: null,
     review_decision: null,
     review_resolution: null,
-    failure_cause: null
+    failure_cause: failureCause
   };
+}
+
+function observedFailureCause(phase: string, code: string) {
+  return {
+    schema_version: "dra.run-failure-cause.v1",
+    observation_status: "observed",
+    phase,
+    code,
+    recorded_at: "2026-07-16T08:02:00Z"
+  };
+}
+
+function mismatchedRunError(runId: string): FetchStep {
+  return jsonResponse(
+    {
+      code: "run_status_unavailable",
+      problem: "Run observation is unavailable.",
+      cause: "The error envelope named another run.",
+      fix: "Inspect the requested run only.",
+      retryable: false,
+      run_id: runId
+    },
+    409
+  );
 }
 
 function runResult(runId: string) {

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   DEFAULT_BACKEND_BASE_URL,
@@ -52,15 +52,10 @@ export type LiveRunState = {
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = 600_000;
 const DEFAULT_RANDOM_UUID = () => crypto.randomUUID();
-const TERMINAL_STATUSES = new Set([
+const TERMINAL_STATUSES = new Set<RunProjection["execution_status"]>([
   "completed",
   "completed_with_fallback",
-  "failed",
-  "cancelled",
-  "timeout",
-  "timed_out",
-  "review_required",
-  "blocked"
+  "failed"
 ]);
 
 export function useLiveRun(options: LiveRunOptions = {}) {
@@ -94,6 +89,14 @@ export function useLiveRun(options: LiveRunOptions = {}) {
     createIntent.current = null;
     activeRunId.current = null;
   }, []);
+
+  useEffect(
+    () => () => {
+      invalidateRequests();
+      clearRunScope();
+    },
+    [clearRunScope, invalidateRequests]
+  );
 
   const setMode = useCallback(
     (mode: DemoMode) => {
@@ -364,8 +367,8 @@ export function useLiveRun(options: LiveRunOptions = {}) {
   };
 }
 
-function isTerminal(status: string | undefined) {
-  return typeof status === "string" && TERMINAL_STATUSES.has(status);
+function isTerminal(status: RunProjection["execution_status"]) {
+  return TERMINAL_STATUSES.has(status);
 }
 
 function classifyObservationFailure(

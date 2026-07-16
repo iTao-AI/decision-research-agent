@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ClientRequestError,
   createRunIntent,
+  getHealth,
   getResult,
   getRun,
   isAmbiguousCreateError,
@@ -197,6 +198,41 @@ describe("keyed live run creation", () => {
     expect(error).toBeInstanceOf(ClientRequestError);
     expect(isAmbiguousCreateError(error)).toBe(false);
   });
+});
+
+describe("loopback request boundary", () => {
+  it.each(["health", "create", "status", "result"] as const)(
+    "rejects redirects on the %s request path",
+    async (requestPath) => {
+      const intent = createRunIntent(() => FIXED_UUID);
+      const responses = {
+        health: jsonResponse({ status: "ok", service: "decision-research-agent" }),
+        create: jsonResponse({
+          run_id: "run_live_redirect",
+          segment_id: "run_live_redirect_seg_000",
+          status: "started",
+          thread_id: intent.payload.thread_id,
+          idempotent_replay: false
+        }),
+        status: jsonResponse(validRunStatus("run_live_redirect")),
+        result: jsonResponse(validRunResult("run_live_redirect"))
+      };
+      const fetchMock = stubFetch(responses[requestPath]);
+
+      if (requestPath === "health") {
+        await getHealth(BASE_URL);
+      } else if (requestPath === "create") {
+        await startRun(BASE_URL, intent);
+      } else if (requestPath === "status") {
+        await getRun(BASE_URL, "run_live_redirect");
+      } else {
+        await getResult(BASE_URL, "run_live_redirect");
+      }
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][1]?.redirect).toBe("error");
+    }
+  );
 });
 
 describe("strict live response parsing", () => {
@@ -403,6 +439,39 @@ function jsonReadFailureResponse(error: unknown): Response {
     ok: true,
     status: 200
   } as Response;
+}
+
+function validRunStatus(runId: string) {
+  return {
+    run_id: runId,
+    thread_id: "demo-console-thread",
+    profile_id: "generic",
+    execution_status: "completed",
+    review_status: "not_required",
+    delivery_status: "ready",
+    state_version: 2,
+    segments: [],
+    evidence: [],
+    review_workflow: null,
+    review_decision: null,
+    review_resolution: null,
+    failure_cause: null
+  };
+}
+
+function validRunResult(runId: string) {
+  return {
+    run_id: runId,
+    execution_status: "completed",
+    delivery_status: "ready",
+    artifact: {
+      artifact_id: "research-report.md",
+      kind: "research_report_markdown",
+      media_type: "text/markdown",
+      content: "# Canonical result",
+      content_hash: "sha256:def"
+    }
+  };
 }
 
 function stubFetch(response: Response | Promise<Response>) {

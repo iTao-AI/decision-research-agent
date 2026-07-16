@@ -113,6 +113,31 @@ describe("Decision Research Agent demo console", () => {
     );
   });
 
+  it("stacks recovery actions without fixed minimum overflow at the 320px path", () => {
+    const process = (
+      globalThis as typeof globalThis & {
+        process: {
+          cwd(): string;
+          getBuiltinModule(name: "fs"): {
+            readFileSync(path: string, encoding: "utf8"): string;
+          };
+        };
+      }
+    ).process;
+    const styles = process
+      .getBuiltinModule("fs")
+      .readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+    const mobileStart = styles.indexOf("@media (max-width: 760px)");
+    const mobileStyles = styles.slice(mobileStart);
+    const recoveryRule = mobileStyles.match(/\.recovery-actions\s*\{([^}]*)\}/)?.[1];
+    const buttonRule = mobileStyles.match(/\.recovery-actions button\s*\{([^}]*)\}/)?.[1];
+
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+    expect(recoveryRule).toMatch(/flex-direction:\s*column/);
+    expect(buttonRule).toMatch(/min-width:\s*0/);
+    expect(buttonRule).toMatch(/width:\s*100%/);
+  });
+
   it("shows static demo data for lifecycle, evidence, review, verification, and result", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -551,7 +576,13 @@ describe("Decision Research Agent demo console", () => {
         idempotent_replay: false
       }),
       jsonResponse({
-        ...runStatus(runId, "failed", "blocked"),
+        ...runStatus(
+          runId,
+          "failed",
+          "failed",
+          "not_required",
+          observedFailureCause("execution", "execution_error")
+        ),
         ...(currentArtifacts === undefined ? {} : { current_artifacts: currentArtifacts })
       })
     ]);
@@ -577,15 +608,19 @@ describe("Decision Research Agent demo console", () => {
     expect(within(card).getByText(expected)).toBeInTheDocument();
   });
 
-  it.each(["failed", "cancelled", "timeout", "review_required", "blocked"])(
-    "renders %s as a terminal non-ready outcome without a result request",
-    async (executionStatus) => {
+  it.each([
+    ["completed", "required", "review_required", null],
+    ["completed", "resolved", "blocked", null],
+    ["failed", "not_required", "failed", observedFailureCause("execution", "execution_error")]
+  ] as const)(
+    "renders %s/%s/%s as a terminal non-ready outcome without a result request",
+    async (executionStatus, reviewStatus, deliveryStatus, failureCause) => {
       const user = userEvent.setup();
-      const runId = `run_live_${executionStatus}`;
+      const runId = `run_live_${deliveryStatus}`;
       const fetchMock = mockFetchSequence([
         jsonResponse({ status: "ok", service: "decision-research-agent" }),
         jsonResponse(createAcknowledgement(runId, false)),
-        jsonResponse(runStatus(runId, executionStatus, "blocked"))
+        jsonResponse(runStatus(runId, executionStatus, deliveryStatus, reviewStatus, failureCause))
       ]);
 
       render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
@@ -596,6 +631,7 @@ describe("Decision Research Agent demo console", () => {
 
       expect(screen.getByText("已观察终态，但 canonical result 尚未就绪")).toBeInTheDocument();
       expect(screen.getAllByText(executionStatus).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(deliveryStatus).length).toBeGreaterThan(0);
       expect(fetchMock).toHaveBeenCalledTimes(3);
       expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain(
         `${BASE_URL}/api/runs/${runId}/result`
@@ -626,7 +662,7 @@ describe("Decision Research Agent demo console", () => {
   ])("renders failure-cause availability %# without inference", async (failureCause, expected) => {
     const user = userEvent.setup();
     const status = {
-      ...runStatus("run_live_failure_cause", "failed", "blocked"),
+      ...runStatus("run_live_failure_cause", "failed", "failed"),
       failure_cause: failureCause
     };
     const fetchMock = mockFetchSequence([
@@ -866,7 +902,7 @@ function authorityRunStatus(runId: string) {
   return {
     ...runStatus(runId, "completed", "ready"),
     thread_id: `demo-console-${FIXED_UUID}`,
-    review_status: "approved",
+    review_status: "resolved",
     state_version: 42,
     segments: [
       {
@@ -946,13 +982,19 @@ function authorityRunStatus(runId: string) {
   };
 }
 
-function runStatus(runId: string, executionStatus: string, deliveryStatus: string) {
+function runStatus(
+  runId: string,
+  executionStatus: string,
+  deliveryStatus: string,
+  reviewStatus = "not_required",
+  failureCause: unknown = null
+) {
   return {
     run_id: runId,
     thread_id: `demo-console-${FIXED_UUID}`,
     profile_id: "generic",
     execution_status: executionStatus,
-    review_status: "not_required",
+    review_status: reviewStatus,
     delivery_status: deliveryStatus,
     state_version: 1,
     segments: [
@@ -968,7 +1010,17 @@ function runStatus(runId: string, executionStatus: string, deliveryStatus: strin
     review_workflow: null,
     review_decision: null,
     review_resolution: null,
-    failure_cause: null
+    failure_cause: failureCause
+  };
+}
+
+function observedFailureCause(phase: string, code: string) {
+  return {
+    schema_version: "dra.run-failure-cause.v1",
+    observation_status: "observed",
+    phase,
+    code,
+    recorded_at: "2026-07-16T08:02:00Z"
   };
 }
 

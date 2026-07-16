@@ -54,6 +54,33 @@ const RESULT = {
   unknown_private_field: "ignored"
 };
 
+const APPROVED_FAILURE_CAUSES = [
+  ["dispatch", "run_dispatch_schedule_failed"],
+  ["dispatch", "run_dispatch_start_failed"],
+  ["dispatch", "run_dispatch_start_timeout"],
+  ["dispatch", "run_dispatch_lease_expired"],
+  ["execution", "call_budget_exceeded"],
+  ["execution", "recursion_limit_exceeded"],
+  ["execution", "invalid_research_packet"],
+  ["execution", "missing_research_packet"],
+  ["execution", "run_timeout"],
+  ["execution", "cancelled"],
+  ["execution", "execution_error"],
+  ["finalization", "run_timeout"],
+  ["finalization", "cancelled"],
+  ["finalization", "run_finalization_failed"]
+] as const;
+
+const REAL_RUN_STATUS_TUPLES = [
+  ["pending", "not_required", "pending"],
+  ["running", "not_required", "pending"],
+  ["completed", "not_required", "ready"],
+  ["completed_with_fallback", "not_required", "ready"],
+  ["completed", "required", "review_required"],
+  ["completed", "resolved", "blocked"],
+  ["failed", "not_required", "failed"]
+] as const;
+
 describe("parseRunProjection", () => {
   it("selects only the complete render-safe run projection", () => {
     const projection = parseRunProjection(structuredClone(STATUS));
@@ -132,6 +159,37 @@ describe("parseRunProjection", () => {
   ])("rejects malformed required run scalar %s", (field, invalidValue) => {
     const value = record(structuredClone(STATUS));
     value[field] = invalidValue;
+
+    expectInvalid(() => parseRunProjection(value));
+  });
+
+  it.each(REAL_RUN_STATUS_TUPLES)(
+    "accepts the authoritative central status tuple %s/%s/%s",
+    (executionStatus, reviewStatus, deliveryStatus) => {
+      const value = record(structuredClone(STATUS));
+      value.execution_status = executionStatus;
+      value.review_status = reviewStatus;
+      value.delivery_status = deliveryStatus;
+      value.failure_cause =
+        executionStatus === "failed"
+          ? observedFailureCause("execution", "execution_error")
+          : null;
+
+      expect(parseRunProjection(value)).toMatchObject({
+        execution_status: executionStatus,
+        review_status: reviewStatus,
+        delivery_status: deliveryStatus
+      });
+    }
+  );
+
+  it.each([
+    ["execution_status", "cancelled"],
+    ["review_status", "approved"],
+    ["delivery_status", "delivered"]
+  ])("rejects unknown central status %s=%s", (field, unknownValue) => {
+    const value = record(structuredClone(STATUS));
+    value[field] = unknownValue;
 
     expectInvalid(() => parseRunProjection(value));
   });
@@ -395,22 +453,25 @@ describe("parseRunProjection", () => {
     });
   });
 
-  it.each([
-    ["dispatch", "run_dispatch_schedule_failed"],
-    ["execution", "run_timeout"],
-    ["finalization", "run_finalization_failed"]
-  ])("accepts the approved observed failure matrix entry %s/%s", (phase, code) => {
-    const value = record(structuredClone(STATUS));
-    value.failure_cause = observedFailureCause(phase, code);
-
-    expect(parseRunProjection(value).failureCause).toEqual({
-      kind: "observed",
-      schema_version: "dra.run-failure-cause.v1",
-      phase,
-      code,
-      recorded_at: "2026-07-16T08:02:00Z"
-    });
+  it("mirrors all 14 authoritative failure-cause phase/code pairs", () => {
+    expect(APPROVED_FAILURE_CAUSES).toHaveLength(14);
   });
+
+  it.each(APPROVED_FAILURE_CAUSES)(
+    "accepts the approved observed failure matrix entry %s/%s",
+    (phase, code) => {
+      const value = record(structuredClone(STATUS));
+      value.failure_cause = observedFailureCause(phase, code);
+
+      expect(parseRunProjection(value).failureCause).toEqual({
+        kind: "observed",
+        schema_version: "dra.run-failure-cause.v1",
+        phase,
+        code,
+        recorded_at: "2026-07-16T08:02:00Z"
+      });
+    }
+  );
 
   it.each([
     ["missing schema version", { observation_status: "not_observed" }],
@@ -490,6 +551,34 @@ describe("parseRunResult", () => {
   it("rejects a canonical result that does not match the requested run identity", () => {
     expectInvalid(() => parseRunResult(structuredClone(RESULT), "run_expected"));
   });
+
+  it("accepts a completed-with-fallback deliverable result", () => {
+    const value = record(structuredClone(RESULT));
+    value.execution_status = "completed_with_fallback";
+
+    expect(parseRunResult(value)).toMatchObject({
+      execution_status: "completed_with_fallback",
+      delivery_status: "ready"
+    });
+  });
+
+  it.each([
+    ["pending", "ready"],
+    ["running", "ready"],
+    ["failed", "ready"],
+    ["cancelled", "ready"],
+    ["completed", "pending"],
+    ["completed", "blocked"]
+  ])(
+    "rejects a non-deliverable canonical result tuple %s/%s",
+    (executionStatus, deliveryStatus) => {
+      const value = record(structuredClone(RESULT));
+      value.execution_status = executionStatus;
+      value.delivery_status = deliveryStatus;
+
+      expectInvalid(() => parseRunResult(value));
+    }
+  );
 
   it.each([
     ["run_id", null],

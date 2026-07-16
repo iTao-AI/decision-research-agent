@@ -178,6 +178,12 @@ export async function getResult(
 
 export function normalizeClientError(error: unknown, runId?: string): ClientError {
   if (error instanceof ClientRequestError) {
+    if (runId && error.details.run_id !== undefined && error.details.run_id !== runId) {
+      return {
+        ...invalidResponse("Backend error response did not match the requested run identity."),
+        run_id: runId
+      };
+    }
     return runId && !error.details.run_id ? { ...error.details, run_id: runId } : error.details;
   }
   return {
@@ -202,7 +208,10 @@ export function isAmbiguousCreateError(error: unknown) {
 async function requestJson<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(buildUrl(baseUrl, path), init ?? { method: "GET" });
+    response = await fetch(buildUrl(baseUrl, path), {
+      ...(init ?? { method: "GET" }),
+      redirect: "error"
+    });
   } catch (error) {
     if (isAbortError(error)) {
       throw error;

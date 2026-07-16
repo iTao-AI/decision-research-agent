@@ -75,7 +75,11 @@ external evaluation of the public contract surface.
 
 ## Release
 
-- [v0.1.3 Release Notes](releases/v0.1.3.md) — current supported surface,
+- [v0.1.4 Release Notes](releases/v0.1.4.md) — current supported surface,
+  including durable run failure causes and Console live authority closure,
+  compatibility, rollback, verification, and explicit limits.
+- [v0.1.3 Release Notes](releases/v0.1.3.md) — historical durable run
+  dispatch reconciliation surface,
   including single-node durable run dispatch reconciliation, compatibility,
   rollback, verification, and explicit limits.
 - [v0.1.2 Release Notes](releases/v0.1.2.md) — historical run-creation

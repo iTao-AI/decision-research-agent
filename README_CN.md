@@ -253,6 +253,7 @@ python tools/decision_research_agent_tool.py doctor
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Durable Run Failure Cause Proof](docs/evidence/run-failure-cause-v1.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.4 Release Notes](docs/releases/v0.1.4.md)
 - [v0.1.3 Release Notes](docs/releases/v0.1.3.md)
 - [v0.1.2 Release Notes](docs/releases/v0.1.2.md)
 - [v0.1.1 Release Notes](docs/releases/v0.1.1.md)

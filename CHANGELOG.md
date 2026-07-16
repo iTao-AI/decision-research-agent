@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-16
+
 ### Durable run failure causes
 
 - Added immutable application-database `run_failure_causes_v1` through

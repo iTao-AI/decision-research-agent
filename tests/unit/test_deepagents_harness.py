@@ -1,6 +1,13 @@
 from pathlib import Path
 
 import pytest
+from langchain.agents.middleware.model_call_limit import (
+    ModelCallLimitExceededError,
+)
+from langchain.agents.middleware.tool_call_limit import (
+    ToolCallLimitExceededError,
+)
+from langgraph.errors import GraphRecursionError
 
 
 class FakeGraph:
@@ -336,3 +343,84 @@ async def test_runtime_config_is_owned_by_adapter(monkeypatch):
         observer=Observer(),
     )
     assert talent_graph.config["recursion_limit"] == 37
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("native_exception", "expected_failure_kind"),
+    [
+        pytest.param(
+            ModelCallLimitExceededError(1, 1, 1, 1),
+            "call_budget_exceeded",
+            id="model-call-limit",
+        ),
+        pytest.param(
+            ToolCallLimitExceededError(1, 1, 1, 1, tool_name="search"),
+            "call_budget_exceeded",
+            id="tool-call-limit",
+        ),
+        pytest.param(
+            GraphRecursionError("bounded recursion"),
+            "recursion_limit_exceeded",
+            id="graph-recursion-limit",
+        ),
+    ],
+)
+async def test_installed_native_limit_signals_reach_bounded_harness_mapping(
+    native_exception,
+    expected_failure_kind,
+):
+    from agent.deepagents_harness import DeepAgentsHarness
+    from agent.harness_contracts import HarnessExecutionError, HarnessRequest
+    from agent.runtime_context import ResearchRuntimeContext
+
+    class RaisingGraph:
+        async def astream(self, _input, *, config, context):
+            del config, context
+            if False:
+                yield {}
+            raise native_exception
+
+    class Observer:
+        def callbacks(self):
+            return []
+
+        def on_stream_chunk(self, _chunk):
+            raise AssertionError("no chunks expected")
+
+        def snapshot_outcome(self):
+            raise AssertionError("native failure must not produce success")
+
+    graph = RaisingGraph()
+    harness = DeepAgentsHarness(
+        graph=graph,
+        backend=object(),
+        permissions=(),
+        skills=(),
+        profile_graphs={"generic": graph},
+    )
+    request = HarnessRequest(
+        query="query",
+        thread_id="thread-1",
+        run_id="run-1",
+        segment_id="segment-1",
+        profile_id="generic",
+        scope={},
+        trace_metadata={},
+    )
+    context = ResearchRuntimeContext(
+        thread_id="thread-1",
+        run_id="run-1",
+        segment_id="segment-1",
+        profile_id="generic",
+    )
+
+    with pytest.raises(HarnessExecutionError) as raised:
+        await harness.execute(
+            request,
+            runtime_context=context,
+            observer=Observer(),
+        )
+
+    assert raised.value.failure_kind == expected_failure_kind
+    assert raised.value.__cause__ is native_exception

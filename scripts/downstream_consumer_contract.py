@@ -598,6 +598,7 @@ def _resolve_result(*, run_id: str, db_path: str) -> tuple[int, dict[str, Any]]:
 
 
 def _seed_source_cases(db_path: str) -> list[tuple[str, dict[str, Any]]]:
+    from api.run_failure_cause_models import RunFailureCauseWrite
     from api.run_repository import (
         create_run,
         finalize_run_transaction,
@@ -677,6 +678,14 @@ def _seed_source_cases(db_path: str) -> list[tuple[str, dict[str, Any]]]:
             delivery_status=delivery_status,
             evidence_entries=evidence_entries,
             artifacts=artifacts,
+            failure_cause=(
+                RunFailureCauseWrite(
+                    phase="execution",
+                    code="execution_error",
+                )
+                if execution_status == "failed"
+                else None
+            ),
             db_path=db_path,
         ):
             raise RuntimeError("deterministic terminal transition failed")
@@ -711,10 +720,12 @@ def build_fixture_bundle() -> dict[str, Any]:
                 result_http_status, result_payload = _resolve_result(
                     run_id=status["run_id"], db_path=db_path
                 )
+                status_v1 = dict(status)
+                status_v1.pop("failure_cause", None)
                 cases.append(
                     project_consumer_case(
                         case_id=case_id,
-                        status_payload=status,
+                        status_payload=status_v1,
                         result_http_status=result_http_status,
                         result_payload=result_payload,
                     )

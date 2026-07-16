@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Durable run failure causes
+
+- Added immutable application-database `run_failure_causes_v1` through
+  `009_run_failure_cause_v1`; historical failed runs report `not_observed`
+  without inferred diagnosis, while new terminal failures atomically persist
+  bounded dispatch, execution, or finalization causes.
+- Added an additive `failure_cause` field only to
+  `GET /api/runs/{run_id}` and a deterministic 16-case proof.
+  `GET /api/runs/{run_id}/result`, `409 run_failed`, and the frozen
+  `dra.downstream-consumer.v1` fixture remain unchanged.
+- The contract does not claim exactly-once execution, hard preemption,
+  provider diagnosis, multi-instance high availability, or a billing record.
+
 ## [0.1.3] - 2026-07-14
 
 ### Durable run dispatch

@@ -9,6 +9,8 @@ from api.run_dispatch_repository import (
     claim_run_dispatch,
     dispatch_attempt_is_started,
     get_run_dispatch,
+    reconcile_run_dispatch_cancellation,
+    reconcile_run_dispatch_timeout,
     release_run_dispatch_for_retry,
     start_run_dispatch,
 )
@@ -28,6 +30,76 @@ def _claim(db_path, run_id=None, worker_id=WORKER_1, now=NOW):
         run_id=run_id,
         now=now,
     )
+
+
+def _dispatch_snapshot(db_path, *, run_id, segment_id):
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    try:
+        dispatch = connection.execute(
+            """
+            SELECT status, lease_owner, lease_expires_at, attempt_count,
+                   last_error_code, updated_at, started_at
+            FROM run_dispatches_v1 WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        run = connection.execute(
+            """
+            SELECT execution_status, review_status, delivery_status,
+                   state_version, updated_at
+            FROM research_runs_v2 WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        segment = connection.execute(
+            "SELECT status, updated_at FROM run_segments WHERE segment_id = ?",
+            (segment_id,),
+        ).fetchone()
+        cause = connection.execute(
+            """
+            SELECT observation_status, terminal_state_version, phase, code,
+                   recorded_at
+            FROM run_failure_causes_v1 WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+    return {
+        "dispatch": dict(dispatch),
+        "run": dict(run),
+        "segment": dict(segment),
+        "cause": dict(cause) if cause is not None else None,
+    }
+
+
+def _assert_observed_dispatch_failure(snapshot, *, code):
+    assert snapshot["dispatch"]["status"] == "failed"
+    assert snapshot["dispatch"]["attempt_count"] == 3
+    assert snapshot["dispatch"]["last_error_code"] == code
+    assert snapshot["dispatch"]["lease_owner"] is None
+    assert snapshot["dispatch"]["lease_expires_at"] is None
+    assert snapshot["dispatch"]["started_at"] is None
+    assert snapshot["run"]["execution_status"] == "failed"
+    assert snapshot["run"]["review_status"] == "not_required"
+    assert snapshot["run"]["delivery_status"] == "failed"
+    assert snapshot["run"]["state_version"] == 1
+    assert snapshot["segment"]["status"] == "failed"
+    assert snapshot["cause"] is not None
+    assert snapshot["cause"] == {
+        "observation_status": "observed",
+        "terminal_state_version": 1,
+        "phase": "dispatch",
+        "code": code,
+        "recorded_at": snapshot["cause"]["recorded_at"],
+    }
+    assert {
+        snapshot["dispatch"]["updated_at"],
+        snapshot["run"]["updated_at"],
+        snapshot["segment"]["updated_at"],
+        snapshot["cause"]["recorded_at"],
+    } == {snapshot["cause"]["recorded_at"]}
 
 
 def test_get_pending_dispatch_and_claim_oldest_first(tmp_path):
@@ -184,6 +256,43 @@ def test_retry_release_is_exact_and_retains_bounded_code(tmp_path):
 
 @pytest.mark.parametrize(
     "error_code",
+    ["run_dispatch_schedule_failed", "run_dispatch_start_failed"],
+)
+def test_first_two_schedule_or_start_failures_retry_without_public_cause(
+    tmp_path,
+    error_code,
+):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+
+    for attempt in (1, 2):
+        claim = _claim(
+            db_path,
+            run_id=created["run_id"],
+            now=NOW + timedelta(minutes=attempt),
+        )
+        assert claim.attempt_count == attempt
+        assert release_run_dispatch_for_retry(
+            db_path=db_path,
+            claim=claim,
+            error_code=error_code,
+        ) == "retry"
+        snapshot = _dispatch_snapshot(
+            db_path,
+            run_id=created["run_id"],
+            segment_id=created["segment_id"],
+        )
+        assert snapshot["dispatch"]["status"] == "pending"
+        assert snapshot["dispatch"]["attempt_count"] == attempt
+        assert snapshot["dispatch"]["last_error_code"] == error_code
+        assert snapshot["run"]["execution_status"] == "pending"
+        assert snapshot["run"]["state_version"] == 0
+        assert snapshot["segment"]["status"] == "pending"
+        assert snapshot["cause"] is None
+
+
+@pytest.mark.parametrize(
+    "error_code",
     ["", "has space", "credential=/private/token", "A" * 129],
 )
 def test_retry_rejects_unbounded_error_codes(tmp_path, error_code):
@@ -199,7 +308,14 @@ def test_retry_rejects_unbounded_error_codes(tmp_path, error_code):
         )
 
 
-def test_third_failed_claim_fails_dispatch_run_and_segment_consistently(tmp_path):
+@pytest.mark.parametrize(
+    "error_code",
+    ["run_dispatch_schedule_failed", "run_dispatch_start_failed"],
+)
+def test_third_schedule_or_start_failure_writes_exact_atomic_cause(
+    tmp_path,
+    error_code,
+):
     db_path = str(tmp_path / "tasks.db")
     created = create_run(db_path=db_path, thread_id="thread-1", query="secret query")
     outcomes = []
@@ -213,34 +329,55 @@ def test_third_failed_claim_fails_dispatch_run_and_segment_consistently(tmp_path
             release_run_dispatch_for_retry(
                 db_path=db_path,
                 claim=claim,
-                error_code="run_dispatch_schedule_failed",
+                error_code=error_code,
             )
         )
 
     assert outcomes == ["retry", "retry", "failed"]
-    connection = sqlite3.connect(db_path)
-    try:
-        dispatch = connection.execute(
-            "SELECT status, attempt_count, last_error_code, lease_owner "
-            "FROM run_dispatches_v1 WHERE run_id = ?",
-            (created["run_id"],),
-        ).fetchone()
-        run = connection.execute(
-            "SELECT execution_status, review_status, delivery_status, state_version "
-            "FROM research_runs_v2 WHERE run_id = ?",
-            (created["run_id"],),
-        ).fetchone()
-        segment = connection.execute(
-            "SELECT status FROM run_segments WHERE segment_id = ?",
-            (created["segment_id"],),
-        ).fetchone()
-    finally:
-        connection.close()
+    snapshot = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    _assert_observed_dispatch_failure(snapshot, code=error_code)
+    assert "secret query" not in str(snapshot["dispatch"])
+    assert _claim(
+        db_path,
+        run_id=created["run_id"],
+        now=NOW + timedelta(minutes=4),
+    ) is None
 
-    assert dispatch == ("failed", 3, "run_dispatch_schedule_failed", None)
-    assert run == ("failed", "not_required", "failed", 1)
-    assert segment == ("failed",)
-    assert "secret query" not in str(dispatch)
+
+def test_third_pre_start_timeout_writes_exact_atomic_cause(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+    outcomes = []
+
+    for attempt in (1, 2, 3):
+        claim = _claim(
+            db_path,
+            run_id=created["run_id"],
+            now=NOW + timedelta(minutes=attempt),
+        )
+        outcomes.append(
+            reconcile_run_dispatch_timeout(db_path=db_path, claim=claim)
+        )
+
+    assert outcomes == ["retry", "retry", "failed"]
+    snapshot = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    _assert_observed_dispatch_failure(
+        snapshot,
+        code="run_dispatch_start_timeout",
+    )
+    assert _claim(
+        db_path,
+        run_id=created["run_id"],
+        now=NOW + timedelta(minutes=4),
+    ) is None
 
 
 def test_expired_third_claim_is_failed_before_scanning_next_pending_run(tmp_path):
@@ -295,25 +432,329 @@ def test_expired_third_claim_is_failed_before_scanning_next_pending_run(tmp_path
     assert [claim.attempt_count for claim in claims] == [1, 2, 3]
     assert next_claim.run_id == pending["run_id"]
     assert next_claim.attempt_count == 1
-    dispatch = get_run_dispatch(db_path=db_path, run_id=exhausted["run_id"])
-    assert dispatch["status"] == "failed"
-    assert dispatch["attempt_count"] == 3
-    assert dispatch["last_error_code"] == "run_dispatch_lease_expired"
+    snapshot = _dispatch_snapshot(
+        db_path,
+        run_id=exhausted["run_id"],
+        segment_id=exhausted["segment_id"],
+    )
+    _assert_observed_dispatch_failure(
+        snapshot,
+        code="run_dispatch_lease_expired",
+    )
+    assert start_run_dispatch(db_path=db_path, claim=claims[-1]) is False
+    assert _claim(
+        db_path,
+        run_id=exhausted["run_id"],
+        now=NOW + timedelta(minutes=5),
+    ) is None
+
+
+def test_expired_third_claim_uses_utc_for_comparison_and_terminal_timestamps(
+    tmp_path,
+):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+    for attempt in (1, 2):
+        claim = _claim(
+            db_path,
+            run_id=created["run_id"],
+            now=NOW + timedelta(minutes=attempt),
+        )
+        assert release_run_dispatch_for_retry(
+            db_path=db_path,
+            claim=claim,
+            error_code="run_dispatch_schedule_failed",
+        ) == "retry"
+
+    third_claimed_at = datetime(
+        2026,
+        7,
+        14,
+        14,
+        3,
+        tzinfo=timezone(timedelta(hours=14)),
+    )
+    third = _claim(
+        db_path,
+        run_id=created["run_id"],
+        now=third_claimed_at,
+    )
+    scan_now = datetime(
+        2026,
+        7,
+        14,
+        8,
+        3,
+        31,
+        tzinfo=timezone(timedelta(hours=8)),
+    )
+    assert third.lease_expires_at.astimezone(timezone.utc) < scan_now.astimezone(
+        timezone.utc
+    )
+
+    assert _claim(
+        db_path,
+        run_id=created["run_id"],
+        now=scan_now,
+    ) is None
+    snapshot = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    _assert_observed_dispatch_failure(
+        snapshot,
+        code="run_dispatch_lease_expired",
+    )
+    expected_timestamp = scan_now.astimezone(timezone.utc).isoformat()
+    assert snapshot["dispatch"]["updated_at"] == expected_timestamp
+    assert snapshot["run"]["updated_at"] == expected_timestamp
+    assert snapshot["segment"]["updated_at"] == expected_timestamp
+    assert snapshot["cause"]["recorded_at"] == expected_timestamp
+
+    verified = get_run_dispatch(db_path=db_path, run_id=created["run_id"])
+    assert verified["status"] == "failed"
+    assert verified["updated_at"] == expected_timestamp
+
+
+def test_cancellation_retries_first_two_and_defers_exact_third_lease(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+
+    for attempt in (1, 2):
+        claim = _claim(
+            db_path,
+            run_id=created["run_id"],
+            now=NOW + timedelta(minutes=attempt),
+        )
+        assert reconcile_run_dispatch_cancellation(
+            db_path=db_path,
+            claim=claim,
+        ) == "retry"
+        snapshot = _dispatch_snapshot(
+            db_path,
+            run_id=created["run_id"],
+            segment_id=created["segment_id"],
+        )
+        assert snapshot["dispatch"]["status"] == "pending"
+        assert snapshot["dispatch"]["attempt_count"] == attempt
+        assert snapshot["dispatch"]["last_error_code"] == "run_dispatch_interrupted"
+        assert snapshot["run"]["execution_status"] == "pending"
+        assert snapshot["segment"]["status"] == "pending"
+        assert snapshot["cause"] is None
+
+    third = _claim(
+        db_path,
+        run_id=created["run_id"],
+        now=NOW + timedelta(minutes=3),
+    )
+    before = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    assert reconcile_run_dispatch_cancellation(
+        db_path=db_path,
+        claim=third,
+    ) == "deferred"
+    assert _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    ) == before
+
+
+def test_expired_deferred_cancellation_converges_to_lease_expired(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+
+    for attempt in (1, 2):
+        claim = _claim(
+            db_path,
+            run_id=created["run_id"],
+            now=NOW + timedelta(minutes=attempt),
+        )
+        assert reconcile_run_dispatch_cancellation(
+            db_path=db_path,
+            claim=claim,
+        ) == "retry"
+    third = _claim(
+        db_path,
+        run_id=created["run_id"],
+        now=NOW + timedelta(minutes=3),
+    )
+    assert reconcile_run_dispatch_cancellation(
+        db_path=db_path,
+        claim=third,
+    ) == "deferred"
+
+    assert _claim(
+        db_path,
+        run_id=created["run_id"],
+        now=third.lease_expires_at + timedelta(seconds=1),
+    ) is None
+    snapshot = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    _assert_observed_dispatch_failure(
+        snapshot,
+        code="run_dispatch_lease_expired",
+    )
+
+
+def test_started_timeout_and_cancellation_report_started_without_dispatch_cause(
+    tmp_path,
+):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+    claim = _claim(db_path, run_id=created["run_id"])
+    assert start_run_dispatch(db_path=db_path, claim=claim) is True
+    before = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+
+    assert reconcile_run_dispatch_timeout(db_path=db_path, claim=claim) == "started"
+    assert reconcile_run_dispatch_cancellation(
+        db_path=db_path,
+        claim=claim,
+    ) == "started"
+    after = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    assert after == before
+    assert after["cause"] is None
+
+
+def test_stale_and_forged_newer_attempts_are_noops_without_cause(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+    first = _claim(db_path, run_id=created["run_id"], now=NOW)
+    forged_newer = first.model_copy(update={"attempt_count": 2})
+    before = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+
+    assert reconcile_run_dispatch_timeout(
+        db_path=db_path,
+        claim=forged_newer,
+    ) == "stale"
+    assert reconcile_run_dispatch_cancellation(
+        db_path=db_path,
+        claim=forged_newer,
+    ) == "stale"
+    assert release_run_dispatch_for_retry(
+        db_path=db_path,
+        claim=forged_newer,
+        error_code="run_dispatch_schedule_failed",
+    ) == "stale"
+    assert _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    ) == before
+
     connection = sqlite3.connect(db_path)
     try:
-        run = connection.execute(
-            "SELECT execution_status, delivery_status FROM research_runs_v2 WHERE run_id = ?",
-            (exhausted["run_id"],),
-        ).fetchone()
-        segment = connection.execute(
-            "SELECT status FROM run_segments WHERE segment_id = ?",
-            (exhausted["segment_id"],),
-        ).fetchone()
+        with connection:
+            connection.execute(
+                "UPDATE run_dispatches_v1 SET lease_expires_at = ? WHERE run_id = ?",
+                ((NOW - timedelta(seconds=1)).isoformat(), created["run_id"]),
+            )
     finally:
         connection.close()
-    assert run == ("failed", "failed")
-    assert segment == ("failed",)
-    assert start_run_dispatch(db_path=db_path, claim=claims[-1]) is False
+    second = _claim(
+        db_path,
+        run_id=created["run_id"],
+        worker_id=WORKER_2,
+        now=NOW + timedelta(minutes=1),
+    )
+    before = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    assert second.attempt_count == 2
+    assert reconcile_run_dispatch_timeout(db_path=db_path, claim=first) == "stale"
+    assert reconcile_run_dispatch_cancellation(
+        db_path=db_path,
+        claim=first,
+    ) == "stale"
+    assert release_run_dispatch_for_retry(
+        db_path=db_path,
+        claim=first,
+        error_code="run_dispatch_schedule_failed",
+    ) == "stale"
+    after = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+    assert after == before
+    assert after["cause"] is None
+
+
+def test_cause_insert_failure_rolls_back_dispatch_run_and_segment(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+    for attempt in (1, 2):
+        claim = _claim(
+            db_path,
+            run_id=created["run_id"],
+            now=NOW + timedelta(minutes=attempt),
+        )
+        assert release_run_dispatch_for_retry(
+            db_path=db_path,
+            claim=claim,
+            error_code="run_dispatch_schedule_failed",
+        ) == "retry"
+    third = _claim(
+        db_path,
+        run_id=created["run_id"],
+        now=NOW + timedelta(minutes=3),
+    )
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                CREATE TRIGGER reject_dispatch_failure_cause
+                BEFORE INSERT ON run_failure_causes_v1
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced dispatch cause insert failure');
+                END
+                """
+            )
+    finally:
+        connection.close()
+    before = _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="forced dispatch cause insert failure",
+    ):
+        release_run_dispatch_for_retry(
+            db_path=db_path,
+            claim=third,
+            error_code="run_dispatch_schedule_failed",
+        )
+
+    assert _dispatch_snapshot(
+        db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    ) == before
 
 
 def test_claim_fails_closed_for_noncanonical_scope(tmp_path):
@@ -361,6 +802,15 @@ def test_terminal_or_wrong_version_run_cannot_be_claimed(tmp_path):
             connection.execute(
                 "UPDATE research_runs_v2 SET execution_status = 'failed', state_version = 1 "
                 "WHERE run_id = ?",
+                (terminal["run_id"],),
+            )
+            connection.execute(
+                """
+                INSERT INTO run_failure_causes_v1(
+                    run_id, observation_status, terminal_state_version,
+                    phase, code, recorded_at
+                ) VALUES (?, 'not_observed', NULL, NULL, NULL, NULL)
+                """,
                 (terminal["run_id"],),
             )
             connection.execute(

@@ -643,14 +643,28 @@ def _contract_case(root: Path) -> dict[str, Any]:
                 ),
             )
 
-        with patch.object(server, "run_deep_agent", fake_agent):
-            asyncio.run(
-                server._run_dispatched_with_persistence(
-                    claim,
-                    db_path=environment["DECISION_RESEARCH_AGENT_DB_PATH"],
-                    outcome_box=server.OutcomeBox(),
-                )
+        async def run_tracked_claim() -> None:
+            stage = server._RunStage()
+            termination_origin = server.TerminationOrigin()
+            finalization_checkpoint = server.FinalizationCheckpoint()
+            coroutine = server._run_dispatched_with_persistence(
+                claim,
+                db_path=environment["DECISION_RESEARCH_AGENT_DB_PATH"],
+                outcome_box=server.OutcomeBox(),
+                stage=stage,
+                termination_origin=termination_origin,
+                finalization_checkpoint=finalization_checkpoint,
             )
+            task = server.create_tracked_task(
+                coroutine,
+                f"{claim.run_id}:dispatch:{claim.attempt_count}",
+                termination_origin=termination_origin,
+                finalization_checkpoint=finalization_checkpoint,
+            )
+            await task
+
+        with patch.object(server, "run_deep_agent", fake_agent):
+            asyncio.run(run_tracked_claim())
         client = TestClient(server.app)
         headers = {"X-API-Key": "proof-only-api-secret"}
         status = client.get(f"/api/runs/{created['run_id']}", headers=headers)

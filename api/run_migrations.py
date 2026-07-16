@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import sqlite3
 
-from api.database import sqlite_db_path
+from api.database import backup_database, restore_database, sqlite_db_path
 from api.evidence_verification_repository import (
     VERIFICATION_MIGRATION_CHECKSUM,
     VERIFICATION_MIGRATION_VERSION,
@@ -20,8 +20,13 @@ from api.publication_repository import (
     migrate_publication_with_backup,
     verify_publication_schema,
 )
-from api.run_repository import MIGRATION_VERSION
-from api.run_repository import init_run_schema
+from api.run_repository import (
+    MIGRATION_VERSION,
+    _verify_run_failure_cause_marker,
+    _verify_run_failure_cause_rows,
+    _verify_run_failure_cause_schema,
+    init_run_schema,
+)
 from api.run_creation_models import (
     RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
     RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,
@@ -29,6 +34,11 @@ from api.run_creation_models import (
 from api.run_dispatch_models import (
     RUN_DISPATCH_MIGRATION_CHECKSUM,
     RUN_DISPATCH_MIGRATION_VERSION,
+)
+from api.run_failure_cause_models import (
+    RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,
+    RUN_FAILURE_CAUSE_MIGRATION_VERSION,
+    RunFailureCauseConflict,
 )
 
 
@@ -44,6 +54,7 @@ REQUIRED_TABLES = {
     "review_resolutions_v2",
     "run_create_idempotency_v1",
     "run_dispatches_v1",
+    "run_failure_causes_v1",
 }
 REQUIRED_INDEXES = {
     "idx_research_runs_v2_thread",
@@ -56,6 +67,7 @@ EXPECTED_MIGRATIONS = {
     REVIEW_MIGRATION_VERSION: REVIEW_MIGRATION_CHECKSUM,
     RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION: RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
     RUN_DISPATCH_MIGRATION_VERSION: RUN_DISPATCH_MIGRATION_CHECKSUM,
+    RUN_FAILURE_CAUSE_MIGRATION_VERSION: RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,
 }
 REQUIRED_COLUMNS = {
     "research_runs_v2": {
@@ -145,6 +157,14 @@ REQUIRED_COLUMNS = {
         "updated_at",
         "started_at",
     },
+    "run_failure_causes_v1": {
+        "run_id",
+        "observation_status",
+        "terminal_state_version",
+        "phase",
+        "code",
+        "recorded_at",
+    },
 }
 VERIFICATION_TABLES = {
     "evidence_verification_preflights_v2",
@@ -191,30 +211,6 @@ VERIFICATION_COLUMNS = {
         "created_at",
     },
 }
-
-
-def backup_database(*, db_path: str, backup_path: str) -> None:
-    """Create a transactionally consistent SQLite backup."""
-    Path(backup_path).parent.mkdir(parents=True, exist_ok=True)
-    source = sqlite3.connect(sqlite_db_path(db_path))
-    destination = sqlite3.connect(backup_path)
-    try:
-        source.backup(destination)
-    finally:
-        destination.close()
-        source.close()
-
-
-def restore_database(*, backup_path: str, db_path: str) -> None:
-    """Restore a SQLite backup without copying WAL sidecar files."""
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    source = sqlite3.connect(backup_path)
-    destination = sqlite3.connect(sqlite_db_path(db_path))
-    try:
-        source.backup(destination)
-    finally:
-        destination.close()
-        source.close()
 
 
 def _normalized_schema_sql(value: str | None) -> str:
@@ -270,6 +266,7 @@ def verify_run_schema(
             PUBLICATION_MIGRATION_CHECKSUM
         )
     conn = sqlite3.connect(sqlite_db_path(db_path))
+    conn.row_factory = sqlite3.Row
     try:
         tables = {
             row[0]
@@ -314,6 +311,9 @@ def verify_run_schema(
             for version, checksum in expected_migrations.items()
             if migrations.get(version) != checksum
         )
+        _verify_run_failure_cause_marker(conn)
+        _verify_run_failure_cause_schema(conn)
+        _verify_run_failure_cause_rows(conn)
         try:
             foreign_key_errors = conn.execute(
                 "PRAGMA foreign_key_check"
@@ -494,6 +494,7 @@ def _migration_markers(db_path: str) -> dict[str, str]:
         PUBLICATION_MIGRATION_VERSION: PUBLICATION_MIGRATION_CHECKSUM,
         RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION: RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
         RUN_DISPATCH_MIGRATION_VERSION: RUN_DISPATCH_MIGRATION_CHECKSUM,
+        RUN_FAILURE_CAUSE_MIGRATION_VERSION: RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,
     }
     invalid = [
         version
@@ -501,6 +502,8 @@ def _migration_markers(db_path: str) -> dict[str, str]:
         if version in markers and markers[version] != checksum
     ]
     if invalid:
+        if RUN_FAILURE_CAUSE_MIGRATION_VERSION in invalid:
+            raise RunFailureCauseConflict("run_failure_cause_unavailable")
         raise RuntimeError(f"run_schema_migration_checksum_invalid:{sorted(invalid)}")
     return markers
 
@@ -520,6 +523,10 @@ def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
     dispatch_applied = (
         markers.get(RUN_DISPATCH_MIGRATION_VERSION)
         == RUN_DISPATCH_MIGRATION_CHECKSUM
+    )
+    failure_cause_applied = (
+        markers.get(RUN_FAILURE_CAUSE_MIGRATION_VERSION)
+        == RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM
     )
 
     if not publication_applied:
@@ -555,6 +562,8 @@ def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
         except Exception:
             restore_database(backup_path=backup_path, db_path=db_path)
             raise
+    elif not failure_cause_applied:
+        init_run_schema(db_path)
 
     try:
         return verify_run_schema(

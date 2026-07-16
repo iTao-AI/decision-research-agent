@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sqlite3
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -32,3 +33,27 @@ def sqlite_db_path(db_path: str | Path | None = None) -> str:
     if db_path is not None and str(db_path) == ":memory:":
         return ":memory:"
     return str(application_db_path(db_path))
+
+
+def backup_database(*, db_path: str, backup_path: str) -> None:
+    """Create a transactionally consistent SQLite backup."""
+    Path(backup_path).parent.mkdir(parents=True, exist_ok=True)
+    source = sqlite3.connect(sqlite_db_path(db_path))
+    destination = sqlite3.connect(backup_path)
+    try:
+        source.backup(destination)
+    finally:
+        destination.close()
+        source.close()
+
+
+def restore_database(*, backup_path: str, db_path: str) -> None:
+    """Restore a SQLite backup without copying WAL sidecar files."""
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    source = sqlite3.connect(backup_path)
+    destination = sqlite3.connect(sqlite_db_path(db_path))
+    try:
+        source.backup(destination)
+    finally:
+        destination.close()
+        source.close()

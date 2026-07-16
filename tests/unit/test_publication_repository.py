@@ -239,16 +239,369 @@ def _publication_tables(db_path: str) -> dict[str, list[tuple]]:
                 )
             )
             for table in (
+                "research_runs_v2",
+                "run_failure_causes_v1",
+                "run_segments",
+                "evidence_entries_v2",
+                "evidence_verification_preflights_v2",
+                "evidence_verification_decisions_v2",
                 "evidence_verification_snapshots_v2",
                 "run_artifacts_v2",
                 "review_bundles_v2",
+                "review_decisions_v2",
                 "review_workflows_v2",
+                "review_resume_attempts_v2",
+                "review_resolutions_v2",
                 "run_publications_v2",
-                "research_runs_v2",
             )
         }
     finally:
         connection.close()
+
+
+def _run_state_version(db_path: str, *, run_id: str) -> int:
+    connection = _connect(db_path)
+    try:
+        return connection.execute(
+            "SELECT state_version FROM research_runs_v2 WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()["state_version"]
+    finally:
+        connection.close()
+
+
+def _mark_run_failed_with_observed_cause(
+    db_path: str,
+    *,
+    run_id: str,
+) -> None:
+    recorded_at = "2026-07-16T00:00:00+00:00"
+    connection = _connect(db_path)
+    try:
+        with connection:
+            state_version = connection.execute(
+                "SELECT state_version FROM research_runs_v2 WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()["state_version"]
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET execution_status = 'failed', updated_at = ?
+                WHERE run_id = ?
+                """,
+                (recorded_at, run_id),
+            )
+            connection.execute(
+                """
+                UPDATE run_segments
+                SET status = 'failed', updated_at = ?
+                WHERE segment_id = (
+                    SELECT segment_id FROM run_segments
+                    WHERE run_id = ? ORDER BY sequence LIMIT 1
+                )
+                """,
+                (recorded_at, run_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO run_failure_causes_v1(
+                    run_id, observation_status, terminal_state_version,
+                    phase, code, recorded_at
+                ) VALUES (?, 'observed', ?, 'execution',
+                          'execution_error', ?)
+                """,
+                (run_id, state_version, recorded_at),
+            )
+    finally:
+        connection.close()
+
+
+def _set_run_execution_status(
+    db_path: str,
+    *,
+    run_id: str,
+    execution_status: str,
+) -> None:
+    if execution_status == "failed":
+        _mark_run_failed_with_observed_cause(db_path, run_id=run_id)
+        return
+    connection = _connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET execution_status = ?
+                WHERE run_id = ?
+                """,
+                (execution_status, run_id),
+            )
+    finally:
+        connection.close()
+
+
+def _delete_review_workflow(db_path: str, *, workflow_id: str) -> None:
+    connection = _connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                "DELETE FROM review_workflows_v2 WHERE workflow_id = ?",
+                (workflow_id,),
+            )
+    finally:
+        connection.close()
+
+
+def _fail_run_after_publication_write(
+    db_path: str,
+    *,
+    trigger_name: str,
+    trigger_sql: str,
+) -> None:
+    recorded_at = "2026-07-16T00:00:00+00:00"
+    connection = _connect(db_path)
+    try:
+        with connection:
+            connection.executescript(
+                f"""
+                CREATE TRIGGER {trigger_name}
+                {trigger_sql}
+                BEGIN
+                    UPDATE research_runs_v2
+                    SET execution_status = 'failed', updated_at = '{recorded_at}'
+                    WHERE run_id = NEW.run_id;
+                    UPDATE run_segments
+                    SET status = 'failed', updated_at = '{recorded_at}'
+                    WHERE segment_id = (
+                        SELECT segment_id FROM run_segments
+                        WHERE run_id = NEW.run_id
+                        ORDER BY sequence LIMIT 1
+                    );
+                    INSERT INTO run_failure_causes_v1(
+                        run_id, observation_status, terminal_state_version,
+                        phase, code, recorded_at
+                    )
+                    SELECT NEW.run_id, 'observed', state_version,
+                           'execution', 'execution_error', '{recorded_at}'
+                    FROM research_runs_v2 WHERE run_id = NEW.run_id;
+                END
+                """
+            )
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize("execution_status", ["failed", "running"])
+def test_noncompleted_run_cannot_stale_current_publication(
+    tmp_path,
+    execution_status,
+):
+    seeded = _seed_talent_run(tmp_path, migrate=True)
+    _set_run_execution_status(
+        seeded.db_path,
+        run_id=seeded.run_id,
+        execution_status=execution_status,
+    )
+    before = _publication_tables(seeded.db_path)
+
+    with pytest.raises(
+        PublicationConflict,
+        match="verification_publication_conflict",
+    ):
+        _accept_verification(seeded)
+
+    assert _publication_tables(seeded.db_path) == before
+
+
+def test_new_publication_run_update_rechecks_completed_authority(tmp_path):
+    seeded = _seed_talent_run(tmp_path, migrate=True)
+    _accept_verification(seeded)
+    _fail_run_after_publication_write(
+        seeded.db_path,
+        trigger_name="fail_run_after_new_publication",
+        trigger_sql="""
+        AFTER INSERT ON run_publications_v2
+        WHEN NEW.revision = 2
+        """,
+    )
+    expected_state_version = _run_state_version(
+        seeded.db_path,
+        run_id=seeded.run_id,
+    )
+    before = _publication_tables(seeded.db_path)
+
+    with pytest.raises(PublicationConflict, match="stale_state_version"):
+        finalize_verification_publication(
+            db_path=seeded.db_path,
+            run_id=seeded.run_id,
+            expected_state_version=expected_state_version,
+        )
+
+    assert _publication_tables(seeded.db_path) == before
+
+
+def test_failed_run_cannot_create_verification_publication(tmp_path):
+    seeded = _seed_talent_run(tmp_path, migrate=True)
+    _accept_verification(seeded)
+    _mark_run_failed_with_observed_cause(
+        seeded.db_path,
+        run_id=seeded.run_id,
+    )
+    expected_state_version = _run_state_version(
+        seeded.db_path,
+        run_id=seeded.run_id,
+    )
+    before = _publication_tables(seeded.db_path)
+
+    with pytest.raises(
+        PublicationConflict,
+        match="verification_publication_conflict",
+    ):
+        finalize_verification_publication(
+            db_path=seeded.db_path,
+            run_id=seeded.run_id,
+            expected_state_version=expected_state_version,
+        )
+
+    assert _publication_tables(seeded.db_path) == before
+
+
+def test_noncompleted_run_cannot_create_verification_publication(tmp_path):
+    seeded = _seed_talent_run(tmp_path, migrate=True)
+    _accept_verification(seeded)
+    connection = _connect(seeded.db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET execution_status = 'running'
+                WHERE run_id = ?
+                """,
+                (seeded.run_id,),
+            )
+    finally:
+        connection.close()
+    expected_state_version = _run_state_version(
+        seeded.db_path,
+        run_id=seeded.run_id,
+    )
+    before = _publication_tables(seeded.db_path)
+
+    with pytest.raises(
+        PublicationConflict,
+        match="verification_publication_conflict",
+    ):
+        finalize_verification_publication(
+            db_path=seeded.db_path,
+            run_id=seeded.run_id,
+            expected_state_version=expected_state_version,
+        )
+
+    assert _publication_tables(seeded.db_path) == before
+
+
+def test_failed_run_cannot_repair_verification_publication(tmp_path):
+    seeded = _seed_talent_run(tmp_path, migrate=True)
+    _delete_review_workflow(
+        seeded.db_path,
+        workflow_id=seeded.workflow_id,
+    )
+    _mark_run_failed_with_observed_cause(
+        seeded.db_path,
+        run_id=seeded.run_id,
+    )
+    expected_state_version = _run_state_version(
+        seeded.db_path,
+        run_id=seeded.run_id,
+    )
+    before = _publication_tables(seeded.db_path)
+
+    with pytest.raises(
+        PublicationConflict,
+        match="verification_publication_conflict",
+    ):
+        finalize_verification_publication(
+            db_path=seeded.db_path,
+            run_id=seeded.run_id,
+            expected_state_version=expected_state_version,
+        )
+
+    assert _publication_tables(seeded.db_path) == before
+
+
+def test_publication_repair_run_update_rechecks_completed_authority(tmp_path):
+    seeded = _seed_talent_run(tmp_path, migrate=True)
+    _delete_review_workflow(
+        seeded.db_path,
+        workflow_id=seeded.workflow_id,
+    )
+    _fail_run_after_publication_write(
+        seeded.db_path,
+        trigger_name="fail_run_after_publication_repair",
+        trigger_sql="""
+        AFTER INSERT ON review_workflows_v2
+        WHEN NEW.review_revision = 1
+        """,
+    )
+    expected_state_version = _run_state_version(
+        seeded.db_path,
+        run_id=seeded.run_id,
+    )
+    before = _publication_tables(seeded.db_path)
+
+    with pytest.raises(
+        PublicationConflict,
+        match="verification_publication_conflict",
+    ):
+        finalize_verification_publication(
+            db_path=seeded.db_path,
+            run_id=seeded.run_id,
+            expected_state_version=expected_state_version,
+        )
+
+    assert _publication_tables(seeded.db_path) == before
+
+
+def test_publication_repair_checks_run_update_rowcount(tmp_path):
+    seeded = _seed_talent_run(tmp_path, migrate=True)
+    _delete_review_workflow(
+        seeded.db_path,
+        workflow_id=seeded.workflow_id,
+    )
+    connection = _connect(seeded.db_path)
+    try:
+        with connection:
+            connection.execute(
+                f"""
+                CREATE TRIGGER delete_run_before_publication_repair
+                BEFORE UPDATE OF state_version ON research_runs_v2
+                WHEN OLD.run_id = '{seeded.run_id}'
+                BEGIN
+                    DELETE FROM research_runs_v2
+                    WHERE run_id = OLD.run_id;
+                END
+                """
+            )
+    finally:
+        connection.close()
+    expected_state_version = _run_state_version(
+        seeded.db_path,
+        run_id=seeded.run_id,
+    )
+    before = _publication_tables(seeded.db_path)
+
+    with pytest.raises(
+        PublicationConflict,
+        match="verification_publication_conflict",
+    ):
+        finalize_verification_publication(
+            db_path=seeded.db_path,
+            run_id=seeded.run_id,
+            expected_state_version=expected_state_version,
+        )
+
+    assert _publication_tables(seeded.db_path) == before
 
 
 def test_new_decision_atomically_stales_current_publication(tmp_path):

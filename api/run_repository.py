@@ -3,12 +3,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+from pathlib import Path
 import sqlite3
 import threading
 import uuid
 from typing import Any
 
-from api.database import sqlite_db_path
+from pydantic import ValidationError
+
+from api.database import backup_database, restore_database, sqlite_db_path
 from api.run_creation_models import (
     RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
     RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,
@@ -21,6 +24,14 @@ from api.run_dispatch_models import (
     RUN_DISPATCH_MIGRATION_CHECKSUM,
     RUN_DISPATCH_MIGRATION_VERSION,
     RunDispatchConflict,
+)
+from api.run_failure_cause_models import (
+    RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,
+    RUN_FAILURE_CAUSE_MIGRATION_VERSION,
+    RUN_FAILURE_CAUSE_SCHEMA_VERSION,
+    RunFailureCauseConflict,
+    RunFailureCauseProjectionAdapter,
+    RunFailureCauseWrite,
 )
 
 
@@ -41,6 +52,60 @@ DELIVERY_STATUSES = {
 }
 MIGRATION_VERSION = "003_run_identity_backbone"
 _SCHEMA_INIT_LOCK = threading.Lock()
+RUN_FAILURE_CAUSE_TABLE_SQL = """
+CREATE TABLE run_failure_causes_v1 (
+    run_id TEXT NOT NULL PRIMARY KEY
+        REFERENCES research_runs_v2(run_id) ON DELETE CASCADE,
+    observation_status TEXT NOT NULL
+        CHECK(observation_status IN ('observed', 'not_observed')),
+    terminal_state_version INTEGER,
+    phase TEXT,
+    code TEXT,
+    recorded_at TEXT,
+    CHECK(
+        (
+            observation_status = 'not_observed'
+            AND terminal_state_version IS NULL
+            AND phase IS NULL
+            AND code IS NULL
+            AND recorded_at IS NULL
+        )
+        OR
+        (
+            observation_status = 'observed'
+            AND typeof(terminal_state_version) = 'integer'
+            AND terminal_state_version > 0
+            AND phase IS NOT NULL
+            AND code IS NOT NULL
+            AND recorded_at IS NOT NULL
+            AND (
+                (phase = 'dispatch' AND code IN (
+                    'run_dispatch_schedule_failed',
+                    'run_dispatch_start_failed',
+                    'run_dispatch_start_timeout',
+                    'run_dispatch_lease_expired'
+                ))
+                OR
+                (phase = 'execution' AND code IN (
+                    'call_budget_exceeded',
+                    'recursion_limit_exceeded',
+                    'invalid_research_packet',
+                    'missing_research_packet',
+                    'run_timeout',
+                    'cancelled',
+                    'execution_error'
+                ))
+                OR
+                (phase = 'finalization' AND code IN (
+                    'run_timeout',
+                    'cancelled',
+                    'run_finalization_failed'
+                ))
+            )
+        )
+    )
+)
+"""
 
 
 class RunCreationConflict(RuntimeError):
@@ -60,6 +125,275 @@ def _connect(db_path: str | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def _inspect_run_failure_cause_marker(db_path: str | None) -> bool:
+    connection = sqlite3.connect(sqlite_db_path(db_path))
+    try:
+        has_marker_table = connection.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'schema_migrations'
+            """
+        ).fetchone()
+        if has_marker_table is None:
+            return False
+        rows = connection.execute(
+            "SELECT checksum FROM schema_migrations WHERE version = ?",
+            (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        raise RunFailureCauseConflict("run_failure_cause_corrupt") from exc
+    finally:
+        connection.close()
+    if not rows:
+        return False
+    if (
+        len(rows) != 1
+        or rows[0][0] != RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM
+    ):
+        raise RunFailureCauseConflict("run_failure_cause_unavailable")
+    return True
+
+
+def _verify_run_failure_cause_marker(
+    connection: sqlite3.Connection,
+) -> None:
+    try:
+        rows = connection.execute(
+            "SELECT checksum FROM schema_migrations WHERE version = ?",
+            (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        raise RunFailureCauseConflict("run_failure_cause_unavailable") from exc
+    if (
+        len(rows) != 1
+        or rows[0][0] != RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM
+    ):
+        raise RunFailureCauseConflict("run_failure_cause_unavailable")
+
+
+def _verify_run_failure_cause_schema(
+    connection: sqlite3.Connection,
+) -> None:
+    try:
+        table_row = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'table' AND name = 'run_failure_causes_v1'
+            """
+        ).fetchone()
+        if table_row is None:
+            raise RunFailureCauseConflict("run_failure_cause_unavailable")
+        columns = connection.execute(
+            "PRAGMA table_info(run_failure_causes_v1)"
+        ).fetchall()
+        foreign_keys = connection.execute(
+            "PRAGMA foreign_key_list(run_failure_causes_v1)"
+        ).fetchall()
+    except RunFailureCauseConflict:
+        raise
+    except sqlite3.Error as exc:
+        raise RunFailureCauseConflict("run_failure_cause_corrupt") from exc
+
+    expected_columns = [
+        ("run_id", "TEXT", 1, None, 1),
+        ("observation_status", "TEXT", 1, None, 0),
+        ("terminal_state_version", "INTEGER", 0, None, 0),
+        ("phase", "TEXT", 0, None, 0),
+        ("code", "TEXT", 0, None, 0),
+        ("recorded_at", "TEXT", 0, None, 0),
+    ]
+    actual_columns = [tuple(row[1:6]) for row in columns]
+    exact_foreign_key = (
+        len(foreign_keys) == 1
+        and tuple(foreign_keys[0][2:7])
+        == (
+            "research_runs_v2",
+            "run_id",
+            "run_id",
+            "NO ACTION",
+            "CASCADE",
+        )
+    )
+    if (
+        actual_columns != expected_columns
+        or not exact_foreign_key
+        or " ".join(table_row[0].split()).lower()
+        != " ".join(RUN_FAILURE_CAUSE_TABLE_SQL.split()).lower()
+    ):
+        raise RunFailureCauseConflict("run_failure_cause_corrupt")
+
+
+def _verify_run_failure_cause_rows(
+    connection: sqlite3.Connection,
+) -> None:
+    try:
+        rows = connection.execute(
+            """
+            SELECT cause.run_id,
+                   cause.observation_status,
+                   cause.terminal_state_version,
+                   cause.phase,
+                   cause.code,
+                   cause.recorded_at,
+                   run.execution_status,
+                   run.state_version,
+                   run.updated_at
+            FROM run_failure_causes_v1 AS cause
+            LEFT JOIN research_runs_v2 AS run ON run.run_id = cause.run_id
+            ORDER BY cause.run_id
+            """
+        ).fetchall()
+        missing_failed_runs = connection.execute(
+            """
+            SELECT run.run_id
+            FROM research_runs_v2 AS run
+            LEFT JOIN run_failure_causes_v1 AS cause
+              ON cause.run_id = run.run_id
+            WHERE run.execution_status = 'failed'
+              AND cause.run_id IS NULL
+            ORDER BY run.run_id
+            """
+        ).fetchall()
+        if missing_failed_runs:
+            raise RunFailureCauseConflict("run_failure_cause_corrupt")
+
+        for row in rows:
+            if row["execution_status"] != "failed":
+                raise RunFailureCauseConflict("run_failure_cause_corrupt")
+            if row["observation_status"] == "not_observed":
+                if any(
+                    row[name] is not None
+                    for name in (
+                        "terminal_state_version",
+                        "phase",
+                        "code",
+                        "recorded_at",
+                    )
+                ):
+                    raise RunFailureCauseConflict(
+                        "run_failure_cause_corrupt"
+                    )
+                RunFailureCauseProjectionAdapter.validate_python(
+                    {
+                        "schema_version": RUN_FAILURE_CAUSE_SCHEMA_VERSION,
+                        "observation_status": "not_observed",
+                    },
+                    strict=True,
+                )
+                continue
+
+            recorded_at = datetime.fromisoformat(row["recorded_at"])
+            RunFailureCauseProjectionAdapter.validate_python(
+                {
+                    "schema_version": RUN_FAILURE_CAUSE_SCHEMA_VERSION,
+                    "observation_status": row["observation_status"],
+                    "phase": row["phase"],
+                    "code": row["code"],
+                    "recorded_at": recorded_at,
+                },
+                strict=True,
+            )
+            if (
+                type(row["terminal_state_version"]) is not int
+                or row["terminal_state_version"] <= 0
+                or row["terminal_state_version"] != row["state_version"]
+                or row["recorded_at"] != row["updated_at"]
+            ):
+                raise RunFailureCauseConflict("run_failure_cause_corrupt")
+            failed_segment = connection.execute(
+                """
+                SELECT 1 FROM run_segments
+                WHERE run_id = ?
+                  AND status = 'failed'
+                  AND updated_at = ?
+                LIMIT 1
+                """,
+                (row["run_id"], row["recorded_at"]),
+            ).fetchone()
+            if failed_segment is None:
+                raise RunFailureCauseConflict("run_failure_cause_corrupt")
+    except RunFailureCauseConflict:
+        raise
+    except (sqlite3.Error, TypeError, ValueError) as exc:
+        raise RunFailureCauseConflict("run_failure_cause_corrupt") from exc
+
+
+def _apply_run_failure_cause_migration(
+    db_path: str | None,
+) -> None:
+    connection = _connect(db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        marker = connection.execute(
+            "SELECT checksum FROM schema_migrations WHERE version = ?",
+            (RUN_FAILURE_CAUSE_MIGRATION_VERSION,),
+        ).fetchone()
+        if marker is not None:
+            _verify_run_failure_cause_marker(connection)
+            _verify_run_failure_cause_schema(connection)
+            _verify_run_failure_cause_rows(connection)
+            connection.commit()
+            return
+
+        connection.execute(RUN_FAILURE_CAUSE_TABLE_SQL)
+        _verify_run_failure_cause_schema(connection)
+        connection.execute(
+            """
+            INSERT INTO run_failure_causes_v1(
+                run_id, observation_status, terminal_state_version,
+                phase, code, recorded_at
+            )
+            SELECT run_id, 'not_observed', NULL, NULL, NULL, NULL
+            FROM research_runs_v2
+            WHERE execution_status = 'failed'
+            ORDER BY run_id
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO schema_migrations(version, applied_at, checksum)
+            VALUES (?, ?, ?)
+            """,
+            (
+                RUN_FAILURE_CAUSE_MIGRATION_VERSION,
+                _now(),
+                RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,
+            ),
+        )
+        _verify_run_failure_cause_marker(connection)
+        _verify_run_failure_cause_schema(connection)
+        _verify_run_failure_cause_rows(connection)
+        connection.commit()
+    except RunFailureCauseConflict:
+        connection.rollback()
+        raise
+    except (sqlite3.Error, TypeError, ValueError) as exc:
+        connection.rollback()
+        raise RunFailureCauseConflict("run_failure_cause_corrupt") from exc
+    finally:
+        connection.close()
+
+
+def _insert_schema_marker_if_missing(
+    connection: sqlite3.Connection,
+    *,
+    version: str,
+    checksum: str,
+) -> None:
+    marker = connection.execute(
+        "SELECT 1 FROM schema_migrations WHERE version = ?",
+        (version,),
+    ).fetchone()
+    if marker is None:
+        connection.execute(
+            """
+            INSERT INTO schema_migrations(version, applied_at, checksum)
+            VALUES (?, ?, ?)
+            """,
+            (version, _now(), checksum),
+        )
 
 
 def _init_run_schema_unlocked(db_path: str | None = None) -> None:
@@ -236,43 +570,53 @@ def _init_run_schema_unlocked(db_path: str | None = None) -> None:
                 ON run_dispatches_v1(status, lease_expires_at, created_at)
                 """
             )
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO schema_migrations(version, applied_at, checksum)
-                VALUES (?, ?, ?)
-                """,
-                (MIGRATION_VERSION, _now(), "run-identity-backbone-v1"),
+            _insert_schema_marker_if_missing(
+                conn,
+                version=MIGRATION_VERSION,
+                checksum="run-identity-backbone-v1",
             )
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO schema_migrations(version, applied_at, checksum)
-                VALUES (?, ?, ?)
-                """,
-                (
-                    RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,
-                    _now(),
-                    RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
-                ),
+            _insert_schema_marker_if_missing(
+                conn,
+                version=RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION,
+                checksum=RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
             )
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO schema_migrations(version, applied_at, checksum)
-                VALUES (?, ?, ?)
-                """,
-                (
-                    RUN_DISPATCH_MIGRATION_VERSION,
-                    _now(),
-                    RUN_DISPATCH_MIGRATION_CHECKSUM,
-                ),
+            _insert_schema_marker_if_missing(
+                conn,
+                version=RUN_DISPATCH_MIGRATION_VERSION,
+                checksum=RUN_DISPATCH_MIGRATION_CHECKSUM,
             )
     finally:
         conn.close()
+    _apply_run_failure_cause_migration(db_path)
 
 
 def init_run_schema(db_path: str | None = None) -> None:
     """Apply the additive schema once at a time within this process."""
     with _SCHEMA_INIT_LOCK:
-        _init_run_schema_unlocked(db_path)
+        marker_present = _inspect_run_failure_cause_marker(db_path)
+        if marker_present:
+            _init_run_schema_unlocked(db_path)
+            return
+
+        failure_backup_path = Path(
+            f"{sqlite_db_path(db_path)}.pre-run-failure-cause.bak"
+        )
+        if failure_backup_path.exists():
+            raise RuntimeError(
+                "run_failure_cause_migration_backup_already_exists"
+            )
+        backup_database(
+            db_path=sqlite_db_path(db_path),
+            backup_path=str(failure_backup_path),
+        )
+        try:
+            _init_run_schema_unlocked(db_path)
+        except Exception:
+            restore_database(
+                backup_path=str(failure_backup_path),
+                db_path=sqlite_db_path(db_path),
+            )
+            raise
 
 
 def _ensure_baseline_origin_column(
@@ -307,6 +651,9 @@ def _insert_run_identity(
     scope: dict[str, Any],
     now: str,
 ) -> dict[str, str]:
+    _verify_run_failure_cause_marker(connection)
+    _verify_run_failure_cause_schema(connection)
+    _verify_run_failure_cause_rows(connection)
     marker = connection.execute(
         "SELECT checksum FROM schema_migrations WHERE version = ?",
         (RUN_DISPATCH_MIGRATION_VERSION,),
@@ -493,7 +840,81 @@ def create_or_replay_run(
             connection.close()
 
 
-def _run_row(row: sqlite3.Row) -> dict[str, Any]:
+_FAILURE_CAUSE_JOIN_COLUMNS = (
+    "failure_observation_status",
+    "failure_terminal_state_version",
+    "failure_phase",
+    "failure_code",
+    "failure_recorded_at",
+)
+
+
+def _failure_cause_projection(row: sqlite3.Row | dict[str, Any]):
+    try:
+        data = dict(row)
+        observation_status = data["failure_observation_status"]
+        terminal_state_version = data["failure_terminal_state_version"]
+        phase = data["failure_phase"]
+        code = data["failure_code"]
+        recorded_at = data["failure_recorded_at"]
+        storage_values = (
+            observation_status,
+            terminal_state_version,
+            phase,
+            code,
+            recorded_at,
+        )
+
+        if data["execution_status"] != "failed":
+            if any(value is not None for value in storage_values):
+                raise RunFailureCauseConflict("run_failure_cause_corrupt")
+            return None
+
+        if observation_status is None:
+            raise RunFailureCauseConflict("run_failure_cause_corrupt")
+        if observation_status == "not_observed":
+            if any(
+                value is not None
+                for value in (
+                    terminal_state_version,
+                    phase,
+                    code,
+                    recorded_at,
+                )
+            ):
+                raise RunFailureCauseConflict("run_failure_cause_corrupt")
+            payload = {
+                "schema_version": RUN_FAILURE_CAUSE_SCHEMA_VERSION,
+                "observation_status": "not_observed",
+            }
+        else:
+            if (
+                type(terminal_state_version) is not int
+                or terminal_state_version <= 0
+                or terminal_state_version != data["state_version"]
+                or recorded_at != data["updated_at"]
+            ):
+                raise RunFailureCauseConflict("run_failure_cause_corrupt")
+            payload = {
+                "schema_version": RUN_FAILURE_CAUSE_SCHEMA_VERSION,
+                "observation_status": observation_status,
+                "phase": phase,
+                "code": code,
+                "recorded_at": datetime.fromisoformat(recorded_at),
+            }
+
+        projection = RunFailureCauseProjectionAdapter.validate_python(
+            payload,
+            strict=True,
+        )
+        return projection.model_dump(mode="json")
+    except RunFailureCauseConflict:
+        raise
+    except (ValidationError, KeyError, TypeError, ValueError) as exc:
+        raise RunFailureCauseConflict("run_failure_cause_corrupt") from exc
+
+
+def _run_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     data = dict(row)
     data["scope"] = json.loads(data.pop("scope_json"))
     return data
@@ -512,15 +933,32 @@ def get_run(*, run_id: str, db_path: str | None = None) -> dict[str, Any] | None
     conn = _connect(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM research_runs_v2 WHERE run_id = ?", (run_id,)
+            """
+            SELECT
+                r.*,
+                c.observation_status AS failure_observation_status,
+                c.terminal_state_version AS failure_terminal_state_version,
+                c.phase AS failure_phase,
+                c.code AS failure_code,
+                c.recorded_at AS failure_recorded_at
+            FROM research_runs_v2 AS r
+            LEFT JOIN run_failure_causes_v1 AS c ON c.run_id = r.run_id
+            WHERE r.run_id = ?
+            """,
+            (run_id,),
         ).fetchone()
         if row is None:
             return None
+        failure_cause = _failure_cause_projection(row)
+        run_data = dict(row)
+        for column in _FAILURE_CAUSE_JOIN_COLUMNS:
+            run_data.pop(column)
         segments = conn.execute(
             "SELECT * FROM run_segments WHERE run_id = ? ORDER BY sequence ASC",
             (run_id,),
         ).fetchall()
-        result = _run_row(row)
+        result = _run_row(run_data)
+        result["failure_cause"] = failure_cause
         result["segments"] = [dict(segment) for segment in segments]
         evidence = conn.execute(
             """
@@ -673,6 +1111,7 @@ def finalize_run_transaction(
     execution_status: str,
     delivery_status: str,
     evidence_entries: list[Any],
+    failure_cause: RunFailureCauseWrite | None = None,
     db_path: str | None = None,
     review_status: str = "not_required",
     research_packets: list[Any] | None = None,
@@ -687,8 +1126,17 @@ def finalize_run_transaction(
         raise ValueError(f"invalid delivery_status: {delivery_status}")
     if review_status not in REVIEW_STATUSES:
         raise ValueError(f"invalid review_status: {review_status}")
-    if not allowed_previous_statuses:
-        raise ValueError("allowed_previous_statuses must not be empty")
+    if not allowed_previous_statuses or not allowed_previous_statuses <= {
+        "pending",
+        "running",
+    }:
+        raise RunFailureCauseConflict(
+            "run_failure_cause_transition_invalid"
+        )
+    if execution_status == "failed" and failure_cause is None:
+        raise RunFailureCauseConflict("run_failure_cause_required")
+    if execution_status != "failed" and failure_cause is not None:
+        raise RunFailureCauseConflict("run_failure_cause_forbidden")
 
     from api.publication_repository import (
         adopt_baseline_publication,
@@ -731,6 +1179,7 @@ def finalize_run_transaction(
             )
             if cursor.rowcount != 1:
                 return False
+            terminal_state_version = expected_state_version + 1
             segment_cursor = conn.execute(
                 """
                 UPDATE run_segments
@@ -857,6 +1306,27 @@ def finalize_run_transaction(
                     conn,
                     run_id=run_id,
                 )
+            if failure_cause is not None:
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO run_failure_causes_v1(
+                            run_id, observation_status,
+                            terminal_state_version, phase, code, recorded_at
+                        ) VALUES (?, 'observed', ?, ?, ?, ?)
+                        """,
+                        (
+                            run_id,
+                            terminal_state_version,
+                            failure_cause.phase,
+                            failure_cause.code,
+                            now,
+                        ),
+                    )
+                except sqlite3.IntegrityError as exc:
+                    raise RunFailureCauseConflict(
+                        "run_failure_cause_conflict"
+                    ) from exc
             return True
     finally:
         conn.close()
@@ -896,6 +1366,10 @@ def transition_run(
         raise ValueError(f"invalid delivery_status: {delivery_status}")
     if not allowed_previous_statuses:
         raise ValueError("allowed_previous_statuses must not be empty")
+    if execution_status == "failed" or "failed" in allowed_previous_statuses:
+        raise RunFailureCauseConflict(
+            "run_failure_cause_transition_invalid"
+        )
 
     updates = ["state_version = state_version + 1", "updated_at = ?"]
     params: list[Any] = [_now()]

@@ -1,5 +1,6 @@
 import os
 import hashlib
+import json
 from pathlib import PurePosixPath
 
 from fastapi.testclient import TestClient
@@ -73,6 +74,7 @@ def test_result_pending_run_returns_run_not_terminal(tmp_path, monkeypatch):
 
 
 def test_result_failed_run_returns_run_failed(tmp_path, monkeypatch):
+    from api.run_failure_cause_models import RunFailureCauseWrite
     from api.run_repository import create_run, finalize_run_transaction
 
     client = _client(tmp_path, monkeypatch)
@@ -85,6 +87,10 @@ def test_result_failed_run_returns_run_failed(tmp_path, monkeypatch):
         execution_status="failed",
         delivery_status="failed",
         evidence_entries=[],
+        failure_cause=RunFailureCauseWrite(
+            phase="execution",
+            code="execution_error",
+        ),
     )
 
     response = client.get(
@@ -94,6 +100,18 @@ def test_result_failed_run_returns_run_failed(tmp_path, monkeypatch):
 
     assert response.status_code == 409
     assert response.json()["code"] == "run_failed"
+    assert response.content == json.dumps(
+        {
+            "code": "run_failed",
+            "problem": "The ResearchRun failed and has no deliverable result.",
+            "fix": (
+                "Inspect the bounded run projection and start a new run if needed."
+            ),
+            "retryable": True,
+            "run_id": created["run_id"],
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 def test_result_review_required_run_returns_run_review_required(

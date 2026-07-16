@@ -26,6 +26,9 @@ health service identifier use `decision-research-agent`.
 - Supports lost-response run identity reconciliation through an optional
   durable `Idempotency-Key` and single-node recovery of committed work before
   Agent invocation, without claiming exactly-once execution.
+- Exposes a bounded durable `failure_cause` for failed runs through the
+  additive [run status contract](docs/reference/api-contract.md), while
+  nonfailed runs report `null` and historical failures report `not_observed`.
 - Produces bounded result artifacts through `GET /api/runs/{run_id}/result`.
 - Supports Talent Hiring Signal as the first benchmarked research profile.
 - Provides controlled durable review and evidence verification workflows behind
@@ -247,6 +250,7 @@ Useful local checks:
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
 python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
@@ -265,6 +269,7 @@ python tools/decision_research_agent_tool.py doctor
 - [API Contract](docs/reference/api-contract.md)
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
+- [Durable Run Failure Cause Proof](docs/evidence/run-failure-cause-v1.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
 - [v0.1.3 Release Notes](docs/releases/v0.1.3.md)
 - [v0.1.2 Release Notes](docs/releases/v0.1.2.md)
@@ -275,6 +280,10 @@ python tools/decision_research_agent_tool.py doctor
 
 ## Known Boundaries
 
+- Durable failure causes are an additive status-only projection. The canonical
+  result endpoint, its `409 run_failed` envelope, and the frozen
+  `dra.downstream-consumer.v1` fixture remain unchanged; the bounded proof is
+  not a provider diagnosis, billing record, or exactly-once execution claim.
 - The v0.1.3 dispatch contract adds application-owned
   `run_dispatches_v1` reconciliation before Agent invocation. The historical
   v0.1.2 identity proof remains unchanged and does not itself prove

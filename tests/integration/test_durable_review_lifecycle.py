@@ -94,11 +94,24 @@ async def _finalize_talent_fixture(tmp_path, monkeypatch, *, enabled: bool):
         run_id=created["run_id"],
     )
     assert claim is not None
-    await server._run_dispatched_with_persistence(
+    stage = server._RunStage()
+    termination_origin = server.TerminationOrigin()
+    finalization_checkpoint = server.FinalizationCheckpoint()
+    coroutine = server._run_dispatched_with_persistence(
         claim,
         db_path=db_path,
         outcome_box=server.OutcomeBox(),
+        stage=stage,
+        termination_origin=termination_origin,
+        finalization_checkpoint=finalization_checkpoint,
     )
+    task = server.create_tracked_task(
+        coroutine,
+        f"{claim.run_id}:dispatch:{claim.attempt_count}",
+        termination_origin=termination_origin,
+        finalization_checkpoint=finalization_checkpoint,
+    )
+    await task
     return get_run(db_path=db_path, run_id=created["run_id"])
 
 

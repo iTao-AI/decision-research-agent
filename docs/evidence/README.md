@@ -12,6 +12,8 @@ not grant independent verification authority.
 | [durable-hitl-gate-report.json](durable-hitl-gate-report.json) | Machine-readable result for the 13 controlled single-node SQLite durability and safety gates. |
 | [real-source-proof.json](real-source-proof.json) | Machine-readable bounded real-source workflow proof and report hashes. |
 | [real-source-proof.md](real-source-proof.md) | Human-readable proof procedure, verification/publication outcome, and explicit limitations. |
+| [run-failure-cause-v1.json](run-failure-cause-v1.json) | Machine-readable deterministic durable run failure-cause proof. |
+| [run-failure-cause-v1.md](run-failure-cause-v1.md) | Human-readable rendering derived from the validated failure-cause report. |
 | [run-creation-idempotency-v1.json](run-creation-idempotency-v1.json) | Deterministic machine-readable lost-response identity reconciliation proof. |
 | [run-creation-idempotency-v1.md](run-creation-idempotency-v1.md) | Human-readable cases and limits, including `crash_before_schedule_recovery: not_proven`. |
 | [run-dispatch-reconciliation-v1.json](run-dispatch-reconciliation-v1.json) | Deterministic machine-readable single-node committed pre-start dispatch proof. |
@@ -24,6 +26,14 @@ The dispatch proof explicitly records `exactly_once_execution: not_claimed`,
 `live_provider_result: not_observed`. Its recovery cases exercise the
 production lifespan, worker, scheduler, start fence, handler cancellation, and
 fresh-worker restart boundaries rather than direct repository-only starts.
+
+The failure-cause report uses schema `dra.run-failure-cause-proof.v1`. It is a
+fixed 16-case offline, provider-free, network-free, and credential-free proof
+whose two fresh builds are byte-identical to the committed JSON and Markdown.
+It proves bounded single-node application-database terminal authority and
+status projection behavior, not a live-provider result, external side-effect
+exactly-once behavior, multi-instance operation, provider diagnosis, or billing.
+Result and frozen downstream v1 compatibility remain owned by separate gates.
 
 The durable HITL artifact proves only the documented feasibility boundary; its
 feature flag remains disabled by default. The real-source artifact proves a

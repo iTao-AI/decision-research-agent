@@ -36,13 +36,45 @@ The `leased` state is represented by private `run_dispatches_v1`; public
 ResearchRun remains `pending` until the exact lease owner and attempt atomically
 advance dispatch to `started`, run to `running`, and the initial segment to
 `running`. Expired leases can be reclaimed. A stale task or timeout is a no-op
-against a newer attempt. Bounded scheduler/start failures use
-`run_dispatch_schedule_failed` or `run_dispatch_start_timeout`; the third
-failed attempt converges dispatch, run, and segment to `failed`. An expired
-third lease is terminalized with `run_dispatch_lease_expired` before scanning
-the next pending row, so attempt 4 is never created. Pre-start timeout uses
-atomic timeout reconciliation: the exact attempt is released while leased,
+against a newer attempt. Attempts one and two retain only private retry
+diagnostics and create no canonical cause. Only the exact third attempt may
+terminalize dispatch, run, and segment with
+`run_dispatch_schedule_failed`, `run_dispatch_start_failed`, or
+`run_dispatch_start_timeout`; an expired third lease uses
+`run_dispatch_lease_expired`. The exact fence ensures attempt four is never
+created. Pre-start timeout
+uses atomic timeout reconciliation: the exact attempt is released while leased,
 timeout-finalized if already started, or ignored if a newer attempt owns state.
+
+## Failure Cause Terminalization
+
+Every post-migration transition to `failed` writes one observed bounded cause
+in the same winning application transaction. Historical failures use
+`not_observed`; nonfailed runs have no cause row and expose `null`. A stale,
+duplicate, completion, timeout, cancellation, or exception writer cannot
+replace the cause written by the state-version or exact-attempt winner.
+Execution status `failed` is execution-terminal: no later transition, review
+or publication writer may revive it or increment its run state version.
+
+The tracker owns one monotonic termination origin from `unset` to `timeout` or
+`cancelled`; the first transition wins, while the database fence still decides
+the durable terminal winner. Application timeout is claimed before the inner
+task receives cancellation, and a later outer cancellation cannot rewrite it.
+Any already-launched start/terminal database task and the single winning
+callback settle before the wrapper returns or re-raises cancellation.
+
+A finalization checkpoint distinguishes execution-phase from
+finalization-phase timeout/cancellation through the production tracker. The
+service deadline is a cooperative deadline, not hard wall-clock preemption:
+synchronous work or an already-started shielded transaction may settle first.
+Harness strings cannot claim `run_timeout` or `cancelled`; unknown values and
+inner self-cancellation without an application cancellation origin converge to
+bounded execution or finalization errors.
+
+A pre-start infrastructure cancellation is not a public business cancellation.
+It creates no `cancelled` cause: attempts one and two release for retry, while
+an interrupted exact third lease remains fenced and converges through
+`run_dispatch_lease_expired`.
 
 ## Harness Boundary
 

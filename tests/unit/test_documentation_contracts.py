@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 import subprocess
+
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -28,6 +31,69 @@ CURRENT_DOCS = [
 
 def _combined_docs() -> str:
     return "\n\n".join(path.read_text(encoding="utf-8") for path in CURRENT_DOCS)
+
+
+def _section_between(text: str, start: str, end: str) -> str:
+    assert start in text
+    assert end in text
+    return text.split(start, 1)[1].split(end, 1)[0]
+
+
+def _collapsed(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _markdown_table_rows(
+    text: str,
+    *,
+    header: tuple[str, ...],
+) -> tuple[tuple[str, ...], ...]:
+    lines = text.splitlines()
+    header_line = "| " + " | ".join(header) + " |"
+    assert lines.count(header_line) == 1
+    header_index = lines.index(header_line)
+    assert lines[header_index + 1] == "|" + "---|" * len(header)
+
+    rows = []
+    for line in lines[header_index + 2 :]:
+        if not line.startswith("|"):
+            break
+        cells = tuple(cell.strip() for cell in line.strip("|").split("|"))
+        assert len(cells) == len(header)
+        rows.append(cells)
+    return tuple(rows)
+
+
+def _inline_code_value(value: str) -> str:
+    assert value.startswith("`") and value.endswith("`")
+    return value[1:-1]
+
+
+def _replace_once(text: str, old: str, new: str) -> str:
+    assert text.count(old) == 1
+    return text.replace(old, new, 1)
+
+
+def _assert_contract_rejects_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    path: Path,
+    replacements: tuple[tuple[str, str], ...],
+    contract: Callable[[], None],
+) -> None:
+    read_text = Path.read_text
+    mutated_text = read_text(path, encoding="utf-8")
+    for old, new in replacements:
+        mutated_text = _replace_once(mutated_text, old, new)
+
+    def mutated_read_text(self: Path, *args, **kwargs) -> str:
+        if self == path:
+            return mutated_text
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", mutated_read_text)
+    with pytest.raises(AssertionError):
+        contract()
 
 
 def test_current_docs_state_framework_authority_contracts() -> None:
@@ -414,3 +480,444 @@ def test_run_dispatch_reconciliation_contract_is_public_and_bounded():
     assert workflow.count(new_proof) == 1
     assert workflow.index(old_proof) < workflow.index(new_proof)
     assert workflow.index(new_proof) < workflow.index(pytest_step)
+
+
+def test_run_failure_cause_status_contract_is_public_and_additive() -> None:
+    api = (PROJECT_ROOT / "docs" / "reference" / "api-contract.md").read_text(
+        encoding="utf-8"
+    )
+    status = _section_between(
+        api,
+        "### GET /api/runs/{run_id}",
+        "### GET /api/runs/{run_id}/result",
+    )
+    result = _section_between(
+        api,
+        "### GET /api/runs/{run_id}/result",
+        "### GET /api/runs/{run_id}/artifacts/{artifact_id}",
+    )
+    normalized_status = _collapsed(status)
+
+    projections = (
+        '{"failure_cause":{"schema_version":"dra.run-failure-cause.v1",'
+        '"observation_status":"observed","phase":"execution",'
+        '"code":"call_budget_exceeded",'
+        '"recorded_at":"2026-07-16T00:00:00+00:00"}}',
+        '{"failure_cause":{"schema_version":"dra.run-failure-cause.v1",'
+        '"observation_status":"not_observed"}}',
+        '{"failure_cause":null}',
+    )
+    for projection in projections:
+        assert projection in status
+
+    for phrase in (
+        "exactly one additive top-level field",
+        "winning application terminal-transaction time",
+        "extra-allow",
+        "documentation metadata",
+        "not a response filter",
+    ):
+        assert phrase in normalized_status
+
+    safety_boundary = (
+        "The object never exposes `terminal_state_version`, raw exception class "
+        "or text, traceback, query, provider payload, retry count, lease or "
+        "checkpoint identity, database path, local path, credential, or trace ID."
+    )
+    assert safety_boundary in normalized_status
+    for forbidden in (
+        "The object exposes `terminal_state_version`",
+        "The object may expose `terminal_state_version`",
+        "The object can expose `terminal_state_version`",
+    ):
+        assert forbidden not in normalized_status
+
+    for phrase in (
+        "response, error envelope, and OpenAPI operation remain unchanged",
+        "`409 run_failed` does not include `failure_cause`",
+        "read the status endpoint",
+    ):
+        assert phrase in _collapsed(result)
+
+    for path in (PROJECT_ROOT / "README.md", PROJECT_ROOT / "README_CN.md"):
+        readme = path.read_text(encoding="utf-8")
+        assert "failure_cause" in readme
+        assert "docs/reference/api-contract.md" in readme
+
+
+def test_run_failure_cause_ledger_schema_and_migration_are_public() -> None:
+    data_models = (
+        PROJECT_ROOT / "docs" / "reference" / "data-models.md"
+    ).read_text(encoding="utf-8")
+    ledger = _section_between(
+        data_models,
+        "## Durable run failure cause ledger",
+        "## Evidence Entry",
+    )
+    normalized_ledger = _collapsed(ledger)
+
+    for phrase in (
+        "dra.run-failure-cause.v1",
+        "009_run_failure_cause_v1",
+        "run-failure-cause-v1",
+        "run_failure_causes_v1",
+    ):
+        assert phrase in normalized_ledger
+
+    storage_rows = _markdown_table_rows(
+        ledger,
+        header=("Column", "Contract"),
+    )
+    storage_columns = tuple(_inline_code_value(row[0]) for row in storage_rows)
+    expected_storage_columns = (
+        "run_id",
+        "observation_status",
+        "terminal_state_version",
+        "phase",
+        "code",
+        "recorded_at",
+    )
+    assert len(storage_rows) == 6
+    assert len(set(storage_columns)) == 6
+    assert storage_columns == expected_storage_columns
+
+    taxonomy_rows = _markdown_table_rows(
+        ledger,
+        header=("Phase", "Code"),
+    )
+    taxonomy = tuple(
+        (_inline_code_value(row[0]), _inline_code_value(row[1]))
+        for row in taxonomy_rows
+    )
+    expected_taxonomy = (
+        ("dispatch", "run_dispatch_schedule_failed"),
+        ("dispatch", "run_dispatch_start_failed"),
+        ("dispatch", "run_dispatch_start_timeout"),
+        ("dispatch", "run_dispatch_lease_expired"),
+        ("execution", "call_budget_exceeded"),
+        ("execution", "recursion_limit_exceeded"),
+        ("execution", "invalid_research_packet"),
+        ("execution", "missing_research_packet"),
+        ("execution", "run_timeout"),
+        ("execution", "cancelled"),
+        ("execution", "execution_error"),
+        ("finalization", "run_timeout"),
+        ("finalization", "cancelled"),
+        ("finalization", "run_finalization_failed"),
+    )
+    assert len(taxonomy_rows) == 14
+    assert len(set(taxonomy)) == 14
+    assert taxonomy == expected_taxonomy
+
+    for phrase in (
+        "positive `terminal_state_version` equal to the winning failed run `state_version`",
+        "`recorded_at` equals the failed run and segment `updated_at`",
+        "Historical `not_observed` rows",
+        "without an inferred diagnosis",
+        "Nonfailed runs have no cause row",
+        "fail closed",
+        "marker is present",
+        "verification only",
+        "never inserts, infers, or repairs",
+        "<configured-db>.pre-run-failure-cause.bak",
+        "stop the service and all application writers",
+        "preserve the failed database for diagnosis",
+        "restore the complete dedicated pre-009 backup",
+        "must not delete only the table or marker from a live database",
+    ):
+        assert phrase in normalized_ledger
+
+
+def test_run_failure_cause_authority_and_framework_reuse_are_public() -> None:
+    architecture = (PROJECT_ROOT / "docs" / "architecture.md").read_text(
+        encoding="utf-8"
+    )
+    decision = (
+        PROJECT_ROOT / "docs" / "decisions" / "framework-runtime-boundaries.md"
+    ).read_text(encoding="utf-8")
+    authority = _section_between(
+        decision,
+        "## Durability And Authority",
+        "## Trade-offs",
+    )
+    normalized_authority = _collapsed(authority)
+
+    for phrase in (
+        "Durable Failure-Cause Authority",
+        "application database",
+        "terminal transaction",
+        "exact dispatch fence",
+        "status-only projection",
+        "result endpoint remains unchanged",
+        "not exactly-once execution",
+        "not hard preemption",
+        "not provider diagnosis",
+        "not multi-instance high availability",
+        "not a billing record",
+    ):
+        assert phrase in _collapsed(architecture)
+
+    for phrase in (
+        "ModelCallLimitMiddleware",
+        "ToolCallLimitMiddleware",
+        "GraphRecursionError",
+        "Pydantic",
+        "FastAPI",
+        "asyncio",
+        "SQLite",
+    ):
+        assert phrase in normalized_authority
+
+    for required_boundary in (
+        "Only the winning application transaction converts an allowed signal "
+        "into a durable public code; framework error text and trace metadata are "
+        "not persisted as the cause.",
+        "The feature adds no new Agent middleware or DeepAgents middleware.",
+        "LangGraph `TimeoutPolicy` is rejected because it limits a graph node "
+        "attempt rather than the whole application run.",
+        "LangGraph checkpoint/store and LangSmith trace data are also rejected "
+        "as failure-cause business authority because they cannot join the run, "
+        "segment, Evidence, and cause in the same application transaction.",
+    ):
+        assert required_boundary in normalized_authority
+
+    for forbidden in (
+        "framework error text and trace metadata are persisted as the cause",
+        "The feature adds new Agent middleware",
+        "LangGraph `TimeoutPolicy` is accepted",
+        "LangGraph checkpoint/store and LangSmith trace data are accepted as "
+        "failure-cause business authority",
+        "LangGraph checkpoint/store and LangSmith trace data are failure-cause "
+        "business authority",
+    ):
+        assert forbidden not in normalized_authority
+
+
+def test_run_failure_cause_timeout_cancel_and_dispatch_boundaries_are_public() -> None:
+    state_machines = (
+        PROJECT_ROOT / "docs" / "reference" / "state-machines.md"
+    ).read_text(encoding="utf-8")
+
+    for phrase in (
+        "`unset` to `timeout` or `cancelled`",
+        "first transition wins",
+        "timeout is claimed before the inner task receives cancellation",
+        "attempts one and two",
+        "no canonical cause",
+        "exact third attempt",
+        "run_dispatch_schedule_failed",
+        "run_dispatch_start_failed",
+        "run_dispatch_start_timeout",
+        "run_dispatch_lease_expired",
+        "pre-start infrastructure cancellation",
+        "attempt four is never created",
+        "cooperative deadline",
+        "not hard wall-clock preemption",
+        "`failed` is execution-terminal",
+        "review or publication writer",
+    ):
+        assert phrase in _collapsed(state_machines)
+
+
+def test_run_failure_cause_consumer_compatibility_is_explicit() -> None:
+    downstream = (
+        PROJECT_ROOT / "docs" / "reference" / "downstream-consumer-contract.md"
+    ).read_text(encoding="utf-8")
+    integration = (PROJECT_ROOT / "docs" / "AGENT_INTEGRATION.md").read_text(
+        encoding="utf-8"
+    )
+
+    for phrase in (
+        "frozen `dra.downstream-consumer.v1` projection",
+        "ignores the additive upstream `failure_cause` field",
+        "persistent failure cause remains `unknown` inside v1",
+        "fixture bytes and checksum remain unchanged",
+        "`409 run_failed` remains unchanged",
+    ):
+        assert phrase in _collapsed(downstream)
+
+    for phrase in (
+        "raw terminal status projection",
+        "may carry `failure_cause`",
+        "`result --run-id` and `run --wait --result` remain on the unchanged result contract",
+        "`run_wait_timeout` is a client polling deadline",
+        "application-owned terminal `execution/run_timeout` or `finalization/run_timeout`",
+        "No new Tool Client command or model is required",
+    ):
+        assert phrase in _collapsed(integration)
+
+
+def test_run_failure_cause_proof_is_indexed_and_bounded() -> None:
+    json_path = PROJECT_ROOT / "docs" / "evidence" / "run-failure-cause-v1.json"
+    markdown_path = PROJECT_ROOT / "docs" / "evidence" / "run-failure-cause-v1.md"
+    assert json_path.is_file()
+    assert markdown_path.is_file()
+
+    docs_index = (PROJECT_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+    evidence_index = (PROJECT_ROOT / "docs" / "evidence" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    for link in (
+        "[Durable Run Failure Cause Proof](evidence/run-failure-cause-v1.md)",
+        "[JSON report](evidence/run-failure-cause-v1.json)",
+    ):
+        assert link in docs_index
+    for link in (
+        "[run-failure-cause-v1.json](run-failure-cause-v1.json)",
+        "[run-failure-cause-v1.md](run-failure-cause-v1.md)",
+    ):
+        assert link in evidence_index
+    for phrase in (
+        "dra.run-failure-cause-proof.v1",
+        "fixed 16-case",
+        "offline",
+        "provider-free",
+        "network-free",
+        "credential-free",
+        "byte-identical",
+    ):
+        assert phrase in evidence_index
+
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    install = "pip install --no-deps -r constraints.txt"
+    proof = "python scripts/run_failure_cause_proof.py check"
+    broad_suite = "python -m pytest -q"
+    assert workflow.count(proof) == 1
+    assert (
+        workflow.index(install)
+        < workflow.index(proof)
+        < workflow.index(broad_suite)
+    )
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    (
+        (
+            "| `recorded_at` | timezone-aware UTC terminal timestamp for "
+            "observed rows; otherwise null |\n",
+            "| `recorded_at` | timezone-aware UTC terminal timestamp for "
+            "observed rows; otherwise null |\n"
+            "| `provider` | forbidden seventh public storage column |\n",
+        ),
+        (
+            "| `finalization` | `run_finalization_failed` |\n",
+            "| `finalization` | `run_finalization_failed` |\n"
+            "| `execution` | `provider_error` |\n",
+        ),
+        (
+            "| `dispatch` | `run_dispatch_schedule_failed` |\n",
+            "| `dispatch` | `run_dispatch_schedule_failed` |\n"
+            "| `dispatch` | `run_dispatch_schedule_failed` |\n",
+        ),
+    ),
+    ids=("seventh-column", "fifteenth-code", "duplicate-phase-code"),
+)
+def test_run_failure_cause_ledger_rejects_deliberate_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    old: str,
+    new: str,
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=PROJECT_ROOT / "docs" / "reference" / "data-models.md",
+        replacements=((old, new),),
+        contract=test_run_failure_cause_ledger_schema_and_migration_are_public,
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new", "contract"),
+    (
+        (
+            PROJECT_ROOT / "docs" / "reference" / "api-contract.md",
+            "The object never exposes `terminal_state_version`, raw\n"
+            "exception class or text, traceback, query, provider payload, "
+            "retry count, lease\n"
+            "or checkpoint identity, database path, local path, credential, "
+            "or trace ID.",
+            "The object exposes `terminal_state_version`, raw\n"
+            "exception class or text, traceback, query, provider payload, "
+            "retry count, lease\n"
+            "or checkpoint identity, database path, local path, credential, "
+            "or trace ID.",
+            test_run_failure_cause_status_contract_is_public_and_additive,
+        ),
+        (
+            PROJECT_ROOT
+            / "docs"
+            / "decisions"
+            / "framework-runtime-boundaries.md",
+            "LangGraph checkpoint/store and LangSmith trace data\n"
+            "are also rejected as failure-cause business authority because "
+            "they cannot join",
+            "LangGraph checkpoint/store and LangSmith trace data\n"
+            "are accepted as failure-cause business authority because "
+            "they can join",
+            test_run_failure_cause_authority_and_framework_reuse_are_public,
+        ),
+    ),
+    ids=("status-exposes-private-fields", "framework-becomes-authority"),
+)
+def test_run_failure_cause_safety_rejects_deliberate_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    old: str,
+    new: str,
+    contract: Callable[[], None],
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=path,
+        replacements=((old, new),),
+        contract=contract,
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "replacements"),
+    (
+        (
+            PROJECT_ROOT / "docs" / "README.md",
+            (
+                (
+                    "[Durable Run Failure Cause Proof]"
+                    "(evidence/run-failure-cause-v1.md)",
+                    "Durable Run Failure Cause Proof: "
+                    "evidence/run-failure-cause-v1.md",
+                ),
+                (
+                    "[JSON report](evidence/run-failure-cause-v1.json)",
+                    "JSON report: evidence/run-failure-cause-v1.json",
+                ),
+            ),
+        ),
+        (
+            PROJECT_ROOT / "docs" / "evidence" / "README.md",
+            (
+                (
+                    "[run-failure-cause-v1.json](run-failure-cause-v1.json)",
+                    "run-failure-cause-v1.json",
+                ),
+                (
+                    "[run-failure-cause-v1.md](run-failure-cause-v1.md)",
+                    "run-failure-cause-v1.md",
+                ),
+            ),
+        ),
+    ),
+    ids=("docs-index-plain-filenames", "evidence-index-plain-filenames"),
+)
+def test_run_failure_cause_links_reject_deliberate_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    replacements: tuple[tuple[str, str], ...],
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=path,
+        replacements=replacements,
+        contract=test_run_failure_cause_proof_is_indexed_and_bounded,
+    )

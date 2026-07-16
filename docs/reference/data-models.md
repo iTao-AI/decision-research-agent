@@ -28,7 +28,7 @@ Agent harness 输出在进入业务账本前被 service 层冻结为 outcome sna
 | `answer` | 研究输出文本或 fallback 说明 |
 | `evidence_entries` | 当前 run 捕获的不可变证据条目 |
 | `research_packets` | Talent profile 的结构化 ResearchPacket |
-| `failure_kind` | schema、contract、runtime 或 provider failure 分类 |
+| `failure_kind` | 有界且非权威的 harness outcome hint；只有应用 mapper 可生成公开 code，unknown 或 provider-specific 细节统一收敛为 `execution_error`，不持久化原始内容 |
 | `diagnostics` | 有界诊断，不应包含 secret、绝对路径或 traceback |
 
 Outcome 不是业务权威。只有 fenced terminal transaction 写入
@@ -62,6 +62,81 @@ lifespan migration uses a separate `.pre-run-dispatch.bak`, restores it on
 verification failure, and refuses to overwrite an existing backup. It performs
 no backfill: runs created before `008` retain identity replay but are not
 scheduled by the new worker.
+
+## Durable run failure cause ledger
+
+The application database is authoritative for the immutable terminal cause.
+Public status projections use schema `dra.run-failure-cause.v1`; framework
+state, checkpoint data, traces, and private retry diagnostics are mapper inputs,
+not an alternate ledger.
+
+Migration `009_run_failure_cause_v1` has exact checksum
+`run-failure-cause-v1` and creates the one-to-one
+`run_failure_causes_v1` table:
+
+| Column | Contract |
+|---|---|
+| `run_id` | `TEXT NOT NULL PRIMARY KEY` referencing `research_runs_v2(run_id) ON DELETE CASCADE` |
+| `observation_status` | `TEXT NOT NULL`; exactly `observed` or `not_observed` |
+| `terminal_state_version` | positive integer for an observed winning failure; null for historical `not_observed` |
+| `phase` | exact `dispatch`, `execution`, or `finalization` for observed rows; otherwise null |
+| `code` | exact phase-specific value for observed rows; otherwise null |
+| `recorded_at` | timezone-aware UTC terminal timestamp for observed rows; otherwise null |
+
+The v1 phase/code matrix is exact:
+
+| Phase | Code |
+|---|---|
+| `dispatch` | `run_dispatch_schedule_failed` |
+| `dispatch` | `run_dispatch_start_failed` |
+| `dispatch` | `run_dispatch_start_timeout` |
+| `dispatch` | `run_dispatch_lease_expired` |
+| `execution` | `call_budget_exceeded` |
+| `execution` | `recursion_limit_exceeded` |
+| `execution` | `invalid_research_packet` |
+| `execution` | `missing_research_packet` |
+| `execution` | `run_timeout` |
+| `execution` | `cancelled` |
+| `execution` | `execution_error` |
+| `finalization` | `run_timeout` |
+| `finalization` | `cancelled` |
+| `finalization` | `run_finalization_failed` |
+
+An observed row has a positive `terminal_state_version` equal to the winning
+failed run `state_version`, and `recorded_at` equals the failed run and segment
+`updated_at`. The observed cause is inserted in the same fenced transaction as
+run state, segment state, frozen Evidence, packets, artifacts, and review state.
+It is immutable through application APIs; a duplicate insert rolls back the
+whole terminal transaction.
+
+Historical `not_observed` rows keep `terminal_state_version`, `phase`, `code`,
+and `recorded_at` null and are recorded without an inferred diagnosis.
+Migration never parses logs, traces, Evidence, dispatch text, timestamps, or
+exceptions to manufacture a cause. Nonfailed runs have no cause row. A missing
+row for a post-migration failed run, a cause on a nonfailed run, a duplicate
+row, a malformed variant, or a mismatched version/timestamp is corruption and
+must fail closed.
+
+When the exact migration marker is absent, startup first creates the dedicated
+full-database `<configured-db>.pre-run-failure-cause.bak` and refuses to
+overwrite an existing backup. Under one migration transaction it creates and
+verifies the table, inserts `not_observed` only for existing failed runs,
+inserts the exact marker/checksum, verifies cross-table invariants, and commits.
+If application, marker, data-marker, or verification work fails, every migration
+connection closes before the complete backup is restored.
+
+When the exact marker is present, startup performs verification only and never
+inserts, infers, or repairs a cause row. A missing table or row, malformed
+constraint, wrong checksum, or invalid cross-state data is a startup failure,
+not a repair opportunity.
+
+Operator rollback is a source-and-data action: stop the service and all
+application writers, preserve the failed database for diagnosis, restore the
+complete dedicated pre-009 backup to the configured database, and keep the
+application revision aligned with that database before writers restart.
+Operators must not delete only the table or marker from a live database, and
+restarting the same migration-bearing revision against the restored pre-009
+database is not by itself a completed rollback.
 
 ## Evidence Entry
 

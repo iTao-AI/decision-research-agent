@@ -15,7 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from contextlib import asynccontextmanager
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 # Load env once at startup — tools read from os.environ
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
@@ -30,7 +30,12 @@ from agent.run_result import OutcomeBox
 from agent.telemetry import collector
 from api.monitor import monitor, manager
 from api.cors_config import get_allowed_origins
-from api.task_tracker import create_tracked_task
+from api.task_tracker import (
+    FinalizationCheckpoint,
+    TerminationOrigin,
+    create_tracked_task,
+    settle_shielded_task,
+)
 from api.database import sqlite_db_path
 from api.thread_ids import validate_thread_id
 from api.run_repository import (
@@ -41,8 +46,14 @@ from api.run_repository import (
     get_artifact,
     get_run,
 )
+from api.run_failure_cause_models import (
+    RunFailureCauseConflict,
+    RunFailureCauseWrite,
+    RunStatusFailureCauseOpenAPI,
+)
 from api.run_dispatch_models import RunDispatchClaim
 from api.run_dispatch_repository import (
+    reconcile_run_dispatch_cancellation,
     reconcile_run_dispatch_timeout,
     release_run_dispatch_for_retry,
     start_run_dispatch,
@@ -301,6 +312,77 @@ def _validated_thread_id(thread_id: str) -> str:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+_DIRECT_EXECUTION_FAILURES = frozenset(
+    {
+        "call_budget_exceeded",
+        "recursion_limit_exceeded",
+        "invalid_research_packet",
+        "missing_research_packet",
+    }
+)
+
+
+def _execution_failure_cause(failure_kind: str | None) -> RunFailureCauseWrite:
+    code = (
+        failure_kind
+        if failure_kind in _DIRECT_EXECUTION_FAILURES
+        else "execution_error"
+    )
+    return RunFailureCauseWrite(phase="execution", code=code)
+
+
+_RunStageValue = Literal["dispatch", "execution", "finalization"]
+
+
+class _RunStage:
+    """Monotonic application stage shared by one exact dispatch attempt."""
+
+    def __init__(self) -> None:
+        self._value: _RunStageValue = "dispatch"
+
+    @property
+    def value(self) -> _RunStageValue:
+        return self._value
+
+    def advance_to_execution(self) -> None:
+        if self._value == "dispatch":
+            self._value = "execution"
+        elif self._value != "execution":
+            raise RuntimeError("run_stage_cannot_move_backward")
+
+    def advance_to_finalization(self) -> None:
+        if self._value == "execution":
+            self._value = "finalization"
+        elif self._value != "finalization":
+            raise RuntimeError("run_stage_transition_invalid")
+
+
+def _stage_failure_cause(stage: _RunStage) -> RunFailureCauseWrite:
+    if stage.value == "finalization":
+        return RunFailureCauseWrite(
+            phase="finalization",
+            code="run_finalization_failed",
+        )
+    return RunFailureCauseWrite(
+        phase="execution",
+        code="execution_error",
+    )
+
+
+def _termination_failure_cause(
+    stage: _RunStage,
+    termination_origin: TerminationOrigin,
+) -> RunFailureCauseWrite:
+    if termination_origin.value == "timeout":
+        code = "run_timeout"
+    elif termination_origin.value == "cancelled":
+        code = "cancelled"
+    else:
+        return _stage_failure_cause(stage)
+    phase = "finalization" if stage.value == "finalization" else "execution"
+    return RunFailureCauseWrite(phase=phase, code=code)
+
+
 async def _run_started_v2_with_persistence(
     *,
     query: str,
@@ -308,12 +390,17 @@ async def _run_started_v2_with_persistence(
     run_id: str,
     segment_id: str,
     outcome_box: OutcomeBox,
+    db_path: str,
+    stage: _RunStage,
+    termination_origin: TerminationOrigin,
+    finalization_checkpoint: FinalizationCheckpoint,
     profile_id: str = "generic",
     scope: dict | None = None,
 ) -> None:
     """Execute one run-scoped request while preserving LangGraph thread identity."""
     state_version = 1
     allowed_previous_statuses = {"running"}
+    result = None
     try:
         result = await run_deep_agent(
             query,
@@ -324,8 +411,14 @@ async def _run_started_v2_with_persistence(
             profile_id=profile_id,
             scope=scope,
         )
+        stage.advance_to_finalization()
         execution_status = (
             "failed" if result.failure_kind is not None else "completed"
+        )
+        failure_cause = (
+            _execution_failure_cause(result.failure_kind)
+            if execution_status == "failed"
+            else None
         )
         delivery_status = "failed" if execution_status == "failed" else "ready"
         review_status = "not_required"
@@ -362,43 +455,104 @@ async def _run_started_v2_with_persistence(
                             review_bundle.revision,
                         ),
                     }
-        finalized = await asyncio.to_thread(
-            finalize_run_transaction,
-            run_id=run_id,
-            segment_id=segment_id,
-            expected_state_version=1,
-            allowed_previous_statuses={"running"},
-            execution_status=execution_status,
-            delivery_status=delivery_status,
-            review_status=review_status,
-            evidence_entries=result.evidence_entries,
-            research_packets=result.research_packets,
-            review_bundle=review_bundle,
-            artifacts=artifacts,
-            review_workflow=review_workflow,
-        )
-        if not finalized:
-            raise RuntimeError("stale_run_write")
+        await finalization_checkpoint.request_and_wait()
     except asyncio.CancelledError:
-        outcome = outcome_box.latest()
+        outcome = result or outcome_box.latest()
         await _finalize_failed_run_v2(
             run_id=run_id,
             segment_id=segment_id,
             expected_state_version=state_version,
             allowed_previous_statuses=allowed_previous_statuses,
             evidence_entries=outcome.evidence_entries if outcome is not None else [],
+            failure_cause=_termination_failure_cause(stage, termination_origin),
+            db_path=db_path,
         )
         raise
     except Exception:
-        outcome = outcome_box.latest()
+        outcome = result or outcome_box.latest()
         await _finalize_failed_run_v2(
             run_id=run_id,
             segment_id=segment_id,
             expected_state_version=state_version,
             allowed_previous_statuses=allowed_previous_statuses,
             evidence_entries=outcome.evidence_entries if outcome is not None else [],
+            failure_cause=_stage_failure_cause(stage),
+            db_path=db_path,
         )
         raise
+
+    terminal_failure_cause = failure_cause
+    terminal_execution_status = execution_status
+    terminal_delivery_status = delivery_status
+    terminal_review_status = review_status
+    terminal_evidence_entries = result.evidence_entries
+    terminal_research_packets = result.research_packets
+    terminal_review_bundle = review_bundle
+    terminal_artifacts = artifacts
+    terminal_review_workflow = review_workflow
+    if termination_origin.value != "unset":
+        terminal_failure_cause = _termination_failure_cause(
+            stage,
+            termination_origin,
+        )
+        terminal_execution_status = "failed"
+        terminal_delivery_status = "failed"
+        terminal_review_status = "not_required"
+        terminal_research_packets = []
+        terminal_review_bundle = None
+        terminal_artifacts = []
+        terminal_review_workflow = None
+
+    terminal_task = asyncio.create_task(
+        asyncio.to_thread(
+            finalize_run_transaction,
+            run_id=run_id,
+            segment_id=segment_id,
+            expected_state_version=state_version,
+            allowed_previous_statuses=allowed_previous_statuses,
+            execution_status=terminal_execution_status,
+            delivery_status=terminal_delivery_status,
+            review_status=terminal_review_status,
+            evidence_entries=terminal_evidence_entries,
+            research_packets=terminal_research_packets,
+            review_bundle=terminal_review_bundle,
+            artifacts=terminal_artifacts,
+            review_workflow=terminal_review_workflow,
+            failure_cause=terminal_failure_cause,
+            db_path=db_path,
+        )
+    )
+    terminal_result, terminal_exception, cancellation_requests = (
+        await settle_shielded_task(terminal_task)
+    )
+    if terminal_exception is not None:
+        fallback_cause = (
+            _termination_failure_cause(stage, termination_origin)
+            if termination_origin.value != "unset"
+            else RunFailureCauseWrite(
+                phase="finalization",
+                code="run_finalization_failed",
+            )
+        )
+        await _finalize_failed_run_v2(
+            run_id=run_id,
+            segment_id=segment_id,
+            expected_state_version=state_version,
+            allowed_previous_statuses=allowed_previous_statuses,
+            evidence_entries=result.evidence_entries,
+            failure_cause=fallback_cause,
+            db_path=db_path,
+        )
+        current_task = asyncio.current_task()
+        if cancellation_requests or (
+            current_task is not None and current_task.cancelling()
+        ):
+            raise asyncio.CancelledError
+        raise terminal_exception
+    if cancellation_requests:
+        raise asyncio.CancelledError
+    if terminal_result is False:
+        return
 
 
 async def _run_dispatched_with_persistence(
@@ -406,33 +560,67 @@ async def _run_dispatched_with_persistence(
     *,
     db_path: str,
     outcome_box: OutcomeBox,
+    stage: _RunStage,
+    termination_origin: TerminationOrigin,
+    finalization_checkpoint: FinalizationCheckpoint,
 ) -> None:
     """Cross the application-owned start fence before invoking the Agent."""
-    try:
-        started = await asyncio.to_thread(
+    start_task = asyncio.create_task(
+        asyncio.to_thread(
             start_run_dispatch,
             db_path=db_path,
             claim=claim,
         )
-    except Exception:
-        try:
-            await asyncio.to_thread(
+    )
+    started, start_exception, cancellation_requests = await settle_shielded_task(
+        start_task
+    )
+    if start_exception is not None:
+        if cancellation_requests or termination_origin.value != "unset":
+            raise asyncio.CancelledError
+        recovery_task = asyncio.create_task(
+            asyncio.to_thread(
                 release_run_dispatch_for_retry,
                 db_path=db_path,
                 claim=claim,
                 error_code="run_dispatch_start_failed",
             )
-        except Exception:
+        )
+        _, recovery_exception, recovery_cancellations = await settle_shielded_task(
+            recovery_task
+        )
+        if recovery_exception is not None:
             logging.error("Run dispatch start recovery failed")
+        if recovery_cancellations:
+            raise asyncio.CancelledError
         return
     if not started:
+        if cancellation_requests:
+            raise asyncio.CancelledError
         return
+    stage.advance_to_execution()
+    if cancellation_requests or termination_origin.value != "unset":
+        outcome = outcome_box.latest()
+        await _finalize_failed_run_v2(
+            run_id=claim.run_id,
+            segment_id=claim.segment_id,
+            expected_state_version=1,
+            allowed_previous_statuses={"running"},
+            evidence_entries=outcome.evidence_entries if outcome is not None else [],
+            failure_cause=_termination_failure_cause(stage, termination_origin),
+            db_path=db_path,
+        )
+        raise asyncio.CancelledError
     await _run_started_v2_with_persistence(
         query=claim.query,
         thread_id=claim.thread_id,
         run_id=claim.run_id,
         segment_id=claim.segment_id,
         outcome_box=outcome_box,
+        db_path=db_path,
+        stage=stage,
+        termination_origin=termination_origin,
+        finalization_checkpoint=finalization_checkpoint,
         profile_id=claim.profile_id,
         scope=claim.scope,
     )
@@ -445,10 +633,12 @@ async def _finalize_failed_run_v2(
     expected_state_version: int,
     allowed_previous_statuses: set[str],
     evidence_entries: list,
+    failure_cause: RunFailureCauseWrite,
+    db_path: str | None = None,
 ) -> bool:
     """Best-effort failure finalization that never masks the original error."""
-    try:
-        return await asyncio.to_thread(
+    terminal_task = asyncio.create_task(
+        asyncio.to_thread(
             finalize_run_transaction,
             run_id=run_id,
             segment_id=segment_id,
@@ -457,10 +647,20 @@ async def _finalize_failed_run_v2(
             execution_status="failed",
             delivery_status="failed",
             evidence_entries=evidence_entries,
+            failure_cause=failure_cause,
+            db_path=db_path,
         )
-    except Exception:
-        logging.exception("Failed to finalize ResearchRun %s after execution error", run_id)
+    )
+    result, terminal_exception, cancellation_requests = await settle_shielded_task(
+        terminal_task
+    )
+    if terminal_exception is not None:
+        logging.error("Failed to finalize ResearchRun %s", run_id)
+    if cancellation_requests:
+        raise asyncio.CancelledError
+    if terminal_exception is not None:
         return False
+    return result is True
 
 
 async def _mark_run_timeout(
@@ -469,9 +669,17 @@ async def _mark_run_timeout(
     *,
     segment_id: str,
     outcome_box: OutcomeBox,
+    db_path: str | None = None,
+    stage: _RunStage | None = None,
 ) -> None:
     """Fail-close a nonterminal ResearchRun after task tracker timeout."""
-    run = await asyncio.to_thread(get_run, run_id=run_id)
+    run_task = asyncio.create_task(
+        asyncio.to_thread(get_run, run_id=run_id, db_path=db_path)
+    )
+    run, run_exception, _ = await settle_shielded_task(run_task)
+    if run_exception is not None:
+        logging.error("Timed out ResearchRun %s could not be read", run_id)
+        return
     if run is None:
         logging.error("Timed out ResearchRun %s no longer exists", run_id)
         return
@@ -486,6 +694,15 @@ async def _mark_run_timeout(
             expected_state_version=run["state_version"],
             allowed_previous_statuses={previous_status},
             evidence_entries=outcome.evidence_entries if outcome is not None else [],
+            failure_cause=RunFailureCauseWrite(
+                phase=(
+                    "finalization"
+                    if stage is not None and stage.value == "finalization"
+                    else "execution"
+                ),
+                code="run_timeout",
+            ),
+            db_path=db_path,
         )
 
     monitor._emit(
@@ -508,33 +725,106 @@ async def _mark_dispatched_timeout(
     db_path: str,
     outcome_box: OutcomeBox,
     timeout_seconds: int,
+    stage: _RunStage | None = None,
+    termination_origin: TerminationOrigin | None = None,
 ) -> None:
     """Fence timeout handling to the exact dispatch attempt."""
-    try:
-        timeout_outcome = await asyncio.to_thread(
+    if (
+        termination_origin is not None
+        and termination_origin.value != "timeout"
+    ):
+        return
+    reconcile_task = asyncio.create_task(
+        asyncio.to_thread(
             reconcile_run_dispatch_timeout,
             db_path=db_path,
             claim=claim,
         )
-        if timeout_outcome != "started":
-            return
-    except Exception:
+    )
+    timeout_outcome, reconcile_exception, _ = await settle_shielded_task(
+        reconcile_task
+    )
+    if reconcile_exception is not None:
         logging.error("Run dispatch timeout inspection failed")
+        return
+    if timeout_outcome != "started":
         return
     await _mark_run_timeout(
         claim.run_id,
         timeout_seconds,
         segment_id=claim.segment_id,
         outcome_box=outcome_box,
+        db_path=db_path,
+        stage=stage,
+    )
+
+
+async def _mark_dispatched_cancellation(
+    claim: RunDispatchClaim,
+    *,
+    db_path: str,
+    outcome_box: OutcomeBox,
+    stage: _RunStage,
+    termination_origin: TerminationOrigin,
+) -> None:
+    """Fence cancellation handling to the exact dispatch attempt."""
+    if termination_origin.value != "cancelled":
+        return
+    reconcile_task = asyncio.create_task(
+        asyncio.to_thread(
+            reconcile_run_dispatch_cancellation,
+            db_path=db_path,
+            claim=claim,
+        )
+    )
+    cancellation_outcome, reconcile_exception, _ = await settle_shielded_task(
+        reconcile_task
+    )
+    if reconcile_exception is not None:
+        logging.error("Run dispatch cancellation inspection failed")
+        return
+    if cancellation_outcome != "started":
+        return
+
+    run_task = asyncio.create_task(
+        asyncio.to_thread(get_run, run_id=claim.run_id, db_path=db_path)
+    )
+    run, run_exception, _ = await settle_shielded_task(run_task)
+    if run_exception is not None or run is None:
+        logging.error("Cancelled ResearchRun %s could not be read", claim.run_id)
+        return
+    previous_status = run["execution_status"]
+    if previous_status not in {"pending", "running"}:
+        return
+    outcome = outcome_box.latest()
+    await _finalize_failed_run_v2(
+        run_id=claim.run_id,
+        segment_id=claim.segment_id,
+        expected_state_version=run["state_version"],
+        allowed_previous_statuses={previous_status},
+        evidence_entries=outcome.evidence_entries if outcome is not None else [],
+        failure_cause=RunFailureCauseWrite(
+            phase=(
+                "finalization" if stage.value == "finalization" else "execution"
+            ),
+            code="cancelled",
+        ),
+        db_path=db_path,
     )
 
 
 def _schedule_run_dispatch(claim: RunDispatchClaim, *, db_path: str) -> None:
     outcome_box = OutcomeBox()
+    stage = _RunStage()
+    termination_origin = TerminationOrigin()
+    finalization_checkpoint = FinalizationCheckpoint()
     coroutine = _run_dispatched_with_persistence(
         claim,
         db_path=db_path,
         outcome_box=outcome_box,
+        stage=stage,
+        termination_origin=termination_origin,
+        finalization_checkpoint=finalization_checkpoint,
     )
     task_id = f"{claim.run_id}:dispatch:{claim.attempt_count}"
     try:
@@ -546,7 +836,18 @@ def _schedule_run_dispatch(claim: RunDispatchClaim, *, db_path: str) -> None:
                 db_path=db_path,
                 outcome_box=outcome_box,
                 timeout_seconds=timeout_seconds,
+                stage=stage,
+                termination_origin=termination_origin,
             ),
+            on_cancel=lambda _task_id: _mark_dispatched_cancellation(
+                claim,
+                db_path=db_path,
+                outcome_box=outcome_box,
+                stage=stage,
+                termination_origin=termination_origin,
+            ),
+            termination_origin=termination_origin,
+            finalization_checkpoint=finalization_checkpoint,
         )
     except Exception:
         coroutine.close()
@@ -680,9 +981,23 @@ async def create_research_run(
     return response
 
 
-@app.get("/api/runs/{run_id}")
+@app.get(
+    "/api/runs/{run_id}",
+    responses={
+        200: {
+            "model": RunStatusFailureCauseOpenAPI,
+            "description": "ResearchRun status with additive failure cause",
+        }
+    },
+)
 async def get_research_run_v2(run_id: str):
-    run = await asyncio.to_thread(get_run, run_id=run_id)
+    try:
+        run = await asyncio.to_thread(get_run, run_id=run_id)
+    except RunFailureCauseConflict:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "ResearchRun state is unavailable"},
+        )
     if run is None:
         return JSONResponse(status_code=404, content={"detail": "ResearchRun 不存在"})
     return run

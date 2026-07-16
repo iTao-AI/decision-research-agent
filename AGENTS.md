@@ -176,8 +176,9 @@ two independently scoped work units with clear file ownership, separate
 verification boundaries, and enough parallel benefit to exceed coordination
 cost.
 
-- The parent Agent owns shared contracts and files, cross-lane integration,
-  full relevant verification, and the final commit.
+- The parent Agent owns shared contracts and files, the final integrated branch
+  state, cross-lane integration, full relevant verification, and the
+  consolidated terminal report. Bounded child or lane commits are allowed.
 - Keep highly coupled work serial, including shared authority files,
   migrations, public contracts, and changes with ordering dependencies.
 - Do not delegate merely because a task can be split. Prefer focused serial
@@ -303,9 +304,12 @@ private job-search motivation/presentation context.
   merging.
 - After a squash merge, verify that the merge commit tree equals the reviewed
   head tree before fast-forwarding the primary `main` checkout.
-- Clean up only task-owned, clean worktrees and their local or remote branches.
-  Prune stale worktree metadata, confirm other worktrees are unchanged, and do
-  not touch unrelated branches.
+- Clean up only task-owned, clean, inactive worktrees and branches with no open
+  PR or active task. Before deletion, prove that intended unique changes are
+  retained in a merged commit, tag, or explicit archive. Abandoning unique
+  commits requires explicit authorization; preserve anything with unclear
+  ownership or state. Prune stale worktree metadata, confirm other worktrees
+  are unchanged, and do not touch unrelated branches.
 
 A task is complete when the requested behavior matches scope, appropriate
 verification actually passed, required documentation is current, the diff is
@@ -319,5 +323,7 @@ bullets for completed work and verification. Use checkboxes only for genuine
 pending gates.
 
 After creating or updating a PR, query the actual PR and verify its title,
-body, base, head, and draft state. Correct literal `\n`, stale placeholders, or
-format drift before handoff.
+body, base, head, and draft state. Confirm that the persisted section order,
+actual commands and results, scope, risk, documentation impact, and non-claims
+match the final diff and verification. Correct literal `\n`, stale
+placeholders, or format drift before handoff.

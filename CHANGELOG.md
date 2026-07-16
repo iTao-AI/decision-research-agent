@@ -17,6 +17,18 @@ All notable changes to this project are documented in this file.
 - The contract does not claim exactly-once execution, hard preemption,
   provider diagnosis, multi-instance high availability, or a billing record.
 
+### Console live authority closure
+
+- Live Backend now renders only real service-owned run status and canonical
+  result observations while Static Demo remains isolated.
+- Ambiguous create reconciliation reuses the same key and byte-equivalent
+  request, and a known `run_id` enables GET-only observation resume without a
+  replacement create.
+- The loopback-only Console still accepts no credentials and owns no review,
+  verification, publication, or delivery authority. It does not claim durable
+  browser intent, production deployment, exactly-once execution, or
+  live-provider quality.
+
 ## [0.1.3] - 2026-07-14
 
 ### Durable run dispatch

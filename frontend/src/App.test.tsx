@@ -1,8 +1,15 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+
+const BASE_URL = "http://127.0.0.1:8000";
+const FIXED_UUID = "11111111-2222-4333-8444-555555555555";
+
+beforeEach(() => {
+  vi.spyOn(crypto, "randomUUID").mockReturnValue(FIXED_UUID);
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -82,15 +89,73 @@ describe("Decision Research Agent demo console", () => {
     expect(document.querySelector(".chat-bubble")).not.toBeInTheDocument();
   });
 
-  it("shows static demo data for lifecycle, evidence, review, verification, and result", () => {
+  it("lets each definition row span the parent grid and own its two-column layout", () => {
+    const process = (
+      globalThis as typeof globalThis & {
+        process: {
+          cwd(): string;
+          getBuiltinModule(name: "fs"): {
+            readFileSync(path: string, encoding: "utf8"): string;
+          };
+        };
+      }
+    ).process;
+    const styles = process
+      .getBuiltinModule("fs")
+      .readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+    const definitionRowRule = styles.match(/\.definition-row\s*\{([^}]*)\}/)?.[1];
+
+    expect(definitionRowRule).toBeDefined();
+    expect(definitionRowRule).toMatch(/grid-column:\s*1\s*\/\s*-1/);
+    expect(definitionRowRule).toMatch(/display:\s*grid/);
+    expect(definitionRowRule).toMatch(
+      /grid-template-columns:\s*minmax\(120px,\s*0\.45fr\)\s+minmax\(0,\s*1fr\)/
+    );
+  });
+
+  it("stacks recovery actions without fixed minimum overflow at the 320px path", () => {
+    const process = (
+      globalThis as typeof globalThis & {
+        process: {
+          cwd(): string;
+          getBuiltinModule(name: "fs"): {
+            readFileSync(path: string, encoding: "utf8"): string;
+          };
+        };
+      }
+    ).process;
+    const styles = process
+      .getBuiltinModule("fs")
+      .readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+    const mobileStart = styles.indexOf("@media (max-width: 760px)");
+    const mobileStyles = styles.slice(mobileStart);
+    const recoveryRule = mobileStyles.match(/\.recovery-actions\s*\{([^}]*)\}/)?.[1];
+    const buttonRule = mobileStyles.match(/\.recovery-actions button\s*\{([^}]*)\}/)?.[1];
+
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+    expect(recoveryRule).toMatch(/flex-direction:\s*column/);
+    expect(buttonRule).toMatch(/min-width:\s*0/);
+    expect(buttonRule).toMatch(/width:\s*100%/);
+  });
+
+  it("shows static demo data for lifecycle, evidence, review, verification, and result", async () => {
+    const user = userEvent.setup();
     render(<App />);
 
     expect(screen.getAllByText("run_demo_talent_2026_06_29").length).toBeGreaterThan(0);
-    expect(screen.getByText(/evidence_frozen/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Run Lifecycle" }));
+    expect(screen.getAllByText(/evidence_frozen/).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "Evidence Ledger" }));
     expect(screen.getByText(/ev_001/)).toBeInTheDocument();
     expect(screen.getByText(/claim_candidate_signal/)).toBeInTheDocument();
-    expect(screen.getByText("approved")).toBeInTheDocument();
-    expect(screen.getByText("verified")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Review / Verification" }));
+    expect(screen.getAllByText("approved").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("verified").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "Canonical Result" }));
     expect(screen.getByText("decision-brief.md")).toBeInTheDocument();
     expect(screen.getByText(/python tools\/decision_research_agent_tool.py run/)).toBeInTheDocument();
   });
@@ -211,15 +276,12 @@ describe("Decision Research Agent demo console", () => {
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
       jsonResponse({
         status: "started",
-        thread_id: "demo-ui-thread",
+        thread_id: `demo-console-${FIXED_UUID}`,
         run_id: "run_live_001",
-        segment_id: "run_live_001_seg_000"
+        segment_id: "run_live_001_seg_000",
+        idempotent_replay: false
       }),
-      jsonResponse({
-        run_id: "run_live_001",
-        execution_status: "completed",
-        delivery_status: "ready"
-      }),
+      jsonResponse(runStatus("run_live_001", "completed", "ready")),
       jsonResponse({
         run_id: "run_live_001",
         execution_status: "completed",
@@ -255,22 +317,22 @@ describe("Decision Research Agent demo console", () => {
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
       jsonResponse({
         status: "started",
-        thread_id: "demo-ui-thread",
+        thread_id: `demo-console-${FIXED_UUID}`,
         run_id: "run_live_fallback",
-        segment_id: "run_live_fallback_seg_000"
+        segment_id: "run_live_fallback_seg_000",
+        idempotent_replay: false
       }),
-      jsonResponse({
-        run_id: "run_live_fallback",
-        execution_status: "completed_with_fallback",
-        delivery_status: "ready"
-      }),
+      jsonResponse(runStatus("run_live_fallback", "completed_with_fallback", "ready")),
       jsonResponse({
         run_id: "run_live_fallback",
         execution_status: "completed_with_fallback",
         delivery_status: "ready",
         artifact: {
           artifact_id: "research-report.md",
-          content: "Fallback result from backend."
+          kind: "research_report_fallback_markdown",
+          media_type: "text/markdown",
+          content: "Fallback result from backend.",
+          content_hash: "fixture-fallback-hash"
         }
       })
     ]);
@@ -293,9 +355,10 @@ describe("Decision Research Agent demo console", () => {
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
       jsonResponse({
         status: "started",
-        thread_id: "demo-ui-thread",
+        thread_id: `demo-console-${FIXED_UUID}`,
         run_id: "run_live_hanging",
-        segment_id: "run_live_hanging_seg_000"
+        segment_id: "run_live_hanging_seg_000",
+        idempotent_replay: false
       }),
       (_input, init) => {
         pollSignal = init?.signal ?? undefined;
@@ -324,15 +387,12 @@ describe("Decision Research Agent demo console", () => {
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
       jsonResponse({
         status: "started",
-        thread_id: "demo-ui-thread",
+        thread_id: `demo-console-${FIXED_UUID}`,
         run_id: "run_live_deadline",
-        segment_id: "run_live_deadline_seg_000"
+        segment_id: "run_live_deadline_seg_000",
+        idempotent_replay: false
       }),
-      jsonResponse({
-        run_id: "run_live_deadline",
-        execution_status: "running",
-        delivery_status: "pending"
-      })
+      jsonResponse(runStatus("run_live_deadline", "running", "pending"))
     ]);
 
     render(<App liveOptions={{ pollIntervalMs: 20, waitTimeoutMs: 20 }} />);
@@ -441,7 +501,320 @@ describe("Decision Research Agent demo console", () => {
     });
     expect(screen.queryByText("后端可用")).not.toBeInTheDocument();
   });
+
+  it("renders every live screen only from one service projection", async () => {
+    const user = userEvent.setup();
+    mockFetchSequence(completedAuthoritySequence("run_live_authority"));
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findAllByText("run_live_authority");
+
+    const screenFacts = [
+      ["Command Center", "publication_live_authority"],
+      ["Run Lifecycle", "segment_live_authority"],
+      ["Evidence Ledger", "ev_live_authority"],
+      ["Review / Verification", "decision_live_authority"],
+      ["Canonical Result", "canonical-artifact-live.md"],
+      ["Architecture Explain Mode", "Application DB Authority"]
+    ] as const;
+    const forbidden = [
+      "run_demo_talent_2026_06_29",
+      "ev_001",
+      "decision_demo_approved_001",
+      "verification_snapshot_rev_3",
+      "decision-brief.md"
+    ];
+
+    for (const [navigationName, liveFact] of screenFacts) {
+      await user.click(screen.getByRole("button", { name: navigationName }));
+      expect((await screen.findAllByText(liveFact)).length).toBeGreaterThan(0);
+      for (const staticFact of forbidden) {
+        expect(screen.queryByText(staticFact)).not.toBeInTheDocument();
+      }
+    }
+  });
+
+  it("distinguishes no live observation, observed empty Evidence, and generic review", async () => {
+    const user = userEvent.setup();
+    mockFetchSequence(completedLiveSequence("run_live_empty", "Canonical empty-run result."));
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+
+    expect(screen.getAllByText("尚未观察到").length).toBeGreaterThan(0);
+    expect(screen.queryByText("run_demo_talent_2026_06_29")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "检查后端" }));
+    await screen.findByText("后端可用");
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findAllByText("run_live_empty");
+
+    await user.click(screen.getByRole("button", { name: "Evidence Ledger" }));
+    expect(screen.getByText("已观察：Evidence 为空")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Review / Verification" }));
+    expect(screen.getByText("not_required")).toBeInTheDocument();
+    expect(screen.getAllByText("不适用").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("尚未观察到").length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["absent", undefined, "尚未观察到"],
+    ["explicit empty", [], "已观察：列表为空"]
+  ])("renders current artifact metadata as %s", async (_label, currentArtifacts, expected) => {
+    const user = userEvent.setup();
+    const runId = "run_live_artifact_availability";
+    mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse({
+        status: "started",
+        thread_id: `demo-console-${FIXED_UUID}`,
+        run_id: runId,
+        segment_id: `${runId}_seg_000`,
+        idempotent_replay: false
+      }),
+      jsonResponse({
+        ...runStatus(
+          runId,
+          "failed",
+          "failed",
+          "not_required",
+          observedFailureCause("execution", "execution_error")
+        ),
+        ...(currentArtifacts === undefined ? {} : { current_artifacts: currentArtifacts })
+      })
+    ]);
+
+    render(
+      <App
+        liveOptions={{
+          pollIntervalMs: 1,
+          randomUUID: () => FIXED_UUID,
+          waitTimeoutMs: 100
+        }}
+      />
+    );
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findAllByText(runId);
+
+    const heading = screen.getByRole("heading", { name: "Artifact metadata" });
+    const card = heading.closest("article");
+    if (!card) {
+      throw new Error("Expected Artifact metadata card.");
+    }
+    expect(within(card).getByText(expected)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["completed", "required", "review_required", null],
+    ["completed", "resolved", "blocked", null],
+    ["failed", "not_required", "failed", observedFailureCause("execution", "execution_error")]
+  ] as const)(
+    "renders %s/%s/%s as a terminal non-ready outcome without a result request",
+    async (executionStatus, reviewStatus, deliveryStatus, failureCause) => {
+      const user = userEvent.setup();
+      const runId = `run_live_${deliveryStatus}`;
+      const fetchMock = mockFetchSequence([
+        jsonResponse({ status: "ok", service: "decision-research-agent" }),
+        jsonResponse(createAcknowledgement(runId, false)),
+        jsonResponse(runStatus(runId, executionStatus, deliveryStatus, reviewStatus, failureCause))
+      ]);
+
+      render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+      await enterLiveMode(user);
+      await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+      await screen.findAllByText(runId);
+      await user.click(screen.getByRole("button", { name: "Canonical Result" }));
+
+      expect(screen.getByText("已观察终态，但 canonical result 尚未就绪")).toBeInTheDocument();
+      expect(screen.getAllByText(executionStatus).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(deliveryStatus).length).toBeGreaterThan(0);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain(
+        `${BASE_URL}/api/runs/${runId}/result`
+      );
+    }
+  );
+
+  it.each([
+    [undefined, "当前后端不支持"],
+    [null, "不适用"],
+    [
+      {
+        schema_version: "dra.run-failure-cause.v1",
+        observation_status: "not_observed"
+      },
+      "尚未观察到"
+    ],
+    [
+      {
+        schema_version: "dra.run-failure-cause.v1",
+        observation_status: "observed",
+        phase: "execution",
+        code: "execution_error",
+        recorded_at: "2026-07-16T08:02:00Z"
+      },
+      "execution_error"
+    ]
+  ])("renders failure-cause availability %# without inference", async (failureCause, expected) => {
+    const user = userEvent.setup();
+    const status = {
+      ...runStatus("run_live_failure_cause", "failed", "failed"),
+      failure_cause: failureCause
+    };
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_failure_cause", false)),
+      jsonResponse(status)
+    ]);
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findAllByText("run_live_failure_cause");
+    await user.click(screen.getByRole("button", { name: "Run Lifecycle" }));
+
+    expect(screen.getAllByText(expected).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("offers bilingual same-intent reconciliation controls and reuses the exact request", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      () => Promise.reject(new TypeError("lost create acknowledgement")),
+      jsonResponse(createAcknowledgement("run_live_reconciled", true)),
+      jsonResponse(runStatus("run_live_reconciled", "completed", "ready")),
+      jsonResponse(runResult("run_live_reconciled", "Reconciled canonical result."))
+    ]);
+
+    render(
+      <App
+        liveOptions={{
+          pollIntervalMs: 1,
+          randomUUID: () => "11111111-2222-4333-8444-555555555555",
+          waitTimeoutMs: 100
+        }}
+      />
+    );
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+
+    expect(await screen.findByRole("button", { name: "重试同一请求" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "丢弃待确认请求" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "检查后端" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "真实后端" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "检查后端" }));
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+    expect(screen.getByRole("button", { name: "重试同一请求" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "English" }));
+    expect(screen.getByRole("button", { name: "Retry same request" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Discard pending request" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry same request" }));
+    await screen.findByText("Reconciled canonical result.");
+
+    const createCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(createCalls).toHaveLength(2);
+    expect(createCalls[1][1]?.body).toBe(createCalls[0][1]?.body);
+    expect(new Headers(createCalls[1][1]?.headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[0][1]?.headers).get("Idempotency-Key")
+    );
+  });
+
+  it("offers GET-only observation resume after a known run is interrupted", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_resume_ui", false)),
+      jsonResponse(runStatus("run_live_resume_ui", "running", "pending")),
+      () => Promise.reject(new TypeError("poll connection dropped")),
+      jsonResponse(runStatus("run_live_resume_ui", "completed", "ready")),
+      jsonResponse(runResult("run_live_resume_ui", "Resumed canonical result."))
+    ]);
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    expect(await screen.findByRole("button", { name: "仅 GET 恢复观察" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "检查后端" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "真实后端" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "检查后端" }));
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+    expect(screen.getByRole("button", { name: "仅 GET 恢复观察" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "仅 GET 恢复观察" }));
+    await screen.findByText("Resumed canonical result.");
+
+    const methods = fetchMock.mock.calls.map(([, init]) => init?.method ?? "GET");
+    expect(methods.filter((method) => method === "POST")).toHaveLength(1);
+    expect(methods.slice(2)).toEqual(["GET", "GET", "GET", "GET"]);
+  });
+
+  it("keeps new-run controls locked after a known-run stable observation error", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_stable_ui_error", false)),
+      jsonResponse(runStatus("run_live_stable_ui_error", "running", "pending")),
+      jsonResponse(
+        {
+          code: "run_status_unavailable",
+          problem: "Run status is temporarily unavailable.",
+          cause: "The status request was rejected.",
+          fix: "Inspect the persisted run status.",
+          retryable: false
+        },
+        409
+      )
+    ]);
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+
+    expect(await screen.findByText("run_status_unavailable")).toBeInTheDocument();
+    expect(screen.getAllByText("run_live_stable_ui_error").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "检查后端" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行并获取结果" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "检查后端" }));
+
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("restores every deterministic screen after returning to Static Demo", async () => {
+    const user = userEvent.setup();
+    mockFetchSequence(completedAuthoritySequence("run_live_before_static"));
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findAllByText("run_live_before_static");
+    await user.click(screen.getByRole("button", { name: "静态演示" }));
+
+    const staticScreens = [
+      ["Command Center", "run_demo_talent_2026_06_29"],
+      ["Run Lifecycle", "evidence_frozen"],
+      ["Evidence Ledger", "ev_001"],
+      ["Review / Verification", "decision_demo_approved_001"],
+      ["Canonical Result", "decision-brief.md"],
+      ["Architecture Explain Mode", "Application DB Authority"]
+    ] as const;
+    for (const [navigationName, staticFact] of staticScreens) {
+      await user.click(screen.getByRole("button", { name: navigationName }));
+      expect((await screen.findAllByText(staticFact)).length).toBeGreaterThan(0);
+      expect(screen.queryByText("run_live_before_static")).not.toBeInTheDocument();
+    }
+  });
 });
+
+async function enterLiveMode(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "真实后端" }));
+  await user.click(screen.getByRole("button", { name: "检查后端" }));
+  await screen.findByText("后端可用");
+}
 
 function jsonResponse(body: unknown, status = 200) {
   return () =>
@@ -470,25 +843,185 @@ function completedLiveSequence(runId: string, content: string) {
     jsonResponse({ status: "ok", service: "decision-research-agent" }),
     jsonResponse({
       status: "started",
-      thread_id: "demo-ui-thread",
+      thread_id: `demo-console-${FIXED_UUID}`,
       run_id: runId,
-      segment_id: `${runId}_seg_000`
+      segment_id: `${runId}_seg_000`,
+      idempotent_replay: false
     }),
-    jsonResponse({
-      run_id: runId,
-      execution_status: "completed",
-      delivery_status: "ready"
-    }),
+    jsonResponse(runStatus(runId, "completed", "ready")),
     jsonResponse({
       run_id: runId,
       execution_status: "completed",
       delivery_status: "ready",
       artifact: {
         artifact_id: "research-report.md",
-        content
+        kind: "research_report_markdown",
+        media_type: "text/markdown",
+        content,
+        content_hash: "fixture-result-hash"
       }
     })
   ];
+}
+
+function completedAuthoritySequence(runId: string) {
+  return [
+    jsonResponse({ status: "ok", service: "decision-research-agent" }),
+    jsonResponse(createAcknowledgement(runId, false)),
+    jsonResponse(authorityRunStatus(runId)),
+    jsonResponse(runResult(runId, "Canonical content from live authority."))
+  ];
+}
+
+function createAcknowledgement(runId: string, idempotentReplay: boolean) {
+  return {
+    status: "started",
+    thread_id: `demo-console-${FIXED_UUID}`,
+    run_id: runId,
+    segment_id: "segment_live_authority",
+    idempotent_replay: idempotentReplay
+  };
+}
+
+function runResult(runId: string, content: string) {
+  return {
+    run_id: runId,
+    execution_status: "completed",
+    delivery_status: "ready",
+    artifact: {
+      artifact_id: "canonical-artifact-live.md",
+      kind: "research_report_markdown",
+      media_type: "text/markdown",
+      content,
+      content_hash: "sha256:canonical-live-authority"
+    }
+  };
+}
+
+function authorityRunStatus(runId: string) {
+  return {
+    ...runStatus(runId, "completed", "ready"),
+    thread_id: `demo-console-${FIXED_UUID}`,
+    review_status: "resolved",
+    state_version: 42,
+    segments: [
+      {
+        segment_id: "segment_live_authority",
+        kind: "initial",
+        sequence: 0,
+        attempt: 1,
+        status: "completed"
+      }
+    ],
+    evidence: [
+      {
+        evidence_id: "ev_live_authority",
+        source_url: "https://example.com/live-authority",
+        source_identity: "source_live_authority",
+        evidence_fingerprint: "sha256:live-evidence",
+        citation_status: "cited",
+        verification_status: "verified"
+      }
+    ],
+    review_workflow: {
+      workflow_id: "workflow_live_authority",
+      review_id: "review_live_authority",
+      review_revision: 1,
+      status: "approved",
+      decision_id: "decision_live_authority",
+      post_review_segment_id: null,
+      attempt_count: 1,
+      last_error_code: null,
+      created_at: "2026-07-16T08:00:00Z",
+      updated_at: "2026-07-16T08:01:00Z"
+    },
+    review_decision: {
+      decision_id: "decision_live_authority",
+      review_id: "review_live_authority",
+      review_revision: 1,
+      action: "approve",
+      reason_recorded: true,
+      accepted_state_version: 42,
+      created_at: "2026-07-16T08:01:00Z"
+    },
+    review_resolution: {
+      resolution_id: "resolution_live_authority",
+      review_id: "review_live_authority",
+      decision_id: "decision_live_authority",
+      action: "approve",
+      artifact_ids: ["artifact_metadata_live_authority"],
+      created_at: "2026-07-16T08:02:00Z"
+    },
+    verification_summary: {
+      state_counts: { verified: 1 },
+      origin_counts: { service: 1 },
+      snapshot_hash: "verification_live_authority"
+    },
+    current_publication: {
+      publication_id: "publication_live_authority",
+      revision: 1,
+      status: "ready",
+      artifact_ids: ["artifact_metadata_live_authority"]
+    },
+    current_artifacts: [
+      {
+        artifact_id: "artifact_metadata_live_authority",
+        kind: "research_report_markdown",
+        media_type: "text/markdown",
+        content_hash: "sha256:artifact-metadata-live",
+        created_at: "2026-07-16T08:02:00Z"
+      }
+    ],
+    failure_cause: {
+      schema_version: "dra.run-failure-cause.v1",
+      observation_status: "observed",
+      phase: "execution",
+      code: "execution_error",
+      recorded_at: "2026-07-16T08:02:00Z"
+    }
+  };
+}
+
+function runStatus(
+  runId: string,
+  executionStatus: string,
+  deliveryStatus: string,
+  reviewStatus = "not_required",
+  failureCause: unknown = null
+) {
+  return {
+    run_id: runId,
+    thread_id: `demo-console-${FIXED_UUID}`,
+    profile_id: "generic",
+    execution_status: executionStatus,
+    review_status: reviewStatus,
+    delivery_status: deliveryStatus,
+    state_version: 1,
+    segments: [
+      {
+        segment_id: `${runId}_seg_000`,
+        kind: "initial",
+        sequence: 0,
+        attempt: 1,
+        status: executionStatus
+      }
+    ],
+    evidence: [],
+    review_workflow: null,
+    review_decision: null,
+    review_resolution: null,
+    failure_cause: failureCause
+  };
+}
+
+function observedFailureCause(phase: string, code: string) {
+  return {
+    schema_version: "dra.run-failure-cause.v1",
+    observation_status: "observed",
+    phase,
+    code,
+    recorded_at: "2026-07-16T08:02:00Z"
+  };
 }
 
 function deferred<T>() {

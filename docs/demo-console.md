@@ -103,6 +103,41 @@ The client waits for at most ten minutes. A client timeout stops browser
 polling but does not cancel the server-side ResearchRun. Switching back to
 Static Demo prevents stale in-flight responses from replacing the static view.
 
+## Run Data And Recovery Contract
+
+Static Demo and Live Backend run data are mutually exclusive. Switching modes
+clears the previous mode's run projection, and the inactive mode's run-specific
+data is never rendered. Live Backend shows explicit not-observed,
+not-applicable, unsupported, and observed-empty states instead of substituting
+Static Demo values.
+
+Idempotency-Key is header-only and browser-session scoped. Each new-run action
+keeps one temporary keyed request in memory. If the create acknowledgement is
+ambiguous, use **重试同一请求 / Retry same request** to resend the same key and
+byte-equivalent request, or explicitly discard it. Do not start a replacement
+request while reconciliation is pending. A page refresh discards the in-memory
+reconciliation capability; the console does not claim durable browser intent.
+
+Once `run_id` is known, known run observation resumes with GET only. Use **仅
+GET 恢复观察 / Resume observation (GET only)** after an interrupted status or
+result observation. The canonical artifact comes only from
+/api/runs/{run_id}/result. A terminal non-ready state is an observed run
+outcome, not a connection failure, and the console does not request a result
+for that state.
+
+Failure-cause availability is not inferred:
+
+- failure-cause property absent means unsupported;
+- failure-cause null means not applicable;
+- failure-cause not_observed means no cause was observed; and
+- failure-cause observed renders only its bounded public projection.
+
+This path remains loopback-only, does not accept or store API credentials, and
+does not own review or verification authority. It does not prove durable
+browser intent. It does not prove production deployment. It does not prove
+exactly-once execution. It does not prove live-provider quality, public access,
+or service-side business correctness.
+
 The editable backend endpoint accepts only `http://127.0.0.1:<port>`. The
 console rejects other hosts, HTTPS, missing ports, credentials, paths, query
 strings, and fragments before sending a network request. Health is ready only
@@ -153,5 +188,6 @@ Also run the backend-side frontend boundary contract:
 
 ```bash
 python -m pytest tests/unit/test_frontend_retirement.py \
-  tests/unit/test_documentation_contracts.py -q
+  tests/unit/test_documentation_contracts.py \
+  tests/unit/test_demo_console_contracts.py -q
 ```

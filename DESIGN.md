@@ -128,6 +128,40 @@ python tools/decision_research_agent_tool.py run \
 - UI fixtures must not imply that review approval verifies Evidence.
 - `cited` and `verified` remain separate concepts.
 
+## Mode And Live Authority Contract
+
+Static Demo and Live Backend run data are mutually exclusive. The selected
+mode supplies one complete console projection, and the inactive mode's
+run-specific data is never rendered. Static fixtures cannot fill gaps in a
+Live projection; missing, not-applicable, unsupported, and observed-empty
+values remain explicit.
+
+Idempotency-Key is header-only and browser-session scoped. A new-run action
+creates one in-memory intent before transport begins. If its create response is
+ambiguous, the operator may retry the same key and byte-equivalent request or
+discard that pending intent. The key is never rendered, placed in the URL or
+request body, or stored in browser persistence. A page refresh discards the
+in-memory reconciliation capability.
+
+After a valid acknowledgement exposes `run_id`, known run observation resumes
+with GET only. Status and result recovery do not create a replacement run. The
+canonical artifact comes only from /api/runs/{run_id}/result. A terminal
+non-ready state is an observed run outcome, not a connection failure, and does
+not trigger a result request.
+
+The optional additive failure-cause field preserves four availability states:
+
+- failure-cause property absent means unsupported;
+- failure-cause null means not applicable;
+- failure-cause not_observed means no cause was observed; and
+- failure-cause observed renders only its bounded public projection.
+
+Live Backend remains loopback-only and does not accept or store API
+credentials. The console does not own review or verification authority and
+does not prove durable browser intent, production deployment, exactly-once
+execution, or live-provider quality. It consumes bounded service contracts and
+does not become a business authority.
+
 ## Explicit Non-Goals
 
 - No backend API changes.

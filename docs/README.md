@@ -18,7 +18,9 @@ external evaluation of the public contract surface.
 ## How-to And Operations
 
 - [Agent Integration](AGENT_INTEGRATION.md) — use the first-party Tool Client.
-- [Demo Console](demo-console.md) — run Static Demo, use bounded local Live Backend, and understand the video demo boundary.
+- [Demo Console](demo-console.md) — run Static Demo, consume service-owned Live
+  state, reconcile the same create intent, resume known runs with GET only, and
+  understand the video demo boundary.
 - [Observability](observability.md) — configure privacy-first LangSmith traces.
 - [Controlled Review](operations/controlled-review-workflow.md) — operate the review queue.
 - [Durable HITL Feasibility](operations/durable-hitl-feasibility.md) — enable and verify the bounded workflow.
@@ -47,9 +49,12 @@ external evaluation of the public contract surface.
 - [Product Naming](decisions/product-naming.md) — canonical identity.
 - [AI-Assisted Engineering](development/ai-assisted-engineering.md) — governed implementation workflow.
 - [Superpowers Lifecycle](superpowers/README.md), the
-  [Live Demo design](superpowers/specs/2026-06-30-react-demo-console-live-flow-design.md),
+  [Console Live Authority Closure design](superpowers/specs/2026-07-16-console-live-authority-closure-design.md),
+  and its [implementation plan](superpowers/plans/2026-07-16-console-live-authority-closure-implementation.md)
+  — approved public-neutral implementation record.
+- [Live Demo design](superpowers/specs/2026-06-30-react-demo-console-live-flow-design.md)
   and its [implementation plan](superpowers/plans/2026-06-30-react-demo-console-live-flow-implementation.md)
-  — active public-neutral project planning.
+  — earlier Console flow implementation record.
 
 ## Evidence
 

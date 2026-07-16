@@ -157,6 +157,12 @@ npm run dev -- --host 127.0.0.1
 CORS origin，并将未启用 `API_SECRET` 的 backend 绑定到 loopback；启用前请阅读
 [Demo Console Guide](docs/demo-console.md)。当前 console 不接收或保存 API 凭据。
 
+Live Backend 只渲染真实的 service-owned state，来源仅限 run status 与
+canonical result contracts。create response 不明确时，reconciliation 重用
+same key 和 byte-equivalent request。获得 `run_id` 后，observation resume
+仅使用 GET，不能再次 create。Console 不拥有 review、verification、publication
+或 delivery authority。
+
 ## Tool Client
 
 ```bash

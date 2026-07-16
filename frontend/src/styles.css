@@ -273,6 +273,17 @@ h3 {
   align-items: end;
 }
 
+.recovery-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 10px;
+}
+
+.recovery-actions button {
+  min-width: 180px;
+  padding: 0 14px;
+}
+
 .live-controls label {
   display: grid;
   gap: 6px;
@@ -373,6 +384,7 @@ h3 {
 
 .command-grid,
 .flow-map,
+.projection-stack,
 .two-column,
 .result-layout {
   display: grid;
@@ -492,6 +504,66 @@ h3 {
 .ledger-card,
 .markdown-preview {
   padding: 16px;
+}
+
+.observation-card {
+  min-width: 0;
+}
+
+.observation {
+  overflow-wrap: anywhere;
+}
+
+.observation.not_observed,
+.observation.not_applicable,
+.observation.unsupported,
+.observation.observed-empty {
+  display: inline-block;
+  padding: 5px 8px;
+  border: 1px solid #d8d2c4;
+  border-radius: 6px;
+  background: #f7f5ef;
+  color: #4b5563;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+}
+
+.projection-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.projection-list li {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #d8d2c4;
+  border-radius: 8px;
+  background: #f7f5ef;
+}
+
+.definition-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #ebe7dd;
+}
+
+.definition-row:last-child {
+  border-bottom: 0;
+}
+
+.definition-row dd {
+  overflow-wrap: anywhere;
+}
+
+.terminal-card {
+  border-color: #d97706;
 }
 
 .evidence-card header {
@@ -648,5 +720,14 @@ pre {
   .caller-row,
   .execution-path {
     grid-template-columns: 1fr;
+  }
+
+  .recovery-actions {
+    flex-direction: column;
+  }
+
+  .recovery-actions button {
+    min-width: 0;
+    width: 100%;
   }
 }

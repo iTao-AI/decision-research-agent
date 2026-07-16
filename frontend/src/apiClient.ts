@@ -1,4 +1,15 @@
+import {
+  parseRunProjection,
+  parseRunResult,
+  type RunProjection,
+  type RunResultResponse
+} from "./runProjection";
+
+export type { RunProjection, RunResultResponse } from "./runProjection";
+
 export const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8000";
+export const LIVE_DEMO_QUERY =
+  "Generate a short evidence-bound result for the Agent Research Operations Console.";
 
 export type ClientError = {
   code: string;
@@ -14,32 +25,22 @@ export type HealthResponse = {
   status: string;
 };
 
+export type RunCreateIntent = Readonly<{
+  idempotencyKey: string;
+  payload: Readonly<{
+    query: string;
+    thread_id: string;
+    profile_id: "generic";
+    scope: Readonly<Record<string, never>>;
+  }>;
+}>;
+
 export type RunCreationResponse = {
   run_id: string;
   segment_id: string;
   status: string;
   thread_id: string;
-};
-
-export type RunProjection = {
-  delivery_status?: string;
-  execution_status?: string;
-  review_status?: string;
-  run_id: string;
-  state_version?: number;
-};
-
-export type RunResultResponse = {
-  artifact?: {
-    artifact_id?: string;
-    content?: string;
-    content_hash?: string;
-    kind?: string;
-    media_type?: string;
-  };
-  delivery_status?: string;
-  execution_status?: string;
-  run_id: string;
+  idempotent_replay: boolean;
 };
 
 export class ClientRequestError extends Error {
@@ -49,6 +50,23 @@ export class ClientRequestError extends Error {
     super(details.code);
     this.details = details;
   }
+}
+
+const ambiguousTransportErrors = new WeakSet<ClientRequestError>();
+
+export function createRunIntent(
+  randomUUID: () => string = () => crypto.randomUUID()
+): RunCreateIntent {
+  const uuid = randomUUID();
+  return Object.freeze({
+    idempotencyKey: `run-create-console-${uuid}`,
+    payload: Object.freeze({
+      query: LIVE_DEMO_QUERY,
+      thread_id: `demo-console-${uuid}`,
+      profile_id: "generic" as const,
+      scope: Object.freeze({})
+    })
+  });
 }
 
 export async function getHealth(baseUrl: string, signal?: AbortSignal): Promise<HealthResponse> {
@@ -83,15 +101,17 @@ export async function getHealth(baseUrl: string, signal?: AbortSignal): Promise<
   };
 }
 
-export async function startRun(baseUrl: string, signal?: AbortSignal): Promise<RunCreationResponse> {
+export async function startRun(
+  baseUrl: string,
+  intent: RunCreateIntent,
+  signal?: AbortSignal
+): Promise<RunCreationResponse> {
   const value = await requestJson<Partial<RunCreationResponse>>(baseUrl, "/api/runs", {
-    body: JSON.stringify({
-      profile_id: "generic",
-      query: "Generate a short evidence-bound result for the Agent Research Operations Console.",
-      scope: {},
-      thread_id: `demo-console-${Date.now()}`
-    }),
-    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(intent.payload),
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": intent.idempotencyKey
+    },
     method: "POST",
     signal
   });
@@ -99,15 +119,22 @@ export async function startRun(baseUrl: string, signal?: AbortSignal): Promise<R
     typeof value.run_id !== "string" ||
     typeof value.segment_id !== "string" ||
     typeof value.status !== "string" ||
-    typeof value.thread_id !== "string"
+    typeof value.thread_id !== "string" ||
+    typeof value.idempotent_replay !== "boolean"
   ) {
     throw new ClientRequestError(invalidResponse("Run creation response did not include run identity."));
+  }
+  if (value.thread_id !== intent.payload.thread_id) {
+    throw new ClientRequestError(
+      invalidResponse("Run creation response did not match the requested thread identity.")
+    );
   }
   return {
     run_id: value.run_id,
     segment_id: value.segment_id,
     status: value.status,
-    thread_id: value.thread_id
+    thread_id: value.thread_id,
+    idempotent_replay: value.idempotent_replay
   };
 }
 
@@ -116,21 +143,18 @@ export async function getRun(
   runId: string,
   signal?: AbortSignal
 ): Promise<RunProjection> {
-  const value = await requestJson<Partial<RunProjection>>(
+  const value = await requestJson<unknown>(
     baseUrl,
     `/api/runs/${encodeURIComponent(runId)}`,
     { method: "GET", signal }
   );
-  if (typeof value.run_id !== "string") {
-    throw new ClientRequestError(invalidResponse("Run projection did not include run_id."));
+  try {
+    return parseRunProjection(value, runId);
+  } catch {
+    throw new ClientRequestError(
+      invalidResponse("Run projection selected fields were malformed.")
+    );
   }
-  return {
-    delivery_status: stringOrUndefined(value.delivery_status),
-    execution_status: stringOrUndefined(value.execution_status),
-    review_status: stringOrUndefined(value.review_status),
-    run_id: value.run_id,
-    state_version: typeof value.state_version === "number" ? value.state_version : undefined
-  };
 }
 
 export async function getResult(
@@ -138,24 +162,28 @@ export async function getResult(
   runId: string,
   signal?: AbortSignal
 ): Promise<RunResultResponse> {
-  const value = await requestJson<Partial<RunResultResponse>>(
+  const value = await requestJson<unknown>(
     baseUrl,
     `/api/runs/${encodeURIComponent(runId)}/result`,
     { method: "GET", signal }
   );
-  if (typeof value.run_id !== "string") {
-    throw new ClientRequestError(invalidResponse("Canonical result response did not include run_id."));
+  try {
+    return parseRunResult(value, runId);
+  } catch {
+    throw new ClientRequestError(
+      invalidResponse("Canonical result selected fields were malformed.")
+    );
   }
-  return {
-    artifact: typeof value.artifact === "object" && value.artifact !== null ? value.artifact : undefined,
-    delivery_status: stringOrUndefined(value.delivery_status),
-    execution_status: stringOrUndefined(value.execution_status),
-    run_id: value.run_id
-  };
 }
 
 export function normalizeClientError(error: unknown, runId?: string): ClientError {
   if (error instanceof ClientRequestError) {
+    if (runId && error.details.run_id !== undefined && error.details.run_id !== runId) {
+      return {
+        ...invalidResponse("Backend error response did not match the requested run identity."),
+        run_id: runId
+      };
+    }
     return runId && !error.details.run_id ? { ...error.details, run_id: runId } : error.details;
   }
   return {
@@ -168,15 +196,29 @@ export function normalizeClientError(error: unknown, runId?: string): ClientErro
   };
 }
 
+export function isAmbiguousCreateError(error: unknown) {
+  return (
+    isAbortError(error) ||
+    (error instanceof ClientRequestError &&
+      error.details.code === "connection_failed" &&
+      ambiguousTransportErrors.has(error))
+  );
+}
+
 async function requestJson<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(buildUrl(baseUrl, path), init ?? { method: "GET" });
+    response = await fetch(buildUrl(baseUrl, path), {
+      ...(init ?? { method: "GET" }),
+      redirect: "error"
+    });
   } catch (error) {
     if (isAbortError(error)) {
       throw error;
     }
-    throw new ClientRequestError(normalizeClientError(error));
+    const clientError = new ClientRequestError(normalizeClientError(error));
+    ambiguousTransportErrors.add(clientError);
+    throw clientError;
   }
 
   const body = await readJson(response);
@@ -218,7 +260,15 @@ function buildUrl(baseUrl: string, path: string) {
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    if (error instanceof TypeError) {
+      const clientError = new ClientRequestError(normalizeClientError(error));
+      ambiguousTransportErrors.add(clientError);
+      throw clientError;
+    }
     return null;
   }
 }
@@ -263,10 +313,6 @@ function invalidBackendUrl(): ClientError {
     fix: "Enter an explicit loopback HTTP endpoint such as http://127.0.0.1:8000.",
     retryable: false
   };
-}
-
-function stringOrUndefined(value: unknown) {
-  return typeof value === "string" ? value : undefined;
 }
 
 function isAbortError(error: unknown) {

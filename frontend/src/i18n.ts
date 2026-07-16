@@ -56,6 +56,29 @@ export const copy = {
       authority: "Authority",
       live: "Live Demo"
     },
+    observations: {
+      notObserved: "尚未观察到",
+      notApplicable: "不适用",
+      unsupported: "当前后端不支持",
+      observedEmptyEvidence: "已观察：Evidence 为空",
+      observedEmptyCollection: "已观察：列表为空",
+      terminalNoResult: "已观察终态，但 canonical result 尚未就绪",
+      referenceOnly: "参考说明：不表示当前 run 已启用全部可选 runtime。"
+    },
+    projection: {
+      staticSnapshot: "静态演示快照",
+      liveProjection: "Live service projection",
+      createReceipt: "Create acknowledgement",
+      runState: "Run state",
+      publication: "Publication metadata",
+      artifacts: "Artifact metadata",
+      failureCause: "Failure cause",
+      stateProjection: "当前持久化状态投影",
+      eventHistory: "静态生命周期示意",
+      workflow: "Review workflow",
+      decision: "Review decision",
+      resolution: "Review resolution"
+    },
     live: {
       staticMode: "静态演示",
       liveMode: "真实后端",
@@ -70,15 +93,23 @@ export const copy = {
       fix: "修复建议",
       resultPreview: "Canonical Result Preview",
       startBackend: "启动后端或检查 Backend base URL。",
+      retrySameRequest: "重试同一请求",
+      discardPendingRequest: "丢弃待确认请求",
+      resumeObservation: "仅 GET 恢复观察",
+      originalReceipt: "新建请求确认",
+      replayReceipt: "幂等重放确认",
       statuses: {
         checking: "正在检查后端健康状态",
+        creating: "正在创建 ResearchRun",
         error: "需要操作方处理",
         idle: "等待检查后端",
+        observation_interrupted: "观察已中断，可按 run_id 继续",
         polling: "正在轮询运行状态",
         ready: "后端已就绪",
+        reconciliation_required: "创建响应不明确，需要确认",
         result: "已加载 canonical result",
-        starting: "正在创建 ResearchRun",
-        static: "静态快照已启用"
+        static: "静态快照已启用",
+        terminal: "已观察到非 ready 终态"
       }
     },
     statements: {
@@ -131,6 +162,29 @@ export const copy = {
       authority: "Authority",
       live: "Live Demo"
     },
+    observations: {
+      notObserved: "Not observed",
+      notApplicable: "Not applicable",
+      unsupported: "Unsupported by the current backend",
+      observedEmptyEvidence: "Observed: Evidence ledger is empty",
+      observedEmptyCollection: "Observed: collection is empty",
+      terminalNoResult: "Terminal state observed; canonical result is not ready",
+      referenceOnly: "Reference only: this does not claim every optional runtime is active."
+    },
+    projection: {
+      staticSnapshot: "Static demo snapshot",
+      liveProjection: "Live service projection",
+      createReceipt: "Create acknowledgement",
+      runState: "Run state",
+      publication: "Publication metadata",
+      artifacts: "Artifact metadata",
+      failureCause: "Failure cause",
+      stateProjection: "Current persisted state projection",
+      eventHistory: "Static lifecycle illustration",
+      workflow: "Review workflow",
+      decision: "Review decision",
+      resolution: "Review resolution"
+    },
     live: {
       staticMode: "Static Demo",
       liveMode: "Live Backend",
@@ -145,15 +199,23 @@ export const copy = {
       fix: "Fix",
       resultPreview: "Canonical Result Preview",
       startBackend: "Start the backend or verify Backend base URL.",
+      retrySameRequest: "Retry same request",
+      discardPendingRequest: "Discard pending request",
+      resumeObservation: "Resume observation (GET only)",
+      originalReceipt: "New create acknowledgement",
+      replayReceipt: "Idempotent replay acknowledgement",
       statuses: {
         checking: "Checking backend health",
+        creating: "Starting ResearchRun",
         error: "Operator action required",
         idle: "Ready for backend check",
+        observation_interrupted: "Observation interrupted; resume by run_id",
         polling: "Polling run state",
         ready: "Backend ready",
+        reconciliation_required: "Create response is ambiguous and needs reconciliation",
         result: "Canonical result loaded",
-        starting: "Starting ResearchRun",
-        static: "Static snapshot active"
+        static: "Static snapshot active",
+        terminal: "Terminal non-ready run observed"
       }
     },
     statements: {

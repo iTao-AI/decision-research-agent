@@ -11,6 +11,7 @@ from agent.talent_contracts import (
     ReviewBundle,
 )
 from api.decision_brief import with_content_hash
+from api.publication_repository import migrate_publication_with_backup
 from api.review_artifacts import ReviewedArtifactResult, build_reviewed_artifacts
 from api.review_models import (
     ReviewDecisionRequest,
@@ -293,6 +294,349 @@ def resumable_approved_review_run(tmp_path) -> ResumableReviewRun:
 def resumable_rejected_review_run(tmp_path) -> ResumableReviewRun:
     required = _required_review_run(tmp_path, suffix="rejected")
     return _make_resumable_review_run(required, action="reject")
+
+
+def _mark_run_failed_with_observed_cause(
+    db_path: str,
+    *,
+    run_id: str,
+) -> None:
+    recorded_at = "2026-07-16T00:00:00+00:00"
+    connection = _connect(db_path)
+    try:
+        with connection:
+            state_version = connection.execute(
+                "SELECT state_version FROM research_runs_v2 WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()["state_version"]
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET execution_status = 'failed', updated_at = ?
+                WHERE run_id = ?
+                """,
+                (recorded_at, run_id),
+            )
+            connection.execute(
+                """
+                UPDATE run_segments
+                SET status = 'failed', updated_at = ?
+                WHERE segment_id = (
+                    SELECT segment_id FROM run_segments
+                    WHERE run_id = ? ORDER BY sequence LIMIT 1
+                )
+                """,
+                (recorded_at, run_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO run_failure_causes_v1(
+                    run_id, observation_status, terminal_state_version,
+                    phase, code, recorded_at
+                ) VALUES (?, 'observed', ?, 'execution',
+                          'execution_error', ?)
+                """,
+                (run_id, state_version, recorded_at),
+            )
+    finally:
+        connection.close()
+
+
+def _authority_rows(db_path: str) -> dict[str, list[tuple]]:
+    connection = _connect(db_path)
+    try:
+        existing_tables = {
+            row["name"]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        return {
+            table: [
+                tuple(row)
+                for row in connection.execute(
+                    f"SELECT * FROM {table} ORDER BY 1"
+                ).fetchall()
+            ]
+            for table in (
+                "research_runs_v2",
+                "run_failure_causes_v1",
+                "run_segments",
+                "evidence_entries_v2",
+                "run_artifacts_v2",
+                "review_bundles_v2",
+                "review_decisions_v2",
+                "review_workflows_v2",
+                "review_resume_attempts_v2",
+                "review_resolutions_v2",
+                "evidence_verification_preflights_v2",
+                "evidence_verification_decisions_v2",
+                "evidence_verification_snapshots_v2",
+                "run_publications_v2",
+            )
+            if table in existing_tables
+        }
+    finally:
+        connection.close()
+
+
+def _enable_publication_schema(db_path: str) -> None:
+    migrate_publication_with_backup(
+        db_path=db_path,
+        backup_path=f"{db_path}.publication-backup",
+    )
+
+
+def _fail_run_after_review_write(
+    db_path: str,
+    *,
+    trigger_name: str,
+    trigger_sql: str,
+) -> None:
+    recorded_at = "2026-07-16T00:00:00+00:00"
+    connection = _connect(db_path)
+    try:
+        with connection:
+            connection.executescript(
+                f"""
+                CREATE TRIGGER {trigger_name}
+                {trigger_sql}
+                BEGIN
+                    UPDATE research_runs_v2
+                    SET execution_status = 'failed', updated_at = '{recorded_at}'
+                    WHERE run_id = NEW.run_id;
+                    UPDATE run_segments
+                    SET status = 'failed', updated_at = '{recorded_at}'
+                    WHERE segment_id = (
+                        SELECT segment_id FROM run_segments
+                        WHERE run_id = NEW.run_id
+                        ORDER BY sequence LIMIT 1
+                    );
+                    INSERT INTO run_failure_causes_v1(
+                        run_id, observation_status, terminal_state_version,
+                        phase, code, recorded_at
+                    )
+                    SELECT NEW.run_id, 'observed', state_version,
+                           'execution', 'execution_error', '{recorded_at}'
+                    FROM research_runs_v2 WHERE run_id = NEW.run_id;
+                END
+                """
+            )
+    finally:
+        connection.close()
+
+
+def test_failed_run_cannot_accept_pending_review(required_review_run):
+    _mark_run_failed_with_observed_cause(
+        required_review_run.db_path,
+        run_id=required_review_run.run_id,
+    )
+    before = _authority_rows(required_review_run.db_path)
+
+    with pytest.raises(ReviewConflict, match="review_not_waiting"):
+        accept_review_decision(
+            db_path=required_review_run.db_path,
+            run_id=required_review_run.run_id,
+            review_id=required_review_run.review_id,
+            request=ReviewDecisionRequest(
+                decision_id="decision_failed",
+                review_revision=1,
+                action="approve",
+                expected_state_version=2,
+            ),
+            actor_fingerprint="actor_hash",
+        )
+
+    assert _authority_rows(required_review_run.db_path) == before
+
+
+def test_accept_review_run_update_rechecks_completed_authority(
+    required_review_run,
+):
+    _fail_run_after_review_write(
+        required_review_run.db_path,
+        trigger_name="fail_run_after_review_acceptance",
+        trigger_sql="""
+        AFTER UPDATE OF status ON review_workflows_v2
+        WHEN NEW.status = 'resume_pending'
+        """,
+    )
+    before = _authority_rows(required_review_run.db_path)
+
+    with pytest.raises(ReviewConflict, match="stale_state_version"):
+        accept_review_decision(
+            db_path=required_review_run.db_path,
+            run_id=required_review_run.run_id,
+            review_id=required_review_run.review_id,
+            request=ReviewDecisionRequest(
+                decision_id="decision_raced",
+                review_revision=1,
+                action="approve",
+                expected_state_version=2,
+            ),
+            actor_fingerprint="actor_hash",
+        )
+
+    assert _authority_rows(required_review_run.db_path) == before
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("review_status", "resolved"),
+        ("delivery_status", "ready"),
+    ],
+)
+def test_accept_review_run_update_rechecks_review_authority(
+    required_review_run,
+    column,
+    value,
+):
+    connection = _connect(required_review_run.db_path)
+    try:
+        with connection:
+            connection.executescript(
+                f"""
+                CREATE TRIGGER mutate_run_authority_after_review_acceptance
+                AFTER UPDATE OF status ON review_workflows_v2
+                WHEN NEW.status = 'resume_pending'
+                BEGIN
+                    UPDATE research_runs_v2
+                    SET {column} = '{value}'
+                    WHERE run_id = NEW.run_id;
+                END
+                """
+            )
+    finally:
+        connection.close()
+    before = _authority_rows(required_review_run.db_path)
+
+    with pytest.raises(ReviewConflict, match="stale_state_version"):
+        accept_review_decision(
+            db_path=required_review_run.db_path,
+            run_id=required_review_run.run_id,
+            review_id=required_review_run.review_id,
+            request=ReviewDecisionRequest(
+                decision_id=f"decision_raced_{column}",
+                review_revision=1,
+                action="approve",
+                expected_state_version=2,
+            ),
+            actor_fingerprint="actor_hash",
+        )
+
+    assert _authority_rows(required_review_run.db_path) == before
+
+
+def test_failed_run_decision_replay_is_read_only(required_review_run):
+    request = ReviewDecisionRequest(
+        decision_id="decision_replay_failed",
+        review_revision=1,
+        action="approve",
+        expected_state_version=2,
+    )
+    accepted = accept_review_decision(
+        db_path=required_review_run.db_path,
+        run_id=required_review_run.run_id,
+        review_id=required_review_run.review_id,
+        request=request,
+        actor_fingerprint="actor_hash",
+    )
+    _enable_publication_schema(required_review_run.db_path)
+    _mark_run_failed_with_observed_cause(
+        required_review_run.db_path,
+        run_id=required_review_run.run_id,
+    )
+    before = _authority_rows(required_review_run.db_path)
+
+    replay = accept_review_decision(
+        db_path=required_review_run.db_path,
+        run_id=required_review_run.run_id,
+        review_id=required_review_run.review_id,
+        request=request,
+        actor_fingerprint="actor_hash",
+    )
+
+    assert replay.decision == accepted.decision
+    assert replay.idempotent_replay is True
+    assert _authority_rows(required_review_run.db_path) == before
+
+
+def test_failed_run_cannot_resolve_accepted_review(
+    resumable_approved_review_run,
+):
+    fixture = resumable_approved_review_run
+    _mark_run_failed_with_observed_cause(
+        fixture.required.db_path,
+        run_id=fixture.required.run_id,
+    )
+    before = _authority_rows(fixture.required.db_path)
+
+    with pytest.raises(ReviewConflict, match="stale_state_version"):
+        resolve_review(
+            db_path=fixture.required.db_path,
+            workflow_id=fixture.required.workflow_id,
+            worker_id="worker_a",
+            expected_run_state_version=3,
+            result=fixture.artifacts,
+        )
+
+    assert _authority_rows(fixture.required.db_path) == before
+
+
+def test_resolve_review_run_update_rechecks_completed_authority(
+    resumable_approved_review_run,
+):
+    fixture = resumable_approved_review_run
+    _fail_run_after_review_write(
+        fixture.required.db_path,
+        trigger_name="fail_run_after_review_resolution",
+        trigger_sql="""
+        AFTER INSERT ON review_resolutions_v2
+        """,
+    )
+    before = _authority_rows(fixture.required.db_path)
+
+    with pytest.raises(ReviewConflict, match="stale_state_version"):
+        resolve_review(
+            db_path=fixture.required.db_path,
+            workflow_id=fixture.required.workflow_id,
+            worker_id="worker_a",
+            expected_run_state_version=3,
+            result=fixture.artifacts,
+        )
+
+    assert _authority_rows(fixture.required.db_path) == before
+
+
+def test_failed_run_resolution_replay_is_read_only(
+    resumable_approved_review_run,
+):
+    fixture = resumable_approved_review_run
+    _enable_publication_schema(fixture.required.db_path)
+    resolution = resolve_review(
+        db_path=fixture.required.db_path,
+        workflow_id=fixture.required.workflow_id,
+        worker_id="worker_a",
+        expected_run_state_version=3,
+        result=fixture.artifacts,
+    )
+    _mark_run_failed_with_observed_cause(
+        fixture.required.db_path,
+        run_id=fixture.required.run_id,
+    )
+    before = _authority_rows(fixture.required.db_path)
+
+    replay = resolve_review(
+        db_path=fixture.required.db_path,
+        workflow_id=fixture.required.workflow_id,
+        worker_id="worker_a",
+        expected_run_state_version=3,
+        result=fixture.artifacts,
+    )
+
+    assert replay == resolution
+    assert _authority_rows(fixture.required.db_path) == before
 
 
 def test_same_decision_request_is_idempotent(required_review_run):

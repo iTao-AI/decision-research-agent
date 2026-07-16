@@ -368,6 +368,9 @@ def accept_review_decision(
                 UPDATE research_runs_v2
                 SET state_version = state_version + 1, updated_at = ?
                 WHERE run_id = ? AND state_version = ?
+                  AND execution_status = 'completed'
+                  AND review_status = 'required'
+                  AND delivery_status = 'review_required'
                 """,
                 (now, run_id, request.expected_state_version),
             )
@@ -1364,11 +1367,6 @@ def resolve_review(
                 raise ReviewConflict("review_not_found")
             if workflow["status"] == "superseded":
                 raise ReviewConflict("review_superseded")
-            _require_active_publication_review(
-                connection,
-                run_id=workflow["run_id"],
-                review_id=workflow["review_id"],
-            )
 
             existing = connection.execute(
                 "SELECT * FROM review_resolutions_v2 WHERE review_id = ?",
@@ -1376,6 +1374,11 @@ def resolve_review(
             ).fetchone()
             if existing is not None:
                 return _resolution_record(existing)
+            _require_active_publication_review(
+                connection,
+                run_id=workflow["run_id"],
+                review_id=workflow["review_id"],
+            )
 
             if (
                 workflow["status"] != "resolution_pending"
@@ -1562,6 +1565,10 @@ def resolve_review(
                     state_version = state_version + 1,
                     updated_at = ?
                 WHERE run_id = ? AND state_version = ?
+                  AND execution_status IN (
+                    'completed',
+                    'completed_with_fallback'
+                  )
                 """,
                 (
                     delivery_status,

@@ -399,6 +399,30 @@ def _publication_status(
 
 
 def _backfill_publications(connection: sqlite3.Connection) -> None:
+    noncompleted_residue = connection.execute(
+        """
+        SELECT 1
+        FROM research_runs_v2 AS run
+        WHERE run.execution_status NOT IN (
+            'completed',
+            'completed_with_fallback'
+        )
+          AND (
+            EXISTS (
+                SELECT 1 FROM review_bundles_v2 AS bundle
+                WHERE bundle.run_id = run.run_id
+            )
+            OR EXISTS (
+                SELECT 1 FROM run_publications_v2 AS publication
+                WHERE publication.run_id = run.run_id
+            )
+          )
+        LIMIT 1
+        """
+    ).fetchone()
+    if noncompleted_residue is not None:
+        raise PublicationConflict("verification_publication_conflict")
+
     runs = connection.execute(
         """
         SELECT
@@ -805,6 +829,10 @@ def stale_current_publication(
             state_version = state_version + 1,
             updated_at = ?
         WHERE run_id = ?
+          AND execution_status IN (
+            'completed',
+            'completed_with_fallback'
+          )
         """,
         (now, run_id),
     )
@@ -957,7 +985,7 @@ def finalize_verification_publication(
         try:
             run = connection.execute(
                 """
-                SELECT state_version
+                SELECT state_version, execution_status
                 FROM research_runs_v2
                 WHERE run_id = ?
                 """,
@@ -967,6 +995,13 @@ def finalize_verification_publication(
                 raise PublicationConflict("publication_run_not_found")
             if run["state_version"] != expected_state_version:
                 raise PublicationConflict("stale_state_version")
+            if run["execution_status"] not in {
+                "completed",
+                "completed_with_fallback",
+            }:
+                raise PublicationConflict(
+                    "verification_publication_conflict"
+                )
 
             adopt_baseline_publication(
                 connection,
@@ -1010,7 +1045,7 @@ def finalize_verification_publication(
                         revision=current["revision"],
                         now=now,
                     )
-                    connection.execute(
+                    run_cursor = connection.execute(
                         """
                         UPDATE research_runs_v2
                         SET review_status = 'required',
@@ -1018,9 +1053,17 @@ def finalize_verification_publication(
                             state_version = state_version + 1,
                             updated_at = ?
                         WHERE run_id = ? AND state_version = ?
+                          AND execution_status IN (
+                            'completed',
+                            'completed_with_fallback'
+                          )
                         """,
                         (now, run_id, expected_state_version),
                     )
+                    if run_cursor.rowcount != 1:
+                        raise PublicationConflict(
+                            "verification_publication_conflict"
+                        )
                     repaired = True
                 connection.commit()
                 return PublicationFinalization(
@@ -1128,6 +1171,10 @@ def finalize_verification_publication(
                     state_version = state_version + 1,
                     updated_at = ?
                 WHERE run_id = ? AND state_version = ?
+                  AND execution_status IN (
+                    'completed',
+                    'completed_with_fallback'
+                  )
                 """,
                 (now, run_id, expected_state_version),
             )

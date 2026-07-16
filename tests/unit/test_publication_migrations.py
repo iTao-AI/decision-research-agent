@@ -9,6 +9,7 @@ import api.publication_repository as publication_repository
 from api.evidence_verification_repository import init_evidence_verification_schema
 from api.publication_repository import (
     PUBLICATION_MIGRATION_VERSION,
+    PublicationConflict,
     adopt_baseline_publication,
     migrate_publication_with_backup,
     verify_publication_schema,
@@ -35,6 +36,7 @@ def _seed_revision_one_review_database(
     run_review_status: str | None = None,
     delivery_status: str | None = None,
     workflow_status: str | None = None,
+    execution_status: str = "completed",
 ) -> tuple[str, str]:
     db_path = str(tmp_path / "tasks.db")
     init_evidence_verification_schema(db_path)
@@ -65,7 +67,7 @@ def _seed_revision_one_review_database(
             connection.execute(
                 """
                 UPDATE research_runs_v2
-                SET execution_status = 'completed',
+                SET execution_status = ?,
                     review_status = ?,
                     delivery_status = ?,
                     state_version = 3,
@@ -73,6 +75,7 @@ def _seed_revision_one_review_database(
                 WHERE run_id = ?
                 """,
                 (
+                    execution_status,
                     run_review_status
                     or ("resolved" if with_resolution else "required"),
                     delivery_status
@@ -194,6 +197,28 @@ def _seed_revision_one_review_database(
                     )
                     """,
                     (run_id, "a" * 64, NOW),
+                )
+            if execution_status == "failed":
+                connection.execute(
+                    """
+                    UPDATE run_segments
+                    SET status = 'failed', updated_at = ?
+                    WHERE segment_id = (
+                        SELECT segment_id FROM run_segments
+                        WHERE run_id = ? ORDER BY sequence LIMIT 1
+                    )
+                    """,
+                    (NOW, run_id),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO run_failure_causes_v1(
+                        run_id, observation_status, terminal_state_version,
+                        phase, code, recorded_at
+                    ) VALUES (?, 'observed', 3, 'execution',
+                              'execution_error', ?)
+                    """,
+                    (run_id, NOW),
                 )
     finally:
         connection.close()
@@ -450,6 +475,29 @@ def test_publication_migration_backfills_revision_one_current_head(tmp_path):
         "artifact_ids_json": '["decision-brief.json"]',
     }
     assert snapshot_count == 1
+
+
+@pytest.mark.parametrize("execution_status", ["failed", "running"])
+def test_publication_migration_rejects_noncompleted_run_review_residue(
+    tmp_path,
+    execution_status,
+):
+    db_path, _ = _seed_revision_one_review_database(
+        tmp_path,
+        execution_status=execution_status,
+    )
+    before = _database_dump(db_path)
+
+    with pytest.raises(
+        PublicationConflict,
+        match="verification_publication_conflict",
+    ):
+        migrate_publication_with_backup(
+            db_path=db_path,
+            backup_path=str(tmp_path / "backup.db"),
+        )
+
+    assert _database_dump(db_path) == before
 
 
 def test_not_required_ready_run_backfills_and_adopts_ready_without_workflow(

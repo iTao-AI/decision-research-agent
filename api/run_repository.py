@@ -9,6 +9,8 @@ import threading
 import uuid
 from typing import Any
 
+from pydantic import ValidationError
+
 from api.database import backup_database, restore_database, sqlite_db_path
 from api.run_creation_models import (
     RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
@@ -29,6 +31,7 @@ from api.run_failure_cause_models import (
     RUN_FAILURE_CAUSE_SCHEMA_VERSION,
     RunFailureCauseConflict,
     RunFailureCauseProjectionAdapter,
+    RunFailureCauseWrite,
 )
 
 
@@ -837,7 +840,81 @@ def create_or_replay_run(
             connection.close()
 
 
-def _run_row(row: sqlite3.Row) -> dict[str, Any]:
+_FAILURE_CAUSE_JOIN_COLUMNS = (
+    "failure_observation_status",
+    "failure_terminal_state_version",
+    "failure_phase",
+    "failure_code",
+    "failure_recorded_at",
+)
+
+
+def _failure_cause_projection(row: sqlite3.Row | dict[str, Any]):
+    try:
+        data = dict(row)
+        observation_status = data["failure_observation_status"]
+        terminal_state_version = data["failure_terminal_state_version"]
+        phase = data["failure_phase"]
+        code = data["failure_code"]
+        recorded_at = data["failure_recorded_at"]
+        storage_values = (
+            observation_status,
+            terminal_state_version,
+            phase,
+            code,
+            recorded_at,
+        )
+
+        if data["execution_status"] != "failed":
+            if any(value is not None for value in storage_values):
+                raise RunFailureCauseConflict("run_failure_cause_corrupt")
+            return None
+
+        if observation_status is None:
+            raise RunFailureCauseConflict("run_failure_cause_corrupt")
+        if observation_status == "not_observed":
+            if any(
+                value is not None
+                for value in (
+                    terminal_state_version,
+                    phase,
+                    code,
+                    recorded_at,
+                )
+            ):
+                raise RunFailureCauseConflict("run_failure_cause_corrupt")
+            payload = {
+                "schema_version": RUN_FAILURE_CAUSE_SCHEMA_VERSION,
+                "observation_status": "not_observed",
+            }
+        else:
+            if (
+                type(terminal_state_version) is not int
+                or terminal_state_version <= 0
+                or terminal_state_version != data["state_version"]
+                or recorded_at != data["updated_at"]
+            ):
+                raise RunFailureCauseConflict("run_failure_cause_corrupt")
+            payload = {
+                "schema_version": RUN_FAILURE_CAUSE_SCHEMA_VERSION,
+                "observation_status": observation_status,
+                "phase": phase,
+                "code": code,
+                "recorded_at": datetime.fromisoformat(recorded_at),
+            }
+
+        projection = RunFailureCauseProjectionAdapter.validate_python(
+            payload,
+            strict=True,
+        )
+        return projection.model_dump(mode="json")
+    except RunFailureCauseConflict:
+        raise
+    except (ValidationError, KeyError, TypeError, ValueError) as exc:
+        raise RunFailureCauseConflict("run_failure_cause_corrupt") from exc
+
+
+def _run_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     data = dict(row)
     data["scope"] = json.loads(data.pop("scope_json"))
     return data
@@ -856,15 +933,32 @@ def get_run(*, run_id: str, db_path: str | None = None) -> dict[str, Any] | None
     conn = _connect(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM research_runs_v2 WHERE run_id = ?", (run_id,)
+            """
+            SELECT
+                r.*,
+                c.observation_status AS failure_observation_status,
+                c.terminal_state_version AS failure_terminal_state_version,
+                c.phase AS failure_phase,
+                c.code AS failure_code,
+                c.recorded_at AS failure_recorded_at
+            FROM research_runs_v2 AS r
+            LEFT JOIN run_failure_causes_v1 AS c ON c.run_id = r.run_id
+            WHERE r.run_id = ?
+            """,
+            (run_id,),
         ).fetchone()
         if row is None:
             return None
+        failure_cause = _failure_cause_projection(row)
+        run_data = dict(row)
+        for column in _FAILURE_CAUSE_JOIN_COLUMNS:
+            run_data.pop(column)
         segments = conn.execute(
             "SELECT * FROM run_segments WHERE run_id = ? ORDER BY sequence ASC",
             (run_id,),
         ).fetchall()
-        result = _run_row(row)
+        result = _run_row(run_data)
+        result["failure_cause"] = failure_cause
         result["segments"] = [dict(segment) for segment in segments]
         evidence = conn.execute(
             """
@@ -1017,6 +1111,7 @@ def finalize_run_transaction(
     execution_status: str,
     delivery_status: str,
     evidence_entries: list[Any],
+    failure_cause: RunFailureCauseWrite | None = None,
     db_path: str | None = None,
     review_status: str = "not_required",
     research_packets: list[Any] | None = None,
@@ -1031,8 +1126,17 @@ def finalize_run_transaction(
         raise ValueError(f"invalid delivery_status: {delivery_status}")
     if review_status not in REVIEW_STATUSES:
         raise ValueError(f"invalid review_status: {review_status}")
-    if not allowed_previous_statuses:
-        raise ValueError("allowed_previous_statuses must not be empty")
+    if not allowed_previous_statuses or not allowed_previous_statuses <= {
+        "pending",
+        "running",
+    }:
+        raise RunFailureCauseConflict(
+            "run_failure_cause_transition_invalid"
+        )
+    if execution_status == "failed" and failure_cause is None:
+        raise RunFailureCauseConflict("run_failure_cause_required")
+    if execution_status != "failed" and failure_cause is not None:
+        raise RunFailureCauseConflict("run_failure_cause_forbidden")
 
     from api.publication_repository import (
         adopt_baseline_publication,
@@ -1075,6 +1179,7 @@ def finalize_run_transaction(
             )
             if cursor.rowcount != 1:
                 return False
+            terminal_state_version = expected_state_version + 1
             segment_cursor = conn.execute(
                 """
                 UPDATE run_segments
@@ -1201,6 +1306,27 @@ def finalize_run_transaction(
                     conn,
                     run_id=run_id,
                 )
+            if failure_cause is not None:
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO run_failure_causes_v1(
+                            run_id, observation_status,
+                            terminal_state_version, phase, code, recorded_at
+                        ) VALUES (?, 'observed', ?, ?, ?, ?)
+                        """,
+                        (
+                            run_id,
+                            terminal_state_version,
+                            failure_cause.phase,
+                            failure_cause.code,
+                            now,
+                        ),
+                    )
+                except sqlite3.IntegrityError as exc:
+                    raise RunFailureCauseConflict(
+                        "run_failure_cause_conflict"
+                    ) from exc
             return True
     finally:
         conn.close()
@@ -1240,6 +1366,10 @@ def transition_run(
         raise ValueError(f"invalid delivery_status: {delivery_status}")
     if not allowed_previous_statuses:
         raise ValueError("allowed_previous_statuses must not be empty")
+    if execution_status == "failed" or "failed" in allowed_previous_statuses:
+        raise RunFailureCauseConflict(
+            "run_failure_cause_transition_invalid"
+        )
 
     updates = ["state_version = state_version + 1", "updated_at = ?"]
     params: list[Any] = [_now()]

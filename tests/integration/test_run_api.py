@@ -25,7 +25,12 @@ def route_dispatch_worker(monkeypatch):
         def wake(self):
             pass
 
-    monkeypatch.setattr(server.app.state, "run_dispatch_worker", RouteWorker())
+    monkeypatch.setattr(
+        server.app.state,
+        "run_dispatch_worker",
+        RouteWorker(),
+        raising=False,
+    )
 
 
 async def _run_v2_with_dispatch(server, **kwargs):
@@ -79,6 +84,91 @@ def test_create_and_get_run_returns_distinct_thread_and_run_identity(
     fetched = client.get(f"/api/runs/{created['run_id']}", headers=AUTH_HEADERS)
     assert fetched.status_code == 200
     assert fetched.json()["run_id"] == created["run_id"]
+
+
+def test_get_run_status_exposes_observed_failure_cause(tmp_path, monkeypatch):
+    import api.run_repository as repository
+    from api.run_failure_cause_models import RunFailureCauseWrite
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+    monkeypatch.setattr(
+        repository,
+        "_now",
+        lambda: "2026-07-16T00:00:00+00:00",
+    )
+    created = repository.create_run(thread_id="thread-1", query="query")
+    assert repository.finalize_run_transaction(
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="failed",
+        delivery_status="failed",
+        evidence_entries=[],
+        failure_cause=RunFailureCauseWrite(
+            phase="execution",
+            code="execution_error",
+        ),
+    )
+
+    response = TestClient(app).get(
+        f"/api/runs/{created['run_id']}",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["failure_cause"] == {
+        "schema_version": "dra.run-failure-cause.v1",
+        "observation_status": "observed",
+        "phase": "execution",
+        "code": "execution_error",
+        "recorded_at": "2026-07-16T00:00:00Z",
+    }
+    assert "terminal_state_version" not in response.text
+
+
+def test_get_run_status_exposes_historical_not_observed_failure_cause(
+    tmp_path,
+    monkeypatch,
+):
+    from tests.unit.test_run_migrations import _apply_009, _seed_pre_009_runs
+
+    db_path = str(tmp_path / "tasks.db")
+    _seed_pre_009_runs(db_path, statuses=("failed",))
+    _apply_009(db_path)
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", db_path)
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+
+    response = TestClient(app).get(
+        "/api/runs/run_failed_0",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["failure_cause"] == {
+        "schema_version": "dra.run-failure-cause.v1",
+        "observation_status": "not_observed",
+    }
+
+
+def test_get_run_status_exposes_null_failure_cause_for_nonfailed_run(
+    tmp_path,
+    monkeypatch,
+):
+    from api.run_repository import create_run
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("API_SECRET", "test-integration-key")
+    created = create_run(thread_id="thread-1", query="query")
+
+    response = TestClient(app).get(
+        f"/api/runs/{created['run_id']}",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["failure_cause"] is None
 
 
 def test_keyed_create_replays_identity_and_schedules_once(tmp_path, monkeypatch):

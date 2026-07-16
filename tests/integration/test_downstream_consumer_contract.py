@@ -519,6 +519,37 @@ def test_committed_fixture_matches_fresh_build():
     assert committed == serialize_fixture(build_fixture_bundle())
 
 
+def test_status_failure_cause_is_discarded_before_frozen_v1_projection(monkeypatch):
+    import scripts.downstream_consumer_contract as contract
+
+    projected_statuses = []
+    original_projector = contract.project_consumer_case
+
+    def capture_projector(**kwargs):
+        projected_statuses.append(kwargs["status_payload"])
+        return original_projector(**kwargs)
+
+    monkeypatch.setattr(contract, "project_consumer_case", capture_projector)
+    committed = Path(
+        "docs/evidence/downstream-consumer-contract-v1.json"
+    ).read_bytes()
+    rebuilt = contract.serialize_fixture(contract.build_fixture_bundle())
+
+    assert projected_statuses
+    assert all("failure_cause" not in status for status in projected_statuses)
+    assert rebuilt == committed
+    assert hashlib.sha256(committed).hexdigest() == (
+        "cc602576115ff9b41b0f07fa5f6ee88db15424760a78ab4611675e62e19a8157"
+    )
+    canonical = json.loads(committed)["cases"][2]["result"]["body"]["artifact"]
+    assert canonical["content"] == (
+        "# Synthetic Research Report\n\nPublic-safe contract proof."
+    )
+    assert canonical["content_hash"] == hashlib.sha256(
+        canonical["content"].encode("utf-8")
+    ).hexdigest()
+
+
 def test_cli_build_and_check_are_deterministic(tmp_path, capsys):
     from scripts.downstream_consumer_contract import (
         build_fixture_bundle,

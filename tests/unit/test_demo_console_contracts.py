@@ -3,6 +3,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+README = ROOT / "README.md"
+README_CN = ROOT / "README_CN.md"
+CHANGELOG = ROOT / "CHANGELOG.md"
+DOCS_INDEX = ROOT / "docs" / "README.md"
 DESIGN = ROOT / "DESIGN.md"
 OPERATIONS = ROOT / "docs" / "demo-console.md"
 APP = ROOT / "frontend" / "src" / "App.tsx"
@@ -105,6 +109,42 @@ def test_failure_cause_availability_states_remain_distinct():
     assert "failure-cause null means not applicable" in contract
     assert "failure-cause not_observed means no cause was observed" in contract
     assert "failure-cause observed renders only its bounded public projection" in contract
+
+
+def test_shared_discovery_publishes_console_live_authority_closure():
+    readme = re.sub(r"\s+", " ", _read(README))
+    readme_cn = re.sub(r"\s+", " ", _read(README_CN))
+    changelog = re.sub(r"\s+", " ", _read(CHANGELOG))
+    docs_index = re.sub(r"\s+", " ", _read(DOCS_INDEX))
+    unreleased, historical = changelog.split("## [0.1.3]", maxsplit=1)
+
+    assert "renders only real service-owned state" in readme
+    assert "same key and byte-equivalent request" in readme
+    assert "observation resume is GET-only" in readme
+    assert "does not own review, verification, publication, or delivery authority" in readme
+
+    assert "只渲染真实的 service-owned state" in readme_cn
+    assert "same key 和 byte-equivalent request" in readme_cn
+    assert "observation resume 仅使用 GET" in readme_cn
+    assert "不拥有 review、verification、publication 或 delivery authority" in readme_cn
+
+    assert "### Console live authority closure" in unreleased
+    assert "same key and byte-equivalent request" in unreleased
+    assert "GET-only observation resume" in unreleased
+    assert "does not claim durable browser intent" in unreleased
+    assert "Console live authority closure" not in historical
+
+    assert "[Demo Console](demo-console.md)" in docs_index
+    assert (
+        "[Console Live Authority Closure design]"
+        "(superpowers/specs/2026-07-16-console-live-authority-closure-design.md)"
+        in docs_index
+    )
+    assert (
+        "[implementation plan]"
+        "(superpowers/plans/2026-07-16-console-live-authority-closure-implementation.md)"
+        in docs_index
+    )
 
 
 def test_console_security_authority_and_nonclaims_are_public():

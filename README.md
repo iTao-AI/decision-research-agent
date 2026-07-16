@@ -174,6 +174,12 @@ CORS origin and a loopback-only backend; follow the
 [Demo Console guide](docs/demo-console.md) before enabling it. The current
 console does not accept or store API credentials.
 
+Live Backend renders only real service-owned state from the run status and
+canonical result contracts. Ambiguous create reconciliation reuses the same
+key and byte-equivalent request. After `run_id` is known, observation resume is
+GET-only and cannot issue another create. The console does not own review,
+verification, publication, or delivery authority.
+
 ## Tool Client
 
 ```bash

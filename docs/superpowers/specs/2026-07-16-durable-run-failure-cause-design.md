@@ -381,6 +381,17 @@ before the complete backup is restored. When the exact marker already exists,
 startup performs verification only and must not insert, infer, or repair any
 cause row.
 
+`init_run_schema` is the single application entry for applying or verifying
+`009`, including direct create, read, dispatch, review, publication, test, and
+lifespan paths. On marker absence it must create and protect the dedicated
+backup before invoking an initializer that can write any migration state; on
+failure it restores that backup only after all migration connections settle.
+On marker presence it verifies the exact checksum, table, and row invariants
+without creating a backup or mutating data. No caller may invoke a private
+initializer to bypass this coordinator. Existing earlier migration branches
+retain their caller-supplied backup behavior, while every branch that reaches
+the shared schema initializer is also covered by the dedicated `009` backup.
+
 This is not a cause backfill. It records only that no bounded cause was observed
 under the new contract. The migration must not read logs, traces, dispatch
 attempt text, Evidence, artifacts, timestamps, or exception messages to infer a
@@ -558,12 +569,32 @@ rewrite the origin or invoke `on_cancel`. Callback failure is diagnostic unless
 its bounded database reconciliation commits a terminal transition; it cannot
 change the winning origin or suppress Python cancellation semantics.
 
+The bounded wait owns an explicit deadline task. If the inner task and deadline
+are both done in the same event-loop turn while origin is unset, inner
+completion or inner self-cancellation wins deterministically only when the
+tracked wrapper has no external cancellation request. The wrapper checks its
+own `Task.cancelling()` request count before completion/tie classification, so
+same-turn target self-cancellation cannot hide an outer cancellation. Every
+exit path cancels, awaits, and observes the deadline task so no timer survives
+the tracked wrapper.
+
 The chosen callback itself runs in an explicit task and follows the same
 shield-and-settle rule as start and terminal writes. A second cancellation may
 be remembered for later propagation, but it cannot abandon an already-started
 callback or its `to_thread` reconciliation. Only after that callback settles may
 the outer task return the existing timeout value or re-raise the pending
 `CancelledError`.
+
+The shared settlement helper itself never propagates an outer cancellation. It
+captures the owning wrapper task and tracks its monotonic `Task.cancelling()`
+request count while waiting for the target to finish. It returns the target
+result or target exception plus the observed outer cancellation-request count.
+A target that self-cancels with no wrapper cancellation request is reported only
+as the target exception and does not claim application cancellation. The caller
+classifies the settled database/callback/inner result first, then re-raises any
+remembered outer cancellation. If timeout already won and a later cancellation
+arrives during its callback, the timeout callback still settles, `on_cancel` is
+not invoked, and the tracked task then re-raises `CancelledError`.
 
 ### Deadline path
 
@@ -602,10 +633,28 @@ the outer task return the existing timeout value or re-raise the pending
    return a success-like value.
 
 If already-started execution catches `asyncio.CancelledError` while origin
-remains unset, the wrapper atomically marks the shared origin `cancelled` before
-freezing and finalizing the outcome. A timeout can never be inferred from
+remains unset and the tracked wrapper has no external cancellation request, it
+is an inner self-cancellation rather than application cancel authority. The
+wrapper persists `execution/execution_error` during execution, or
+`finalization/run_finalization_failed` after the stage advanced, then re-raises
+the Python cancellation. It does not claim the shared origin and the tracker
+does not invoke either callback. A timeout can never be inferred from
 `OutcomeBox.failure_kind="cancelled"` or from exception text, and an ordinary
 harness outcome carrying that string maps to `execution_error`.
+
+Immediately after synchronous artifact/review materialization and before a
+terminal database task is created, the inner wrapper requests a one-shot
+finalization checkpoint and waits for the tracker to release it. The tracker
+waits on the inner task, explicit deadline task, and checkpoint request. When
+the checkpoint arrives it compares the event-loop monotonic clock with the
+precomputed absolute deadline and checks its own external cancellation-request
+count before releasing the inner wrapper. An expired deadline claims timeout;
+an external cancellation claims cancelled; only a still-live request releases
+the success path. This handshake, rather than one or more bare event-loop
+yields, makes finalization-stage timeout/cancellation reachable without
+allowing a success transaction to launch after termination already won. Tests
+must drive it through the real tracker and deterministic barriers; setting a
+stage or origin directly is not sufficient proof.
 
 The deadline remains cooperative rather than hard wall-clock preemption.
 Synchronous Python work and a shielded database transaction that already
@@ -661,11 +710,23 @@ joined SQLite query so a reader cannot compose projections from different
 commits or depend on duplicate `SELECT *` names. It validates the row through
 the strict projection model before returning it.
 
+For an observed cause, the joined projection also requires `recorded_at` to
+equal the run's terminal `updated_at`. Full migration verification additionally
+requires a failed segment for the same run whose `updated_at` equals that
+timestamp. A different but otherwise valid UTC timestamp is invariant
+corruption.
+
 Malformed phase/code pairs, failed-without-row, nonfailed-with-row, malformed
 timestamps, a non-null historical terminal version, and an observed terminal
 version that differs from the run `state_version` fail closed with a bounded
 internal error. Public responses must not include the corrupt row or raw
 database exception.
+
+FastAPI OpenAPI metadata documents the additive field with an extra-allow
+Pydantic envelope whose only declared property is the required nullable
+observed/not-observed union. It is documentation metadata, not a response model
+that filters the existing status payload. The result route's OpenAPI operation
+remains unchanged and does not acquire the cause field.
 
 ## Result And Consumer Compatibility
 
@@ -697,12 +758,17 @@ docs/evidence/run-failure-cause-v1.md
 
 The JSON report schema is `dra.run-failure-cause-proof.v1`. The proof is
 offline, credential-free, provider-free, network-free, deterministic, and
-fail-closed. It uses production migration, repository, tracker, dispatch,
-service, finalization, and status-projection paths with deterministic fake
-harness behavior at the existing port boundary. A fixed aware UTC application
-clock must be injected at the existing time boundary so `recorded_at`, run
-updates, migration output, JSON, and Markdown do not depend on wall-clock time;
-production code continues to use the real application clock.
+fail-closed. It uses production migration, repository, `RunDispatchWorker`,
+scheduler, tracker, dispatch, service, finalization, and status-projection
+paths. Timeout and cancellation cases enter through the production scheduler
+and await its real tracked task. Native call-limit and recursion cases use the
+real `DeepAgentsHarness.execute` mapper with only its graph replaced by a fake
+that raises the installed framework exception. Other deterministic Agent
+outcomes may use a fake harness at the existing port boundary. A fixed aware
+UTC application clock must be injected at the existing time boundary so
+`recorded_at`, run updates, migration output, JSON, and Markdown do not depend
+on wall-clock time; production code continues to use the real application
+clock.
 
 The fixed ordered matrix must cover every public code plus the nonfailed and
 historical projections:
@@ -735,19 +801,23 @@ Additional invariant observations must prove:
 - timeout and cancellation remain distinct under controlled interleavings;
 - pre-start infrastructure cancellation does not create a public cancellation
   cause and cannot leave a late start thread unobserved;
+- post-start inner self-cancellation with unset origin converges to a bounded
+  execution/finalization failure and cannot leave the run `running`;
 - an already-launched terminal transaction is shielded and settled before any
   fallback writer runs;
 - no raw exception, traceback, credential, provider payload, private host,
-  absolute path, or query enters the DB, API, JSON, or Markdown evidence;
+  absolute path, or query enters the failure-cause row, its public projection,
+  or the JSON/Markdown proof;
 - corrupt and oversized baseline input fails closed with bounded reads;
 - invalid or missing CLI arguments return exit 1, empty stdout, and one stable
   JSON error line on stderr; help remains exit 0;
 - JSON and Markdown reports are byte-identical across two fresh runs.
 
-Mutation tests must break the real production mapper, dispatch terminal insert,
-terminal transaction, status join, or timeout-before-cancel ordering and prove
-the check fails. A validator that only checks self-generated report shape is
-insufficient.
+Mutation tests must independently break the real production mapper, dispatch
+terminal insert, terminal transaction, status join, scheduler callback wiring,
+tracker construction, settlement helper, finalization checkpoint, or
+timeout-before-cancel ordering and prove the check fails. A validator that only
+checks self-generated report shape is insufficient.
 
 ## Test Strategy
 
@@ -945,7 +1015,7 @@ than silently widening the PR.
 9. The status endpoint exposes only the exact additive bounded projection.
 10. The result endpoint and existing downstream fixture remain unchanged.
 11. No raw error, provider detail, secret, local path, trace, or query enters
-    the database, API, or proof.
+    the failure-cause row, its public projection, or the proof.
 12. The production-path deterministic proof passes twice with byte-identical
     JSON and Markdown.
 13. Existing idempotency, dispatch, Agent evaluation, downstream, identity, and

@@ -41,6 +41,8 @@ jobs:
         env:
           PYTHON_DOTENV_DISABLED: '1'
         run: python scripts/run_dispatch_reconciliation_proof.py check
+      - name: Run failure cause proof
+        run: python scripts/run_failure_cause_proof.py check
       - name: Run tests
         run: python -m pytest -q
 

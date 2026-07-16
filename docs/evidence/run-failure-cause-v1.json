@@ -1,0 +1,374 @@
+{
+  "boundaries": {
+    "application_database_terminal_authority": "proven",
+    "external_side_effect_exactly_once": "not_claimed",
+    "framework_native_signal_mapping": "proven",
+    "live_provider_result": "not_observed",
+    "production_scheduler_timeout_cancellation": "proven",
+    "result_and_downstream_v1_compatibility": "separate_gate",
+    "status_projection_after_restart": "proven"
+  },
+  "cases": [
+    {
+      "case_id": "completed_null",
+      "observations": {
+        "artifact_count": 1,
+        "code": null,
+        "dispatch_status": "started",
+        "evidence_count": 0,
+        "phase": null,
+        "projection_status": "null",
+        "recorded_at": null,
+        "run_status": "completed",
+        "segment_status": "completed",
+        "state_version": 2,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "historical_not_observed",
+      "observations": {
+        "artifact_count": 0,
+        "code": null,
+        "dispatch_status": "absent",
+        "evidence_count": 0,
+        "phase": null,
+        "projection_status": "not_observed",
+        "recorded_at": null,
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 3,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "dispatch_schedule_failed",
+      "observations": {
+        "artifact_count": 0,
+        "attempt_count": 3,
+        "code": "run_dispatch_schedule_failed",
+        "dispatch_status": "failed",
+        "evidence_count": 0,
+        "last_error_matches_cause": true,
+        "phase": "dispatch",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 1,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "dispatch_start_failed",
+      "observations": {
+        "artifact_count": 0,
+        "attempt_count": 3,
+        "code": "run_dispatch_start_failed",
+        "dispatch_status": "failed",
+        "evidence_count": 0,
+        "last_error_matches_cause": true,
+        "phase": "dispatch",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 1,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "dispatch_start_timeout",
+      "observations": {
+        "artifact_count": 0,
+        "attempt_count": 3,
+        "callback_count": 3,
+        "code": "run_dispatch_start_timeout",
+        "dispatch_status": "failed",
+        "evidence_count": 0,
+        "last_error_matches_cause": true,
+        "phase": "dispatch",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 1,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "dispatch_lease_expired",
+      "observations": {
+        "artifact_count": 0,
+        "attempt_count": 3,
+        "code": "run_dispatch_lease_expired",
+        "dispatch_status": "failed",
+        "evidence_count": 0,
+        "last_error_matches_cause": true,
+        "lease_expires_at": null,
+        "phase": "dispatch",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:01:33Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 1,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "execution_call_budget_exceeded",
+      "observations": {
+        "artifact_count": 0,
+        "code": "call_budget_exceeded",
+        "dispatch_status": "started",
+        "evidence_count": 0,
+        "framework_signal_count": 2,
+        "phase": "execution",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "execution_recursion_limit_exceeded",
+      "observations": {
+        "artifact_count": 0,
+        "code": "recursion_limit_exceeded",
+        "dispatch_status": "started",
+        "evidence_count": 0,
+        "framework_signal_count": 1,
+        "phase": "execution",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "execution_invalid_research_packet",
+      "observations": {
+        "artifact_count": 0,
+        "code": "invalid_research_packet",
+        "dispatch_status": "started",
+        "evidence_count": 0,
+        "packet_resolution": "invalid",
+        "phase": "execution",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "execution_missing_research_packet",
+      "observations": {
+        "artifact_count": 0,
+        "code": "missing_research_packet",
+        "dispatch_status": "started",
+        "evidence_count": 0,
+        "packet_resolution": "missing",
+        "phase": "execution",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "execution_timeout",
+      "observations": {
+        "artifact_count": 0,
+        "callback_count": 1,
+        "code": "run_timeout",
+        "dispatch_status": "started",
+        "evidence_count": 1,
+        "phase": "execution",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "termination_origin": "timeout",
+        "timestamp_aligned": true,
+        "tracker_settled": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "finalization_timeout",
+      "observations": {
+        "artifact_count": 0,
+        "callback_count": 1,
+        "code": "run_timeout",
+        "dispatch_status": "started",
+        "evidence_count": 0,
+        "phase": "finalization",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "termination_origin": "timeout",
+        "timestamp_aligned": true,
+        "tracker_settled": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "execution_cancelled",
+      "observations": {
+        "artifact_count": 0,
+        "callback_count": 1,
+        "code": "cancelled",
+        "dispatch_status": "started",
+        "evidence_count": 1,
+        "phase": "execution",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "termination_origin": "cancelled",
+        "timestamp_aligned": true,
+        "tracker_settled": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "finalization_cancelled",
+      "observations": {
+        "artifact_count": 0,
+        "callback_count": 1,
+        "code": "cancelled",
+        "dispatch_status": "started",
+        "evidence_count": 0,
+        "phase": "finalization",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "termination_origin": "cancelled",
+        "timestamp_aligned": true,
+        "tracker_settled": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "execution_error",
+      "observations": {
+        "artifact_count": 0,
+        "code": "execution_error",
+        "dispatch_status": "started",
+        "evidence_count": 1,
+        "phase": "execution",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "finalization_failed",
+      "observations": {
+        "artifact_count": 0,
+        "code": "run_finalization_failed",
+        "dispatch_status": "started",
+        "evidence_count": 0,
+        "phase": "finalization",
+        "projection_status": "observed",
+        "recorded_at": "2026-07-16T00:00:00Z",
+        "run_status": "failed",
+        "segment_status": "failed",
+        "state_version": 2,
+        "timestamp_aligned": true
+      },
+      "status": "passed"
+    }
+  ],
+  "fixed_time": "2026-07-16T00:00:00+00:00",
+  "invariants": [
+    {
+      "invariant_id": "retry_attempts_have_no_cause",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "dispatch_codes_match",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "terminal_insert_fault_rolls_back",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "terminal_guards_fail_closed",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "first_cause_is_immutable",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "restart_projection_is_identical",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "termination_ownership_is_distinct",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "prestart_cancellation_is_infrastructure_only",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "inner_self_cancel_is_bounded",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "launched_terminal_task_settles",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "public_failure_surface_is_redacted",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "bounded_cli_inputs_fail_closed",
+      "status": "passed"
+    },
+    {
+      "invariant_id": "fresh_outputs_are_byte_identical",
+      "status": "passed"
+    }
+  ],
+  "limits": [
+    "Deterministic local production-path contract proof, not a live-provider measurement.",
+    "SQLite single-node terminal authority is proven; multi-instance operation is not claimed.",
+    "Result and downstream v1 compatibility remain owned by their separate regression gates."
+  ],
+  "schema_version": "dra.run-failure-cause-proof.v1",
+  "source": "production_path_deterministic_local",
+  "status": "valid"
+}

@@ -30,6 +30,12 @@ A breaking proof-schema change requires a new schema version and fixture file.
 Additive upstream API fields are ignored unless a later fixture version
 explicitly projects them.
 
+The frozen `dra.downstream-consumer.v1` projection ignores the additive
+upstream `failure_cause` field, so persistent failure cause remains `unknown`
+inside v1. The live status API may expose that field, but it is outside this
+historical fixture schema and checksum. The fixture bytes and checksum remain
+unchanged.
+
 ## State And Disposition
 
 | Execution / review / delivery | Result | Classification | Disposition |
@@ -96,9 +102,14 @@ the compatibility-only fallback execution status.
 
 The `unknown` list deliberately includes claim-level Evidence references,
 typed limitations, typed conflicts and gaps, source title/publisher/effective
-date, persistent failure cause, and persistent usage/cost. Consumers must not parse Markdown
-to manufacture typed claims, limitations, conflicts, dates, or Evidence
-references. Markdown headings and prose do not add typed contract fields.
+date, persistent failure cause within the frozen v1 projection, and persistent
+usage/cost. Consumers must not parse Markdown to manufacture typed claims,
+limitations, conflicts, dates, or Evidence references. Markdown headings and
+prose do not add typed contract fields.
+
+`409 run_failed` remains unchanged, and the result payload carries no
+`failure_cause`. A consumer that wants the additive cause reads the live status
+projection without revising this v1 fixture, capability list, or checksum.
 
 ## Authority And Failure Handling
 

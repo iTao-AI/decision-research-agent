@@ -67,6 +67,20 @@ cannot recover work that has not reached Agent invocation. LangGraph checkpoint
 and LangSmith tracing likewise remain workflow-position and diagnostics
 facilities, not application dispatch authority.
 
+Durable failure causes reuse native bounded signals without moving authority.
+The existing LangChain `ModelCallLimitMiddleware` and
+`ToolCallLimitMiddleware` typed exceptions, LangGraph `GraphRecursionError`,
+strict Pydantic models, FastAPI lifecycle, asyncio task ordering, and SQLite
+transactions/fences remain the implementation primitives. Only the winning
+application transaction converts an allowed signal into a durable public code;
+framework error text and trace metadata are not persisted as the cause.
+
+The feature adds no new Agent middleware or DeepAgents middleware. LangGraph
+`TimeoutPolicy` is rejected because it limits a graph node attempt rather than
+the whole application run. LangGraph checkpoint/store and LangSmith trace data
+are also rejected as failure-cause business authority because they cannot join
+the run, segment, Evidence, and cause in the same application transaction.
+
 LangSmith receives bounded metadata with inputs and outputs hidden by default.
 Trace availability never changes business readiness, Evidence authority,
 review resolution, publication, or delivery.

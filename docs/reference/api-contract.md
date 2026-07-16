@@ -82,6 +82,41 @@ summary, and state version. The projection does not expose database paths,
 checkpoint payloads, lease owners, actor fingerprints, raw tracebacks, or local
 artifact paths.
 
+The status projection adds exactly one additive top-level field,
+`failure_cause`, with public schema `dra.run-failure-cause.v1`. Its three exact
+variants are:
+
+Observed failure:
+
+```json
+{"failure_cause":{"schema_version":"dra.run-failure-cause.v1","observation_status":"observed","phase":"execution","code":"call_budget_exceeded","recorded_at":"2026-07-16T00:00:00+00:00"}}
+```
+
+Historical failure whose bounded cause was not recorded before migration:
+
+```json
+{"failure_cause":{"schema_version":"dra.run-failure-cause.v1","observation_status":"not_observed"}}
+```
+
+Nonfailed run:
+
+```json
+{"failure_cause":null}
+```
+
+For an observed cause, `recorded_at` is the winning application
+terminal-transaction time, not the first provider, framework, or operating
+system error time. The object never exposes `terminal_state_version`, raw
+exception class or text, traceback, query, provider payload, retry count, lease
+or checkpoint identity, database path, local path, credential, or trace ID.
+Missing, duplicate, malformed, or state-inconsistent cause data fails closed as
+a bounded internal error without returning the corrupt row or raw database
+exception.
+
+The extra-allow OpenAPI envelope is documentation metadata whose only declared
+property is the required nullable observed/not-observed union. It is not a
+response filter and does not remove existing run-status fields.
+
 ### GET /api/runs/{run_id}/result
 
 Resolve the current canonical delivery artifact. The endpoint reads
@@ -91,6 +126,11 @@ it does not read LangGraph checkpoint state.
 Ready generic runs return `research-report.md`. Ready Talent runs return the
 current publication artifact when available, otherwise the canonical
 `decision-brief.md` artifact. Delivery is Markdown-only delivery in v0.1.0.
+
+The `GET /api/runs/{run_id}/result` response, error envelope, and OpenAPI
+operation remain unchanged. In particular, `409 run_failed` does not include
+`failure_cause`; clients that need the bounded cause read the status endpoint
+before or after the unchanged result request.
 
 Stable errors:
 

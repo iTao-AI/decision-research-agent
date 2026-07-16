@@ -95,11 +95,18 @@ the terminal run projection. `run --wait --result` calls
 canonical result payload. `--result` without `--wait` performs no request and
 returns `result_requires_wait`.
 
-The wait timeout is a client polling deadline; it does not cancel the
-server-side run. On `run_wait_timeout`, the structured error includes `run_id`
-so callers can inspect the run or use `result --run-id` later. `result --run-id`
-remains the recovery path for separately created or previously timed-out runs.
-For generic runs the artifact ID is `research-report.md`.
+The raw terminal status projection printed by `run --wait` may carry
+`failure_cause`. `result --run-id` and `run --wait --result` remain on the
+unchanged result contract, including the existing `409 run_failed` envelope
+without a cause. No new Tool Client command or model is required.
+
+`run_wait_timeout` is a client polling deadline; it does not cancel the
+server-side run. Its structured error includes `run_id` so callers can inspect
+the run or use `result --run-id` later. That recovery path also covers
+separately created or previously timed-out runs. The client deadline is
+distinct from an application-owned terminal `execution/run_timeout` or
+`finalization/run_timeout` returned by the status endpoint. For generic runs
+the artifact ID is `research-report.md`.
 
 Public repository tests cover the `run --wait --result` golden path with
 environment-only API key configuration; captured command output must not

@@ -158,6 +158,31 @@ a second claim. The proof covers committed pre-start recovery, not exactly-once
 execution, recovery after running begins, provider/tool side effects,
 multi-instance high availability, or a live-provider result.
 
+## Durable Failure-Cause Authority
+
+The application database owns the immutable bounded cause for a failed run.
+Framework exceptions, packet validation, the task tracker's termination origin,
+and private dispatch diagnostics are inputs only. A cause becomes authoritative
+when the application terminal transaction or exact dispatch fence wins together
+with the failed run and segment; framework state, LangGraph checkpoint data, and
+LangSmith traces cannot fill, revise, or repair it.
+
+`GET /api/runs/{run_id}` provides the additive status-only projection. New
+failures expose an observed cause, historical failures expose `not_observed`,
+and nonfailed runs expose `null`. The result endpoint remains unchanged, as do
+its stable errors and the frozen downstream v1 fixture.
+
+Migration `009_run_failure_cause_v1` protects first application with the
+dedicated `.pre-run-failure-cause.bak`. Rollback is operator-controlled: stop
+application writers, preserve the failed database for diagnosis, and restore
+the complete backup with a compatible application revision before writers
+restart.
+
+This bounded contract is not exactly-once execution, not hard preemption, not
+provider diagnosis, not multi-instance high availability, and not a billing
+record. It also does not make framework runtime, trace, or checkpoint storage a
+business ledger.
+
 ## EvidenceLedger, DecisionBrief, And Canonical Result Authority
 
 Evidence is application-owned. Findings and claims must resolve to run-scoped

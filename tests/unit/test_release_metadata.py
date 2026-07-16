@@ -13,6 +13,7 @@ V010_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.0.md"
 V011_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.1.md"
 V012_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.2.md"
 V013_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.3.md"
+V014_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.4.md"
 PYTEST_FIXED_FLOOR = "9.0.3"
 
 
@@ -28,6 +29,7 @@ def test_current_release_version_is_consistent() -> None:
     assert package["version"] == "0.1.3"
     assert lock["version"] == "0.1.3"
     assert lock["packages"][""]["version"] == "0.1.3"
+    assert not V014_RELEASE_NOTES.exists()
 
 
 def test_changelog_preserves_published_release_boundary() -> None:
@@ -47,9 +49,22 @@ def test_changelog_preserves_published_release_boundary() -> None:
     assert changelog.index(v0_1_3_heading) < changelog.index(v0_1_2_heading)
     assert changelog.index(v0_1_2_heading) < changelog.index(v0_1_1_heading)
     assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
+    assert "## [0.1.4]" not in changelog
 
     unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_3_heading, 1)[0]
-    assert unreleased.strip() == ""
+    failure_cause_subsection = """### Durable run failure causes
+
+- Added immutable application-database `run_failure_causes_v1` through
+  `009_run_failure_cause_v1`; historical failed runs report `not_observed`
+  without inferred diagnosis, while new terminal failures atomically persist
+  bounded dispatch, execution, or finalization causes.
+- Added an additive `failure_cause` field only to
+  `GET /api/runs/{run_id}` and a deterministic 16-case proof.
+  `GET /api/runs/{run_id}/result`, `409 run_failed`, and the frozen
+  `dra.downstream-consumer.v1` fixture remain unchanged.
+- The contract does not claim exactly-once execution, hard preemption,
+  provider diagnosis, multi-instance high availability, or a billing record."""
+    assert unreleased.strip() == failure_cause_subsection
 
     v0_1_3 = changelog.split(v0_1_3_heading, 1)[1].split(v0_1_2_heading, 1)[0]
     durable_subsection = """### Durable run dispatch

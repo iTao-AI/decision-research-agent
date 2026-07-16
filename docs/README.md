@@ -27,7 +27,8 @@ external evaluation of the public contract surface.
 
 ## Reference
 
-- [API Contract](reference/api-contract.md) — REST, WebSocket, authentication, and errors.
+- [API Contract](reference/api-contract.md) — REST, WebSocket, authentication,
+  errors, and the additive durable run failure-cause status projection.
 - [Downstream Consumer Contract](reference/downstream-consumer-contract.md) — deterministic status, result, Evidence, fallback, and failure-handling proof.
 - [Agent Evaluation Regression Gate](reference/agent-evaluation-regression-gate.md) — deterministic eight-case, six-evaluator release gate and baseline workflow.
 - [Data Models](reference/data-models.md) — run, Evidence, artifact, review, and publication records.
@@ -57,6 +58,9 @@ external evaluation of the public contract surface.
 - [Evidence Index](evidence/README.md) — current bounded evidence.
 - [Run Creation Idempotency Proof](evidence/run-creation-idempotency-v1.md) — deterministic lost-response identity reconciliation and limits.
 - [Run Dispatch Reconciliation Proof](evidence/run-dispatch-reconciliation-v1.md) — deterministic committed pre-start recovery, migration safety, and explicit non-claims.
+- [Durable Run Failure Cause Proof](evidence/run-failure-cause-v1.md) and
+  [JSON report](evidence/run-failure-cause-v1.json) — deterministic 16-case
+  production-path contract proof for the bounded terminal-cause projection.
 - [Agent Evaluation Report](evidence/agent-evaluation-regression-v1.md) and
   [JSON baseline](evidence/agent-evaluation-regression-v1.json) — deterministic
   contract regression evidence and limits.

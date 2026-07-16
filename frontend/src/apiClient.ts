@@ -1,3 +1,12 @@
+import {
+  parseRunProjection,
+  parseRunResult,
+  type RunProjection,
+  type RunResultResponse
+} from "./runProjection";
+
+export type { RunProjection, RunResultResponse } from "./runProjection";
+
 export const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8000";
 export const LIVE_DEMO_QUERY =
   "Generate a short evidence-bound result for the Agent Research Operations Console.";
@@ -32,27 +41,6 @@ export type RunCreationResponse = {
   status: string;
   thread_id: string;
   idempotent_replay: boolean;
-};
-
-export type RunProjection = {
-  delivery_status?: string;
-  execution_status?: string;
-  review_status?: string;
-  run_id: string;
-  state_version?: number;
-};
-
-export type RunResultResponse = {
-  artifact?: {
-    artifact_id?: string;
-    content?: string;
-    content_hash?: string;
-    kind?: string;
-    media_type?: string;
-  };
-  delivery_status?: string;
-  execution_status?: string;
-  run_id: string;
 };
 
 export class ClientRequestError extends Error {
@@ -150,21 +138,18 @@ export async function getRun(
   runId: string,
   signal?: AbortSignal
 ): Promise<RunProjection> {
-  const value = await requestJson<Partial<RunProjection>>(
+  const value = await requestJson<unknown>(
     baseUrl,
     `/api/runs/${encodeURIComponent(runId)}`,
     { method: "GET", signal }
   );
-  if (typeof value.run_id !== "string") {
-    throw new ClientRequestError(invalidResponse("Run projection did not include run_id."));
+  try {
+    return parseRunProjection(value);
+  } catch {
+    throw new ClientRequestError(
+      invalidResponse("Run projection selected fields were malformed.")
+    );
   }
-  return {
-    delivery_status: stringOrUndefined(value.delivery_status),
-    execution_status: stringOrUndefined(value.execution_status),
-    review_status: stringOrUndefined(value.review_status),
-    run_id: value.run_id,
-    state_version: typeof value.state_version === "number" ? value.state_version : undefined
-  };
 }
 
 export async function getResult(
@@ -172,20 +157,18 @@ export async function getResult(
   runId: string,
   signal?: AbortSignal
 ): Promise<RunResultResponse> {
-  const value = await requestJson<Partial<RunResultResponse>>(
+  const value = await requestJson<unknown>(
     baseUrl,
     `/api/runs/${encodeURIComponent(runId)}/result`,
     { method: "GET", signal }
   );
-  if (typeof value.run_id !== "string") {
-    throw new ClientRequestError(invalidResponse("Canonical result response did not include run_id."));
+  try {
+    return parseRunResult(value);
+  } catch {
+    throw new ClientRequestError(
+      invalidResponse("Canonical result selected fields were malformed.")
+    );
   }
-  return {
-    artifact: typeof value.artifact === "object" && value.artifact !== null ? value.artifact : undefined,
-    delivery_status: stringOrUndefined(value.delivery_status),
-    execution_status: stringOrUndefined(value.execution_status),
-    run_id: value.run_id
-  };
 }
 
 export function normalizeClientError(error: unknown, runId?: string): ClientError {
@@ -308,10 +291,6 @@ function invalidBackendUrl(): ClientError {
     fix: "Enter an explicit loopback HTTP endpoint such as http://127.0.0.1:8000.",
     retryable: false
   };
-}
-
-function stringOrUndefined(value: unknown) {
-  return typeof value === "string" ? value : undefined;
 }
 
 function isAbortError(error: unknown) {

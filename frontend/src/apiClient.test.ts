@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ClientRequestError,
   createRunIntent,
+  getResult,
+  getRun,
   isAmbiguousCreateError,
   startRun,
   type RunCreateIntent
@@ -150,6 +152,152 @@ describe("keyed live run creation", () => {
 
     expect(error).toBeInstanceOf(ClientRequestError);
     expect(isAmbiguousCreateError(error)).toBe(false);
+  });
+});
+
+describe("strict live response parsing", () => {
+  it("returns only the parsed immutable run projection", async () => {
+    stubFetch(
+      jsonResponse({
+        run_id: "run_live_001",
+        thread_id: "demo-console-thread",
+        profile_id: "generic",
+        execution_status: "completed",
+        review_status: "not_required",
+        delivery_status: "ready",
+        state_version: 2,
+        segments: [
+          {
+            segment_id: "run_live_001_seg_000",
+            kind: "initial",
+            sequence: 0,
+            attempt: 1,
+            status: "completed"
+          }
+        ],
+        evidence: [],
+        review_workflow: null,
+        review_decision: null,
+        review_resolution: null,
+        failure_cause: null,
+        query: "ignored private query"
+      })
+    );
+
+    const run = await getRun(BASE_URL, "run_live_001");
+
+    expect(run).toEqual({
+      run_id: "run_live_001",
+      thread_id: "demo-console-thread",
+      profile_id: "generic",
+      execution_status: "completed",
+      review_status: "not_required",
+      delivery_status: "ready",
+      state_version: 2,
+      segments: [
+        {
+          segment_id: "run_live_001_seg_000",
+          kind: "initial",
+          sequence: 0,
+          attempt: 1,
+          status: "completed"
+        }
+      ],
+      evidence: [],
+      review: { workflow: null, decision: null, resolution: null },
+      currentArtifacts: [],
+      failureCause: { kind: "not_applicable" }
+    });
+    expect("query" in run).toBe(false);
+    expect(Object.isFrozen(run)).toBe(true);
+  });
+
+  it("converts malformed selected run fields to bounded invalid_response", async () => {
+    stubFetch(
+      jsonResponse({
+        run_id: "run_live_001",
+        thread_id: "demo-console-thread",
+        profile_id: "generic",
+        execution_status: { raw_error: "opaque selected-field leak" },
+        review_status: "not_required",
+        delivery_status: "ready",
+        state_version: 2,
+        segments: [],
+        evidence: [],
+        review_workflow: null,
+        review_decision: null,
+        review_resolution: null
+      })
+    );
+
+    const error = await captureError(getRun(BASE_URL, "run_live_001"));
+
+    expect(error).toBeInstanceOf(ClientRequestError);
+    expect(error).toMatchObject({ details: { code: "invalid_response", retryable: false } });
+    expect(JSON.stringify((error as ClientRequestError).details)).not.toContain(
+      "opaque selected-field leak"
+    );
+  });
+
+  it("returns only the parsed immutable canonical result", async () => {
+    stubFetch(
+      jsonResponse({
+        run_id: "run_live_001",
+        execution_status: "completed",
+        delivery_status: "ready",
+        artifact: {
+          artifact_id: "research-report.md",
+          kind: "research_report_markdown",
+          media_type: "text/markdown",
+          content: "# Canonical result",
+          content_hash: "sha256:def",
+          local_path: "/private/result.md"
+        },
+        unknown_private_field: "ignored"
+      })
+    );
+
+    const result = await getResult(BASE_URL, "run_live_001");
+
+    expect(result).toEqual({
+      run_id: "run_live_001",
+      execution_status: "completed",
+      delivery_status: "ready",
+      artifact: {
+        artifact_id: "research-report.md",
+        kind: "research_report_markdown",
+        media_type: "text/markdown",
+        content: "# Canonical result",
+        content_hash: "sha256:def"
+      }
+    });
+    expect("local_path" in result.artifact).toBe(false);
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it("converts malformed canonical artifact fields to bounded invalid_response", async () => {
+    stubFetch(
+      jsonResponse({
+        run_id: "run_live_001",
+        execution_status: "completed",
+        delivery_status: "ready",
+        artifact: {
+          artifact_id: "research-report.md",
+          kind: "research_report_markdown",
+          media_type: "text/markdown",
+          content: { raw_error: "opaque artifact leak" },
+          content_hash: "sha256:def"
+        }
+      })
+    );
+
+    const error = await captureError(getResult(BASE_URL, "run_live_001"));
+
+    expect(error).toBeInstanceOf(ClientRequestError);
+    expect(error).toMatchObject({ details: { code: "invalid_response", retryable: false } });
+    expect(JSON.stringify((error as ClientRequestError).details)).not.toContain(
+      "opaque artifact leak"
+    );
   });
 });
 

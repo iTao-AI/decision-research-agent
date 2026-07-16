@@ -216,11 +216,7 @@ describe("Decision Research Agent demo console", () => {
         segment_id: "run_live_001_seg_000",
         idempotent_replay: false
       }),
-      jsonResponse({
-        run_id: "run_live_001",
-        execution_status: "completed",
-        delivery_status: "ready"
-      }),
+      jsonResponse(runStatus("run_live_001", "completed", "ready")),
       jsonResponse({
         run_id: "run_live_001",
         execution_status: "completed",
@@ -261,18 +257,17 @@ describe("Decision Research Agent demo console", () => {
         segment_id: "run_live_fallback_seg_000",
         idempotent_replay: false
       }),
-      jsonResponse({
-        run_id: "run_live_fallback",
-        execution_status: "completed_with_fallback",
-        delivery_status: "ready"
-      }),
+      jsonResponse(runStatus("run_live_fallback", "completed_with_fallback", "ready")),
       jsonResponse({
         run_id: "run_live_fallback",
         execution_status: "completed_with_fallback",
         delivery_status: "ready",
         artifact: {
           artifact_id: "research-report.md",
-          content: "Fallback result from backend."
+          kind: "research_report_fallback_markdown",
+          media_type: "text/markdown",
+          content: "Fallback result from backend.",
+          content_hash: "fixture-fallback-hash"
         }
       })
     ]);
@@ -332,11 +327,7 @@ describe("Decision Research Agent demo console", () => {
         segment_id: "run_live_deadline_seg_000",
         idempotent_replay: false
       }),
-      jsonResponse({
-        run_id: "run_live_deadline",
-        execution_status: "running",
-        delivery_status: "pending"
-      })
+      jsonResponse(runStatus("run_live_deadline", "running", "pending"))
     ]);
 
     render(<App liveOptions={{ pollIntervalMs: 20, waitTimeoutMs: 20 }} />);
@@ -479,21 +470,46 @@ function completedLiveSequence(runId: string, content: string) {
       segment_id: `${runId}_seg_000`,
       idempotent_replay: false
     }),
-    jsonResponse({
-      run_id: runId,
-      execution_status: "completed",
-      delivery_status: "ready"
-    }),
+    jsonResponse(runStatus(runId, "completed", "ready")),
     jsonResponse({
       run_id: runId,
       execution_status: "completed",
       delivery_status: "ready",
       artifact: {
         artifact_id: "research-report.md",
-        content
+        kind: "research_report_markdown",
+        media_type: "text/markdown",
+        content,
+        content_hash: "fixture-result-hash"
       }
     })
   ];
+}
+
+function runStatus(runId: string, executionStatus: string, deliveryStatus: string) {
+  return {
+    run_id: runId,
+    thread_id: "demo-ui-thread",
+    profile_id: "generic",
+    execution_status: executionStatus,
+    review_status: "not_required",
+    delivery_status: deliveryStatus,
+    state_version: 1,
+    segments: [
+      {
+        segment_id: `${runId}_seg_000`,
+        kind: "initial",
+        sequence: 0,
+        attempt: 1,
+        status: executionStatus
+      }
+    ],
+    evidence: [],
+    review_workflow: null,
+    review_decision: null,
+    review_resolution: null,
+    failure_cause: null
+  };
 }
 
 function deferred<T>() {

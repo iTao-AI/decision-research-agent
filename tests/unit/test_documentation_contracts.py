@@ -266,6 +266,7 @@ def test_demo_console_docs_state_deterministic_video_boundary() -> None:
 
 def test_operations_docs_cover_release_recovery_boundaries() -> None:
     docs = _combined_docs()
+    collapsed_docs = _collapsed(docs)
 
     required_phrases = [
         "canonical DB migration",
@@ -275,11 +276,19 @@ def test_operations_docs_cover_release_recovery_boundaries() -> None:
         "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false",
         "privacy-first trace defaults",
         "run_result_unavailable",
-        "no frontend service",
     ]
 
     for phrase in required_phrases:
         assert phrase in docs
+
+    assert (
+        "The current Console does not expose review controls and does not own review authority."
+        in collapsed_docs
+    )
+    assert (
+        "The current Console does not expose verification controls and does not own verification authority."
+        in collapsed_docs
+    )
 
 
 def test_downstream_consumer_contract_is_indexed_and_bounded():

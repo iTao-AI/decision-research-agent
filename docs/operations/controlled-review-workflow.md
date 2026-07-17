@@ -9,8 +9,8 @@ configured API credential.
 
 This is not a multi-user or multi-instance deployment contract. The application
 database remains the business ledger; the checkpoint database stores only the
-LangGraph review-gate execution position. This repository does not ship
-frontend review controls; there is no frontend service in this release.
+LangGraph review-gate execution position. The current Console does not expose
+review controls and does not own review authority.
 
 ## Configure
 

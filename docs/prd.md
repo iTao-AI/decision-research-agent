@@ -7,11 +7,10 @@ on LangChain, LangGraph, DeepAgents, and LangSmith diagnostics. It turns
 open-ended research questions into auditable runs, source-backed evidence,
 controlled review decisions, and canonical delivery artifacts.
 
-The v0.1.0 release surface remains backend-first: HTTP API, WebSocket
-monitoring, Python Tool Client, operator scripts, tests, and documentation.
-The current repository also includes a separately built Agent Research
-Operations Console with a deterministic Static Demo and bounded local Live
-Backend mode.
+The supported surface includes the HTTP API, WebSocket monitoring, Python Tool
+Client, operator scripts, tests, documentation, and the separately built Agent
+Research Operations Console. The Console provides a deterministic Static Demo
+and bounded local Live Backend mode.
 
 ## Target Users
 
@@ -40,6 +39,9 @@ Backend mode.
 | Capability | Description | Status |
 |---|---|---|
 | Canonical run execution | `POST /api/runs` creates a run-scoped execution with `thread_id`, `run_id`, and `segment_id` | Implemented |
+| Reliable run creation | Optional idempotent create reconciles a lost response without creating a replacement run | Implemented |
+| Durable pre-start dispatch | Persisted intent, bounded leases, and reconciliation protect the pre-start dispatch boundary | Implemented |
+| Durable failure cause | Terminal failures persist a bounded phase and cause without inferred diagnosis | Implemented |
 | Canonical result delivery | `GET /api/runs/{run_id}/result` returns bounded deliverable artifacts only when ready | Implemented |
 | Generic research profile | DeepAgents-native generic harness with read-only skills and approved tools | Implemented |
 | Talent Hiring Signal profile | Restricted profile, declared evidence scope, deterministic review bundle and DecisionBrief | Implemented |
@@ -47,7 +49,7 @@ Backend mode.
 | Durable HITL feasibility | Single-node SQLite review gate, disabled by default, with 13-gate safety report | Implemented |
 | Evidence verification authority | Append-only human verification decisions and revisioned publications | Implemented |
 | Tool Client integration | Canonical Python client for health, run, result, review, and evidence commands | Implemented |
-| Agent Research Operations Console | Static operational snapshot plus bounded local `health -> run -> result` API consumption | Implemented |
+| Agent Research Operations Console | Keyed create/status/result observation, strict response identity, GET-only resume, and rendering limited to service-owned status plus the canonical result | Implemented |
 
 ## Success Criteria
 
@@ -91,3 +93,4 @@ Backend mode.
 | 2026-05-19 | Initial PRD created |
 | 2026-06-26 | Rewritten for v0.1.0 canonical backend, DeepAgents-native harness, and legacy runtime removal |
 | 2026-06-30 | Added the separately built Agent Research Operations Console and bounded local Live Backend consumer flow |
+| 2026-07-16 | Added v0.1.2-v0.1.4 run reliability and Console observation capabilities |

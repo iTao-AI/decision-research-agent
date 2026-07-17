@@ -13,13 +13,20 @@ Current verified slices include:
 - Run-scoped execution using `thread_id`, `run_id`, and `segment_id`.
 - Evidence preservation across completion, timeout, and cancellation paths.
 - Application-owned `ResearchRun` and `EvidenceLedger` persistence.
+- Optional idempotent run creation with key reuse and lost-response
+  reconciliation.
+- Durable pre-start run dispatch with persisted intent, bounded leases, and
+  reconciliation.
+- A stable terminal failure-cause contract for machine-readable failure phase
+  and cause reporting.
 - A restricted `talent-hiring-signal` profile with deterministic artifacts.
 - A fixed-sample Talent benchmark whose value gate passed.
 - A default-disabled single-node SQLite durable HITL feasibility path whose
   13 durability and safety gates passed.
 - An Agent Research Operations Console with deterministic Static Demo and
-  bounded local Live Backend modes that create runs and consume the canonical
-  result contract without owning business authority.
+  bounded local Live Backend modes, including keyed live create/status/result
+  flows that render only service-owned state without owning business
+  authority.
 
 The canonical repository and technical identifier are
 `decision-research-agent`. Runtime configuration, Tool Client usage, Docker
@@ -32,8 +39,8 @@ Use this priority order:
 1. Actual code, tests, migrations, configuration, and command output.
 2. Accepted decisions in `docs/decisions/`.
 3. Current reference contracts in `docs/reference/` and `docs/architecture.md`.
-4. Active approved public-neutral specs/plans and the current release record in
-   `docs/superpowers/`.
+4. Active approved public-neutral specs/plans in `docs/superpowers/` and the
+   current release record in `docs/releases/`.
 5. Operations and evidence documents.
 6. Issues, PR descriptions, historical plans, and external artifacts.
 
@@ -164,22 +171,34 @@ level instead of silently expanding the process.
 
 ## Subagent Policy
 
-Coding-workflow subagents are disabled by default because they add token,
-context, and latency cost.
+Subagents are not required by default. Use them only when there are at least
+two independently scoped work units with clear file ownership, separate
+verification boundaries, and enough parallel benefit to exceed coordination
+cost.
 
-- Do not invoke implementation, research, testing, review, or documentation
-  subagents.
-- Do not invoke `superpowers:subagent-driven-development`.
-- Do not delegate merely because work could be parallelized.
+- The parent Agent owns shared contracts and files, the final integrated branch
+  state, cross-lane integration, full relevant verification, and the
+  consolidated terminal report. Bounded child or lane commits are allowed.
+- Keep highly coupled work serial, including shared authority files,
+  migrations, public contracts, and changes with ordering dependencies.
+- Do not delegate merely because a task can be split. Prefer focused serial
+  execution when ownership or verification boundaries are unclear.
 - Do not automatically request a second-model review.
-- Execute sequentially in the current Agent and keep context focused.
-
-Use a subagent only when the user explicitly authorizes it for the current
-task. Approval does not carry forward. Parallel read-only tool calls by the
-current Agent are allowed and are not subagent delegation.
 
 This policy governs development workflow. It does not remove the product's
 existing runtime research sub-agent architecture.
+
+## Skills And Phase Ownership
+
+- Use GStack primarily for plan challenge, review, QA, and release audits.
+- Use Superpowers primarily for brainstorming, TDD, systematic debugging, plan
+  execution, review-finding resolution, and completion verification.
+- Assign one primary workflow controller per phase. Do not stack Skills with
+  overlapping control responsibilities or make every available Skill a
+  mandatory gate.
+- Apply specialized security, performance, documentation, or independent
+  review Skills only when the risk-based execution level or task evidence
+  justifies their cost.
 
 ## Working Rules
 
@@ -194,6 +213,19 @@ existing runtime research sub-agent architecture.
 - Never claim a test, review, benchmark, build, push, PR, merge, or deployment
   without actual evidence.
 
+## Execution Handoff And Waiting
+
+- At completion or a defined stop condition, provide one terminal report led
+  by `READY`, `WAITING`, or `BLOCKED`. Include the branch, worktree, final HEAD,
+  actual diff, verification, documentation impact, remaining risks, and remote
+  actions not executed.
+- Only a `BLOCKED` state requiring an immediate user or parent decision may
+  proactively interrupt a coordinating or review task. Do not send duplicate
+  progress or completion messages.
+- For expected long-running work, start it once and wait for an external
+  completion signal. Use only a small number of bounded checks for work
+  expected to finish quickly, and do not keep polling while state is unchanged.
+
 ## Testing And Verification
 
 - Behavior changes require TDD; bug fixes require a regression test.
@@ -203,6 +235,9 @@ existing runtime research sub-agent architecture.
   explicit and separate.
 - Run focused tests during implementation. Run the full suite when shared
   behavior or multiple modules are affected.
+- `.github/workflows/ci.yml` is the current authority for required hosted
+  gates. The commands below are common local entry points only; do not infer or
+  invent hosted check names or passing status from this file.
 
 Common commands:
 
@@ -264,11 +299,31 @@ private job-search motivation/presentation context.
   public responses.
 - Public claims require repository-visible tests, benchmarks, or referenced
   evidence.
+- Merge only with explicit user authorization and the required hosted checks
+  satisfied. Confirm that the PR head still matches the reviewed HEAD before
+  merging.
+- After a squash merge, verify that the merge commit tree equals the reviewed
+  head tree before fast-forwarding the primary `main` checkout.
+- Clean up only task-owned, clean, inactive worktrees and branches with no open
+  PR or active task. Before deletion, prove that intended unique changes are
+  retained in a merged commit, tag, or explicit archive. Abandoning unique
+  commits requires explicit authorization; preserve anything with unclear
+  ownership or state. Prune stale worktree metadata, confirm other worktrees
+  are unchanged, and do not touch unrelated branches.
 
 A task is complete when the requested behavior matches scope, appropriate
 verification actually passed, required documentation is current, the diff is
 clean and intentional, and remaining risks or skipped checks are reported.
 
-PR descriptions default to Simplified Chinese and use a result-first structure:
-`Summary`, `Completion`, `Verification`, then optional `Scope`,
-`Risk / Impact`, migration, rollback, and documentation impact.
+PR descriptions default to Simplified Chinese, retain English section headings
+and technical literals, and use a result-first structure. `Summary`,
+`Completion`, and `Verification` are required; add `Scope`, `Risk / Impact`,
+migration, rollback, or `Documentation impact` when relevant. Use ordinary
+bullets for completed work and verification. Use checkboxes only for genuine
+pending gates.
+
+After creating or updating a PR, query the actual PR and verify its title,
+body, base, head, and draft state. Confirm that the persisted section order,
+actual commands and results, scope, risk, documentation impact, and non-claims
+match the final diff and verification. Correct literal `\n`, stale
+placeholders, or format drift before handoff.

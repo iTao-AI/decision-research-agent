@@ -49,7 +49,7 @@ and bounded local Live Backend mode.
 | Durable HITL feasibility | Single-node SQLite review gate, disabled by default, with 13-gate safety report | Implemented |
 | Evidence verification authority | Append-only human verification decisions and revisioned publications | Implemented |
 | Tool Client integration | Canonical Python client for health, run, result, review, and evidence commands | Implemented |
-| Agent Research Operations Console | Keyed create/status/result observation, strict status/result identity, GET-only resume, and canonical service/result authority | Implemented |
+| Agent Research Operations Console | Keyed create/status/result observation, strict response identity, GET-only resume, and rendering limited to service-owned status plus the canonical result | Implemented |
 
 ## Success Criteria
 

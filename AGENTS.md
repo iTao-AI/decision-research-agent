@@ -39,8 +39,8 @@ Use this priority order:
 1. Actual code, tests, migrations, configuration, and command output.
 2. Accepted decisions in `docs/decisions/`.
 3. Current reference contracts in `docs/reference/` and `docs/architecture.md`.
-4. Active approved public-neutral specs/plans and the current release record in
-   `docs/superpowers/`.
+4. Active approved public-neutral specs/plans in `docs/superpowers/` and the
+   current release record in `docs/releases/`.
 5. Operations and evidence documents.
 6. Issues, PR descriptions, historical plans, and external artifacts.
 

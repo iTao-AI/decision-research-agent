@@ -43,7 +43,11 @@ python -m pytest tests/unit/test_name.py -q
 ```
 
 Run broader integration tests for persistence, concurrency, API, worker, or
-framework-boundary changes. Before requesting review, run:
+framework-boundary changes. Use risk-based verification: a small, isolated
+change normally needs focused checks, while broad, shared, or release-facing
+work needs the complete relevant local checks. `.github/workflows/ci.yml` is
+the authority for hosted gates; local commands do not establish hosted check
+state. For broad, shared, or release-facing work, the local baseline is:
 
 ```bash
 python -m pytest -q
@@ -72,9 +76,9 @@ CI tests must mock remote providers.
 - Operations guides describe repeatable procedures and recovery.
 - Reference documents match current code and contract tests.
 - ADRs explain durable ownership and trade-offs.
-- Active approved project plans belong in the curated Superpowers workspace;
-  completed implementation history belongs in Git after durable decisions are
-  promoted.
+- The curated Superpowers workspace can retain active approved artifacts and
+  selected completed implementation records. Completed records document prior
+  implementation; they do not own the current contract.
 
 Every relative Markdown link must resolve. Public claims require a producing
 command, test, benchmark, or bounded evidence artifact.
@@ -84,9 +88,12 @@ command, test, benchmark, or bounded evidence artifact.
 Describe the final effect, acceptance-level completion, and commands actually
 run. State skipped checks and remaining risk explicitly. Do not claim tests,
 benchmarks, reviews, builds, or deployment results without current command
-evidence.
+evidence. Before submission, verify the persisted PR title, body, base, head,
+and draft state. Ensure the body matches the actual diff, commands, results,
+scope, risks, and non-claims. Use ordinary bullets for completed facts;
+checkboxes are only for unfinished merge gates.
 
-The v0.1.0 release boundary is backend and CLI; the repository now also carries
-a separately built Agent Research Operations Console. Do not add deployment,
-public online execution, frontend-owned business state, new runtime Skills,
-broad dependency upgrades, or authority changes as incidental cleanup.
+The current supported surface and non-scope are recorded in the current
+[release index](docs/README.md#release). Do not add deployment, public online
+execution, frontend-owned business state, new runtime Skills, broad dependency
+upgrades, or authority changes as incidental cleanup.

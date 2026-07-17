@@ -275,11 +275,19 @@ def test_operations_docs_cover_release_recovery_boundaries() -> None:
         "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false",
         "privacy-first trace defaults",
         "run_result_unavailable",
-        "no frontend service",
     ]
 
     for phrase in required_phrases:
         assert phrase in docs
+
+    assert (
+        "The current Console does not expose\nreview controls and does not own review authority."
+        in docs
+    )
+    assert (
+        "The\ncurrent Console does not expose verification controls and does not own\nverification authority."
+        in docs
+    )
 
 
 def test_downstream_consumer_contract_is_indexed_and_bounded():

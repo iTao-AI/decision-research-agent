@@ -9,8 +9,9 @@ the existing durable review worker.
 
 The runtime adds no UI, RBAC, multi-user identity, PostgreSQL, multiple
 replicas, runtime Skills, or Async Subagents. It does not automatically
-retrieve sources, run browser actions, or use an LLM to verify Evidence. There
-is no frontend service in this release.
+retrieve sources, run browser actions, or use an LLM to verify Evidence. The
+current Console does not expose verification controls and does not own
+verification authority.
 
 The repository provides a separate bounded, operator-driven real-source proof
 workflow that exercises the existing ledger, review, and publication contract.

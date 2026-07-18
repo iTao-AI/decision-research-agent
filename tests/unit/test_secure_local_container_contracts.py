@@ -12,6 +12,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = PROJECT_ROOT / "docker-compose.yml"
+CI_PATH = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
 
 REQUIRED_COMPOSE_VALUES = {
     "API_SECRET": "compose-test-only",
@@ -305,3 +306,73 @@ def test_container_helper_declares_isolated_bounded_lifecycles() -> None:
     assert combined.count("def test_backend_container_restart_preserves_review_state") == 1
     assert combined.count("def test_controlled_review_cli_approve_and_reject_canary") == 1
     assert combined.count("def test_verification_to_approval_survives_container_restart") == 1
+
+
+def test_ci_uses_disjoint_non_docker_and_required_container_jobs() -> None:
+    workflow = yaml.safe_load(CI_PATH.read_text(encoding="utf-8"))
+    backend = workflow["jobs"]["backend"]
+    backend_test = backend["steps"][-1]
+
+    assert backend_test == {
+        "name": "Run tests",
+        "env": {"PYTHON_DOTENV_DISABLED": "1"},
+        "run": 'python -m pytest -q -m "not docker"',
+    }
+    assert all(
+        step.get("run") != "python -m pytest -q -m docker"
+        for step in backend["steps"]
+    )
+    assert all(
+        "DECISION_RESEARCH_AGENT_REQUIRE_DOCKER_TESTS" not in step.get("env", {})
+        for step in backend["steps"]
+    )
+
+    container = workflow["jobs"]["container"]
+    assert container["name"] == "Secure Local Runtime Containers"
+    assert container["runs-on"] == "ubuntu-latest"
+    assert container["timeout-minutes"] == 60
+    assert container["steps"][:3] == [
+        {
+            "uses": (
+                "actions/checkout@"
+                "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+            )
+        },
+        {
+            "uses": (
+                "actions/setup-python@"
+                "ece7cb06caefa5fff74198d8649806c4678c61a1"
+            ),
+            "with": {
+                "python-version": "3.11",
+                "cache": "pip",
+                "cache-dependency-path": "requirements.txt\nconstraints.txt\n",
+            },
+        },
+        {
+            "name": "Install dependencies",
+            "run": "pip install --no-deps -r constraints.txt",
+        },
+    ]
+    docker_step = container["steps"][-1]
+    assert docker_step == {
+        "name": "Run required container tests",
+        "env": {
+            "PYTHON_DOTENV_DISABLED": "1",
+            "DECISION_RESEARCH_AGENT_REQUIRE_DOCKER_TESTS": "true",
+        },
+        "run": "python -m pytest -q -m docker",
+    }
+    assert all(
+        step.get("run") not in {"python -m pytest -q", 'python -m pytest -q -m "not docker"'}
+        for step in container["steps"]
+    )
+
+    pytest_commands = [
+        step["run"]
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("run", "").startswith("python -m pytest")
+    ]
+    assert pytest_commands.count('python -m pytest -q -m "not docker"') == 1
+    assert pytest_commands.count("python -m pytest -q -m docker") == 1

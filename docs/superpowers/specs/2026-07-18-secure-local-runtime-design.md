@@ -383,6 +383,11 @@ the existing HTTP error shape and WebSocket close contract.
   process fails closed with a bounded startup error that does not echo the
   value. Operators may either set the secret to empty for source-loopback use
   or generate a real secret.
+- The `.env.example` `API_SECRET` line changes to an explicit empty value in
+  the same pull request that rejects the legacy sentinel. The remaining
+  provider, tracing, and database template hardening may land with the
+  container pull request, but no intermediate `main` state documents a value
+  that the runtime rejects.
 - A whitespace-only secret is invalid configuration rather than an alias for
   empty local mode or a usable authenticated secret.
 - Other non-empty values remain accepted for compatibility. Documentation
@@ -474,6 +479,11 @@ message schema, and channel isolation. Only handshake access changes.
 - If an `Origin` header is present, it must exactly match the one valid
   configured browser origin. An absent Origin remains allowed for a direct
   non-browser local client.
+- Handshake processing uses this exact order: reject query credentials; extract
+  peer, authority, forwarding, Origin, and header context; evaluate runtime
+  access; validate `run_id`; load the run; then call `manager.connect_run`.
+  Unauthenticated or unsafe callers never reach run identity validation or
+  database lookup.
 - An invalid Origin, unsafe peer, query credential, invalid `run_id`, or missing
   run closes before `manager.connect_run`.
 - No denial reason contains the supplied credential, raw query, full URL,
@@ -653,16 +663,19 @@ the selective Dockerfile copies and durable-HITL evidence remains present.
 
 ## CI Contract
 
-The existing backend CI lane remains the primary controller. It sets:
+The existing backend CI lane remains authoritative for non-container tests and
+runs the complete suite with Docker-marked tests excluded. One dedicated
+required container lane owns every `pytest.mark.docker` case, sets:
 
 ```text
 DECISION_RESEARCH_AGENT_REQUIRE_DOCKER_TESTS=true
 ```
 
-for the complete pytest invocation. Both existing Docker integration fixtures
-must fail rather than skip when Docker is unavailable. A separate duplicate
-container job is not required unless the existing lane cannot provide bounded
-diagnostics or runtime.
+and uses a timeout sized for the existing three function-scoped Compose
+lifecycles. This split is required because the current 15-minute backend job is
+shorter than the aggregate bounded Compose lifecycles. It is not a duplicate
+container authority: non-container tests run only in the backend lane and
+Docker-marked tests run only in the container lane.
 
 Container-focused tests add:
 
@@ -678,9 +691,10 @@ Container-focused tests add:
 - zero provider/model/tool calls;
 - bounded logs and deterministic cleanup on failure.
 
-If hosted-runner behavior proves too slow or unstable, the implementation may
-split the same required cases into one dedicated job, but it must not create
-two authoritative container lanes or weaken the required gate.
+The container lane must preserve bounded diagnostics and cleanup on failure.
+It may reuse the image and Compose helpers within the lane, but it must not
+create a second container job, silently skip Docker-marked tests, or weaken the
+required gate.
 
 ## Deterministic Proof
 
@@ -814,6 +828,7 @@ Owns:
 - WebSocket header-only credential and Origin behavior;
 - CORS validation and safe browser settings;
 - source launcher correction;
+- the `.env.example` `API_SECRET=` correction required by sentinel rejection;
 - focused unit/integration/contracts;
 - API, architecture, getting-started, Console, and security documentation for
   the access boundary.
@@ -826,7 +841,8 @@ routes, or frontend credential behavior.
 Owns:
 
 - Compose loopback publication and required variables;
-- `.env.example` safe template;
+- the remaining `.env.example` provider, tracing, and database safe-template
+  corrections;
 - MySQL/backend health and startup ordering;
 - backend capability/no-new-privileges hardening;
 - `.dockerignore` build-context correction;

@@ -7,7 +7,7 @@ import ipaddress
 import os
 from collections.abc import Mapping, Sequence
 from typing import Literal
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import unquote_to_bytes, urlsplit
 
 from pydantic import BaseModel, ConfigDict, SecretStr
 from starlette.requests import Request
@@ -39,6 +39,7 @@ FORWARDED_IDENTITY_HEADERS = frozenset(
 )
 
 _DUPLICATE_ORIGIN = "__invalid_duplicate_origin__"
+_MAX_ENCODED_QUERY_KEY_BYTES = len("api_key") * 3
 
 
 class RuntimeAccessConfigurationError(RuntimeError):
@@ -119,7 +120,15 @@ def direct_peer_is_loopback(value: str | None) -> bool:
 
 
 def authority_is_explicit_loopback(value: str | None) -> bool:
-    if not value or any(marker in value for marker in ("/", "?", "#", "@")):
+    if (
+        not value
+        or any(
+            ord(character) < 0x20 or ord(character) == 0x7F
+            for character in value
+        )
+        or any(marker in value for marker in ("/", "?", "#", "@"))
+        or value.endswith(":")
+    ):
         return False
     try:
         parsed = urlsplit(f"//{value}")
@@ -204,10 +213,21 @@ def _direct_peer(scope: Mapping[str, object]) -> str | None:
 
 
 def _query_credential_present(query_string: bytes) -> bool:
-    try:
-        return any(key == "api_key" for key, _value in parse_qsl(query_string.decode("ascii"), keep_blank_values=True))
-    except UnicodeDecodeError:
-        return False
+    component_start = 0
+    while component_start <= len(query_string):
+        component_end = query_string.find(b"&", component_start)
+        if component_end == -1:
+            component_end = len(query_string)
+        separator = query_string.find(b"=", component_start, component_end)
+        key_end = component_end if separator == -1 else separator
+        if key_end - component_start <= _MAX_ENCODED_QUERY_KEY_BYTES:
+            encoded_key = query_string[component_start:key_end]
+            if unquote_to_bytes(encoded_key) == b"api_key":
+                return True
+        if component_end == len(query_string):
+            return False
+        component_start = component_end + 1
+    return False
 
 
 def _build_access_context(

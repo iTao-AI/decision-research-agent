@@ -51,6 +51,18 @@ def test_real_application_rejects_remote_empty_secret_before_route(monkeypatch):
     assert response.json()["code"] == "api_auth_not_configured"
 
 
+def test_real_application_rejects_empty_loopback_host_port_before_route(monkeypatch):
+    _set_runtime(monkeypatch, {})
+
+    response = _client().get(
+        "/api/runs/nonexistent",
+        headers={"Host": "127.0.0.1:"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "local_authority_required"
+
+
 @pytest.mark.parametrize(
     ("environ", "peer", "url", "headers", "close_code", "reason"),
     [
@@ -117,6 +129,55 @@ def test_websocket_denials_precede_identity_lookup_and_connection(
     assert exc_info.value.reason == reason
     for supplied in ("test-secret", "do-not-copy", "wrong.example", "192.0.2.1", "localhost"):
         assert supplied not in exc_info.value.reason
+
+
+@pytest.mark.asyncio
+async def test_raw_websocket_query_denial_precedes_identity_and_connection(
+    monkeypatch,
+):
+    import api.server as server
+
+    _set_runtime(monkeypatch, {"API_SECRET": "test-secret"})
+
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("identity_or_database_reached_before_access")
+
+    async def unexpected_connect(*_args, **_kwargs):
+        raise AssertionError("connection_owned_before_access")
+
+    monkeypatch.setattr(server, "validate_thread_id", unexpected)
+    monkeypatch.setattr(server, "get_run", unexpected)
+    monkeypatch.setattr(server.manager, "connect_run", unexpected_connect)
+
+    class FakeWebSocket:
+        app = server.app
+        scope = {
+            "type": "websocket",
+            "path": "/ws/runs/run_1",
+            "raw_path": b"/ws/runs/run_1",
+            "query_string": b"api_key=would-be-logged&invalid=\xff",
+            "headers": [
+                (b"host", b"127.0.0.1:8000"),
+                (b"x-api-key", b"test-secret"),
+            ],
+            "client": ("127.0.0.1", 50000),
+            "server": ("127.0.0.1", 8000),
+            "scheme": "ws",
+            "subprotocols": [],
+        }
+
+        def __init__(self):
+            self.closed = None
+
+        async def close(self, *, code, reason):
+            self.closed = (code, reason)
+
+    websocket = FakeWebSocket()
+    await server.run_websocket_endpoint(websocket, "run_1")
+
+    assert websocket.closed == (1008, "query_credential_rejected")
+    assert "test-secret" not in websocket.closed[1]
+    assert "would-be-logged" not in websocket.closed[1]
 
 
 def test_websocket_absent_origin_reaches_run_identity_after_access(monkeypatch):

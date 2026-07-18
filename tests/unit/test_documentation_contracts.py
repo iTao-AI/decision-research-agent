@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 from pathlib import Path
 import subprocess
 
@@ -253,6 +254,45 @@ def test_secure_local_runtime_access_boundary_is_public() -> None:
 
     assert "Docker healthcheck is now enforced" not in contract
     assert "container capabilities are now dropped" not in contract
+
+
+def test_public_docs_do_not_claim_unshipped_compose_log_hardening() -> None:
+    dockerfile = (PROJECT_ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+    container_command = json.loads(
+        next(
+            line.removeprefix("CMD ")
+            for line in dockerfile.splitlines()
+            if line.startswith("CMD [")
+        )
+    )
+    public_docs = _collapsed(
+        "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                PROJECT_ROOT / "SECURITY.md",
+                PROJECT_ROOT / "docs" / "architecture.md",
+                PROJECT_ROOT / "docs" / "reference" / "api-contract.md",
+            )
+        )
+    )
+    implementation_plan = (
+        PROJECT_ROOT
+        / "docs"
+        / "superpowers"
+        / "plans"
+        / "2026-07-18-secure-local-runtime-implementation.md"
+    ).read_text(encoding="utf-8")
+
+    compose_has_warning_logging = "--log-level=warning" in container_command or any(
+        current == "--log-level" and following == "warning"
+        for current, following in zip(container_command, container_command[1:])
+    )
+    if not compose_has_warning_logging:
+        assert "Compose warning-level hardening is deferred to PR B" in public_docs
+        assert "source and Compose launchers" not in public_docs
+        assert "source/Compose launchers keep Uvicorn at warning level" not in (
+            implementation_plan
+        )
 
 
 def test_demo_console_docs_track_frontend_node_requirements() -> None:

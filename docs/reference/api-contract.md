@@ -258,10 +258,10 @@ frontend-specific setting is not a compatibility alias.
 
 The supported source entrypoint is `python api/server.py`; it passes the
 already-constructed app to Uvicorn on `127.0.0.1` with reload disabled and
-warning-level logging. Uvicorn warning-level logging is required for supported
-source and Compose launchers so rejected legacy query credentials are not
-emitted by info-level WebSocket transport logging. This PR does not claim new
-container health or capability enforcement.
+warning-level logging so rejected legacy query credentials are not emitted by
+info-level WebSocket transport logging in source mode. Compose warning-level
+hardening is deferred to PR B and is not delivered by this PR. This PR does
+not claim new container health or capability enforcement.
 
 All caller-provided `thread_id` values must be 1-128 characters of letters,
 digits, dots, underscores, or hyphens. Path separators and traversal forms are

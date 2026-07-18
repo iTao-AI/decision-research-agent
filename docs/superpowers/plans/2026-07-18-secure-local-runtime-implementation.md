@@ -980,9 +980,11 @@ Require the PR A docs to contain:
 - credential-free source mode means direct peer + literal Host loopback only;
 - configured `X-API-Key` remains the Tool Client credential;
 - source launcher is `127.0.0.1` without reload;
-- supported source/Compose launchers keep Uvicorn at warning level so rejected
+- the supported source launcher keeps Uvicorn at warning level so rejected
   legacy query credentials are not emitted by info-level WebSocket transport
-  logging;
+  logging in source mode;
+- Compose warning-level hardening is deferred to PR B and is not claimed as a
+  PR A capability;
 - CORS/Origin is not authentication;
 - WebSocket uses header only and query credentials are removed;
 - non-loopback direct use requires a key plus operator-owned TLS and remains

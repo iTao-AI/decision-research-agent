@@ -49,6 +49,12 @@ def test_normalizes_one_exact_origin_trailing_slash() -> None:
         "https://example.com#fragment",
         "https://*.example.com",
         "https://example.com:invalid",
+        "http://127.0.0.1:",
+        "http://[::1]:",
+        "https://example.com:/",
+        "http://127.0.0.1\t:5173",
+        "http://127.0.0.1\n:5173",
+        "http://127.0.0.1\x00:5173",
     ],
 )
 def test_rejects_non_origin_values(origin: str) -> None:

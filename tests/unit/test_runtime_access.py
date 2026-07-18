@@ -95,7 +95,20 @@ def test_empty_secret_rejects_unknown_or_non_loopback_peer(peer: str | None):
 
 @pytest.mark.parametrize(
     "authority",
-    [None, "", "localhost:8000", "192.0.2.1:8000", "127.0.0.1:bad", "127.0.0.1/path", "user@127.0.0.1"],
+    [
+        None,
+        "",
+        "localhost:8000",
+        "192.0.2.1:8000",
+        "127.0.0.1:bad",
+        "127.0.0.1:",
+        "[::1]:",
+        "127.0.0.1/path",
+        "user@127.0.0.1",
+        "127.0.0.1\t",
+        "127.0.0.1\n",
+        "127.0.0.1\x00",
+    ],
 )
 def test_empty_secret_rejects_unsafe_authority(authority: str | None):
     assert decide_runtime_access(
@@ -103,6 +116,15 @@ def test_empty_secret_rejects_unsafe_authority(authority: str | None):
         _context(authority_host=authority),
         allowed_origin=None,
     ).code == "local_authority_required"
+
+
+@pytest.mark.parametrize("authority", ["127.0.0.1", "[::1]"])
+def test_empty_secret_accepts_loopback_authority_without_optional_port(authority: str):
+    assert decide_runtime_access(
+        load_runtime_access_policy({}),
+        _context(authority_host=authority),
+        allowed_origin=None,
+    ) == AccessDecision(allowed=True, code="allowed_loopback")
 
 
 def test_forwarding_metadata_is_rejected_before_peer_classification():
@@ -262,3 +284,23 @@ def test_websocket_context_detects_query_key_presence_without_copying_value():
     assert context.transport == "websocket"
     assert context.query_credential_present is True
     assert "do-not-copy" not in repr(context)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        b"api_key=would-be-logged&invalid=\xff",
+        b"%61pi_key=would-be-logged",
+        b"api%5Fkey=would-be-logged",
+    ],
+)
+def test_websocket_context_detects_query_key_without_decoding_values(query: bytes):
+    context = build_websocket_access_context(
+        _websocket(
+            headers=[(b"host", b"127.0.0.1:8000")],
+            query=query,
+        )
+    )
+
+    assert context.query_credential_present is True
+    assert "would-be-logged" not in repr(context)

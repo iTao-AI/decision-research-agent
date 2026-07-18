@@ -35,7 +35,16 @@ class CorsConfiguration(BaseModel):
 
 
 def _normalize_origin(value: str) -> str:
-    if not value or value != value.strip() or value in {"*", "null"} or "," in value:
+    if (
+        not value
+        or value != value.strip()
+        or any(
+            ord(character) < 0x20 or ord(character) == 0x7F
+            for character in value
+        )
+        or value in {"*", "null"}
+        or "," in value
+    ):
         raise CorsConfigurationError("cors_origin_invalid")
     try:
         parsed = urlsplit(value)
@@ -45,6 +54,7 @@ def _normalize_origin(value: str) -> str:
     if (
         parsed.scheme not in {"http", "https"}
         or parsed.hostname is None
+        or parsed.netloc.endswith(":")
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query

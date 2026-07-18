@@ -237,11 +237,12 @@ identity or connection ownership. Review and Evidence verification continue
 through independent feature-owned gates after the shared access boundary.
 
 The source launcher binds `127.0.0.1` with reload disabled. Uvicorn
-warning-level logging is required for supported source and Compose launchers
-to avoid info-level transport logging of rejected legacy query credentials.
-Non-loopback direct use requires a configured key plus operator-owned TLS and
-is not a supported hosted deployment. TLS termination, caller identity, RBAC,
-and multi-tenant hosting remain outside this local runtime boundary.
+warning-level logging avoids info-level transport logging of rejected legacy
+query credentials in source mode. Compose warning-level hardening is deferred
+to PR B and is not delivered by this PR. Non-loopback direct use requires a
+configured key plus operator-owned TLS and is not a supported hosted
+deployment. TLS termination, caller identity, RBAC, and multi-tenant hosting
+remain outside this local runtime boundary.
 
 Public demo videos are deterministic loopback contract demos. They are not
 live provider research recordings, not a public production service, and not

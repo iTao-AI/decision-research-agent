@@ -31,11 +31,12 @@ must both be loopback. Configuring `API_SECRET` requires the matching
 are not authentication, and WebSocket query credentials are rejected.
 
 The source launcher binds `127.0.0.1` with reload disabled. Uvicorn
-warning-level logging is required for supported source and Compose launchers
-so rejected legacy query credentials are not emitted by info-level WebSocket
-transport logging. Non-loopback direct use also requires operator-owned TLS
-and is not a supported hosted deployment. Controlled review and Evidence
-verification retain independent feature-owned gates.
+warning-level logging prevents rejected legacy query credentials from being
+emitted by info-level WebSocket transport logging in source mode. Compose
+warning-level hardening is deferred to PR B and is not delivered by this PR.
+Non-loopback direct use also requires operator-owned TLS and is
+not a supported hosted deployment. Controlled review and Evidence verification
+retain independent feature-owned gates.
 
 LangSmith traces are privacy-first by default. Keep inputs and outputs hidden
 unless a local, low-sensitivity diagnostic task explicitly requires temporary

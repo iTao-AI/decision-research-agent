@@ -315,7 +315,8 @@ never inspect peer addresses or choose authentication policy.
 - Use strict immutable Pydantic models only where they materially improve
   configuration and decision validation; do not add another settings library.
 - Use Uvicorn's existing programmatic launcher with explicit host, port, and
-  reload values.
+  reload values. Use its native log-level control rather than a project-owned
+  query-redaction filter.
 - Use Docker Compose required-variable interpolation, `healthcheck`,
   `depends_on.condition`, `cap_drop`, and `security_opt` rather than adding an
   orchestrator or custom supervisor.
@@ -337,10 +338,10 @@ Add one small module such as `api/runtime_access.py`. The exact implementation
 may use frozen Pydantic models or equivalently strict immutable project types,
 but the semantics are fixed:
 
-```python
+```text
 RuntimeAccessPolicy(
     api_secret: SecretStr | None,
-    local_unauthenticated_http: bool,
+    allow_unauthenticated_loopback: bool,
 )
 
 RequestAccessContext(
@@ -356,7 +357,6 @@ RequestAccessContext(
 AccessDecision(
     allowed: bool,
     code: Literal[
-        "allowed_public",
         "allowed_loopback",
         "allowed_api_key",
         "api_auth_not_configured",
@@ -371,7 +371,9 @@ AccessDecision(
 
 The internal types are not serialized into run state or exposed as a second
 public authentication API. Stable bounded denial codes are projected through
-the existing HTTP error shape and WebSocket close contract.
+the existing HTTP error shape and WebSocket close contract. Public paths bypass
+the protected-route policy before a decision is constructed, so the decision
+type does not carry a dead `allowed_public` value.
 
 ### Configuration normalization
 
@@ -397,6 +399,15 @@ the existing HTTP error shape and WebSocket close contract.
   environment variables is unsupported; changing a secret requires restart.
 - Logs may include the mode name `loopback_only` or `api_key`, never the secret,
   its prefix, length, hash, request header, or query string.
+- The supported source and container launchers set Uvicorn log level to
+  `warning`. [Locked Uvicorn 0.49.0 WebSocket protocol code](https://github.com/Kludex/uvicorn/blob/0.49.0/uvicorn/protocols/websockets/websockets_impl.py)
+  formats the full path plus query at info level when a handshake is accepted or
+  rejected, before application denial can sanitize it. Suppressing that
+  info-level transport log with Uvicorn's native log-level setting is the
+  smallest framework-native way to prevent a rejected legacy `?api_key=` value
+  from becoming a default log leak. Application warnings and errors remain
+  visible; operators who deliberately enable more verbose server logging own
+  the resulting URL-log boundary.
 
 No new public `DRA_RUNTIME_MODE`, `AUTH_PROVIDER`, or similar enum is added.
 A later identity design can attach another credential adapter to this seam
@@ -533,22 +544,30 @@ The direct executable entrypoint becomes:
 
 ```python
 uvicorn.run(
-    "api.server:app",
+    app,
     host="127.0.0.1",
     port=8000,
     reload=False,
+    log_level="warning",
 )
 ```
+
+Because reload and multi-worker mode are intentionally disabled, the direct
+entrypoint passes the already-constructed application object rather than
+re-importing `api.server` from a string. This keeps the frozen policy and its
+startup validation single-construction in the supported source process.
 
 The public development command remains explicit:
 
 ```bash
-python -m uvicorn api.server:app --host 127.0.0.1 --port 8000
+python -m uvicorn api.server:app --host 127.0.0.1 --port 8000 --log-level warning
 ```
 
 The container command continues to listen on `0.0.0.0:8000` because Docker
-port forwarding requires a container-reachable listener. Documentation must
-not confuse that internal address with host publication.
+port forwarding requires a container-reachable listener, and it uses the same
+warning-level Uvicorn boundary. Documentation must not confuse the internal
+address with host publication or warning-level transport logging with the
+absence of application warnings/errors.
 
 An operator may deliberately start Uvicorn on another interface, but protected
 requests then require a configured API key and external secure transport. That
@@ -605,6 +624,13 @@ application user and `MYSQL_DATABASE` may retain its non-secret default.
 The backend receives `API_SECRET` through its environment. No secret is copied
 into the image, build argument, label, health command, source archive, or proof
 artifact.
+
+The backend service env-file path is
+`${DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE:-.env}`. Normal operators retain the
+repository-local `.env` workflow. Container tests pass a mode-`0600` temporary
+file through both Compose `--env-file` and that explicit path variable, so they
+neither read nor modify a developer's repository `.env`. This is a
+delivery/test-isolation seam, not a runtime access mode or credential authority.
 
 ### Health and startup order
 
@@ -689,6 +715,15 @@ Container-focused tests add:
 - backend data/output volume writability;
 - existing restart and persistence behavior;
 - zero provider/model/tool calls;
+- temporary fake Compose environment only, with no read or mutation of a
+  repository `.env`;
+- a minimal subprocess-environment allowlist that carries only required Docker
+  transport/runtime keys plus explicit test controls, so host API, database,
+  provider, and `COMPOSE_*` variables cannot override the fake env file;
+- an aggregate lifecycle budget that keeps all three function-scoped Compose
+  lifecycles, bounded diagnostics, and cleanup below the required job timeout;
+- removal and zero-inventory checks for task-owned backend images as well as
+  containers, volumes, and networks, without deleting the shared MySQL image;
 - bounded logs and deterministic cleanup on failure.
 
 The container lane must preserve bounded diagnostics and cleanup on failure.
@@ -764,7 +799,9 @@ health, host mapping, privilege inspection, and cleanup.
 | Console against authenticated backend | Existing bounded 401 guidance |
 | Compose with missing/empty required secret | Config fails before service start |
 | Compose with explicit fake test secrets | Build/start/health succeeds |
+| Host environment contains conflicting application or Compose values | Ignored by the scrubbed test subprocess environment |
 | Docker daemon unavailable in CI | Required test failure, not skip |
+| Docker test timeout or assertion failure | Bounded redacted diagnostics and task-owned resource/image cleanup still run |
 | Existing named volumes | Content preserved; no UID migration |
 
 ## Data, API, And Consumer Compatibility
@@ -882,11 +919,15 @@ Before release preparation:
    regression.
 7. Compose positive and negative configuration contracts pass.
 8. Required Docker tests build, start, inspect, restart, and clean the local
-   stack with no skip.
+   stack with no skip, no inherited application secrets, and no task-owned
+   container, volume, network, or backend-image residue.
 9. Dependency manifests, Agent framework versions, database schemas, canonical
    result, and downstream fixtures have no unauthorized diff.
 10. Public/private marker, credential-value, URL-query-secret, documentation,
     canonical identity, presentation, and `git diff --check` audits pass.
+11. PR B has no `api/**`, frontend-runtime, version, dependency, or migration
+    diff relative to its landed PR A base; PR C's changed-file set exactly
+    matches its approved release-metadata allowlist.
 
 For the exact `v0.1.5` tag archive:
 
@@ -902,8 +943,9 @@ For the exact `v0.1.5` tag archive:
 9. Inspect backend capability/no-new-privileges settings and named-volume
    writability without printing environment values.
 10. Confirm no provider/model/tool request ran.
-11. Always remove project containers, volumes, networks, archive, and temporary
-    `.env`; do not run global Docker prune.
+11. Always remove project containers, volumes, networks, the task-built backend
+    image, archive, and temporary `.env`; preserve shared base images and do not
+    run global Docker prune.
 
 Tagging and GitHub Release publication remain separately authorized actions.
 The release must distinguish deterministic proof, CI container proof, and

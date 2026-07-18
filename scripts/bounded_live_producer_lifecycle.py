@@ -663,6 +663,11 @@ def _sanitize_volumes(
             raise ValueError
         if set(item) - {"type", "source", "target", "read_only", "volume"}:
             raise ValueError
+        if item.get("read_only") not in (None, False) or item.get("volume") not in (
+            None,
+            {},
+        ):
+            raise ValueError
         output.append({"type": "volume", "source": f"<task-volume:{role}>", "target": target})
     return output
 
@@ -756,13 +761,10 @@ def sanitize_compose_projection(
                 "volumes": _sanitize_volumes(
                     service.get("volumes"),
                     volume_targets,
-                    tuple(
-                        f"{project_name}_{logical_name}"
-                        for logical_name in (
-                            ("backend_data", "backend_output")
-                            if service_name == "backend"
-                            else ("mysql_data",)
-                        )
+                    (
+                        ("backend_data", "backend_output")
+                        if service_name == "backend"
+                        else ("mysql_data",)
                     ),
                 ),
                 "networks": ["app-network"],

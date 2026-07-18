@@ -130,13 +130,15 @@ def _compose_projection() -> dict[str, object]:
                 "volumes": [
                     {
                         "type": "volume",
-                        "source": f"{project_name}_backend_data",
+                        "source": "backend_data",
                         "target": "/app/data",
+                        "volume": {},
                     },
                     {
                         "type": "volume",
-                        "source": f"{project_name}_backend_output",
+                        "source": "backend_output",
                         "target": "/app/output",
+                        "volume": {},
                     },
                 ],
                 "networks": {"app-network": None},
@@ -168,8 +170,9 @@ def _compose_projection() -> dict[str, object]:
                 "volumes": [
                     {
                         "type": "volume",
-                        "source": f"{project_name}_mysql_data",
+                        "source": "mysql_data",
                         "target": "/var/lib/mysql",
+                        "volume": {},
                     }
                 ],
                 "networks": {"app-network": None},
@@ -496,6 +499,13 @@ def test_sanitize_compose_projection_rejects_unknown_secret_and_shape_mutations(
 
     payload = _compose_projection()
     payload["services"]["backend"]["entrypoint"] = ["sh"]  # type: ignore[index]
+    with pytest.raises(EvaluationError):
+        sanitize_compose_projection(payload)
+
+    payload = _compose_projection()
+    payload["services"]["backend"]["volumes"][0]["volume"] = {  # type: ignore[index]
+        "nocopy": True
+    }
     with pytest.raises(EvaluationError):
         sanitize_compose_projection(payload)
 

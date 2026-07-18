@@ -268,3 +268,40 @@ def test_compose_config_accepts_explicit_values_in_a_scrubbed_environment(
     assert completed.stdout == ""
     for value in values.values():
         assert value not in output
+
+
+def test_container_helper_declares_isolated_bounded_lifecycles() -> None:
+    durable = (
+        PROJECT_ROOT / "tests" / "integration" / "test_durable_review_container.py"
+    ).read_text(encoding="utf-8")
+    verification = (
+        PROJECT_ROOT
+        / "tests"
+        / "integration"
+        / "test_evidence_verification_container.py"
+    ).read_text(encoding="utf-8")
+    combined = durable + verification
+
+    assert "_create_isolated_compose_env" in durable
+    assert "build_compose_subprocess_env" in durable
+    assert '"--env-file"' in durable
+    assert "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE" in durable
+    assert "COMPOSE_UP_TIMEOUT_SECONDS = 480" in durable
+    assert "HEALTH_TIMEOUT_SECONDS = 60" in durable
+    assert "DIAGNOSTIC_TIMEOUT_SECONDS = 30" in durable
+    assert "COMPOSE_CLEANUP_TIMEOUT_SECONDS = 120" in durable
+    assert "MAX_COMPOSE_LIFECYCLE_SECONDS = 690" in durable
+    assert "down" in combined
+    assert '"--rmi"' in combined
+    assert '"local"' in combined
+    assert "_ensure_compose_env_file" not in combined
+    assert "os.environ.copy()" not in combined
+    assert 'args.extend(["-e"' not in combined
+    assert "durable-hitl-container-test-only" not in combined
+    assert "verification-container-test-only" not in combined
+    assert "docker system prune" not in combined
+    assert "docker image prune" not in combined
+
+    assert combined.count("def test_backend_container_restart_preserves_review_state") == 1
+    assert combined.count("def test_controlled_review_cli_approve_and_reject_canary") == 1
+    assert combined.count("def test_verification_to_approval_survives_container_restart") == 1

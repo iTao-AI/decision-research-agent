@@ -33,13 +33,26 @@ also export the same value for the Tool Client:
 export DECISION_RESEARCH_AGENT_API_KEY="replace-with-your-local-secret"
 ```
 
+The checked-in source template uses `API_SECRET=`. Empty means the bounded
+credential-free source mode; no sentinel value is accepted as a secret. In
+that mode, the direct peer and literal Host must both be loopback. When a real
+secret is configured, the Tool Client sends it as `X-API-Key` from
+`DECISION_RESEARCH_AGENT_API_KEY`.
+
 ## 2. Start The Backend
 
 ```bash
 python api/server.py
 ```
 
-Leave this terminal running.
+This supported source launcher passes the already-constructed app to Uvicorn
+on `127.0.0.1` with reload disabled and warning-level logging. Leave this
+terminal running.
+
+CORS and Origin checks are not authentication. WebSocket credentials are
+header-only, and query credentials are rejected. Non-loopback direct use
+requires a configured key and operator-owned TLS and is not a supported hosted
+deployment.
 
 ## 3. Verify Health
 

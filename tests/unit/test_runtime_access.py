@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from unittest.mock import patch
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.websockets import WebSocket
@@ -18,6 +19,21 @@ from api.runtime_access import (
     decide_runtime_access,
     load_runtime_access_policy,
 )
+
+
+def test_source_launcher_uses_constructed_loopback_app_without_reload():
+    from api import server
+
+    with patch.object(server.uvicorn, "run") as run:
+        server.run_source_server()
+
+    run.assert_called_once_with(
+        server.app,
+        host="127.0.0.1",
+        port=8000,
+        reload=False,
+        log_level="warning",
+    )
 
 
 def _context(**overrides: object) -> RequestAccessContext:

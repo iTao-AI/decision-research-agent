@@ -59,15 +59,20 @@ DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN=http://127.0.0.1:5173
 ```
 
 CORS is deny-by-default. The configured origin must exactly match the URL used
-to open the Vite development server.
+to open the Vite development server. CORS and Origin checks are not
+authentication.
 
 ### 2. Start the backend on loopback
 
 From the repository root with the Python environment active:
 
 ```bash
-python -m uvicorn api.server:app --host 127.0.0.1 --port 8000
+python api/server.py
 ```
+
+The source launcher uses `127.0.0.1`, reload disabled, and Uvicorn
+warning-level logging. In credential-free mode, the direct peer and literal
+Host must both be loopback.
 
 Verify the service identity:
 
@@ -150,6 +155,10 @@ console intentionally has no credential input or browser credential storage,
 so authenticated backends return `401`. Use the first-party Tool Client for an
 authenticated environment. Do not place an API key in the backend base URL,
 query string, source code, or Vite build variables.
+
+WebSocket credentials are header-only, and query credentials are rejected.
+The current console does not use WebSocket, store `X-API-Key`, or bypass the
+runtime access policy.
 
 ## Troubleshooting
 

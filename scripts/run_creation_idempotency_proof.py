@@ -183,25 +183,34 @@ def _build_api_cases(db_path: str) -> tuple[dict[str, Any], dict[str, Any]]:
     with patch.dict(os.environ, environment, clear=False), patch.object(
         server, "create_tracked_task", capture_task
     ):
+        from api.runtime_access import load_runtime_access_policy
+
+        previous_policy = server.app.state.runtime_access_policy
+        server.app.state.runtime_access_policy = load_runtime_access_policy(
+            {"API_SECRET": "proof-only-api-secret"}
+        )
         server.app.state.run_dispatch_worker = server.create_run_dispatch_worker(
             db_path
         )
-        client = TestClient(server.app)
-        first = client.post("/api/runs", json=body, headers=headers)
-        first_identity = {
-            key: first.json()[key]
-            for key in ("run_id", "thread_id", "segment_id")
-        }
-        replay = client.post("/api/runs", json=body, headers=headers)
-        replay_identity = {
-            key: replay.json()[key]
-            for key in ("run_id", "thread_id", "segment_id")
-        }
-        conflict = client.post(
-            "/api/runs",
-            json={**body, "query": "changed query"},
-            headers=headers,
-        )
+        try:
+            client = TestClient(server.app)
+            first = client.post("/api/runs", json=body, headers=headers)
+            first_identity = {
+                key: first.json()[key]
+                for key in ("run_id", "thread_id", "segment_id")
+            }
+            replay = client.post("/api/runs", json=body, headers=headers)
+            replay_identity = {
+                key: replay.json()[key]
+                for key in ("run_id", "thread_id", "segment_id")
+            }
+            conflict = client.post(
+                "/api/runs",
+                json={**body, "query": "changed query"},
+                headers=headers,
+            )
+        finally:
+            server.app.state.runtime_access_policy = previous_policy
     lost = _case(
         "lost_response_replay",
         same_identity=first_identity == replay_identity,

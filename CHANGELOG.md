@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Secure local runtime access
+
+- Source execution now allows credential-free requests only when the direct
+  peer and literal Host are both loopback; configured environments require
+  the shared `X-API-Key` credential.
+- CORS remains a browser boundary rather than authentication. WebSocket
+  credentials are header-only, and legacy query credentials are rejected
+  before run identity or connection ownership.
+- The supported source launcher binds `127.0.0.1` with reload disabled and
+  warning-level logging. Remote direct use requires a key and operator-owned
+  TLS and is not a supported hosted deployment.
+
 ## [0.1.4] - 2026-07-16
 
 ### Durable run failure causes

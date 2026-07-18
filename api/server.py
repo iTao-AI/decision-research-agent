@@ -1178,5 +1178,15 @@ async def run_websocket_endpoint(websocket: WebSocket, run_id: str):
         manager.disconnect_run(websocket, run_id)
 
 
+def run_source_server() -> None:
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=8000,
+        reload=False,
+        log_level="warning",
+    )
+
+
 if __name__ == "__main__":
-    uvicorn.run("api.server:app", host="0.0.0.0", port=8000, reload=True)
+    run_source_server()

@@ -210,7 +210,7 @@ def test_demo_console_docs_define_a_safe_copy_pasteable_local_flow() -> None:
         "npm run dev -- --host 127.0.0.1",
         "DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN=http://127.0.0.1:5173",
         "API_SECRET=",
-        "python -m uvicorn api.server:app --host 127.0.0.1 --port 8000",
+        "python api/server.py",
         "does not accept or store API credentials",
         "Static Demo",
         "Live Backend",
@@ -220,6 +220,39 @@ def test_demo_console_docs_define_a_safe_copy_pasteable_local_flow() -> None:
 
     for phrase in required:
         assert phrase in guide
+
+
+def test_secure_local_runtime_access_boundary_is_public() -> None:
+    paths = [
+        PROJECT_ROOT / "docs" / "reference" / "api-contract.md",
+        PROJECT_ROOT / "docs" / "architecture.md",
+        PROJECT_ROOT / "docs" / "getting-started.md",
+        PROJECT_ROOT / "docs" / "AGENT_INTEGRATION.md",
+        PROJECT_ROOT / "SECURITY.md",
+    ]
+    contract = _collapsed("\n".join(path.read_text(encoding="utf-8") for path in paths))
+
+    required = [
+        "direct peer and literal Host must both be loopback",
+        "X-API-Key",
+        "DECISION_RESEARCH_AGENT_API_KEY",
+        "127.0.0.1",
+        "reload disabled",
+        "Uvicorn warning-level logging",
+        "CORS and Origin checks are not authentication",
+        "WebSocket credentials are header-only",
+        "query credentials are rejected",
+        "operator-owned TLS",
+        "not a supported hosted deployment",
+        "independent feature-owned gates",
+        "API_SECRET=",
+        "no sentinel value is accepted",
+    ]
+    for phrase in required:
+        assert phrase in contract
+
+    assert "Docker healthcheck is now enforced" not in contract
+    assert "container capabilities are now dropped" not in contract
 
 
 def test_demo_console_docs_track_frontend_node_requirements() -> None:

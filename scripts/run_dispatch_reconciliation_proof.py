@@ -619,62 +619,71 @@ def _contract_case(root: Path) -> dict[str, Any]:
     }
     with patch.dict(os.environ, environment, clear=False):
         import api.server as server
+        from api.runtime_access import load_runtime_access_policy
 
-        created = create_run(thread_id="proof-thread", query="proof")
-        claim = claim_run_dispatch(
-            db_path=environment["DECISION_RESEARCH_AGENT_DB_PATH"],
-            worker_id="dispatch_worker_55555555555555555555555555555555",
-            lease_seconds=30,
-            run_id=created["run_id"],
+        previous_policy = server.app.state.runtime_access_policy
+        server.app.state.runtime_access_policy = load_runtime_access_policy(
+            {"API_SECRET": "proof-only-api-secret"}
         )
-        entries: list[int] = []
 
-        async def fake_agent(*_args, **_kwargs):
-            entries.append(1)
-            return AgentRunResult(
-                thread_id="proof-thread",
-                query="proof",
-                session_dir=Path("/workspace/proof"),
-                run_id=created["run_id"],
-                segment_id=created["segment_id"],
-                report_candidate=ReportCandidate(
-                    path=Path("/workspace/research-report.md"),
-                    content="# Deterministic result",
-                ),
-            )
-
-        async def run_tracked_claim() -> None:
-            stage = server._RunStage()
-            termination_origin = server.TerminationOrigin()
-            finalization_checkpoint = server.FinalizationCheckpoint()
-            coroutine = server._run_dispatched_with_persistence(
-                claim,
+        try:
+            created = create_run(thread_id="proof-thread", query="proof")
+            claim = claim_run_dispatch(
                 db_path=environment["DECISION_RESEARCH_AGENT_DB_PATH"],
-                outcome_box=server.OutcomeBox(),
-                stage=stage,
-                termination_origin=termination_origin,
-                finalization_checkpoint=finalization_checkpoint,
+                worker_id="dispatch_worker_55555555555555555555555555555555",
+                lease_seconds=30,
+                run_id=created["run_id"],
             )
-            task = server.create_tracked_task(
-                coroutine,
-                f"{claim.run_id}:dispatch:{claim.attempt_count}",
-                termination_origin=termination_origin,
-                finalization_checkpoint=finalization_checkpoint,
-            )
-            await task
+            entries: list[int] = []
 
-        with patch.object(server, "run_deep_agent", fake_agent):
-            asyncio.run(run_tracked_claim())
-        client = TestClient(server.app)
-        headers = {"X-API-Key": "proof-only-api-secret"}
-        status = client.get(f"/api/runs/{created['run_id']}", headers=headers)
-        result = client.get(f"/api/runs/{created['run_id']}/result", headers=headers)
-        fixture = json.loads(
-            (PROJECT_ROOT / "docs/evidence/downstream-consumer-contract-v1.json").read_text(
-                encoding="utf-8"
+            async def fake_agent(*_args, **_kwargs):
+                entries.append(1)
+                return AgentRunResult(
+                    thread_id="proof-thread",
+                    query="proof",
+                    session_dir=Path("/workspace/proof"),
+                    run_id=created["run_id"],
+                    segment_id=created["segment_id"],
+                    report_candidate=ReportCandidate(
+                        path=Path("/workspace/research-report.md"),
+                        content="# Deterministic result",
+                    ),
+                )
+
+            async def run_tracked_claim() -> None:
+                stage = server._RunStage()
+                termination_origin = server.TerminationOrigin()
+                finalization_checkpoint = server.FinalizationCheckpoint()
+                coroutine = server._run_dispatched_with_persistence(
+                    claim,
+                    db_path=environment["DECISION_RESEARCH_AGENT_DB_PATH"],
+                    outcome_box=server.OutcomeBox(),
+                    stage=stage,
+                    termination_origin=termination_origin,
+                    finalization_checkpoint=finalization_checkpoint,
+                )
+                task = server.create_tracked_task(
+                    coroutine,
+                    f"{claim.run_id}:dispatch:{claim.attempt_count}",
+                    termination_origin=termination_origin,
+                    finalization_checkpoint=finalization_checkpoint,
+                )
+                await task
+
+            with patch.object(server, "run_deep_agent", fake_agent):
+                asyncio.run(run_tracked_claim())
+            client = TestClient(server.app)
+            headers = {"X-API-Key": "proof-only-api-secret"}
+            status = client.get(f"/api/runs/{created['run_id']}", headers=headers)
+            result = client.get(f"/api/runs/{created['run_id']}/result", headers=headers)
+            fixture = json.loads(
+                (PROJECT_ROOT / "docs/evidence/downstream-consumer-contract-v1.json").read_text(
+                    encoding="utf-8"
+                )
             )
-        )
-        fixture_valid = validate_fixture_bundle(fixture) is fixture
+            fixture_valid = validate_fixture_bundle(fixture) is fixture
+        finally:
+            server.app.state.runtime_access_policy = previous_policy
     return _case(
         "contract_compatibility",
         status_shape_preserved=(

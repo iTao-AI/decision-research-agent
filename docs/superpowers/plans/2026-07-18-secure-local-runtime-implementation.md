@@ -1400,15 +1400,20 @@ Freeze and test these per-lifecycle upper bounds:
 COMPOSE_UP_TIMEOUT_SECONDS = 480
 HEALTH_TIMEOUT_SECONDS = 60
 DIAGNOSTIC_TIMEOUT_SECONDS = 30
+DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS = 30
 COMPOSE_CLEANUP_TIMEOUT_SECONDS = 120
-MAX_COMPOSE_LIFECYCLE_SECONDS = 690
+LIFECYCLE_TIMEOUT_SECONDS = 720
+MAX_COMPOSE_LIFECYCLE_SECONDS = 840
 ```
 
-The three function-scoped lifecycles therefore have a combined maximum of
-`2070` seconds. The required 60-minute job retains more than 15 minutes for
-checkout, dependency installation, collection, assertions, and runner
-overhead. Cleanup receives its own reserved timeout and must not reuse an
-already-exhausted startup deadline.
+Each function-scoped fixture also performs one daemon-availability probe
+outside its lifecycle. The enforceable fixed bound is therefore three
+lifecycles plus three external probes: `2610` seconds
+(`3 * 840 + 3 * 30`). The required 60-minute job retains `990` seconds, which
+is more than 15 minutes, for checkout, dependency installation, collection,
+assertions, and runner overhead. Each lifecycle includes an independent
+120-second cleanup reserve; cleanup must not reuse an already-exhausted active
+deadline.
 
 `wait_until_healthy` polls finite `.State.Health.Status` values with a monotonic
 deadline. On timeout/failure, collect only the final bounded tail of
@@ -2231,8 +2236,9 @@ production readiness, hosted security certification, or live-provider quality.
 - Access order: HTTP policy runs before route behavior; WebSocket query/context/
   access runs before run identity, database lookup, and connection ownership.
 - CI ownership: non-Docker and Docker tests are disjoint; there is one required
-  container lane, no silent skip, and the aggregate lifecycle maximum remains
-  below the job timeout with cleanup headroom.
+  container lane, no silent skip, and three bounded lifecycles plus their three
+  external daemon probes leave `990` seconds of the 60-minute job for checkout,
+  installation, collection, assertions, and runner overhead.
 - Test isolation: Compose subprocesses use a minimal host-environment allowlist,
   explicit temporary env files, and exact task-owned image cleanup.
 - Change boundaries: PR B proves prohibited paths are unchanged relative to its

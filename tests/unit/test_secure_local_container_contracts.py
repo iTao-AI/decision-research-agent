@@ -365,8 +365,9 @@ def test_container_helper_declares_isolated_bounded_lifecycles() -> None:
     assert "HEALTH_TIMEOUT_SECONDS = 60" in durable
     assert "DIAGNOSTIC_TIMEOUT_SECONDS = 30" in durable
     assert "COMPOSE_CLEANUP_TIMEOUT_SECONDS = 120" in durable
-    assert "LIFECYCLE_TIMEOUT_SECONDS = 840" in durable
-    assert "MAX_COMPOSE_LIFECYCLE_SECONDS = 960" in durable
+    assert "DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS = 30" in durable
+    assert "LIFECYCLE_TIMEOUT_SECONDS = 720" in durable
+    assert "MAX_COMPOSE_LIFECYCLE_SECONDS = 840" in durable
     assert "REQUIRED_DOCKER_LIFECYCLE_COUNT = 3" in durable
     assert "_bounded_timeout" in durable
     assert '"DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT": "0"' in durable
@@ -385,6 +386,25 @@ def test_container_helper_declares_isolated_bounded_lifecycles() -> None:
     assert combined.count("def test_backend_container_restart_preserves_review_state") == 1
     assert combined.count("def test_controlled_review_cli_approve_and_reject_canary") == 1
     assert combined.count("def test_verification_to_approval_survives_container_restart") == 1
+
+
+def test_approved_plan_accounts_for_lifecycles_and_external_daemon_probes() -> None:
+    plan = (
+        PROJECT_ROOT
+        / "docs"
+        / "superpowers"
+        / "plans"
+        / "2026-07-18-secure-local-runtime-implementation.md"
+    ).read_text(encoding="utf-8")
+
+    assert "LIFECYCLE_TIMEOUT_SECONDS = 720" in plan
+    assert "MAX_COMPOSE_LIFECYCLE_SECONDS = 840" in plan
+    assert "DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS = 30" in plan
+    assert "`2610` seconds" in plan
+    assert "`990` seconds" in plan
+    assert "more than 15 minutes" in plan
+    assert "690" not in plan
+    assert "2070" not in plan
 
 
 def test_ci_uses_disjoint_non_docker_and_required_container_jobs() -> None:

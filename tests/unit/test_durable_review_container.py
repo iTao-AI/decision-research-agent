@@ -163,6 +163,10 @@ def test_docker_availability_probe_uses_the_scrubbed_environment(
     assert captured["command"] == ["docker", "info"]
     assert captured["kwargs"]["env"] == project.env
     assert captured["kwargs"]["check"] is False
+    assert (
+        captured["kwargs"]["timeout"]
+        == container_support.DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS
+    )
 
 
 def test_backend_health_polling_requires_both_services_healthy(
@@ -519,17 +523,64 @@ def test_health_wait_cannot_outlive_the_active_lifecycle_deadline(
         )
 
 
+def test_health_poll_crossing_lifecycle_deadline_never_sleeps_negative(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [0.0]
+    sleep_calls: list[float] = []
+
+    def health_states(_services: tuple[str, ...]) -> dict[str, str]:
+        now[0] = 1.1
+        return {"backend": "starting"}
+
+    def sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        if seconds < 0:
+            raise ValueError("sleep length must be non-negative")
+
+    project = _project(
+        tmp_path,
+        monotonic=lambda: now[0],
+        sleep=sleep,
+    )
+    project._lifecycle_deadline = 1.0
+    monkeypatch.setattr(project, "health_states", health_states)
+
+    with pytest.raises(
+        TimeoutError,
+        match="container_lifecycle_deadline_exceeded",
+    ):
+        project.wait_until_healthy(
+            services=("backend",),
+            timeout_seconds=60,
+            poll_seconds=0.25,
+        )
+
+    assert sleep_calls == []
+
+
 def test_task7_enforced_timeout_budget_fits_required_ci_lane() -> None:
     assert container_support.COMPOSE_UP_TIMEOUT_SECONDS == 480
     assert container_support.HEALTH_TIMEOUT_SECONDS == 60
     assert container_support.DIAGNOSTIC_TIMEOUT_SECONDS == 30
     assert container_support.COMPOSE_CLEANUP_TIMEOUT_SECONDS == 120
-    assert container_support.LIFECYCLE_TIMEOUT_SECONDS == 840
-    assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS == 960
+    assert container_support.DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS == 30
+    assert container_support.LIFECYCLE_TIMEOUT_SECONDS == 720
+    assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS == 840
     assert container_support.REQUIRED_DOCKER_LIFECYCLE_COUNT == 3
     assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS == (
         container_support.LIFECYCLE_TIMEOUT_SECONDS
         + container_support.COMPOSE_CLEANUP_TIMEOUT_SECONDS
     )
-    assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS * 3 == 2880
-    assert 60 * 60 - container_support.MAX_COMPOSE_LIFECYCLE_SECONDS * 3 == 720
+    lifecycle_bound = (
+        container_support.MAX_COMPOSE_LIFECYCLE_SECONDS
+        * container_support.REQUIRED_DOCKER_LIFECYCLE_COUNT
+    )
+    external_probe_bound = (
+        container_support.DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS
+        * container_support.REQUIRED_DOCKER_LIFECYCLE_COUNT
+    )
+    assert lifecycle_bound + external_probe_bound == 2610
+    assert 60 * 60 - lifecycle_bound - external_probe_bound == 990
+    assert 60 * 60 - lifecycle_bound - external_probe_bound > 15 * 60

@@ -21,9 +21,10 @@ pytestmark = pytest.mark.docker
 COMPOSE_UP_TIMEOUT_SECONDS = 480
 HEALTH_TIMEOUT_SECONDS = 60
 DIAGNOSTIC_TIMEOUT_SECONDS = 30
+DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS = 30
 COMPOSE_CLEANUP_TIMEOUT_SECONDS = 120
-LIFECYCLE_TIMEOUT_SECONDS = 840
-MAX_COMPOSE_LIFECYCLE_SECONDS = 960
+LIFECYCLE_TIMEOUT_SECONDS = 720
+MAX_COMPOSE_LIFECYCLE_SECONDS = 840
 REQUIRED_DOCKER_LIFECYCLE_COUNT = 3
 MAX_DIAGNOSTIC_CHARACTERS = 12_000
 
@@ -192,7 +193,7 @@ def _docker_daemon_available(env: dict[str, str]) -> bool:
             text=True,
             capture_output=True,
             check=False,
-            timeout=DIAGNOSTIC_TIMEOUT_SECONDS,
+            timeout=DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -354,6 +355,8 @@ class DockerProject:
             ):
                 raise RuntimeError("container_health_state_invalid")
             remaining = deadline - self._monotonic()
+            if remaining <= 0:
+                break
             self._sleep(min(poll_seconds, remaining))
         if (
             self._lifecycle_deadline is not None

@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -953,3 +954,90 @@ def test_live_cli_rejects_unapproved_or_partial_arguments(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["phase"] == "input"
+
+
+def test_container_fixture_uses_production_dispatch_fence_and_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_path = PROJECT_ROOT / "scripts/bounded_live_producer_container_fixture.py"
+    assert fixture_path.is_file()
+    source = fixture_path.read_text(encoding="utf-8")
+    assert "start_run_dispatch" in source
+    assert "finalize_run_transaction" in source
+    assert "build_generic_result_artifact" in source
+    assert "create_run_dispatch_worker" in source
+    assert "run_deep_agent" in source
+    assert "sqlite3" not in source
+    assert "live evidence" not in source.lower()
+
+    guard = subprocess.run(
+        [sys.executable, str(fixture_path), "serve"],
+        cwd=PROJECT_ROOT,
+        env={"PATH": os.environ.get("PATH", ""), "PYTHON_DOTENV_DISABLED": "1"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert guard.returncode == 1
+    assert guard.stdout == ""
+    assert guard.stderr == '{"code":"fixture_disabled"}\n'
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_FIXTURE", "true")
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "false")
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION", "false")
+    server_was_loaded = "api.server" in sys.modules
+    module = importlib.import_module(
+        "scripts.bounded_live_producer_container_fixture"
+    )
+    assert ("api.server" in sys.modules) is server_was_loaded
+
+    from api.run_dispatch_repository import claim_run_dispatch
+    from api.run_repository import create_or_replay_run, get_run
+    from api.run_result_service import resolve_run_result
+
+    db_path = str(tmp_path / "fixture.db")
+    accepted = create_or_replay_run(
+        db_path=db_path,
+        idempotency_key="fixture-key-0123456789abcdef0123456789abcdef",
+        thread_id="fixture-thread-0123456789abcdef0123456789abcdef",
+        query="bounded fixture query",
+        profile_id="generic",
+        profile_version="1",
+        scope={},
+    )
+    claim = claim_run_dispatch(
+        db_path=db_path,
+        worker_id="dispatch_worker_" + "a" * 32,
+        lease_seconds=30,
+        run_id=accepted.run_id,
+    )
+    assert claim is not None
+    worker = module.create_fixture_worker(db_path)
+    worker.scheduler(claim)
+
+    status = get_run(db_path=db_path, run_id=accepted.run_id)
+    resolved = resolve_run_result(db_path=db_path, run_id=accepted.run_id)
+    assert status is not None
+    assert status["state_version"] == 2
+    assert status["segments"][0]["status"] == "completed"
+    result = {
+        "run_id": resolved.run_id,
+        "execution_status": resolved.execution_status,
+        "delivery_status": resolved.delivery_status,
+        "artifact": resolved.artifact,
+    }
+    projected = project_live_observation(
+        status_payload=status,
+        result_payload=result,
+        expected_run_id=accepted.run_id,
+        expected_thread_id=accepted.thread_id,
+        expected_segment_id=accepted.segment_id,
+        required_cited_domains=("docs.python.org", "peps.python.org"),
+    )
+    assert projected.result.consumer_support == "supported"
+    assert [urlsplit(row.source_url).hostname for row in projected.evidence] == [
+        "docs.python.org",
+        "peps.python.org",
+    ]
+    assert "live evidence" not in resolved.artifact["content"].lower()

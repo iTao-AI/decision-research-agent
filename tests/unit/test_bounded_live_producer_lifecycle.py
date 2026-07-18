@@ -10,6 +10,7 @@ import sys
 import tarfile
 
 import pytest
+import yaml
 
 from scripts.bounded_live_producer_contracts import (
     EvaluationError,
@@ -791,3 +792,125 @@ def test_managed_compose_project_rejects_arbitrary_paths_and_project_names(
             project_name="user-controlled",
             environment={},
         )
+
+
+def test_fixture_override_is_exact_and_requires_explicit_test_mode(tmp_path: Path) -> None:
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "tests/fixtures/bounded-live-producer-v1/docker-compose.fixture.yml"
+    )
+    assert fixture_path.is_file()
+    assert yaml.safe_load(fixture_path.read_text(encoding="utf-8")) == {
+        "services": {
+            "backend": {
+                "command": [
+                    "python",
+                    "scripts/bounded_live_producer_container_fixture.py",
+                    "serve",
+                ],
+                "environment": {
+                    "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_FIXTURE": "true"
+                },
+            }
+        }
+    }
+
+    projection = _compose_projection()
+    projection["services"]["backend"]["command"] = [  # type: ignore[index]
+        "python",
+        "scripts/bounded_live_producer_container_fixture.py",
+        "serve",
+    ]
+    projection["services"]["backend"]["environment"][  # type: ignore[index]
+        "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_FIXTURE"
+    ] = "true"
+    sanitized = sanitize_compose_projection(projection, fixture_mode=True)
+    assert sanitized["services"]["backend"]["command"] == "<fixture-command>"
+    with pytest.raises(EvaluationError):
+        sanitize_compose_projection(projection)
+
+    root = tmp_path / "snapshot"
+    override = root / "tests/fixtures/bounded-live-producer-v1/docker-compose.fixture.yml"
+    override.parent.mkdir(parents=True)
+    base = root / "docker-compose.yml"
+    base.write_text("services: {}\n", encoding="utf-8")
+    override.write_text(fixture_path.read_text(encoding="utf-8"), encoding="utf-8")
+    env_file = tmp_path / "fixture.env"
+    env_file.write_text("", encoding="utf-8")
+    commands: list[tuple[str, ...]] = []
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(base, override),
+        env_file=env_file,
+        project_name="dra-proof-0123456789abcdef0123456789abcdef",
+        environment={},
+        runner=runner,
+    )
+    project.start_fixture_backend(
+        ActiveDeadline(
+            5,
+            code=FailureCode.SERVICE_START_FAILED,
+            phase=FailurePhase.DOCKER,
+        )
+    )
+    flattened = " ".join(commands[-1])
+    assert str(override) in flattened
+    assert flattened.endswith("up -d backend")
+
+
+def test_fixture_override_cleanup_treats_already_absent_ids_as_clean(
+    tmp_path: Path,
+) -> None:
+    task_root = tmp_path / "task-root"
+    root = task_root / "snapshot"
+    root.mkdir(parents=True)
+    base = root / "docker-compose.yml"
+    base.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "fixture.env"
+    env_file.write_text("", encoding="utf-8")
+    commands: list[tuple[str, ...]] = []
+
+    def runner(
+        args: tuple[str, ...],
+        *,
+        cwd: Path,
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        assert cwd.is_dir()
+        if "inspect" in args or any(token in args for token in ("rm", "down")):
+            return subprocess.CompletedProcess(args, 1 if "inspect" in args or "rm" in args else 0, "", "")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(base,),
+        env_file=env_file,
+        project_name="dra-proof-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        environment={},
+        runner=runner,
+    )
+    project.record_ownership(
+        container_ids=("c" * 64,),
+        volume_ids=("dra-proof-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_backend_data",),
+        network_ids=("d" * 64,),
+        image_tag="dra-proof-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-backend",
+        image_id="sha256:" + "e" * 64,
+        temp_paths=(task_root,),
+    )
+    receipt = cleanup_receipt(
+        project,
+        ActiveDeadline(
+            5,
+            code=FailureCode.CLEANUP_FAILED,
+            phase=FailurePhase.CLEANUP,
+        ),
+    )
+    assert receipt["succeeded"] is True
+    assert not task_root.exists()
+    assert any(command[:3] == ("docker", "image", "rm") for command in commands)

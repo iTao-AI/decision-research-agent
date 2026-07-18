@@ -3,10 +3,12 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 
 from packaging.markers import default_environment
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -15,27 +17,131 @@ V011_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.1.md"
 V012_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.2.md"
 V013_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.3.md"
 V014_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.4.md"
+V015_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
 PYTEST_FIXED_FLOOR = "9.0.3"
+V015_H2_ORDER = (
+    "Supported Surface",
+    "Changes",
+    "Compatibility And Migration",
+    "Rollback",
+    "Required Verification",
+    "Known Limits",
+)
+V015_PUBLIC_RELEASE_CORPUS = (
+    PROJECT_ROOT / "CHANGELOG.md",
+    PROJECT_ROOT / "README.md",
+    PROJECT_ROOT / "README_CN.md",
+    PROJECT_ROOT / "SECURITY.md",
+    PROJECT_ROOT / "docs" / "README.md",
+    V015_RELEASE_NOTES,
+)
+V015_PREMATURE_CLAIM_PATTERNS = (
+    r"\bv0\.1\.5 is published\b",
+    r"\b(?:v0\.1\.5|release) tag (?:has been |was )?(?:created|published)\b",
+    r"\bgithub release (?:has been |was )?published\b",
+    r"\barchive smoke (?:has |was )?(?:passed|completed)\b",
+    r"\bdeployment (?:has been |was )?completed\b",
+    r"\blive-provider research (?:has been |was )?completed\b",
+    r"\bthe live-provider research and provider-quality claims are made\b",
+    r"\bthis release provides tls\b",
+)
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _collapsed(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _v0_1_5_h2_sections(notes: str) -> dict[str, str]:
+    matches = list(re.finditer(r"^## (.+)$", notes, re.MULTILINE))
+    headings = tuple(match.group(1) for match in matches)
+    assert headings == V015_H2_ORDER
+
+    return {
+        match.group(1): notes[
+            match.end() : matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(notes)
+        ]
+        for index, match in enumerate(matches)
+    }
+
+
+def _assert_v0_1_5_release_notes_contract() -> None:
+    notes = _read(V015_RELEASE_NOTES)
+    sections = _v0_1_5_h2_sections(notes)
+    normalized_sections = {
+        heading: _collapsed(body) for heading, body in sections.items()
+    }
+    verification = normalized_sections["Required Verification"]
+    known_limits = normalized_sections["Known Limits"]
+
+    for command in (
+        "python scripts/secure_local_runtime_proof.py check",
+        "python scripts/agent_evaluation_gate.py check",
+        'python -m pytest -q -m "not docker"',
+        "npm audit --audit-level=moderate",
+    ):
+        assert command in verification
+        for heading, body in normalized_sections.items():
+            if heading != "Required Verification":
+                assert command not in body
+
+    evidence_boundary = (
+        "The deterministic proof, required Docker lane, and post-publication "
+        "archive smoke are separate evidence boundaries."
+    )
+    assert evidence_boundary in verification
+    for heading, body in normalized_sections.items():
+        if heading != "Required Verification":
+            assert evidence_boundary not in body
+
+    for complete_non_claim in (
+        "This preparation document does not claim that a `v0.1.5` tag, GitHub "
+        "Release, post-publication archive smoke, deployment, or live research "
+        "has completed.",
+        "This release does not provide TLS, caller identity, per-user "
+        "authorization, RBAC, rate limiting, trusted-proxy handling, hosted "
+        "production, or production deployment.",
+        "No live-provider research or provider-quality claim is made by the "
+        "deterministic proof, required Docker lane, or this release preparation.",
+    ):
+        assert complete_non_claim in known_limits
+        for heading, body in normalized_sections.items():
+            if heading != "Known Limits":
+                assert complete_non_claim not in body
+
+
+def _assert_v0_1_5_public_release_corpus_has_no_premature_claims() -> None:
+    corpus = "\n".join(_read(path) for path in V015_PUBLIC_RELEASE_CORPUS).lower()
+    for pattern in V015_PREMATURE_CLAIM_PATTERNS:
+        assert re.search(pattern, corpus) is None
+
+
 def test_current_release_version_is_consistent() -> None:
     package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
     lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
 
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.4"
-    assert package["version"] == "0.1.4"
-    assert lock["version"] == "0.1.4"
-    assert lock["packages"][""]["version"] == "0.1.4"
-    assert V014_RELEASE_NOTES.exists()
+    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.5"
+    assert package["version"] == "0.1.5"
+    assert lock["version"] == "0.1.5"
+    assert lock["packages"][""]["version"] == "0.1.5"
+    assert V015_RELEASE_NOTES.exists()
 
 
 def test_changelog_preserves_published_release_boundary() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     unreleased_heading = "## [Unreleased]"
+    v0_1_5_match = re.search(
+        r"^## \[0\.1\.5\] - (\d{4}-\d{2}-\d{2})$",
+        changelog,
+        re.MULTILINE,
+    )
+    assert v0_1_5_match is not None
+    v0_1_5_heading = v0_1_5_match.group(0)
     v0_1_4_heading = "## [0.1.4] - 2026-07-16"
     v0_1_3_heading = "## [0.1.3] - 2026-07-14"
     v0_1_2_heading = "## [0.1.2] - 2026-07-14"
@@ -43,17 +149,21 @@ def test_changelog_preserves_published_release_boundary() -> None:
     v0_1_0_heading = "## [0.1.0] - 2026-06-28"
 
     assert unreleased_heading in changelog
+    assert v0_1_5_heading in changelog
     assert v0_1_4_heading in changelog
     assert v0_1_3_heading in changelog
     assert v0_1_2_heading in changelog
     assert v0_1_1_heading in changelog
     assert v0_1_0_heading in changelog
-    assert changelog.index(unreleased_heading) < changelog.index(v0_1_4_heading)
+    assert changelog.index(unreleased_heading) < changelog.index(v0_1_5_heading)
+    assert changelog.index(v0_1_5_heading) < changelog.index(v0_1_4_heading)
     assert changelog.index(v0_1_4_heading) < changelog.index(v0_1_3_heading)
     assert changelog.index(v0_1_3_heading) < changelog.index(v0_1_2_heading)
     assert changelog.index(v0_1_2_heading) < changelog.index(v0_1_1_heading)
     assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
-    unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_4_heading, 1)[0]
+    unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_5_heading, 1)[0]
+    assert unreleased.strip() == ""
+    v0_1_5 = changelog.split(v0_1_5_heading, 1)[1].split(v0_1_4_heading, 1)[0]
     secure_runtime_subsection = """### Secure local runtime access
 
 - Source execution now allows credential-free requests only when the direct
@@ -70,15 +180,16 @@ def test_changelog_preserves_published_release_boundary() -> None:
 - Compose now requires `API_SECRET`, `MYSQL_ROOT_PASSWORD`, and
   `MYSQL_PASSWORD`, publishes the backend and MySQL only on `127.0.0.1`, and
   keeps the MySQL root credential value out of the backend service.
-- Backend and MySQL health declarations gate startup. The backend drops all
-  capabilities and enables `no-new-privileges` while retaining the root UID
-  for existing `data` and `output` volume compatibility.
+- MySQL health gates backend startup; the backend declares an exact
+  process/service health check. It drops all capabilities and enables
+  `no-new-privileges` while retaining the root UID for existing `data` and
+  `output` volume compatibility.
 - Added a deterministic 16-case local contract proof and a disjoint required
   Docker lane for build, health, security inspection, named-volume restart
   persistence, bounded task-owned cleanup, and no observed provider, model, or
   tool request. This evidence does not claim TLS, identity, RBAC, hosted
   deployment, non-root operation, or provider quality."""
-    assert unreleased.strip() == (
+    assert v0_1_5.strip() == (
         f"{secure_runtime_subsection}\n\n{container_subsection}"
     )
 
@@ -111,8 +222,7 @@ def test_changelog_preserves_published_release_boundary() -> None:
     assert sha256(published_suffix.encode("utf-8")).hexdigest() == (
         "24d309bb3887af98db06622a8fcb5358c0cbdbc6c2aa7b60fa24817d810f4f81"
     )
-    assert "## [0.1.5]" not in changelog
-    assert not (PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md").exists()
+    assert v0_1_5_match.group(1) in _read(V015_RELEASE_NOTES)
 
     v0_1_3 = changelog.split(v0_1_3_heading, 1)[1].split(v0_1_2_heading, 1)[0]
     durable_subsection = """### Durable run dispatch
@@ -171,7 +281,7 @@ def test_security_policy_matches_current_release_surface() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
 
     required = [
-        "Decision Research Agent v0.1.4",
+        "Decision Research Agent v0.1.5",
         "single-node",
         "run dispatch",
         "failure cause",
@@ -187,21 +297,16 @@ def test_security_policy_matches_current_release_surface() -> None:
         assert phrase in security
 
 
-def test_security_policy_separates_v0_1_4_from_unreleased_runtime_controls() -> None:
+def test_security_policy_publishes_v0_1_5_runtime_controls() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
-    current_main_heading = "## Unreleased / Current Main Security Controls"
+    normalized = " ".join(security.split())
 
-    published_surface, current_main = security.split(current_main_heading, 1)
-    current_main = current_main.split("## Out Of Scope", 1)[0]
-    normalized_current_main = " ".join(current_main.split())
-
-    assert "Decision Research Agent v0.1.4 ships" in published_surface
-    assert "Compose requires non-empty" not in published_surface
-    assert "drops all backend capabilities" not in published_surface
-    assert "The source template uses `API_SECRET=`" in normalized_current_main
-    assert "Compose requires non-empty" in normalized_current_main
-    assert "drops all backend capabilities" in normalized_current_main
-    assert "v0.1.5" not in security
+    assert "Decision Research Agent v0.1.5 ships" in normalized
+    assert "The source template uses `API_SECRET=`" in normalized
+    assert "Compose requires non-empty" in normalized
+    assert "drops all backend capabilities" in normalized
+    assert "root UID" in normalized
+    assert "Unreleased / Current Main Security Controls" not in security
 
 
 def test_release_notes_document_breaking_migration_and_rollback() -> None:
@@ -371,12 +476,50 @@ def test_v0_1_4_release_notes_cover_surface_compatibility_and_limits() -> None:
         assert phrase in notes
 
 
-def test_v0_1_4_release_is_discoverable_without_claiming_publication() -> None:
+def test_v0_1_5_release_notes_cover_secure_local_runtime_and_limits() -> None:
+    notes = _read(V015_RELEASE_NOTES)
+    _assert_v0_1_5_release_notes_contract()
+
+    required = [
+        "# Decision Research Agent v0.1.5",
+        "## Supported Surface",
+        "## Changes",
+        "## Compatibility And Migration",
+        "## Rollback",
+        "## Required Verification",
+        "## Known Limits",
+        "empty `API_SECRET`",
+        "direct peer and literal Host",
+        "loopback",
+        "API_SECRET",
+        "MYSQL_ROOT_PASSWORD",
+        "MYSQL_PASSWORD",
+        "127.0.0.1",
+        "WebSocket",
+        "X-API-Key",
+        "query",
+        "deterministic proof",
+        "required Docker lane",
+        "post-publication archive smoke",
+        "root UID",
+        "TLS",
+        "identity",
+        "RBAC",
+        "hosted",
+        "production deployment",
+        "live-provider research",
+    ]
+    for phrase in required:
+        assert phrase in notes
+
+
+def test_v0_1_5_release_is_discoverable_without_claiming_publication() -> None:
     readme = _read(PROJECT_ROOT / "README.md")
     readme_cn = _read(PROJECT_ROOT / "README_CN.md")
     docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
-    combined = "\n".join((readme, readme_cn, docs_index, _read(V014_RELEASE_NOTES)))
-
+    assert "[v0.1.5 Release Notes](docs/releases/v0.1.5.md)" in readme
+    assert "[v0.1.5 Release Notes](docs/releases/v0.1.5.md)" in readme_cn
+    assert "[v0.1.5 Release Notes](releases/v0.1.5.md)" in docs_index
     assert "[v0.1.4 Release Notes](docs/releases/v0.1.4.md)" in readme
     assert "[v0.1.4 Release Notes](docs/releases/v0.1.4.md)" in readme_cn
     assert "[v0.1.4 Release Notes](releases/v0.1.4.md)" in docs_index
@@ -393,7 +536,11 @@ def test_v0_1_4_release_is_discoverable_without_claiming_publication() -> None:
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
     assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
     assert (
-        "- [v0.1.4 Release Notes](releases/v0.1.4.md) — current supported surface,"
+        "- [v0.1.5 Release Notes](releases/v0.1.5.md) — current supported surface,"
+        in docs_index
+    )
+    assert (
+        "- [v0.1.4 Release Notes](releases/v0.1.4.md) — historical durable failure"
         in docs_index
     )
     assert (
@@ -411,17 +558,71 @@ def test_v0_1_4_release_is_discoverable_without_claiming_publication() -> None:
     assert "downstream-consumer and Agent evaluation contract gates." in docs_index
     assert docs_index.count("current supported surface") == 1
     assert (
-        "[v0.1.1 Release Notes](releases/v0.1.1.md) — current supported surface"
+        "[v0.1.4 Release Notes](releases/v0.1.4.md) — current supported surface"
         not in docs_index
     )
-    for forbidden in (
-        "v0.1.4 is published",
-        "v0.1.4 tag created",
-        "release tag created",
-        "GitHub Release published",
-        "deployment completed",
-    ):
-        assert forbidden not in combined
+    _assert_v0_1_5_public_release_corpus_has_no_premature_claims()
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new", "contract"),
+    (
+        (
+            V015_RELEASE_NOTES,
+            "No live-provider research or provider-quality claim is made by the\n"
+            "  deterministic proof, required Docker lane, or this release preparation.",
+            "The live-provider research and provider-quality claims are made by the\n"
+            "  deterministic proof, required Docker lane, and this release preparation.",
+            _assert_v0_1_5_release_notes_contract,
+        ),
+        (
+            V015_RELEASE_NOTES,
+            "This release does not provide TLS, caller identity, per-user authorization,\n"
+            "  RBAC, rate limiting, trusted-proxy handling, hosted production, or production deployment.",
+            "This release provides TLS, caller identity, per-user authorization,\n"
+            "  RBAC, hosted production, and production deployment.",
+            _assert_v0_1_5_release_notes_contract,
+        ),
+        (
+            V015_RELEASE_NOTES,
+            "## Required Verification",
+            "## Known Limits",
+            _assert_v0_1_5_release_notes_contract,
+        ),
+        (
+            PROJECT_ROOT / "SECURITY.md",
+            "that are not part of v0.1.5.",
+            "that are not part of v0.1.5.\n\nGitHub Release published.",
+            _assert_v0_1_5_public_release_corpus_has_no_premature_claims,
+        ),
+    ),
+    ids=(
+        "positive-provider-claim",
+        "positive-production-claim",
+        "duplicate-known-limits-heading",
+        "security-publication-claim",
+    ),
+)
+def test_v0_1_5_release_contract_rejects_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    old: str,
+    new: str,
+    contract,
+) -> None:
+    read_text = Path.read_text
+    mutated = read_text(path, encoding="utf-8")
+    assert mutated.count(old) == 1
+    mutated = mutated.replace(old, new, 1)
+
+    def mutated_read_text(self: Path, *args, **kwargs) -> str:
+        if self == path:
+            return mutated
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", mutated_read_text)
+    with pytest.raises(AssertionError):
+        contract()
 
 
 def test_pytest_dependency_declaration_uses_security_fixed_floor() -> None:

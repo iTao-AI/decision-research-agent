@@ -82,7 +82,11 @@ external evaluation of the public contract surface.
 
 ## Release
 
-- [v0.1.4 Release Notes](releases/v0.1.4.md) — current supported surface,
+- [v0.1.5 Release Notes](releases/v0.1.5.md) — current supported surface,
+  including secure local runtime access and container delivery, compatibility,
+  rollback, verification, and explicit limits.
+- [v0.1.4 Release Notes](releases/v0.1.4.md) — historical durable failure
+  cause and Console live authority closure surface,
   including durable run failure causes and Console live authority closure,
   compatibility, rollback, verification, and explicit limits.
 - [v0.1.3 Release Notes](releases/v0.1.3.md) — historical durable run

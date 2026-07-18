@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-18
+
 ### Secure local runtime access
 
 - Source execution now allows credential-free requests only when the direct
@@ -21,9 +23,10 @@ All notable changes to this project are documented in this file.
 - Compose now requires `API_SECRET`, `MYSQL_ROOT_PASSWORD`, and
   `MYSQL_PASSWORD`, publishes the backend and MySQL only on `127.0.0.1`, and
   keeps the MySQL root credential value out of the backend service.
-- Backend and MySQL health declarations gate startup. The backend drops all
-  capabilities and enables `no-new-privileges` while retaining the root UID
-  for existing `data` and `output` volume compatibility.
+- MySQL health gates backend startup; the backend declares an exact
+  process/service health check. It drops all capabilities and enables
+  `no-new-privileges` while retaining the root UID for existing `data` and
+  `output` volume compatibility.
 - Added a deterministic 16-case local contract proof and a disjoint required
   Docker lane for build, health, security inspection, named-volume restart
   persistence, bounded task-owned cleanup, and no observed provider, model, or

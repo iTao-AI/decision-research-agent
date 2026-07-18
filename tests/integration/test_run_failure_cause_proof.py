@@ -1005,10 +1005,13 @@ def test_ci_runs_failure_cause_proof_after_dispatch_proof_before_broad_pytest():
         "- name: Run deterministic run dispatch reconciliation proof"
     )
     proof_index = workflow.index("- name: Run failure cause proof")
+    secure_runtime_index = workflow.index(
+        "- name: Run secure local runtime proof"
+    )
     pytest_index = workflow.index("- name: Run tests")
-    assert dispatch_index < proof_index < pytest_index
+    assert dispatch_index < proof_index < secure_runtime_index < pytest_index
     assert workflow.count("- name: Run failure cause proof") == 1
-    step = workflow[proof_index:pytest_index]
+    step = workflow[proof_index:secure_runtime_index]
     assert step == (
         "- name: Run failure cause proof\n"
         "        run: python scripts/run_failure_cause_proof.py check\n"

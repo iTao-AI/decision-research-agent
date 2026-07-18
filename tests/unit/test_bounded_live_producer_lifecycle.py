@@ -841,6 +841,10 @@ def test_fixture_override_is_exact_and_requires_explicit_test_mode(tmp_path: Pat
 
     def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
         commands.append(args)
+        if args[:5] == ("docker", "image", "inspect", "--format", "{{.Id}}"):
+            return subprocess.CompletedProcess(args, 0, "sha256:" + "f" * 64 + "\n", "")
+        if args[:2] == ("docker", "run"):
+            return subprocess.CompletedProcess(args, 0, '{"status":"valid","match":true}\n', "")
         return subprocess.CompletedProcess(args, 0, "", "")
 
     project = ManagedComposeProject(
@@ -851,16 +855,53 @@ def test_fixture_override_is_exact_and_requires_explicit_test_mode(tmp_path: Pat
         environment={},
         runner=runner,
     )
-    project.start_fixture_backend(
-        ActiveDeadline(
-            5,
-            code=FailureCode.SERVICE_START_FAILED,
-            phase=FailurePhase.DOCKER,
-        )
+    deadline = ActiveDeadline(
+        5,
+        code=FailureCode.SERVICE_START_FAILED,
+        phase=FailurePhase.DOCKER,
     )
+    with pytest.raises(ValueError, match="fixture_secure_check_required"):
+        project.start_fixture_backend(deadline)
+    project.verify_snapshot_secure_runtime(deadline)
+    project.start_fixture_backend(deadline)
     flattened = " ".join(commands[-1])
     assert str(override) in flattened
     assert flattened.endswith("up -d backend")
+    secure_command = next(command for command in commands if command[:2] == ("docker", "run"))
+    assert "--network" in secure_command and "none" in secure_command
+    assert "--cap-drop" in secure_command and "ALL" in secure_command
+    assert "--security-opt" in secure_command
+    assert "PYTHON_DOTENV_DISABLED=1" in secure_command
+    assert secure_command[-2:] == (
+        "scripts/secure_local_runtime_proof.py",
+        "check",
+    )
+
+
+def test_fixture_archive_may_defer_only_to_the_locked_image_secure_check(
+    tmp_path: Path,
+) -> None:
+    root = _tiny_repository(tmp_path)
+    secure_script = root / "scripts/secure_local_runtime_proof.py"
+    secure_script.write_text("raise SystemExit(1)\n", encoding="utf-8")
+    _git(root, "add", "scripts/secure_local_runtime_proof.py")
+    _git(root, "commit", "-qm", "failing host check")
+
+    with pytest.raises(EvaluationError) as default_failure:
+        prepare_source_snapshot(
+            root,
+            tmp_path / "default-check",
+            required_paths=REQUIRED_PATHS,
+        )
+    assert default_failure.value.code is FailureCode.SOURCE_ARCHIVE_INVALID
+
+    deferred = prepare_source_snapshot(
+        root,
+        tmp_path / "deferred-check",
+        required_paths=REQUIRED_PATHS,
+        verify_secure_runtime=False,
+    )
+    assert deferred.secure_runtime_checked is False
 
 
 def test_fixture_override_cleanup_treats_already_absent_ids_as_clean(

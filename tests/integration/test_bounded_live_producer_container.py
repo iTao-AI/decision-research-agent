@@ -238,6 +238,7 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
             "scripts/bounded_live_producer_proof.py",
             "tests/fixtures/bounded-live-producer-v1/docker-compose.fixture.yml",
         ),
+        verify_secure_runtime=False,
     )
     env_file = tmp_path / "fixture.env"
     api_secret = _write_fixture_env(env_file)
@@ -265,6 +266,7 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
         )
         sanitize_compose_projection(config, fixture_mode=True)
         project.build_backend(active)
+        project.verify_snapshot_secure_runtime(active)
         project.start_mysql(active)
         project.start_fixture_backend(active)
         _refresh_ownership(project, active, task_root=task_root)

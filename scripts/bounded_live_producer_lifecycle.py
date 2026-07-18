@@ -225,6 +225,7 @@ class SourceSnapshot:
     version: str
     archive_sha256: str
     members: tuple[str, ...]
+    secure_runtime_checked: bool
 
 
 def _public_provider_url(value: str) -> bool:
@@ -411,9 +412,12 @@ def prepare_source_snapshot(
     archive_bytes_max: int = _DEFAULT_ARCHIVE_BYTES_MAX,
     archive_members_max: int = _DEFAULT_ARCHIVE_MEMBERS_MAX,
     archive_member_bytes_max: int = _DEFAULT_ARCHIVE_MEMBER_BYTES_MAX,
+    verify_secure_runtime: bool = True,
 ) -> SourceSnapshot:
     root = checkout_root.resolve()
     try:
+        if type(verify_secure_runtime) is not bool:
+            raise ValueError
         commit = _git_output(root, "rev-parse", "--verify", "HEAD")
         tree = _git_output(root, "rev-parse", "--verify", "HEAD^{tree}")
         if not _COMMIT_RE.fullmatch(commit) or not _COMMIT_RE.fullmatch(tree):
@@ -466,19 +470,20 @@ def prepare_source_snapshot(
         )
         if any(not (snapshot_root / path).is_file() for path in required_paths):
             raise ValueError
-        secure_check = subprocess.run(
-            [sys.executable, "scripts/secure_local_runtime_proof.py", "check"],
-            cwd=snapshot_root,
-            env={
-                "PATH": os.environ.get("PATH", ""),
-                "PYTHON_DOTENV_DISABLED": "1",
-            },
-            check=False,
-            capture_output=True,
-            timeout=30,
-        )
-        if secure_check.returncode != 0:
-            raise ValueError
+        if verify_secure_runtime:
+            secure_check = subprocess.run(
+                [sys.executable, "scripts/secure_local_runtime_proof.py", "check"],
+                cwd=snapshot_root,
+                env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "PYTHON_DOTENV_DISABLED": "1",
+                },
+                check=False,
+                capture_output=True,
+                timeout=30,
+            )
+            if secure_check.returncode != 0:
+                raise ValueError
         archive_sha256 = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     except EvaluationError:
         shutil.rmtree(task_temp_parent, ignore_errors=True)
@@ -496,6 +501,7 @@ def prepare_source_snapshot(
         version=version,
         archive_sha256=archive_sha256,
         members=members,
+        secure_runtime_checked=verify_secure_runtime,
     )
 
 
@@ -926,6 +932,7 @@ class ManagedComposeProject:
             raise ValueError("managed_compose_project_invalid")
         self.compose_paths = resolved_paths
         self.fixture_mode = len(relatives) == 2
+        self._snapshot_secure_checked = not self.fixture_mode
         self.env_file = env_file.resolve()
         self.project_name = project_name
         self.environment = dict(environment)
@@ -999,8 +1006,66 @@ class ManagedComposeProject:
 
     def build_backend(self, deadline: ActiveDeadline) -> None:
         self._invoke(("build", "backend"), deadline, compose=True)
+        if self.fixture_mode:
+            self._snapshot_secure_checked = False
+
+    def verify_snapshot_secure_runtime(self, deadline: ActiveDeadline) -> None:
+        if not self.fixture_mode:
+            raise ValueError("fixture_secure_check_unavailable")
+        image_tag = f"{self.project_name}-backend"
+        image_result = self._invoke(
+            ("docker", "image", "inspect", "--format", "{{.Id}}", image_tag),
+            deadline,
+        )
+        image_id = image_result.stdout.strip()
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
+            raise EvaluationError(
+                FailureCode.SOURCE_ARCHIVE_INVALID,
+                FailurePhase.DOCKER,
+                False,
+            )
+        result = self._invoke(
+            (
+                "docker",
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--label",
+                f"com.docker.compose.project={self.project_name}",
+                "--name",
+                f"{self.project_name}-secure-check",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges:true",
+                "--env",
+                "PYTHON_DOTENV_DISABLED=1",
+                "--volume",
+                f"{self.root}:/proof",
+                "--workdir",
+                "/proof",
+                "--entrypoint",
+                "python",
+                image_tag,
+                "scripts/secure_local_runtime_proof.py",
+                "check",
+            ),
+            deadline,
+        )
+        if result.stdout != '{"status":"valid","match":true}\n' or result.stderr:
+            raise EvaluationError(
+                FailureCode.SOURCE_ARCHIVE_INVALID,
+                FailurePhase.DOCKER,
+                False,
+            )
+        self._image_tag = image_tag
+        self._image_id = image_id
+        self._snapshot_secure_checked = True
 
     def start_mysql(self, deadline: ActiveDeadline) -> None:
+        if self.fixture_mode and not self._snapshot_secure_checked:
+            raise ValueError("fixture_secure_check_required")
         self._invoke(("up", "-d", "mysql"), deadline, compose=True)
 
     def start_backend(self, deadline: ActiveDeadline) -> None:
@@ -1011,6 +1076,8 @@ class ManagedComposeProject:
     def start_fixture_backend(self, deadline: ActiveDeadline) -> None:
         if not self.fixture_mode:
             raise ValueError("fixture_backend_unavailable")
+        if not self._snapshot_secure_checked:
+            raise ValueError("fixture_secure_check_required")
         self._invoke(("up", "-d", "backend"), deadline, compose=True)
 
     def restart_backend(self, deadline: ActiveDeadline) -> None:

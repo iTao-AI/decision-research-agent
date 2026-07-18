@@ -1,0 +1,336 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from scripts.bounded_live_producer_contracts import (
+    BOUNDARIES,
+    LIMITS,
+    CleanupStatus,
+    ErrorEnvelope,
+    EvaluationError,
+    EvaluationValidationError,
+    FailureCode,
+    FailurePhase,
+    LiveReportModel,
+    ManifestModel,
+    ObservedUsage,
+    load_manifest,
+    render_markdown,
+    serialize_error,
+    serialize_manifest,
+    serialize_report,
+    validate_live_report,
+)
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MANIFEST_PATH = (
+    PROJECT_ROOT / "benchmarks" / "bounded-live-producer-v1" / "manifest.json"
+)
+
+
+def _safe_report() -> dict:
+    return {
+        "schema_version": "dra.bounded-live-producer-evaluation.v1",
+        "status": "valid",
+        "source": {
+            "repository_name": "decision-research-agent",
+            "service_name": "decision-research-agent",
+            "version": "0.1.5",
+            "source_commit": "a" * 40,
+            "source_tree": "b" * 40,
+            "archive_sha256": "c" * 64,
+            "manifest_sha256": "d" * 64,
+            "sanitized_compose_sha256": "e" * 64,
+            "backend_image_id": "sha256:" + "f" * 64,
+            "docker_version": "27.5.1",
+            "compose_version": "2.32.4",
+            "source_clean": True,
+            "build_context": "tracked_archive",
+        },
+        "scenario": {
+            "scenario_id": "cpython-313-free-threaded-pilot",
+            "manifest_sha256": "d" * 64,
+            "request_sha256": "1" * 64,
+            "profile_id": "generic",
+            "required_cited_domains": ["docs.python.org", "peps.python.org"],
+            "provider_id": "operator-provider",
+            "primary_model_id": "operator-primary",
+            "fallback_model_id": "operator-primary",
+        },
+        "lifecycle": {
+            "docker_probe_ms": 100,
+            "build_start_ms": 200,
+            "research_ms": 300,
+            "restart_replay_ms": 400,
+            "active_ms": 900,
+            "cleanup_ms": 100,
+            "total_ms": 1100,
+            "loopback_binding_observed": True,
+            "health_identity_observed": True,
+        },
+        "run": {
+            "run_id": "run_" + "1" * 32,
+            "thread_id": "bounded-live-thread-" + "2" * 32,
+            "segment_id": "run_" + "1" * 32 + "_seg_000",
+            "state_version": 2,
+            "execution_status": "completed",
+            "review_status": "not_required",
+            "delivery_status": "ready",
+            "failure_cause": None,
+            "profile_id": "generic",
+        },
+        "result": {
+            "artifact_id": "research-report.md",
+            "kind": "research_report_markdown",
+            "media_type": "text/markdown",
+            "utf8_bytes": 128,
+            "sha256": "3" * 64,
+            "consumer_support": "supported",
+            "consumer_disposition": "accept_draft",
+        },
+        "evidence": [
+            {
+                "evidence_id": "ev_docs",
+                "source_url": "https://docs.python.org/3/whatsnew/3.13.html",
+                "source_identity": "docs.python.org/cpython-313",
+                "retrieved_at": "2026-07-18T00:00:00+00:00",
+                "citation_status": "cited",
+                "verification_status": "unverified",
+            },
+            {
+                "evidence_id": "ev_pep",
+                "source_url": "https://peps.python.org/pep-0703/",
+                "source_identity": "peps.python.org/pep-0703",
+                "retrieved_at": "2026-07-18T00:00:01+00:00",
+                "citation_status": "cited",
+                "verification_status": "unverified",
+            },
+        ],
+        "usage": {
+            "status": "observed",
+            "prompt_tokens": 10,
+            "completion_tokens": 20,
+            "total_tokens": 30,
+            "call_count": 1,
+            "cost_estimate": {
+                "status": "observed",
+                "amount": "0.01000000",
+                "currency": "USD",
+                "pricing_basis": "operator-pricing-v1",
+                "estimate": True,
+            },
+            "search_cost": {"status": "not_observed"},
+        },
+        "restart": {
+            "same_run_identity": True,
+            "same_thread_identity": True,
+            "same_segment_identity": True,
+            "state_version_non_regressing": True,
+            "same_terminal_state": True,
+            "same_evidence": True,
+            "same_artifact": True,
+            "same_consumer_disposition": True,
+        },
+        "replay": {
+            "idempotent_replay": True,
+            "same_run_identity": True,
+            "same_thread_identity": True,
+            "same_segment_identity": True,
+            "unchanged_terminal_projection": True,
+        },
+        "cleanup": {
+            "attempted": True,
+            "succeeded": True,
+            "zero_container_residue": True,
+            "zero_volume_residue": True,
+            "zero_network_residue": True,
+            "zero_temp_residue": True,
+        },
+        "boundaries": dict(BOUNDARIES),
+        "limits": list(LIMITS),
+    }
+
+
+def test_manifest_is_canonical_and_exact() -> None:
+    raw = MANIFEST_PATH.read_bytes()
+    manifest = load_manifest(MANIFEST_PATH)
+
+    assert isinstance(manifest, ManifestModel)
+    assert manifest.schema_version == "dra.bounded-live-producer-manifest.v1"
+    assert manifest.profile_id == "generic"
+    assert manifest.required_cited_domains == (
+        "docs.python.org",
+        "peps.python.org",
+    )
+    assert serialize_manifest(manifest) == raw
+
+
+def test_manifest_is_frozen_and_strict() -> None:
+    manifest = load_manifest(MANIFEST_PATH)
+    with pytest.raises(ValidationError):
+        manifest.profile_id = "talent-hiring-signal"  # type: ignore[misc]
+
+    payload = manifest.model_dump(mode="python")
+    payload["bounds"]["query_utf8_bytes_min"] = True
+    with pytest.raises(ValidationError):
+        ManifestModel.model_validate(payload, strict=True)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("query", ""),
+        ("query", "line one\r\nline two"),
+        ("required_cited_domains", ["Docs.Python.org"]),
+        ("required_cited_domains", ["docs.python.org", "docs.python.org"]),
+        ("required_cited_domains", ["127.0.0.1"]),
+    ],
+)
+def test_manifest_rejects_invalid_query_or_domains(field: str, value: object) -> None:
+    payload = load_manifest(MANIFEST_PATH).model_dump(mode="python")
+    payload[field] = value
+    with pytest.raises(ValidationError):
+        ManifestModel.model_validate(payload, strict=True)
+
+
+def test_manifest_rejects_scope_depth_and_node_overflow() -> None:
+    payload = load_manifest(MANIFEST_PATH).model_dump(mode="python")
+    payload["scope"] = {"a": {"b": {"c": {"d": {"e": {"f": {"g": {"h": {"i": 1}}}}}}}}}
+    with pytest.raises(ValidationError):
+        ManifestModel.model_validate(payload, strict=True)
+
+    payload = load_manifest(MANIFEST_PATH).model_dump(mode="python")
+    payload["scope"] = {str(index): index for index in range(257)}
+    with pytest.raises(ValidationError):
+        ManifestModel.model_validate(payload, strict=True)
+
+
+def test_manifest_rejects_noncanonical_bytes(tmp_path: Path) -> None:
+    candidate = tmp_path / "manifest.json"
+    candidate.write_bytes(MANIFEST_PATH.read_bytes() + b"\n")
+    with pytest.raises(EvaluationValidationError, match="manifest_invalid"):
+        load_manifest(candidate)
+
+
+def test_manifest_rejects_symlink(tmp_path: Path) -> None:
+    candidate = tmp_path / "manifest.json"
+    candidate.symlink_to(MANIFEST_PATH)
+    with pytest.raises(EvaluationValidationError, match="manifest_invalid"):
+        load_manifest(candidate)
+
+
+def test_strict_usage_rejects_bool_as_integer() -> None:
+    with pytest.raises(ValidationError):
+        ObservedUsage.model_validate(
+            {
+                "status": "observed",
+                "prompt_tokens": True,
+                "completion_tokens": 1,
+                "total_tokens": 2,
+                "call_count": 1,
+                "cost_estimate": {"status": "not_observed"},
+                "search_cost": {"status": "not_observed"},
+            },
+            strict=True,
+        )
+
+
+def test_report_adapter_maps_usage_validation_to_stable_error() -> None:
+    report = _safe_report()
+    report["usage"]["prompt_tokens"] = True
+    with pytest.raises(EvaluationValidationError, match="usage_invalid"):
+        validate_live_report(report)
+
+
+def test_live_report_is_strict_and_serializes_twice_identically() -> None:
+    model = validate_live_report(_safe_report())
+    assert isinstance(model, LiveReportModel)
+    assert serialize_report(model) == serialize_report(model)
+    assert render_markdown(model) == render_markdown(model)
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "code"),
+    [
+        (("result", "content"), "raw markdown", "report_invalid"),
+        (("evidence", 0, "snippet"), "raw snippet", "evidence_invalid"),
+        (("evidence", 0, "source_url"), "http://127.0.0.1/x", "evidence_invalid"),
+        (("evidence", 0, "source_url"), "https://docs.python.org:444/x", "evidence_invalid"),
+        (("source", "local_path"), "/tmp/archive", "report_invalid"),
+        (("scenario", "query"), "raw query", "report_invalid"),
+    ],
+)
+def test_report_rejects_unknown_or_unsafe_fields(
+    path: tuple[object, ...], value: object, code: str
+) -> None:
+    report = deepcopy(_safe_report())
+    target: object = report
+    for part in path[:-1]:
+        target = target[part]  # type: ignore[index]
+    target[path[-1]] = value  # type: ignore[index]
+    with pytest.raises(EvaluationValidationError, match=code):
+        validate_live_report(report)
+
+
+@pytest.mark.parametrize(
+    "amount",
+    ["1", "1.0", "01.00000000", "NaN", "Infinity", "-1.00000000"],
+)
+def test_report_rejects_noncanonical_cost(amount: str) -> None:
+    report = _safe_report()
+    report["usage"]["cost_estimate"]["amount"] = amount
+    with pytest.raises(EvaluationValidationError, match="usage_invalid"):
+        validate_live_report(report)
+
+
+def test_report_requires_exact_boundaries_and_limits() -> None:
+    report = _safe_report()
+    report["boundaries"]["hosted_production_or_sla"] = "proven"
+    with pytest.raises(EvaluationValidationError, match="report_invalid"):
+        validate_live_report(report)
+
+    report = _safe_report()
+    report["limits"].reverse()
+    with pytest.raises(EvaluationValidationError, match="report_invalid"):
+        validate_live_report(report)
+
+
+def test_error_registry_rejects_cross_phase_code() -> None:
+    with pytest.raises(ValueError, match="evaluation_error_invalid"):
+        EvaluationError(
+            code=FailureCode.SOURCE_DIRTY,
+            phase=FailurePhase.DOCKER,
+            retryable=False,
+        )
+
+
+def test_error_serialization_is_exact_and_safe() -> None:
+    error = EvaluationError(
+        code=FailureCode.SOURCE_DIRTY,
+        phase=FailurePhase.INPUT,
+        retryable=False,
+        cleanup_status=CleanupStatus.NOT_STARTED,
+    )
+    raw = serialize_error(error)
+    assert raw.endswith(b"\n")
+    envelope = ErrorEnvelope.model_validate_json(raw, strict=True)
+    assert envelope.model_dump(mode="json") == {
+        "schema_version": "dra.bounded-live-producer-evaluation-error.v1",
+        "code": "source_dirty",
+        "phase": "input",
+        "retryable": False,
+        "cleanup_status": "not_started",
+    }
+    assert b"Traceback" not in raw
+
+
+def test_report_size_bound_is_enforced() -> None:
+    report = _safe_report()
+    report["source"]["docker_version"] = "x" * 1_048_576
+    with pytest.raises(EvaluationValidationError, match="report_invalid"):
+        validate_live_report(report)

@@ -650,9 +650,15 @@ def _sanitize_volumes(value: object, expected_targets: Sequence[str]) -> list[di
     return output
 
 
-def sanitize_compose_projection(payload: object) -> dict[str, object]:
+def sanitize_compose_projection(
+    payload: object,
+    *,
+    fixture_mode: bool = False,
+) -> dict[str, object]:
     """Validate the approved resolved Compose shape and return a secret-free projection."""
     try:
+        if type(fixture_mode) is not bool:
+            raise ValueError
         if type(payload) is not dict or set(payload) - {"name", "services", "volumes", "networks"}:
             raise ValueError
         services = payload.get("services")
@@ -673,7 +679,8 @@ def sanitize_compose_projection(payload: object) -> dict[str, object]:
                     "cap_drop",
                     "security_opt",
                     "networks",
-                },
+                }
+                | ({"command"} if fixture_mode else set()),
             ),
             "mysql": (
                 3306,
@@ -692,6 +699,10 @@ def sanitize_compose_projection(payload: object) -> dict[str, object]:
             if type(environment) is not dict:
                 raise ValueError
             allowed_environment = _LIVE_ENV_NAMES | _BACKEND_FIXED_ENV
+            if service_name == "backend" and fixture_mode:
+                allowed_environment = allowed_environment | {
+                    "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_FIXTURE"
+                }
             if set(environment) - allowed_environment:
                 raise ValueError
             safe_environment: dict[str, str] = {}
@@ -703,6 +714,10 @@ def sanitize_compose_projection(payload: object) -> dict[str, object]:
                     safe_environment[key] = "<secret>"
                 elif key in _PATH_ENV:
                     safe_environment[key] = "<container-path>"
+                elif key == "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_FIXTURE":
+                    if value != "true":
+                        raise ValueError
+                    safe_environment[key] = "<fixture-gate>"
                 else:
                     safe_environment[key] = "" if value is None else value
             safe_service: dict[str, object] = {
@@ -718,6 +733,15 @@ def sanitize_compose_projection(payload: object) -> dict[str, object]:
             ):
                 raise ValueError
             if service_name == "backend":
+                expected_command = [
+                    "python",
+                    "scripts/bounded_live_producer_container_fixture.py",
+                    "serve",
+                ]
+                if fixture_mode:
+                    if service.get("command") != expected_command:
+                        raise ValueError
+                    safe_service["command"] = "<fixture-command>"
                 build = service.get("build")
                 if type(build) is not dict or set(build) != {"context", "dockerfile"}:
                     raise ValueError
@@ -883,23 +907,25 @@ class ManagedComposeProject:
         if not self.root.is_dir() or not _PROJECT_RE.fullmatch(project_name):
             raise ValueError("managed_compose_project_invalid")
         resolved_paths = tuple(path.resolve() for path in compose_paths)
-        allowed_relative_paths = {
-            Path("docker-compose.yml"),
-            Path("tests/fixtures/bounded-live-producer-v1/docker-compose.fixture.yml"),
-        }
         try:
             relatives = tuple(path.relative_to(self.root) for path in resolved_paths)
         except ValueError as exc:
             raise ValueError("managed_compose_project_invalid") from exc
+        approved_relatives = (
+            (Path("docker-compose.yml"),),
+            (
+                Path("docker-compose.yml"),
+                Path("tests/fixtures/bounded-live-producer-v1/docker-compose.fixture.yml"),
+            ),
+        )
         if (
-            not resolved_paths
-            or relatives[0] != Path("docker-compose.yml")
-            or any(relative not in allowed_relative_paths for relative in relatives)
+            relatives not in approved_relatives
             or any(not path.is_file() for path in resolved_paths)
             or len(set(resolved_paths)) != len(resolved_paths)
         ):
             raise ValueError("managed_compose_project_invalid")
         self.compose_paths = resolved_paths
+        self.fixture_mode = len(relatives) == 2
         self.env_file = env_file.resolve()
         self.project_name = project_name
         self.environment = dict(environment)
@@ -937,10 +963,11 @@ class ManagedComposeProject:
             **self.port_overrides,
             "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE": str(self.env_file),
         }
+        invocation_root = self.root if self.root.is_dir() else self.env_file.parent
         try:
             result = self._runner(
                 command,
-                cwd=self.root,
+                cwd=invocation_root,
                 env=environment,
                 deadline=deadline,
                 allowed_environment=_DOCKER_ENV_ALLOWLIST,
@@ -977,6 +1004,13 @@ class ManagedComposeProject:
         self._invoke(("up", "-d", "mysql"), deadline, compose=True)
 
     def start_backend(self, deadline: ActiveDeadline) -> None:
+        if self.fixture_mode:
+            raise ValueError("fixture_backend_requires_explicit_start")
+        self._invoke(("up", "-d", "backend"), deadline, compose=True)
+
+    def start_fixture_backend(self, deadline: ActiveDeadline) -> None:
+        if not self.fixture_mode:
+            raise ValueError("fixture_backend_unavailable")
         self._invoke(("up", "-d", "backend"), deadline, compose=True)
 
     def restart_backend(self, deadline: ActiveDeadline) -> None:
@@ -1022,7 +1056,12 @@ def cleanup_receipt(
 ) -> dict[str, bool]:
     failures: list[BaseException] = []
 
-    def attempt(arguments: Sequence[str], *, compose: bool = False) -> None:
+    def attempt(
+        arguments: Sequence[str],
+        *,
+        compose: bool = False,
+        required: bool = True,
+    ) -> None:
         try:
             result = project._invoke(
                 arguments,
@@ -1030,7 +1069,7 @@ def cleanup_receipt(
                 compose=compose,
                 allow_failure=True,
             )
-            if result.returncode != 0:
+            if required and result.returncode != 0:
                 failures.append(
                     EvaluationError(
                         FailureCode.CLEANUP_FAILED,
@@ -1040,6 +1079,8 @@ def cleanup_receipt(
                     )
                 )
         except BaseException:
+            if not required:
+                return
             failures.append(
                 EvaluationError(
                     FailureCode.CLEANUP_FAILED,
@@ -1051,11 +1092,11 @@ def cleanup_receipt(
 
     attempt(("down", "-v", "--remove-orphans"), compose=True)
     for identifier in project._containers:
-        attempt(("docker", "container", "rm", "-f", identifier))
+        attempt(("docker", "container", "rm", "-f", identifier), required=False)
     for identifier in project._volumes:
-        attempt(("docker", "volume", "rm", identifier))
+        attempt(("docker", "volume", "rm", identifier), required=False)
     for identifier in project._networks:
-        attempt(("docker", "network", "rm", identifier))
+        attempt(("docker", "network", "rm", identifier), required=False)
     for path in project._temp_paths:
         try:
             shutil.rmtree(path)
@@ -1069,7 +1110,7 @@ def cleanup_receipt(
                 )
             )
     if project._image_tag and not project._retain_image:
-        attempt(("docker", "image", "rm", project._image_tag))
+        attempt(("docker", "image", "rm", project._image_tag), required=False)
 
     def verify_absent(resource: str, identifier: str) -> None:
         try:

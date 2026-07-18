@@ -1,0 +1,8 @@
+services:
+  backend:
+    command:
+      - python
+      - scripts/bounded_live_producer_container_fixture.py
+      - serve
+    environment:
+      DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_FIXTURE: "true"

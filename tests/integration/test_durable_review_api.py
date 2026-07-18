@@ -1,7 +1,27 @@
 import pytest
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
 
 from api.server import app
+from api.review_api import authenticate_review_request
+
+
+def test_review_authentication_handles_utf8_secret(monkeypatch):
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", "true")
+    monkeypatch.setenv("API_SECRET", "密钥")
+
+    actor, error = authenticate_review_request(
+        SimpleNamespace(headers={"X-API-Key": "密钥"})
+    )
+    assert error is None
+    assert actor is not None
+
+    actor, error = authenticate_review_request(
+        SimpleNamespace(headers={"X-API-Key": "错误"})
+    )
+    assert actor is None
+    assert error.status_code == 401
+    assert error.body.find(b"invalid_api_key") >= 0
 from api.review_repository import _connect
 from tests.unit.test_review_repository import _required_review_run
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from email.message import Message
 import hashlib
-import hmac
 import os
 import uuid
 
@@ -33,6 +32,7 @@ from api.publication_repository import (
 from api.publication_service import PublicationBuildConflict
 from api.review_models import BoundedId
 from api.run_repository import get_run
+from api.runtime_access import credentials_match
 
 
 router = APIRouter()
@@ -97,7 +97,7 @@ def authenticate_evidence_verification_request(
             run_id=run_id,
         )
     supplied = request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(supplied, secret):
+    if not credentials_match(supplied, secret):
         return None, _error(
             401,
             code="invalid_api_key",

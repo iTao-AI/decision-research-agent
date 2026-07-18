@@ -5,8 +5,31 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
 
 from api.server import app
+from api.evidence_verification_api import authenticate_evidence_verification_request
+
+
+def test_evidence_verification_authentication_handles_utf8_secret(monkeypatch):
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION",
+        "true",
+    )
+    monkeypatch.setenv("API_SECRET", "密钥")
+
+    actor, error = authenticate_evidence_verification_request(
+        SimpleNamespace(headers={"X-API-Key": "密钥"})
+    )
+    assert error is None
+    assert actor is not None
+
+    actor, error = authenticate_evidence_verification_request(
+        SimpleNamespace(headers={"X-API-Key": "错误"})
+    )
+    assert actor is None
+    assert error.status_code == 401
+    assert error.body.find(b"invalid_api_key") >= 0
 from api.evidence_verification_repository import finalize_verification_snapshot
 from api.run_repository import get_run
 from tests.unit.test_publication_repository import (

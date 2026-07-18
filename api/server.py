@@ -29,7 +29,14 @@ from agent.main_agent import run_deep_agent
 from agent.run_result import OutcomeBox
 from agent.telemetry import collector
 from api.monitor import monitor, manager
-from api.cors_config import get_allowed_origins
+from api.cors_config import load_cors_configuration
+from api.runtime_access import (
+    AccessDecision,
+    build_http_access_context,
+    credentials_match,
+    decide_runtime_access,
+    load_runtime_access_policy,
+)
 from api.task_tracker import (
     FinalizationCheckpoint,
     TerminationOrigin,
@@ -105,12 +112,56 @@ def _is_review_api_path(path: str) -> bool:
     )
 
 
-class APIKeyMiddleware(BaseHTTPMiddleware):
-    """Middleware that checks X-API-Key header against API_SECRET in .env.
+_RUNTIME_ACCESS_ERRORS = {
+    "api_key_invalid": (
+        401,
+        "The service credential is invalid.",
+        "X-API-Key did not match the configured service credential.",
+        "Provide the configured X-API-Key.",
+    ),
+    "api_auth_not_configured": (
+        503,
+        "The service is not configured for remote unauthenticated access.",
+        "The direct client is not an explicit loopback peer.",
+        "Use the loopback source runtime or configure X-API-Key.",
+    ),
+    "local_authority_required": (
+        503,
+        "An explicit loopback authority is required.",
+        "The request authority is not an explicit loopback literal.",
+        "Use 127.0.0.1 or [::1], or configure X-API-Key.",
+    ),
+    "forwarded_request_rejected": (
+        503,
+        "Forwarded unauthenticated requests are not supported.",
+        "Forwarding identity metadata is present in loopback-only mode.",
+        "Connect directly over loopback or configure X-API-Key.",
+    ),
+    "origin_not_allowed": (
+        403,
+        "The browser Origin is not allowed.",
+        "Origin did not match the configured browser Origin.",
+        "Use the configured browser Origin.",
+    ),
+}
 
-    When API_SECRET is not set, logs a warning and accepts all requests
-    (backwards-compatible with development environments).
-    """
+
+def _runtime_access_error(decision: AccessDecision) -> JSONResponse:
+    status, problem, cause, fix = _RUNTIME_ACCESS_ERRORS[decision.code]
+    return JSONResponse(
+        status_code=status,
+        content={
+            "code": decision.code,
+            "problem": problem,
+            "cause": cause,
+            "fix": fix,
+            "retryable": False,
+        },
+    )
+
+
+class RuntimeAccessMiddleware(BaseHTTPMiddleware):
+    """Enforce the frozen general HTTP runtime access policy."""
 
     async def dispatch(self, request, call_next):
         if request.method == "OPTIONS":
@@ -124,22 +175,22 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if path in ("/docs", "/openapi.json", "/redoc", "/health"):
             return await call_next(request)
 
-        api_secret = os.environ.get("API_SECRET", "")
-        if not api_secret:
-            logging.warning(
-                "API_SECRET is not set — all requests are accepted without authentication. "
-                "Set API_SECRET=your-key in .env to enable API key protection."
-            )
-            return await call_next(request)
+        context = build_http_access_context(request)
+        decision = decide_runtime_access(
+            request.app.state.runtime_access_policy,
+            context,
+            allowed_origin=request.app.state.cors_configuration.allowed_origin,
+        )
+        return await call_next(request) if decision.allowed else _runtime_access_error(decision)
 
-        client_key = request.headers.get("X-API-Key", "")
-        if client_key != api_secret:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "请设置 API_SECRET（在 .env 中）并通过请求头 X-API-Key 传递正确的密钥"},
-            )
 
-        return await call_next(request)
+def _emit_runtime_access_warning_once(application: FastAPI) -> None:
+    if (
+        application.state.runtime_access_policy.secret_value is None
+        and not application.state.runtime_access_warning_emitted
+    ):
+        logging.warning("runtime access mode: loopback_only")
+        application.state.runtime_access_warning_emitted = True
 
 
 def create_review_worker(
@@ -174,6 +225,7 @@ async def lifespan(app: FastAPI):
     app.state.run_dispatch_worker_task = None
     app.state.review_runtime_readiness = None
     app.state.evidence_verification_runtime_readiness = None
+    _emit_runtime_access_warning_once(app)
     try:
         application_db_path = sqlite_db_path()
         runtime = validate_review_runtime(output_dir=output_dir)
@@ -271,18 +323,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+runtime_access_policy = load_runtime_access_policy()
+cors_configuration = load_cors_configuration(
+    access_policy=runtime_access_policy,
+)
+app.state.runtime_access_policy = runtime_access_policy
+app.state.cors_configuration = cors_configuration
+app.state.runtime_access_warning_emitted = False
+
 output_dir = project_root / "output"
 output_dir.mkdir(exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=get_allowed_origins(),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_configuration.allowed_origins,
+    allow_credentials=False,
+    allow_methods=list(cors_configuration.allow_methods),
+    allow_headers=list(cors_configuration.allow_headers),
 )
 
-app.add_middleware(APIKeyMiddleware)
+app.add_middleware(RuntimeAccessMiddleware)
 app.include_router(review_router)
 app.include_router(evidence_verification_router)
 

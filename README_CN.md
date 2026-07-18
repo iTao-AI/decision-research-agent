@@ -142,6 +142,9 @@ curl --fail --silent http://127.0.0.1:8000/health
 
 后续 Tool Client readiness、run 创建、result 获取和故障处理见完整的
 [Getting Started tutorial](docs/getting-started.md)。
+需要使用显式 API/MySQL 值、loopback-only host publication、health-gated
+startup 和保留 volume 的 rollback 启动 authenticated container 时，请遵循
+[Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)。
 
 ## Demo Console
 
@@ -233,6 +236,7 @@ DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/secure_local_runtime_proof.py check
 python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
@@ -252,6 +256,8 @@ python tools/decision_research_agent_tool.py doctor
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Durable Run Failure Cause Proof](docs/evidence/run-failure-cause-v1.md)
+- [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
+- [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
 - [v0.1.4 Release Notes](docs/releases/v0.1.4.md)
 - [v0.1.3 Release Notes](docs/releases/v0.1.3.md)
@@ -267,6 +273,13 @@ python tools/decision_research_agent_tool.py doctor
   endpoint、`409 run_failed` envelope 与冻结的
   `dra.downstream-consumer.v1` fixture 保持不变；该有界证明不构成 provider
   diagnosis、billing record 或 exactly-once execution 声明。
+- Source launcher 仅在 direct-loopback 边界支持 credential-free 访问。
+  Compose 要求认证，只把 backend/MySQL 发布到 `127.0.0.1`，并使用 required
+  secrets、health declarations、warning-level logging、capability drop 与
+  `no-new-privileges`。为兼容现有 volume，image 仍保留 root UID。
+  Deterministic proof、required Docker lane 与后续 tag-archive smoke 是三层
+  独立 local evidence；均不构成 TLS、identity/RBAC、hosted deployment、
+  non-root operation 或 provider/research quality 声明。
 - v0.1.3 dispatch contract 增加 Agent invocation 前由应用拥有的
   `run_dispatches_v1` reconciliation。历史 v0.1.2 identity proof 保持不变，
   其自身不证明 crash-before-schedule recovery；新的 dispatch proof 完成该

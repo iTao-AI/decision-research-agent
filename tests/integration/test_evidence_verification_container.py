@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
-import subprocess
 import time
 import uuid
 
@@ -11,8 +9,11 @@ import pytest
 
 from tests.integration.test_durable_review_container import (
     DockerProject,
+    _assert_secure_runtime_boundary,
+    _create_isolated_compose_env,
+    _create_isolated_docker_config,
     _create_test_bootstrap_override,
-    _ensure_compose_env_file,
+    _docker_daemon_available,
 )
 
 
@@ -28,65 +29,30 @@ def verification_docker_project(tmp_path):
         .lower()
         == "true"
     )
-    try:
-        available = subprocess.run(
-            ["docker", "info"],
-            text=True,
-            capture_output=True,
-            check=False,
-        ).returncode == 0
-    except FileNotFoundError:
-        available = False
-    if not available:
-        if required:
-            pytest.fail("docker_required_but_unavailable")
-        pytest.skip("Docker daemon is unavailable")
-
     project_name = f"dra_verification_{uuid.uuid4().hex[:10]}"
-    env = os.environ.copy()
-    docker_config = tmp_path / "docker-config"
-    docker_config.mkdir()
-    (docker_config / "config.json").write_text(
-        json.dumps(
-            {
-                "auths": {},
-                "cliPluginsExtraDirs": [
-                    str(Path.home() / ".docker" / "cli-plugins")
-                ],
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    env["DOCKER_CONFIG"] = str(docker_config)
-    env["DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL"] = "true"
-    env["DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION"] = "true"
-    env["API_SECRET"] = "verification-container-test-only"
+    env_file = _create_isolated_compose_env(tmp_path / "runtime")
+    docker_config = _create_isolated_docker_config(tmp_path)
     bootstrap = _create_test_bootstrap_override(tmp_path)
     project = DockerProject(
         root=root,
         project_name=project_name,
-        env=env,
+        env_file=env_file,
+        docker_config=docker_config,
+        feature_flags={
+            "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL": "true",
+            "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION": "true",
+        },
         compose_files=(root / "docker-compose.yml", bootstrap.compose_path),
     )
-    with _ensure_compose_env_file(root):
-        try:
-            project._compose(
-                "up",
-                "-d",
-                "--build",
-                "backend",
-                timeout=1800,
-            )
-            project.wait_until_ready()
-            yield project
-        finally:
-            project._compose(
-                "down",
-                "-v",
-                "--remove-orphans",
-                timeout=180,
-            )
+    if not _docker_daemon_available(project.env):
+        if required:
+            pytest.fail("docker_required_but_unavailable")
+        pytest.skip("Docker daemon is unavailable")
+
+    with project.running_backend():
+        _assert_secure_runtime_boundary(project)
+        yield project
+        project.assert_no_provider_calls()
 
 
 def _tool(
@@ -101,10 +67,6 @@ def _tool(
             *args,
         ],
         input_text=input_text,
-        environment={
-            "DECISION_RESEARCH_AGENT_API_KEY":
-                "verification-container-test-only",
-        },
     )
 
 

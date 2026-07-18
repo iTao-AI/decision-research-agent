@@ -16,6 +16,20 @@ All notable changes to this project are documented in this file.
   warning-level logging. Remote direct use requires a key and operator-owned
   TLS and is not a supported hosted deployment.
 
+### Secure local container delivery
+
+- Compose now requires `API_SECRET`, `MYSQL_ROOT_PASSWORD`, and
+  `MYSQL_PASSWORD`, publishes the backend and MySQL only on `127.0.0.1`, and
+  keeps the MySQL root credential value out of the backend service.
+- Backend and MySQL health declarations gate startup. The backend drops all
+  capabilities and enables `no-new-privileges` while retaining the root UID
+  for existing `data` and `output` volume compatibility.
+- Added a deterministic 16-case local contract proof and a disjoint required
+  Docker lane for build, health, security inspection, named-volume restart
+  persistence, bounded task-owned cleanup, and no observed provider, model, or
+  tool request. This evidence does not claim TLS, identity, RBAC, hosted
+  deployment, non-root operation, or provider quality.
+
 ## [0.1.4] - 2026-07-16
 
 ### Durable run failure causes

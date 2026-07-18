@@ -158,6 +158,9 @@ Expected response:
 
 Continue with the complete [Getting Started tutorial](docs/getting-started.md)
 for Tool Client readiness, run creation, result retrieval, and troubleshooting.
+For an authenticated container launch with required API/MySQL values,
+loopback-only host publication, health-gated startup, and volume-safe rollback,
+use [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md).
 
 ## Demo Console
 
@@ -257,6 +260,7 @@ Useful local checks:
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/secure_local_runtime_proof.py check
 python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
@@ -276,6 +280,8 @@ python tools/decision_research_agent_tool.py doctor
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Durable Run Failure Cause Proof](docs/evidence/run-failure-cause-v1.md)
+- [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
+- [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
 - [v0.1.4 Release Notes](docs/releases/v0.1.4.md)
 - [v0.1.3 Release Notes](docs/releases/v0.1.3.md)
@@ -291,6 +297,14 @@ python tools/decision_research_agent_tool.py doctor
   result endpoint, its `409 run_failed` envelope, and the frozen
   `dra.downstream-consumer.v1` fixture remain unchanged; the bounded proof is
   not a provider diagnosis, billing record, or exactly-once execution claim.
+- The source launcher supports credential-free use only on the direct-loopback
+  boundary. Compose is authenticated, publishes backend/MySQL only on
+  `127.0.0.1`, and uses required secrets, health declarations, warning-level
+  logging, dropped capabilities, and `no-new-privileges`. The image retains its
+  root UID for existing-volume compatibility. Deterministic proof, the required
+  Docker lane, and any later tag-archive smoke are separate local evidence;
+  none claims TLS, identity/RBAC, hosted deployment, non-root operation, or
+  provider/research quality.
 - The v0.1.3 dispatch contract adds application-owned
   `run_dispatches_v1` reconciliation before Agent invocation. The historical
   v0.1.2 identity proof remains unchanged and does not itself prove

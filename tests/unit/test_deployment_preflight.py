@@ -39,6 +39,16 @@ def test_backend_image_packages_durable_hitl_gate_report():
     rule_positions = [ignore_rules.index(rule) for rule in required_ignore_rules]
 
     assert rule_positions == sorted(rule_positions)
+    for copied_directory in (
+        "agent",
+        "api",
+        "prompt",
+        "skills",
+        "tools",
+        "utils",
+        "scripts",
+    ):
+        assert f"{copied_directory}/" not in ignore_rules
     assert (
         "COPY docs/evidence/durable-hitl-gate-report.json "
         "docs/evidence/durable-hitl-gate-report.json"

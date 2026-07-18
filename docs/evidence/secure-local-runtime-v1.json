@@ -1,0 +1,178 @@
+{
+  "boundaries": {
+    "authenticated_api_key_access": "proven",
+    "container_configuration": "proven",
+    "container_runtime": "separate_required_lane",
+    "cors_exact_origin": "proven",
+    "hosted_deployment": "not_claimed",
+    "live_provider_result": "not_observed",
+    "source_loopback_access": "proven",
+    "websocket_header_only_access": "proven"
+  },
+  "cases": [
+    {
+      "case_id": "source_launcher_loopback_no_reload",
+      "observations": {
+        "host": "127.0.0.1",
+        "log_level": "warning",
+        "port": 8000,
+        "reload": false
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "http_empty_secret_ipv4_loopback_allowed",
+      "observations": {
+        "decision_code": "allowed_loopback",
+        "http_status": 200,
+        "route_reached": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "http_empty_secret_ipv6_loopback_allowed",
+      "observations": {
+        "decision_code": "allowed_loopback",
+        "http_status": 200,
+        "route_reached": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "http_empty_secret_non_loopback_rejected",
+      "observations": {
+        "decision_code": "api_auth_not_configured",
+        "http_status": 503,
+        "route_reached": false
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "http_empty_secret_unknown_peer_rejected",
+      "observations": {
+        "decision_code": "api_auth_not_configured",
+        "http_status": 503,
+        "route_reached": false
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "http_empty_secret_non_loopback_authority_rejected",
+      "observations": {
+        "decision_code": "local_authority_required",
+        "http_status": 503,
+        "route_reached": false
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "http_empty_secret_forwarded_rejected",
+      "observations": {
+        "decision_code": "forwarded_request_rejected",
+        "http_status": 503,
+        "route_reached": false
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "http_configured_secret_invalid_rejected",
+      "observations": {
+        "decision_code": "api_key_invalid",
+        "http_status": 401,
+        "route_reached": false
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "http_configured_secret_valid_all_peers",
+      "observations": {
+        "decision_code": "allowed_api_key",
+        "loopback_route_reached": true,
+        "non_loopback_route_reached": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "websocket_header_credential_accepted",
+      "observations": {
+        "connection_observed": true,
+        "decision_code": "allowed_api_key",
+        "run_lookup_observed": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "websocket_query_credential_rejected",
+      "observations": {
+        "close_code": 1008,
+        "connection_observed": false,
+        "decision_code": "query_credential_rejected",
+        "run_lookup_observed": false
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "websocket_invalid_origin_rejected",
+      "observations": {
+        "close_code": 1008,
+        "connection_observed": false,
+        "decision_code": "origin_not_allowed",
+        "run_lookup_observed": false
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "cors_invalid_origin_rejected",
+      "observations": {
+        "configuration_code": "cors_origin_invalid",
+        "construction_rejected": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "cors_empty_secret_remote_origin_rejected",
+      "observations": {
+        "configuration_code": "cors_origin_requires_authenticated_runtime",
+        "construction_rejected": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "compose_loopback_required_secrets",
+      "observations": {
+        "api_secret_required": true,
+        "backend_default_host_port": 8000,
+        "backend_host_ip": "127.0.0.1",
+        "backend_root_password_suppressed": true,
+        "mysql_default_host_port": 3306,
+        "mysql_host_ip": "127.0.0.1",
+        "mysql_password_required": true,
+        "mysql_root_password_required": true,
+        "service_env_file_parameterized": true,
+        "test_host_ports_parameterized": true
+      },
+      "status": "passed"
+    },
+    {
+      "case_id": "container_health_privilege_contract",
+      "observations": {
+        "backend_healthcheck_declared": true,
+        "cap_drop_all_declared": true,
+        "container_runtime_scope": "separate_required_lane",
+        "mysql_healthcheck_declared": true,
+        "no_new_privileges_declared": true,
+        "uvicorn_log_level": "warning"
+      },
+      "status": "passed"
+    }
+  ],
+  "limits": [
+    "Deterministic local contract evidence, not a Docker runtime observation or deployment certification.",
+    "TLS, identity, authorization, RBAC, and hosted operation are not proven.",
+    "Provider, model, tool, and research quality are not observed.",
+    "The required Docker runtime lane remains authoritative for container build, health, privilege inspection, and cleanup."
+  ],
+  "schema_version": "dra.secure-local-runtime.v1",
+  "source": "production_path_deterministic_local",
+  "status": "valid"
+}

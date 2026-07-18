@@ -22,6 +22,9 @@ external evaluation of the public contract surface.
   state, reconcile the same create intent, resume known runs with GET only, and
   understand the video demo boundary.
 - [Observability](observability.md) — configure privacy-first LangSmith traces.
+- [Secure Local Runtime](operations/secure-local-runtime.md) — operate the
+  source-loopback and authenticated Compose launch boundaries, verify health
+  and security settings, and preserve existing volumes during rollback.
 - [Controlled Review](operations/controlled-review-workflow.md) — operate the review queue.
 - [Durable HITL Feasibility](operations/durable-hitl-feasibility.md) — enable and verify the bounded workflow.
 - [Evidence Verification](operations/evidence-verification-workflow.md) — operate append-only verification.
@@ -66,6 +69,10 @@ external evaluation of the public contract surface.
 - [Durable Run Failure Cause Proof](evidence/run-failure-cause-v1.md) and
   [JSON report](evidence/run-failure-cause-v1.json) — deterministic 16-case
   production-path contract proof for the bounded terminal-cause projection.
+- [Secure Local Runtime v1 Proof](evidence/secure-local-runtime-v1.md) and
+  [JSON report](evidence/secure-local-runtime-v1.json) — deterministic 16-case
+  production-path access and container-configuration evidence; real Docker
+  runtime remains a separate required lane.
 - [Agent Evaluation Report](evidence/agent-evaluation-regression-v1.md) and
   [JSON baseline](evidence/agent-evaluation-regression-v1.json) — deterministic
   contract regression evidence and limits.

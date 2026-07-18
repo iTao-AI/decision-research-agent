@@ -107,11 +107,14 @@ def _write_env(path: Path, values: dict[str, str]) -> None:
 
 
 def _compose_projection() -> dict[str, object]:
+    project_name = "dra-proof-11111111111111111111111111111111"
     return {
-        "name": "proof-project",
+        "name": project_name,
         "services": {
             "backend": {
                 "build": {"context": "/task/snapshot", "dockerfile": "Dockerfile.backend"},
+                "command": None,
+                "entrypoint": None,
                 "environment": {
                     "API_SECRET": "service-secret",
                     "OPENAI_API_KEY": "provider-secret",
@@ -123,11 +126,18 @@ def _compose_projection() -> dict[str, object]:
                     "DECISION_RESEARCH_AGENT_DB_PATH": "/app/data/decision_research_agent.db",
                     "DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH": "/app/data/review_checkpoints.db",
                 },
-                "env_file": ["/outside/live.env"],
-                "ports": [{"target": 8000, "published": "0", "host_ip": "127.0.0.1", "protocol": "tcp"}],
+                "ports": [{"target": 8000, "published": "0", "host_ip": "127.0.0.1", "protocol": "tcp", "mode": "ingress"}],
                 "volumes": [
-                    {"type": "volume", "source": "proof_backend_data", "target": "/app/data"},
-                    {"type": "volume", "source": "proof_backend_output", "target": "/app/output"},
+                    {
+                        "type": "volume",
+                        "source": f"{project_name}_backend_data",
+                        "target": "/app/data",
+                    },
+                    {
+                        "type": "volume",
+                        "source": f"{project_name}_backend_output",
+                        "target": "/app/output",
+                    },
                 ],
                 "networks": {"app-network": None},
                 "cap_drop": ["ALL"],
@@ -135,6 +145,8 @@ def _compose_projection() -> dict[str, object]:
                 "depends_on": {"mysql": {"condition": "service_healthy", "required": True}},
             },
             "mysql": {
+                "command": None,
+                "entrypoint": None,
                 "image": "mysql:8.0",
                 "environment": {
                     "MYSQL_ROOT_PASSWORD": "root-secret",
@@ -142,7 +154,7 @@ def _compose_projection() -> dict[str, object]:
                     "MYSQL_USER": "decision_research",
                     "MYSQL_PASSWORD": "mysql-secret",
                 },
-                "ports": [{"target": 3306, "published": "0", "host_ip": "127.0.0.1", "protocol": "tcp"}],
+                "ports": [{"target": 3306, "published": "0", "host_ip": "127.0.0.1", "protocol": "tcp", "mode": "ingress"}],
                 "healthcheck": {
                     "test": [
                         "CMD-SHELL",
@@ -153,16 +165,28 @@ def _compose_projection() -> dict[str, object]:
                     "retries": 12,
                     "start_period": "20s",
                 },
-                "volumes": [{"type": "volume", "source": "proof_mysql_data", "target": "/var/lib/mysql"}],
+                "volumes": [
+                    {
+                        "type": "volume",
+                        "source": f"{project_name}_mysql_data",
+                        "target": "/var/lib/mysql",
+                    }
+                ],
                 "networks": {"app-network": None},
             },
         },
         "volumes": {
-            "backend_data": {"name": "proof_backend_data"},
-            "backend_output": {"name": "proof_backend_output"},
-            "mysql_data": {"name": "proof_mysql_data"},
+            "backend_data": {"name": f"{project_name}_backend_data"},
+            "backend_output": {"name": f"{project_name}_backend_output"},
+            "mysql_data": {"name": f"{project_name}_mysql_data"},
         },
-        "networks": {"app-network": {"name": "proof_app-network", "driver": "bridge"}},
+        "networks": {
+            "app-network": {
+                "name": f"{project_name}_app-network",
+                "driver": "bridge",
+                "ipam": {},
+            }
+        },
     }
 
 
@@ -419,10 +443,9 @@ def test_sanitize_compose_projection_redacts_secrets_paths_and_names_determinist
         "search-secret",
         "mysql-secret",
         "root-secret",
-        "/outside/live.env",
         "/task/snapshot",
-        "proof-project",
-        "proof_backend_data",
+        "dra-proof-11111111111111111111111111111111",
+        "dra-proof-11111111111111111111111111111111_backend_data",
     ):
         assert forbidden not in encoded
     assert first["services"]["backend"]["ports"][0]["published"] == 0
@@ -458,6 +481,21 @@ def test_sanitize_compose_projection_rejects_unknown_secret_and_shape_mutations(
 
     payload = _compose_projection()
     payload["services"]["mysql"]["healthcheck"]["retries"] = 99  # type: ignore[index]
+    with pytest.raises(EvaluationError):
+        sanitize_compose_projection(payload)
+
+    payload = _compose_projection()
+    payload["volumes"]["backend_data"]["labels"] = {"TOKEN": "secret"}  # type: ignore[index]
+    with pytest.raises(EvaluationError):
+        sanitize_compose_projection(payload)
+
+    payload = _compose_projection()
+    payload["networks"]["app-network"]["labels"] = {"TOKEN": "secret"}  # type: ignore[index]
+    with pytest.raises(EvaluationError):
+        sanitize_compose_projection(payload)
+
+    payload = _compose_projection()
+    payload["services"]["backend"]["entrypoint"] = ["sh"]  # type: ignore[index]
     with pytest.raises(EvaluationError):
         sanitize_compose_projection(payload)
 
@@ -664,6 +702,37 @@ def test_cleanup_receipt_uses_recorded_ids_fixed_order_and_preserves_preexisting
     assert "prune" not in flattened
     assert "--rmi" not in flattened
     assert "mysql:8.0" not in flattened
+
+
+def test_cleanup_receipt_removes_tracked_temp_before_resource_receipt_exists(
+    tmp_path: Path,
+) -> None:
+    task_temp = tmp_path / "owned-temp"
+    root = task_temp / "snapshot-build" / "snapshot"
+    root.mkdir(parents=True)
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name="dra-proof-55555555555555555555555555555555",
+        environment={},
+        runner=runner,
+    )
+    project.track_temp_paths((task_temp,))
+    receipt = cleanup_receipt(
+        project,
+        ActiveDeadline(5, code=FailureCode.CLEANUP_FAILED, phase=FailurePhase.CLEANUP),
+    )
+    assert receipt["zero_temp_residue"] is True
+    assert not task_temp.exists()
 
 
 def test_cleanup_receipt_fails_when_recorded_resource_still_exists(tmp_path: Path) -> None:

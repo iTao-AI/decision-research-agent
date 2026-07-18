@@ -253,6 +253,7 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
         project_name=f"dra-proof-{secrets.token_hex(16)}",
         environment=docker_environment,
     )
+    project.track_temp_paths((task_root,))
     active = ActiveDeadline(
         DOCKER_TEST_ACTIVE_SECONDS,
         code=FailureCode.SERVICE_START_FAILED,

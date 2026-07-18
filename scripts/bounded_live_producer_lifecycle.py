@@ -643,12 +643,23 @@ def _sanitize_port(value: object, target: int) -> dict[str, object]:
     return {"target": target, "published": 0, "host_ip": "127.0.0.1", "protocol": "tcp"}
 
 
-def _sanitize_volumes(value: object, expected_targets: Sequence[str]) -> list[dict[str, str]]:
+def _sanitize_volumes(
+    value: object,
+    expected_targets: Sequence[str],
+    expected_sources: Sequence[str],
+) -> list[dict[str, str]]:
     if type(value) is not list or len(value) != len(expected_targets):
         raise ValueError
     output: list[dict[str, str]] = []
-    for role, (item, target) in enumerate(zip(value, expected_targets, strict=True)):
-        if type(item) is not dict or item.get("type") != "volume" or item.get("target") != target:
+    for role, (item, target, source) in enumerate(
+        zip(value, expected_targets, expected_sources, strict=True)
+    ):
+        if (
+            type(item) is not dict
+            or item.get("type") != "volume"
+            or item.get("source") != source
+            or item.get("target") != target
+        ):
             raise ValueError
         if set(item) - {"type", "source", "target", "read_only", "volume"}:
             raise ValueError
@@ -666,6 +677,9 @@ def sanitize_compose_projection(
         if type(fixture_mode) is not bool:
             raise ValueError
         if type(payload) is not dict or set(payload) - {"name", "services", "volumes", "networks"}:
+            raise ValueError
+        project_name = payload.get("name")
+        if type(project_name) is not str or not _PROJECT_RE.fullmatch(project_name):
             raise ValueError
         services = payload.get("services")
         if type(services) is not dict or set(services) != {"backend", "mysql"}:
@@ -685,13 +699,23 @@ def sanitize_compose_projection(
                     "cap_drop",
                     "security_opt",
                     "networks",
-                }
-                | ({"command"} if fixture_mode else set()),
+                    "command",
+                    "entrypoint",
+                },
             ),
             "mysql": (
                 3306,
                 ("/var/lib/mysql",),
-                {"image", "ports", "environment", "healthcheck", "volumes", "networks"},
+                {
+                    "image",
+                    "ports",
+                    "environment",
+                    "healthcheck",
+                    "volumes",
+                    "networks",
+                    "command",
+                    "entrypoint",
+                },
             ),
         }
         for service_name, (port, volume_targets, allowed_keys) in specifications.items():
@@ -729,14 +753,31 @@ def sanitize_compose_projection(
             safe_service: dict[str, object] = {
                 "ports": [_sanitize_port(ports[0], port)],
                 "environment": safe_environment,
-                "volumes": _sanitize_volumes(service.get("volumes"), volume_targets),
+                "volumes": _sanitize_volumes(
+                    service.get("volumes"),
+                    volume_targets,
+                    tuple(
+                        f"{project_name}_{logical_name}"
+                        for logical_name in (
+                            ("backend_data", "backend_output")
+                            if service_name == "backend"
+                            else ("mysql_data",)
+                        )
+                    ),
+                ),
                 "networks": ["app-network"],
             }
             networks = service.get("networks")
             if not (
                 networks == ["app-network"]
-                or (type(networks) is dict and set(networks) == {"app-network"})
+                or (
+                    type(networks) is dict
+                    and set(networks) == {"app-network"}
+                    and networks["app-network"] in (None, {})
+                )
             ):
+                raise ValueError
+            if service.get("entrypoint") is not None:
                 raise ValueError
             if service_name == "backend":
                 expected_command = [
@@ -748,6 +789,8 @@ def sanitize_compose_projection(
                     if service.get("command") != expected_command:
                         raise ValueError
                     safe_service["command"] = "<fixture-command>"
+                elif service.get("command") is not None:
+                    raise ValueError
                 build = service.get("build")
                 if type(build) is not dict or set(build) != {"context", "dockerfile"}:
                     raise ValueError
@@ -757,9 +800,15 @@ def sanitize_compose_projection(
                     "context": "<tracked-snapshot>",
                     "dockerfile": "Dockerfile.backend",
                 }
-                env_files = service.get("env_file")
-                if type(env_files) is not list or len(env_files) != 1:
-                    raise ValueError
+                if "env_file" in service:
+                    env_files = service["env_file"]
+                    if (
+                        type(env_files) is not list
+                        or len(env_files) != 1
+                        or type(env_files[0]) is not str
+                        or not env_files[0]
+                    ):
+                        raise ValueError
                 safe_service["env_file"] = ["<credential-source>"]
                 if service.get("cap_drop") != ["ALL"] or service.get("security_opt") != [
                     "no-new-privileges:true"
@@ -775,6 +824,8 @@ def sanitize_compose_projection(
                     raise ValueError
                 safe_service["depends_on"] = {"mysql": "service_healthy"}
             else:
+                if service.get("command") is not None:
+                    raise ValueError
                 if service.get("image") != "mysql:8.0":
                     raise ValueError
                 healthcheck = service.get("healthcheck")
@@ -801,6 +852,22 @@ def sanitize_compose_projection(
         }:
             raise ValueError
         if type(networks) is not dict or set(networks) != {"app-network"}:
+            raise ValueError
+        expected_volumes = {
+            logical_name: {"name": f"{project_name}_{logical_name}"}
+            for logical_name in ("backend_data", "backend_output", "mysql_data")
+        }
+        if volumes != expected_volumes:
+            raise ValueError
+        expected_network = {
+            "name": f"{project_name}_app-network",
+            "driver": "bridge",
+            "ipam": {},
+        }
+        if networks["app-network"] not in (
+            {"driver": "bridge"},
+            expected_network,
+        ):
             raise ValueError
         return {
             "name": "<task-project>",
@@ -949,6 +1016,18 @@ class ManagedComposeProject:
         self._image_id: str | None = None
         self._temp_paths: tuple[Path, ...] = ()
 
+    def track_temp_paths(self, temp_paths: Sequence[Path]) -> None:
+        resolved = tuple(path.resolve() for path in temp_paths)
+        expected_root = self.root.parent.parent
+        if (
+            self._temp_paths
+            or resolved != (expected_root,)
+            or expected_root == Path(expected_root.anchor)
+            or not expected_root.is_dir()
+        ):
+            raise ValueError("ownership_receipt_invalid")
+        self._temp_paths = resolved
+
     def _compose_prefix(self) -> tuple[str, ...]:
         command = ["docker", "compose", "--env-file", str(self.env_file)]
         for path in self.compose_paths:
@@ -970,7 +1049,12 @@ class ManagedComposeProject:
             **self.port_overrides,
             "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE": str(self.env_file),
         }
-        invocation_root = self.root if self.root.is_dir() else self.env_file.parent
+        if self.root.is_dir():
+            invocation_root = self.root
+        elif self.env_file.parent.is_dir():
+            invocation_root = self.env_file.parent
+        else:
+            invocation_root = Path(tempfile.gettempdir()).resolve()
         try:
             result = self._runner(
                 command,
@@ -1107,12 +1191,15 @@ class ManagedComposeProject:
         resolved_temp = tuple(path.resolve() for path in temp_paths)
         if any(path == Path(path.anchor) or not path.exists() for path in resolved_temp):
             raise ValueError("ownership_receipt_invalid")
+        if self._temp_paths and resolved_temp != self._temp_paths:
+            raise ValueError("ownership_receipt_invalid")
         self._containers = tuple(container_ids)
         self._volumes = tuple(volume_ids)
         self._networks = tuple(network_ids)
         self._image_tag = image_tag
         self._image_id = image_id
-        self._temp_paths = resolved_temp
+        if not self._temp_paths:
+            self._temp_paths = resolved_temp
 
 
 def cleanup_receipt(

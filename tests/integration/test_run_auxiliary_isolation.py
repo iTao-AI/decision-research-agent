@@ -12,6 +12,7 @@ from api.server import app
 
 
 AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
+pytestmark = pytest.mark.usefixtures("authenticated_runtime_access")
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +29,12 @@ def route_dispatch_worker(monkeypatch):
         def wake(self):
             pass
 
-    monkeypatch.setattr(server.app.state, "run_dispatch_worker", RouteWorker())
+    monkeypatch.setattr(
+        server.app.state,
+        "run_dispatch_worker",
+        RouteWorker(),
+        raising=False,
+    )
 
 
 def test_same_thread_can_schedule_two_run_scoped_requests(tmp_path, monkeypatch):
@@ -203,16 +209,24 @@ async def test_connection_manager_keeps_two_run_channels_for_same_thread():
     assert run_b.payloads == [{"run_id": "run-b"}]
 
 
-def test_run_websocket_resolves_run_identity(tmp_path, monkeypatch):
+def test_run_websocket_resolves_run_identity(
+    tmp_path,
+    monkeypatch,
+    authenticated_runtime_access,
+):
     from api.run_repository import create_run
 
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
-    os.environ["API_SECRET"] = "test-integration-key"
     created = create_run(thread_id="shared-thread", query="query")
-    client = TestClient(app)
+    client = TestClient(
+        app,
+        base_url="http://127.0.0.1",
+        client=("127.0.0.1", 50000),
+    )
 
     with client.websocket_connect(
-        f"/ws/runs/{created['run_id']}?api_key=test-integration-key"
+        f"/ws/runs/{created['run_id']}",
+        headers={"X-API-Key": "test-integration-key"},
     ) as websocket:
         websocket.send_text("ping")
         payload = websocket.receive_json()

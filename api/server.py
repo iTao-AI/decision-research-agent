@@ -33,6 +33,7 @@ from api.cors_config import load_cors_configuration
 from api.runtime_access import (
     AccessDecision,
     build_http_access_context,
+    build_websocket_access_context,
     credentials_match,
     decide_runtime_access,
     load_runtime_access_policy,
@@ -1140,20 +1141,24 @@ async def get_run_token_usage(run_id: str):
 @app.websocket("/ws/runs/{run_id}")
 async def run_websocket_endpoint(websocket: WebSocket, run_id: str):
     """Run-scoped WebSocket endpoint that permits same-thread concurrent runs."""
+    context = build_websocket_access_context(websocket)
+    decision = decide_runtime_access(
+        websocket.app.state.runtime_access_policy,
+        context,
+        allowed_origin=websocket.app.state.cors_configuration.allowed_origin,
+    )
+    if not decision.allowed:
+        await websocket.close(
+            code=4001 if decision.code == "api_key_invalid" else 1008,
+            reason=decision.code,
+        )
+        return
+
     try:
         run_id = validate_thread_id(run_id)
     except ValueError:
         await websocket.close(code=1008, reason="Invalid run_id")
         return
-
-    api_secret = os.environ.get("API_SECRET", "")
-    if api_secret:
-        client_key = websocket.headers.get("x-api-key", "") or websocket.query_params.get(
-            "api_key", ""
-        )
-        if client_key != api_secret:
-            await websocket.close(code=4001, reason="Unauthorized")
-            return
 
     run = await asyncio.to_thread(get_run, run_id=run_id)
     if run is None:

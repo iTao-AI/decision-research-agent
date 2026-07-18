@@ -8,6 +8,7 @@ import re
 from packaging.markers import default_environment
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -18,10 +19,106 @@ V013_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.3.md"
 V014_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.4.md"
 V015_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
 PYTEST_FIXED_FLOOR = "9.0.3"
+V015_H2_ORDER = (
+    "Supported Surface",
+    "Changes",
+    "Compatibility And Migration",
+    "Rollback",
+    "Required Verification",
+    "Known Limits",
+)
+V015_PUBLIC_RELEASE_CORPUS = (
+    PROJECT_ROOT / "CHANGELOG.md",
+    PROJECT_ROOT / "README.md",
+    PROJECT_ROOT / "README_CN.md",
+    PROJECT_ROOT / "SECURITY.md",
+    PROJECT_ROOT / "docs" / "README.md",
+    V015_RELEASE_NOTES,
+)
+V015_PREMATURE_CLAIM_PATTERNS = (
+    r"\bv0\.1\.5 is published\b",
+    r"\b(?:v0\.1\.5|release) tag (?:has been |was )?(?:created|published)\b",
+    r"\bgithub release (?:has been |was )?published\b",
+    r"\barchive smoke (?:has |was )?(?:passed|completed)\b",
+    r"\bdeployment (?:has been |was )?completed\b",
+    r"\blive-provider research (?:has been |was )?completed\b",
+    r"\bthe live-provider research and provider-quality claims are made\b",
+    r"\bthis release provides tls\b",
+)
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _collapsed(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _v0_1_5_h2_sections(notes: str) -> dict[str, str]:
+    matches = list(re.finditer(r"^## (.+)$", notes, re.MULTILINE))
+    headings = tuple(match.group(1) for match in matches)
+    assert headings == V015_H2_ORDER
+
+    return {
+        match.group(1): notes[
+            match.end() : matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(notes)
+        ]
+        for index, match in enumerate(matches)
+    }
+
+
+def _assert_v0_1_5_release_notes_contract() -> None:
+    notes = _read(V015_RELEASE_NOTES)
+    sections = _v0_1_5_h2_sections(notes)
+    normalized_sections = {
+        heading: _collapsed(body) for heading, body in sections.items()
+    }
+    verification = normalized_sections["Required Verification"]
+    known_limits = normalized_sections["Known Limits"]
+
+    for command in (
+        "python scripts/secure_local_runtime_proof.py check",
+        "python scripts/agent_evaluation_gate.py check",
+        'python -m pytest -q -m "not docker"',
+        "npm audit --audit-level=moderate",
+    ):
+        assert command in verification
+        for heading, body in normalized_sections.items():
+            if heading != "Required Verification":
+                assert command not in body
+
+    evidence_boundary = (
+        "The deterministic proof, required Docker lane, and post-publication "
+        "archive smoke are separate evidence boundaries."
+    )
+    assert evidence_boundary in verification
+    for heading, body in normalized_sections.items():
+        if heading != "Required Verification":
+            assert evidence_boundary not in body
+
+    for complete_non_claim in (
+        "This preparation document does not claim that a `v0.1.5` tag, GitHub "
+        "Release, post-publication archive smoke, deployment, or live research "
+        "has completed.",
+        "This release does not provide TLS, caller identity, per-user "
+        "authorization, RBAC, rate limiting, trusted-proxy handling, hosted "
+        "production, or production deployment.",
+        "No live-provider research or provider-quality claim is made by the "
+        "deterministic proof, required Docker lane, or this release preparation.",
+    ):
+        assert complete_non_claim in known_limits
+        for heading, body in normalized_sections.items():
+            if heading != "Known Limits":
+                assert complete_non_claim not in body
+
+
+def _assert_v0_1_5_public_release_corpus_has_no_premature_claims() -> None:
+    corpus = "\n".join(_read(path) for path in V015_PUBLIC_RELEASE_CORPUS).lower()
+    for pattern in V015_PREMATURE_CLAIM_PATTERNS:
+        assert re.search(pattern, corpus) is None
 
 
 def test_current_release_version_is_consistent() -> None:
@@ -83,9 +180,10 @@ def test_changelog_preserves_published_release_boundary() -> None:
 - Compose now requires `API_SECRET`, `MYSQL_ROOT_PASSWORD`, and
   `MYSQL_PASSWORD`, publishes the backend and MySQL only on `127.0.0.1`, and
   keeps the MySQL root credential value out of the backend service.
-- Backend and MySQL health declarations gate startup. The backend drops all
-  capabilities and enables `no-new-privileges` while retaining the root UID
-  for existing `data` and `output` volume compatibility.
+- MySQL health gates backend startup; the backend declares an exact
+  process/service health check. It drops all capabilities and enables
+  `no-new-privileges` while retaining the root UID for existing `data` and
+  `output` volume compatibility.
 - Added a deterministic 16-case local contract proof and a disjoint required
   Docker lane for build, health, security inspection, named-volume restart
   persistence, bounded task-owned cleanup, and no observed provider, model, or
@@ -380,6 +478,7 @@ def test_v0_1_4_release_notes_cover_surface_compatibility_and_limits() -> None:
 
 def test_v0_1_5_release_notes_cover_secure_local_runtime_and_limits() -> None:
     notes = _read(V015_RELEASE_NOTES)
+    _assert_v0_1_5_release_notes_contract()
 
     required = [
         "# Decision Research Agent v0.1.5",
@@ -413,23 +512,11 @@ def test_v0_1_5_release_notes_cover_secure_local_runtime_and_limits() -> None:
     for phrase in required:
         assert phrase in notes
 
-    forbidden = [
-        "v0.1.5 tag created",
-        "GitHub Release published",
-        "archive smoke passed",
-        "deployment completed",
-        "live-provider research completed",
-    ]
-    for phrase in forbidden:
-        assert phrase not in notes
-
 
 def test_v0_1_5_release_is_discoverable_without_claiming_publication() -> None:
     readme = _read(PROJECT_ROOT / "README.md")
     readme_cn = _read(PROJECT_ROOT / "README_CN.md")
     docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
-    combined = "\n".join((readme, readme_cn, docs_index, _read(V015_RELEASE_NOTES)))
-
     assert "[v0.1.5 Release Notes](docs/releases/v0.1.5.md)" in readme
     assert "[v0.1.5 Release Notes](docs/releases/v0.1.5.md)" in readme_cn
     assert "[v0.1.5 Release Notes](releases/v0.1.5.md)" in docs_index
@@ -474,14 +561,68 @@ def test_v0_1_5_release_is_discoverable_without_claiming_publication() -> None:
         "[v0.1.4 Release Notes](releases/v0.1.4.md) — current supported surface"
         not in docs_index
     )
-    for forbidden in (
-        "v0.1.5 is published",
-        "v0.1.5 tag created",
-        "release tag created",
-        "GitHub Release published",
-        "deployment completed",
-    ):
-        assert forbidden not in combined
+    _assert_v0_1_5_public_release_corpus_has_no_premature_claims()
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new", "contract"),
+    (
+        (
+            V015_RELEASE_NOTES,
+            "No live-provider research or provider-quality claim is made by the\n"
+            "  deterministic proof, required Docker lane, or this release preparation.",
+            "The live-provider research and provider-quality claims are made by the\n"
+            "  deterministic proof, required Docker lane, and this release preparation.",
+            _assert_v0_1_5_release_notes_contract,
+        ),
+        (
+            V015_RELEASE_NOTES,
+            "This release does not provide TLS, caller identity, per-user authorization,\n"
+            "  RBAC, rate limiting, trusted-proxy handling, hosted production, or production deployment.",
+            "This release provides TLS, caller identity, per-user authorization,\n"
+            "  RBAC, hosted production, and production deployment.",
+            _assert_v0_1_5_release_notes_contract,
+        ),
+        (
+            V015_RELEASE_NOTES,
+            "## Required Verification",
+            "## Known Limits",
+            _assert_v0_1_5_release_notes_contract,
+        ),
+        (
+            PROJECT_ROOT / "SECURITY.md",
+            "that are not part of v0.1.5.",
+            "that are not part of v0.1.5.\n\nGitHub Release published.",
+            _assert_v0_1_5_public_release_corpus_has_no_premature_claims,
+        ),
+    ),
+    ids=(
+        "positive-provider-claim",
+        "positive-production-claim",
+        "duplicate-known-limits-heading",
+        "security-publication-claim",
+    ),
+)
+def test_v0_1_5_release_contract_rejects_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    old: str,
+    new: str,
+    contract,
+) -> None:
+    read_text = Path.read_text
+    mutated = read_text(path, encoding="utf-8")
+    assert mutated.count(old) == 1
+    mutated = mutated.replace(old, new, 1)
+
+    def mutated_read_text(self: Path, *args, **kwargs) -> str:
+        if self == path:
+            return mutated
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", mutated_read_text)
+    with pytest.raises(AssertionError):
+        contract()
 
 
 def test_pytest_dependency_declaration_uses_security_fixed_floor() -> None:

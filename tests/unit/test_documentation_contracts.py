@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 import json
 from pathlib import Path
+import re
 import subprocess
 
 import pytest
@@ -43,6 +44,105 @@ def _section_between(text: str, start: str, end: str) -> str:
 
 def _collapsed(text: str) -> str:
     return " ".join(text.split())
+
+
+V015_RELEASE_H2_ORDER = (
+    "Supported Surface",
+    "Changes",
+    "Compatibility And Migration",
+    "Rollback",
+    "Required Verification",
+    "Known Limits",
+)
+
+
+def _v0_1_5_release_sections(notes: str) -> dict[str, str]:
+    matches = list(re.finditer(r"^## (.+)$", notes, re.MULTILINE))
+    assert tuple(match.group(1) for match in matches) == V015_RELEASE_H2_ORDER
+    return {
+        match.group(1): notes[
+            match.end() : matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(notes)
+        ]
+        for index, match in enumerate(matches)
+    }
+
+
+def _assert_v0_1_5_release_documentation_contract() -> None:
+    release_notes_path = PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
+    release_notes = release_notes_path.read_text(encoding="utf-8")
+    sections = _v0_1_5_release_sections(release_notes)
+    normalized_sections = {
+        heading: _collapsed(body) for heading, body in sections.items()
+    }
+    verification = normalized_sections["Required Verification"]
+    known_limits = normalized_sections["Known Limits"]
+
+    assert (
+        "The deterministic proof, required Docker lane, and post-publication "
+        "archive smoke are separate evidence boundaries."
+        in verification
+    )
+    assert "python scripts/secure_local_runtime_proof.py check" in verification
+    assert "npm audit --audit-level=moderate" in verification
+
+    for complete_non_claim in (
+        "This preparation document does not claim that a `v0.1.5` tag, GitHub "
+        "Release, post-publication archive smoke, deployment, or live research "
+        "has completed.",
+        "This release does not provide TLS, caller identity, per-user "
+        "authorization, RBAC, rate limiting, trusted-proxy handling, hosted "
+        "production, or production deployment.",
+        "No live-provider research or provider-quality claim is made by the "
+        "deterministic proof, required Docker lane, or this release preparation.",
+    ):
+        assert complete_non_claim in known_limits
+        for heading, body in normalized_sections.items():
+            if heading != "Known Limits":
+                assert complete_non_claim not in body
+
+    for verification_owned in (
+        "python scripts/secure_local_runtime_proof.py check",
+        "npm audit --audit-level=moderate",
+        "The deterministic proof, required Docker lane, and post-publication "
+        "archive smoke are separate evidence boundaries.",
+    ):
+        for heading, body in normalized_sections.items():
+            if heading != "Required Verification":
+                assert verification_owned not in body
+
+    changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    health_contract = (
+        "MySQL health gates backend startup; the backend declares an exact "
+        "process/service health check."
+    )
+    assert health_contract in _collapsed(changelog)
+    assert health_contract in _collapsed(sections["Changes"])
+
+    public_corpus = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            PROJECT_ROOT / "CHANGELOG.md",
+            PROJECT_ROOT / "README.md",
+            PROJECT_ROOT / "README_CN.md",
+            PROJECT_ROOT / "SECURITY.md",
+            PROJECT_ROOT / "docs" / "README.md",
+            release_notes_path,
+        )
+    ).lower()
+    for premature_claim in (
+        "v0.1.5 is published",
+        "v0.1.5 tag created",
+        "release tag created",
+        "github release published",
+        "archive smoke passed",
+        "deployment completed",
+        "live-provider research completed",
+        "the live-provider research and provider-quality claims are made",
+        "this release provides tls",
+    ):
+        assert premature_claim not in public_corpus
 
 
 def _markdown_table_rows(
@@ -431,6 +531,7 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
         )
     )
     normalized_notes = _collapsed(release_notes)
+    _assert_v0_1_5_release_documentation_contract()
 
     for phrase in (
         "empty `API_SECRET`",
@@ -458,6 +559,65 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
 
     assert "v0.1.5 Release Notes" in current_discovery
     assert "Decision Research Agent v0.1.5" in current_discovery
+
+
+@pytest.mark.parametrize(
+    ("path", "replacements"),
+    (
+        (
+            PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md",
+            (
+                (
+                    "No live-provider research or provider-quality claim is made by the\n"
+                    "  deterministic proof, required Docker lane, or this release preparation.",
+                    "The live-provider research and provider-quality claims are made by the\n"
+                    "  deterministic proof, required Docker lane, and this release preparation.",
+                ),
+            ),
+        ),
+        (
+            PROJECT_ROOT / "SECURITY.md",
+            (
+                (
+                    "that are not part of v0.1.5.",
+                    "that are not part of v0.1.5.\n\nGitHub Release published.",
+                ),
+            ),
+        ),
+    ),
+    ids=("positive-provider-claim", "security-publication-claim"),
+)
+def test_v0_1_5_documentation_contract_rejects_claim_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    replacements: tuple[tuple[str, str], ...],
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=path,
+        replacements=replacements,
+        contract=_assert_v0_1_5_release_documentation_contract,
+    )
+
+
+def test_v0_1_5_documentation_contract_rejects_swapped_section_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
+    read_text = Path.read_text
+    mutated = read_text(path, encoding="utf-8")
+    mutated = mutated.replace("## Required Verification", "## __TEMP__", 1)
+    mutated = mutated.replace("## Known Limits", "## Required Verification", 1)
+    mutated = mutated.replace("## __TEMP__", "## Known Limits", 1)
+
+    def mutated_read_text(self: Path, *args, **kwargs) -> str:
+        if self == path:
+            return mutated
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", mutated_read_text)
+    with pytest.raises(AssertionError):
+        _assert_v0_1_5_release_documentation_contract()
 
 
 def test_demo_console_docs_track_frontend_node_requirements() -> None:

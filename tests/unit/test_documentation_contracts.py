@@ -417,6 +417,49 @@ def test_secure_local_runtime_docs_and_evidence_are_discoverable() -> None:
         assert phrase in evidence_index
 
 
+def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None:
+    release_notes = (
+        PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
+    ).read_text(encoding="utf-8")
+    current_discovery = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            PROJECT_ROOT / "README.md",
+            PROJECT_ROOT / "README_CN.md",
+            PROJECT_ROOT / "docs" / "README.md",
+            PROJECT_ROOT / "SECURITY.md",
+        )
+    )
+    normalized_notes = _collapsed(release_notes)
+
+    for phrase in (
+        "empty `API_SECRET`",
+        "direct peer and literal Host must both be loopback",
+        "Compose requires explicit non-empty `API_SECRET`, `MYSQL_ROOT_PASSWORD`, "
+        "and `MYSQL_PASSWORD`",
+        "loopback-only host publication",
+        "WebSocket credentials are header-only",
+        "deterministic proof",
+        "required Docker lane",
+        "post-publication archive smoke",
+        "backend container retains its root UID",
+    ):
+        assert phrase in normalized_notes
+
+    for phrase in (
+        "does not provide TLS",
+        "caller identity",
+        "RBAC",
+        "hosted production",
+        "production deployment",
+        "live-provider research",
+    ):
+        assert phrase in normalized_notes
+
+    assert "v0.1.5 Release Notes" in current_discovery
+    assert "Decision Research Agent v0.1.5" in current_discovery
+
+
 def test_demo_console_docs_track_frontend_node_requirements() -> None:
     docs = "\n\n".join(
         [
@@ -709,7 +752,7 @@ def test_run_dispatch_reconciliation_contract_is_public_and_bounded():
     ).read_text(encoding="utf-8")
     assert "crash_before_schedule_recovery: not_proven" in old_evidence
     assert "crash_before_schedule_recovery: proven" in new_evidence
-    assert (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.1.4"
+    assert (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.1.5"
 
     workflow = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     old_proof = "python scripts/run_creation_idempotency_proof.py check"

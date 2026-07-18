@@ -96,6 +96,40 @@ def _assert_contract_rejects_mutation(
         contract()
 
 
+def _assert_final_pr_body_reconciliation_contract() -> None:
+    governance = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    contributing = (PROJECT_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+
+    for text in (governance, contributing):
+        assert "pending merge gates use `[ ]`" in text
+        assert "satisfied merge gates must be updated to `[x]`" in text
+        assert "final PR-body reconciliation" in text
+        assert "persisted PR body" in text
+        assert "completed CI" in text
+        assert "merge authorization" in text
+        assert "mergeability" in text
+        assert "review blockers" in text
+        assert "cleanup" in text
+        assert "remaining risk" in text
+        assert "non-claims" in text
+        assert "must not report the PR as fully closed" in text
+
+
+def test_contributor_governance_requires_final_pr_body_reconciliation() -> None:
+    _assert_final_pr_body_reconciliation_contract()
+
+
+def test_pr_body_contract_rejects_satisfied_gate_regression(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=PROJECT_ROOT / "AGENTS.md",
+        replacements=(("updated to `[x]`", "updated to `[ ]`"),),
+        contract=_assert_final_pr_body_reconciliation_contract,
+    )
+
+
 def test_current_docs_state_framework_authority_contracts() -> None:
     docs = _combined_docs()
 

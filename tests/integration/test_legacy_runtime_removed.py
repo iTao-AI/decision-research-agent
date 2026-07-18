@@ -1,10 +1,12 @@
 from fastapi.testclient import TestClient
+import pytest
 from starlette.routing import WebSocketRoute
 
 from api.server import app
 
 
 AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
+pytestmark = pytest.mark.usefixtures("authenticated_runtime_access")
 
 
 def test_legacy_http_runtime_routes_are_removed(monkeypatch):

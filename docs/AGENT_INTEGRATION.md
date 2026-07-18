@@ -26,6 +26,11 @@ fixture, see the [Downstream Consumer Contract](reference/downstream-consumer-co
 Command-line `--base-url` and `--timeout` override environment defaults. API
 keys are accepted only through environment variables, not CLI arguments.
 
+When `API_SECRET` is configured on the service, the Tool Client sends
+`DECISION_RESEARCH_AGENT_API_KEY` as `X-API-Key`. When it is empty,
+credential-free source access is limited so the direct peer and literal Host
+must both be loopback. No sentinel value is accepted as an API secret.
+
 Only canonical keys are read. Old aliases and thread-scoped Tool Client
 commands were removed with the v0.1.0 runtime cleanup.
 
@@ -245,6 +250,10 @@ field with a bounded generic value.
 - Actor fingerprints, lease owners, checkpoint paths, and raw tracebacks are
   not printed.
 - Use loopback binding unless remote access is intentional.
+- CORS and Origin checks are not authentication.
+- WebSocket credentials are header-only, and query credentials are rejected.
+- Non-loopback direct use requires a configured key plus operator-owned TLS
+  and is not a supported hosted deployment.
 - The standalone Tool Client reads process environment variables directly; it
   does not load the repository `.env`.
 ## Lost-response run creation recovery

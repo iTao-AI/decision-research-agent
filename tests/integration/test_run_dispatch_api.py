@@ -17,6 +17,7 @@ from api.server import app
 
 
 AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
+pytestmark = pytest.mark.usefixtures("authenticated_runtime_access")
 WORKER_1 = "dispatch_worker_00000000000000000000000000000001"
 WORKER_2 = "dispatch_worker_00000000000000000000000000000002"
 

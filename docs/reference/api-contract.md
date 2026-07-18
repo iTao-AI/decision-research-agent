@@ -242,9 +242,26 @@ Except `/health` and OpenAPI documentation, HTTP API paths require
 `DECISION_RESEARCH_AGENT_API_KEY` from the environment and never accepts an API
 key as a command-line argument.
 
+When `API_SECRET` is empty, credential-free source access is allowed only when
+the direct peer and literal Host must both be loopback. A configured secret
+removes that exception and requires the exact `X-API-Key` on protected HTTP
+and WebSocket requests. WebSocket credentials are header-only: `api_key` query
+credentials are rejected before run identity lookup or connection ownership.
+Public paths and CORS preflight retain their bounded bypasses. Controlled
+review and Evidence verification retain independent feature-owned gates in
+addition to the shared runtime access policy.
+
 Browser CORS is deny-by-default. Operators may allow one explicit origin with
 `DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN`; when it is unset, the allowlist
-is empty. The retired frontend-specific setting is not a compatibility alias.
+is empty. CORS and Origin checks are not authentication. The retired
+frontend-specific setting is not a compatibility alias.
+
+The supported source entrypoint is `python api/server.py`; it passes the
+already-constructed app to Uvicorn on `127.0.0.1` with reload disabled and
+warning-level logging so rejected legacy query credentials are not emitted by
+info-level WebSocket transport logging in source mode. Compose warning-level
+hardening is deferred to PR B and is not delivered by this PR. This PR does
+not claim new container health or capability enforcement.
 
 All caller-provided `thread_id` values must be 1-128 characters of letters,
 digits, dots, underscores, or hyphens. Path separators and traversal forms are

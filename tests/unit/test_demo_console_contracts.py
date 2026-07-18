@@ -159,6 +159,16 @@ def test_console_security_authority_and_nonclaims_are_public():
     assert "does not prove live-provider quality" in contract
 
 
+def test_console_documents_runtime_access_without_becoming_auth_authority():
+    contract = _public_contract()
+
+    assert "CORS and Origin checks are not authentication" in contract
+    assert "direct peer and literal Host must both be loopback" in contract
+    assert "WebSocket credentials are header-only" in contract
+    assert "query credentials are rejected" in contract
+    assert "Use the first-party Tool Client" in contract
+
+
 def test_frontend_implementation_does_not_import_runtime_or_backend_modules():
     for source in _production_typescript_sources(ROOT / "frontend" / "src"):
         assert _forbidden_module_specifiers(source, _read(source)) == []

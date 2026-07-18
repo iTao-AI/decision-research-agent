@@ -26,6 +26,18 @@ from agent.telemetry import collector
 
 
 @pytest.fixture
+def authenticated_runtime_access(monkeypatch):
+    from api.runtime_access import load_runtime_access_policy
+    from api.server import app
+
+    monkeypatch.setattr(
+        app.state,
+        "runtime_access_policy",
+        load_runtime_access_policy({"API_SECRET": "test-integration-key"}),
+    )
+
+
+@pytest.fixture
 def session_dir():
     """Create a temporary session directory, set context, and clean up."""
     import tempfile

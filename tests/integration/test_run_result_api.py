@@ -4,6 +4,7 @@ import json
 from pathlib import PurePosixPath
 
 from fastapi.testclient import TestClient
+import pytest
 
 from agent.harness_contracts import ReportCandidate
 from agent.run_result import ExecutionOutcome
@@ -11,6 +12,7 @@ from api.server import app
 
 
 AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
+pytestmark = pytest.mark.usefixtures("authenticated_runtime_access")
 
 
 def _client(tmp_path, monkeypatch):

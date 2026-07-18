@@ -24,6 +24,20 @@ API keys must be provided through environment variables. Do not pass API keys on
 the command line, commit them to source control, include them in logs, or paste
 them into issues, pull requests, release notes, or Agent conversations.
 
+The source template uses `API_SECRET=` for credential-free loopback-only use;
+no sentinel value is accepted. In that mode, the direct peer and literal Host
+must both be loopback. Configuring `API_SECRET` requires the matching
+`X-API-Key` on protected HTTP and WebSocket requests. CORS and Origin checks
+are not authentication, and WebSocket query credentials are rejected.
+
+The source launcher binds `127.0.0.1` with reload disabled. Uvicorn
+warning-level logging prevents rejected legacy query credentials from being
+emitted by info-level WebSocket transport logging in source mode. Compose
+warning-level hardening is deferred to PR B and is not delivered by this PR.
+Non-loopback direct use also requires operator-owned TLS and is
+not a supported hosted deployment. Controlled review and Evidence verification
+retain independent feature-owned gates.
+
 LangSmith traces are privacy-first by default. Keep inputs and outputs hidden
 unless a local, low-sensitivity diagnostic task explicitly requires temporary
 full trace visibility.

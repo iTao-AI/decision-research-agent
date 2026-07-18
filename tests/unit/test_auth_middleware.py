@@ -1,101 +1,170 @@
-"""Test API Key authentication middleware."""
-import os
-import subprocess
-import sys
+"""Production runtime access middleware contracts."""
+
+from __future__ import annotations
+
+import logging
+from types import SimpleNamespace
+
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from api.cors_config import load_cors_configuration
+from api.runtime_access import load_runtime_access_policy
+from api.server import RuntimeAccessMiddleware, _emit_runtime_access_warning_once
 
-class TestAuthMiddleware:
-    """Test X-API-Key middleware behavior."""
 
-    def test_no_key_returns_401(self):
-        """Request without X-API-Key header returns 401."""
-        os.environ["API_SECRET"] = "test-key"
-        from api.server import app
-        client = TestClient(app)
-        response = client.get("/api/runs/nonexistent")
-        assert response.status_code == 401
-        body = response.json()
-        assert "API_SECRET" in body.get("detail", "")
+def _app(*, secret: str | None = None, origin: str | None = None) -> FastAPI:
+    app = FastAPI()
+    environ = {} if secret is None else {"API_SECRET": secret}
+    if origin is not None:
+        environ["DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN"] = origin
+    policy = load_runtime_access_policy(environ)
+    app.state.runtime_access_policy = policy
+    app.state.cors_configuration = load_cors_configuration(
+        access_policy=policy,
+        environ=environ,
+    )
+    app.add_middleware(RuntimeAccessMiddleware)
 
-    def test_wrong_key_returns_401(self):
-        """Wrong API key returns 401."""
-        os.environ["API_SECRET"] = "test-key"
-        from api.server import app
-        client = TestClient(app)
-        response = client.get(
-            "/api/runs/nonexistent",
-            headers={"X-API-Key": "wrong-key"},
-        )
-        assert response.status_code == 401
+    @app.get("/protected")
+    async def protected():
+        return {"reached": True}
 
-    def test_correct_key_passes(self):
-        """Correct API key passes through to endpoint logic."""
-        os.environ["API_SECRET"] = "test-key"
-        from api.server import app
-        client = TestClient(app)
-        response = client.get(
-            "/api/runs/nonexistent",
-            headers={"X-API-Key": "test-key"},
-        )
-        # 404 not found (directory doesn't exist) — NOT 401
-        assert response.status_code != 401
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
 
-    def test_cors_preflight_bypasses_api_key_auth(self):
-        """Browser preflight has no X-API-Key and must reach CORS middleware."""
-        env = os.environ.copy()
-        env.update(
-            {
-                "API_SECRET": "test-key",
-                "DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN": "http://localhost:5173",
-                "OPENAI_API_KEY": "test-cors-subprocess-only",
-                "OPENAI_BASE_URL": "http://test",
-                "LANGSMITH_TRACING": "false",
-            }
-        )
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                """
-from fastapi.testclient import TestClient
-from api.server import app
+    @app.get("/api/reviews")
+    async def reviews():
+        return {"feature_gate": True}
 
-response = TestClient(app).options(
-    "/api/runs",
-    headers={
-        "Origin": "http://localhost:5173",
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "x-api-key,content-type",
-    },
+    @app.options("/protected")
+    async def preflight():
+        return {"preflight": True}
+
+    return app
+
+
+def _client(app: FastAPI, *, peer: str = "127.0.0.1", base_url: str = "http://127.0.0.1"):
+    return TestClient(
+        app,
+        base_url=base_url,
+        client=(peer, 50000),
+        follow_redirects=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("peer", "headers"),
+    [("127.0.0.1", {}), ("::1", {"Host": "[::1]"})],
 )
-assert response.status_code == 200, response.text
-assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
-""",
-            ],
-            capture_output=True,
-            text=True,
-            env=env,
+def test_empty_secret_allows_explicit_loopback(peer: str, headers: dict[str, str]):
+    response = _client(_app(), peer=peer).get("/protected", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"reached": True}
+
+
+def test_remote_empty_secret_returns_bounded_503():
+    response = _client(_app(), peer="192.0.2.10").get("/protected")
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": "api_auth_not_configured",
+        "problem": "The service is not configured for remote unauthenticated access.",
+        "cause": "The direct client is not an explicit loopback peer.",
+        "fix": "Use the loopback source runtime or configure X-API-Key.",
+        "retryable": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("headers", "code", "supplied"),
+    [
+        ({"Host": "localhost"}, "local_authority_required", "localhost"),
+        ({"Host": "example.com"}, "local_authority_required", "example.com"),
+        ({"X-Forwarded-For": ""}, "forwarded_request_rejected", None),
+        ({"Forwarded": "for=192.0.2.1"}, "forwarded_request_rejected", "192.0.2.1"),
+    ],
+)
+def test_empty_secret_rejects_unsafe_authority_or_forwarding(headers, code, supplied):
+    response = _client(_app()).get("/protected", headers=headers)
+    assert response.status_code == 503
+    assert response.json()["code"] == code
+    if supplied is not None:
+        assert supplied not in response.text
+
+
+def test_configured_secret_returns_tool_client_compatible_error():
+    response = _client(_app(secret="configured")).get(
+        "/protected",
+        headers={"X-API-Key": "wrong"},
+    )
+    assert response.status_code == 401
+    assert response.json() == {
+        "code": "api_key_invalid",
+        "problem": "The service credential is invalid.",
+        "cause": "X-API-Key did not match the configured service credential.",
+        "fix": "Provide the configured X-API-Key.",
+        "retryable": False,
+    }
+    assert "wrong" not in response.text
+
+
+def test_configured_utf8_secret_allows_local_and_remote_peer():
+    app = _app(secret="密钥")
+    for peer in ("127.0.0.1", "192.0.2.10"):
+        response = _client(app, peer=peer).get(
+            "/protected",
+            headers={"X-API-Key": "密钥".encode("utf-8")},
         )
-        assert completed.returncode == 0, completed.stderr
+        assert response.status_code == 200
 
-    def test_api_secret_not_set_warns_and_passes(self):
-        """If API_SECRET is not in env, log warning and skip auth."""
-        if "API_SECRET" in os.environ:
-            del os.environ["API_SECRET"]
-        from api.server import app
-        client = TestClient(app)
-        response = client.get("/api/runs/nonexistent")
-        # Should not be 401 when auth is disabled
-        assert response.status_code != 401
 
-    def test_websocket_protected(self):
-        """WebSocket connection without proper key is rejected."""
-        os.environ["API_SECRET"] = "test-key"
-        from api.server import app
-        client = TestClient(app)
-        with pytest.raises(Exception) as exc_info:
-            with client.websocket_connect("/ws/runs/test-run"):
-                pass
-        # Connection should be refused (auth failure)
+def test_disallowed_origin_returns_bounded_403_before_route():
+    response = _client(
+        _app(secret="configured", origin="https://allowed.example")
+    ).get(
+        "/protected",
+        headers={"Origin": "https://wrong.example", "X-API-Key": "configured"},
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == "origin_not_allowed"
+    assert "wrong.example" not in response.text
+
+
+@pytest.mark.parametrize("path", ["/health", "/docs", "/openapi.json", "/redoc"])
+def test_public_paths_bypass_runtime_access(path: str):
+    response = _client(_app(secret="configured")).get(path)
+    assert response.status_code != 401
+
+
+def test_options_and_feature_owned_path_bypass_general_access():
+    app = _app(secret="configured")
+    assert _client(app).options("/protected").status_code == 200
+    response = _client(app).get("/api/reviews")
+    assert response.status_code == 200
+    assert response.json() == {"feature_gate": True}
+
+
+def test_empty_secret_requests_do_not_emit_per_request_warning(caplog):
+    caplog.set_level(logging.WARNING)
+    client = _client(_app())
+    client.get("/protected")
+    client.get("/protected")
+    assert "loopback_only" not in caplog.text
+
+
+def test_empty_secret_startup_warning_is_emitted_once(caplog):
+    test_app = SimpleNamespace(
+        state=SimpleNamespace(
+            runtime_access_policy=load_runtime_access_policy({}),
+            runtime_access_warning_emitted=False,
+        )
+    )
+    caplog.set_level(logging.WARNING)
+
+    _emit_runtime_access_warning_once(test_app)
+    _emit_runtime_access_warning_once(test_app)
+
+    assert caplog.text.count("loopback_only") == 1
+    assert test_app.state.runtime_access_warning_emitted is True

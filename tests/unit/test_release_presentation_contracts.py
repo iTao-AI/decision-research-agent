@@ -116,6 +116,16 @@ def test_cors_reference_is_canonical_and_deny_by_default() -> None:
     assert "frontend-specific setting is not a compatibility alias" in text
 
 
+def test_secure_runtime_security_text_preserves_feature_authority() -> None:
+    text = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+
+    assert "API_SECRET=" in text
+    assert "no sentinel value is accepted" in text
+    assert "independent feature-owned gates" in text
+    assert "operator-owned TLS" in text
+    assert "not a supported hosted deployment" in text
+
+
 def test_release_verification_uses_bounded_backend_readiness() -> None:
     paths = [
         ROOT / "docs/releases/v0.1.0.md",

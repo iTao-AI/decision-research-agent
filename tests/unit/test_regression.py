@@ -22,6 +22,8 @@ class TestModuleLoading:
         from api import cors_config
         assert hasattr(cors_config, 'get_allowed_origins')
         assert hasattr(cors_config, 'validate_cors_origin')
+        assert hasattr(cors_config, 'load_cors_configuration')
+        assert hasattr(cors_config, 'CorsConfiguration')
 
     def test_task_tracker_loads(self):
         """task_tracker 模块应该能正常加载"""
@@ -60,7 +62,10 @@ with patch('agent.deepagents_harness.create_deep_agent', return_value=MagicMock(
 
         with patch.dict(
             os.environ,
-            {"DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN": "https://example.com"},
+            {
+                "API_SECRET": "test-regression-only",
+                "DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN": "https://example.com",
+            },
             clear=False,
         ):
             assert get_allowed_origins() == ["https://example.com"]

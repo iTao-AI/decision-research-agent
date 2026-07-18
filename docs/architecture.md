@@ -228,6 +228,22 @@ Backend mode accepts only a loopback base URL, requires one exact CORS origin,
 and does not accept or store API credentials. Authenticated environments should
 use the first-party Tool Client.
 
+The runtime access boundary is frozen when the FastAPI app is constructed.
+With an empty secret, the direct peer and literal Host must both be loopback;
+with a configured secret, protected HTTP and WebSocket access requires the
+shared `X-API-Key`. CORS and Origin checks are not authentication. WebSocket
+credentials are header-only, and query credentials are rejected before run
+identity or connection ownership. Review and Evidence verification continue
+through independent feature-owned gates after the shared access boundary.
+
+The source launcher binds `127.0.0.1` with reload disabled. Uvicorn
+warning-level logging avoids info-level transport logging of rejected legacy
+query credentials in source mode. Compose warning-level hardening is deferred
+to PR B and is not delivered by this PR. Non-loopback direct use requires a
+configured key plus operator-owned TLS and is not a supported hosted
+deployment. TLS termination, caller identity, RBAC, and multi-tenant hosting
+remain outside this local runtime boundary.
+
 Public demo videos are deterministic loopback contract demos. They are not
 live provider research recordings, not a public production service, and not
 evidence of an online multi-user deployment.

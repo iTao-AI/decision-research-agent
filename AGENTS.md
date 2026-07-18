@@ -320,10 +320,19 @@ and technical literals, and use a result-first structure. `Summary`,
 `Completion`, and `Verification` are required; add `Scope`, `Risk / Impact`,
 migration, rollback, or `Documentation impact` when relevant. Use ordinary
 bullets for completed work and verification. Use checkboxes only for genuine
-pending gates.
+merge gates: pending merge gates use `[ ]`; satisfied merge gates must be updated to `[x]`.
 
 After creating or updating a PR, query the actual PR and verify its title,
 body, base, head, and draft state. Confirm that the persisted section order,
 actual commands and results, scope, risk, documentation impact, and non-claims
 match the final diff and verification. Correct literal `\n`, stale
 placeholders, or format drift before handoff.
+
+When completed CI, merge authorization, mergeability, review blockers, or
+cleanup change the PR's terminal state, perform a final PR-body reconciliation
+before reporting closeout. Replace stale pending language with the actual
+terminal result and necessary links, update remaining risk, and preserve valid
+non-claims. Then read back the persisted PR body and verify it matches the
+intended final body. If either the update or persisted-body readback fails, you
+must not report the PR as fully closed; record the exact blocker or pending
+trigger instead.

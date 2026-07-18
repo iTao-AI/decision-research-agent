@@ -90,8 +90,17 @@ run. State skipped checks and remaining risk explicitly. Do not claim tests,
 benchmarks, reviews, builds, or deployment results without current command
 evidence. Before submission, verify the persisted PR title, body, base, head,
 and draft state. Ensure the body matches the actual diff, commands, results,
-scope, risks, and non-claims. Use ordinary bullets for completed facts;
-checkboxes are only for unfinished merge gates.
+scope, risks, and non-claims. Use ordinary bullets for completed facts.
+Checkbox state is explicit: pending merge gates use `[ ]`; satisfied merge gates must be updated to `[x]`.
+
+When completed CI, merge authorization, mergeability, review blockers, or
+cleanup change the PR's terminal state, perform a final PR-body reconciliation
+before reporting closeout. Replace stale pending language with the actual
+terminal result and necessary links, update remaining risk, and preserve valid
+non-claims. Then read back the persisted PR body and verify it matches the
+intended final body. If either the update or persisted-body readback fails, you
+must not report the PR as fully closed; record the exact blocker or pending
+trigger instead.
 
 The current supported surface and non-scope are recorded in the current
 [release index](docs/README.md#release). Do not add deployment, public online

@@ -29,5 +29,8 @@ COPY docs/evidence/durable-hitl-gate-report.json docs/evidence/durable-hitl-gate
 
 EXPOSE 8000
 
+HEALTHCHECK --interval=5s --timeout=3s --start-period=20s --retries=12 \
+  CMD ["python", "-c", "import json; from urllib.request import urlopen; r=urlopen('http://127.0.0.1:8000/health', timeout=2); assert r.status == 200; assert json.load(r) == {'status':'ok','service':'decision-research-agent'}"]
+
 # Start the FastAPI server
-CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"]

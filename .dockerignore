@@ -4,6 +4,19 @@ __pycache__/
 *.pyo
 .venv/
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.hypothesis/
+.cache/
+.tox/
+.nox/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
 
 # Git
 .git/
@@ -17,13 +30,18 @@ __pycache__/
 # Claude / gstack
 .claude/
 .gstack/
+.worktrees/
 
 # Output directories
+data/
 output/
 updated/
 
 # Tests (not needed in production)
 tests/
+
+# Frontend sources (not used by the backend image)
+frontend/
 
 # OS files
 .DS_Store

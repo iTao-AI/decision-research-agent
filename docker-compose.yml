@@ -4,23 +4,27 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
-      - .env
+      - ${DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE:-.env}
     environment:
-      - MYSQL_HOST=mysql
-      - MYSQL_PORT=3306
-      - DECISION_RESEARCH_AGENT_DB_PATH=/app/data/decision_research_agent.db
-      - DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH=/app/data/review_checkpoints.db
-      - DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL=${DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL:-false}
-      - DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=${DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION:-false}
-      - API_SECRET
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      DECISION_RESEARCH_AGENT_DB_PATH: /app/data/decision_research_agent.db
+      DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH: /app/data/review_checkpoints.db
+      DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL: ${DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL:-false}
+      DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION: ${DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION:-false}
+      API_SECRET: ${API_SECRET:?Set API_SECRET for local Compose}
     volumes:
       - backend_data:/app/data
       - backend_output:/app/output
     depends_on:
       mysql:
-        condition: service_started
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - app-network
 
@@ -30,10 +34,18 @@ services:
     ports:
       - "127.0.0.1:3306:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-decision_research}
       MYSQL_USER: ${MYSQL_USER:-decision_research}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-decision_research_password}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     volumes:
       - mysql_data:/var/lib/mysql
     networks:

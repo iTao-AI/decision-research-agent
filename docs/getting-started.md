@@ -30,8 +30,12 @@ Edit `.env`. At minimum, configure the selected model provider. Configure
 also export the same value for the Tool Client:
 
 ```bash
-export DECISION_RESEARCH_AGENT_API_KEY="replace-with-your-local-secret"
+read -r -s DECISION_RESEARCH_AGENT_API_KEY
+export DECISION_RESEARCH_AGENT_API_KEY
 ```
+
+Paste the matching value at the silent prompt and press Enter. This keeps the
+credential out of command arguments and shell history.
 
 The checked-in source template uses `API_SECRET=`. Empty means the bounded
 credential-free source mode; no sentinel value is accepted as a secret. In
@@ -54,6 +58,24 @@ header-only, and query credentials are rejected. Non-loopback direct use
 requires a configured key and operator-owned TLS and is not a supported hosted
 deployment.
 
+### Authenticated Compose alternative
+
+Compose is a separate authenticated launch form, not the empty-secret source
+mode. It requires non-empty `API_SECRET`, `MYSQL_ROOT_PASSWORD`, and
+`MYSQL_PASSWORD` values before configuration succeeds:
+
+```bash
+docker compose config --quiet
+docker compose up -d --build backend
+```
+
+The backend still listens on container-internal `0.0.0.0:8000`, while Compose
+publishes backend/MySQL only on host `127.0.0.1`. Health-gated startup,
+warning-level logging, privilege settings, safe value generation, optional
+`DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE` isolation, existing-volume
+compatibility, and rollback are documented in
+[Secure Local Runtime Operations](operations/secure-local-runtime.md).
+
 ## 3. Verify Health
 
 In a second terminal with the virtual environment active:
@@ -67,6 +89,9 @@ Expected result:
 ```json
 {"status":"ok","service":"decision-research-agent"}
 ```
+
+This exact response proves process/service identity only. It does not establish
+database, provider, model, tool, or research readiness.
 
 ## 4. Check Integration Readiness
 

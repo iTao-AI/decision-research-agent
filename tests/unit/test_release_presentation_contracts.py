@@ -126,6 +126,53 @@ def test_secure_runtime_security_text_preserves_feature_authority() -> None:
     assert "not a supported hosted deployment" in text
 
 
+def test_secure_local_runtime_evidence_uses_canonical_public_paths() -> None:
+    json_path = ROOT / "docs/evidence/secure-local-runtime-v1.json"
+    markdown_path = ROOT / "docs/evidence/secure-local-runtime-v1.md"
+    operations_path = ROOT / "docs/operations/secure-local-runtime.md"
+
+    assert json_path.is_file()
+    assert markdown_path.is_file()
+    assert operations_path.is_file()
+    assert "dra.secure-local-runtime.v1" in json_path.read_text(encoding="utf-8")
+    assert markdown_path.read_text(encoding="utf-8").startswith(
+        "# Secure Local Runtime v1 Proof\n"
+    )
+
+    combined = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            json_path,
+            markdown_path,
+            operations_path,
+            ROOT / "README.md",
+            ROOT / "README_CN.md",
+            ROOT / "docs/README.md",
+            ROOT / "docs/evidence/README.md",
+        )
+    )
+    for marker in (
+        "Career",
+        "Night Voyager",
+        "/Users/",
+        "/private/",
+        "api_key=",
+        "Traceback (most recent call last)",
+        "TODO",
+        "TBD",
+        "FIXME",
+    ):
+        assert marker not in combined
+    for unsupported in (
+        "hosted deployment is supported",
+        "TLS is provided",
+        "identity and RBAC are provided",
+        "container runs as non-root",
+        "provider quality is proven",
+    ):
+        assert unsupported not in combined
+
+
 def test_release_verification_uses_bounded_backend_readiness() -> None:
     paths = [
         ROOT / "docs/releases/v0.1.0.md",

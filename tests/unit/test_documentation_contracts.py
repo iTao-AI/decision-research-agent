@@ -23,6 +23,7 @@ CURRENT_DOCS = [
     PROJECT_ROOT / "docs" / "operations" / "durable-hitl-feasibility.md",
     PROJECT_ROOT / "docs" / "operations" / "evidence-verification-workflow.md",
     PROJECT_ROOT / "docs" / "operations" / "real-source-proof-workflow.md",
+    PROJECT_ROOT / "docs" / "operations" / "secure-local-runtime.md",
     PROJECT_ROOT / "docs" / "architecture.md",
     PROJECT_ROOT / "docs" / "reference" / "api-contract.md",
     PROJECT_ROOT / "docs" / "reference" / "data-models.md",
@@ -252,10 +253,6 @@ def test_secure_local_runtime_access_boundary_is_public() -> None:
     for phrase in required:
         assert phrase in contract
 
-    assert "Docker healthcheck is now enforced" not in contract
-    assert "container capabilities are now dropped" not in contract
-
-
 def test_public_docs_do_not_claim_unshipped_compose_log_hardening() -> None:
     dockerfile = (PROJECT_ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
     container_command = json.loads(
@@ -293,6 +290,131 @@ def test_public_docs_do_not_claim_unshipped_compose_log_hardening() -> None:
         assert "source/Compose launchers keep Uvicorn at warning level" not in (
             implementation_plan
         )
+    else:
+        assert (
+            "source and Compose launchers use Uvicorn warning-level logging"
+            in public_docs
+        )
+        assert "Compose warning-level hardening is deferred to PR B" not in public_docs
+        assert "Compose warning-level hardening is not delivered" not in public_docs
+
+
+def test_secure_local_container_delivery_is_public_and_bounded() -> None:
+    operations_path = (
+        PROJECT_ROOT / "docs" / "operations" / "secure-local-runtime.md"
+    )
+    assert operations_path.is_file()
+    operations = _collapsed(operations_path.read_text(encoding="utf-8"))
+    combined = _collapsed(
+        "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                PROJECT_ROOT / "README.md",
+                PROJECT_ROOT / "README_CN.md",
+                PROJECT_ROOT / "docs" / "README.md",
+                PROJECT_ROOT / "docs" / "architecture.md",
+                PROJECT_ROOT / "docs" / "getting-started.md",
+                PROJECT_ROOT / "SECURITY.md",
+                PROJECT_ROOT / "docs" / "evidence" / "README.md",
+                operations_path,
+            )
+        )
+    )
+
+    for phrase in (
+        "API_SECRET",
+        "MYSQL_ROOT_PASSWORD",
+        "MYSQL_PASSWORD",
+        "127.0.0.1:8000:8000",
+        "127.0.0.1:3306:3306",
+        "0.0.0.0",
+        "cap_drop:",
+        "- ALL",
+        "no-new-privileges:true",
+        "root UID is intentionally retained",
+        "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE",
+        "default repository `.env`",
+        "does not create a second runtime mode",
+        "docker compose config --quiet",
+        "docker compose up -d --build backend",
+        "secrets.token_urlsafe",
+        "0o600",
+        "## Migration And Existing Volumes",
+        "## Rollback",
+        "no database migration",
+        "Existing named",
+        "deterministic proof",
+        "required Docker lane",
+        "tag-archive smoke",
+    ):
+        assert phrase in operations
+
+    for phrase in (
+        "CORS and Origin checks are not authentication",
+        "shared API key",
+        "TLS",
+        "identity",
+        "authorization",
+        "RBAC",
+        "process/service identity",
+        "database, provider, model, tool, or research readiness",
+        "source launcher",
+        "Compose",
+        "container-internal",
+        "host publication",
+        "no provider, model, or tool request was observed",
+        "not a supported hosted deployment",
+    ):
+        assert phrase in combined
+
+    assert "Compose warning-level hardening is deferred to PR B" not in combined
+    assert "Compose warning-level hardening is not delivered" not in combined
+    assert "runs as a non-root user" not in combined
+    assert "production-ready hosted service" not in combined
+
+
+def test_secure_local_runtime_docs_and_evidence_are_discoverable() -> None:
+    discovery = {
+        PROJECT_ROOT / "README.md": (
+            "[Secure Local Runtime Operations]"
+            "(docs/operations/secure-local-runtime.md)",
+            "[Secure Local Runtime v1 Proof]"
+            "(docs/evidence/secure-local-runtime-v1.md)",
+        ),
+        PROJECT_ROOT / "README_CN.md": (
+            "[Secure Local Runtime Operations]"
+            "(docs/operations/secure-local-runtime.md)",
+            "[Secure Local Runtime v1 Proof]"
+            "(docs/evidence/secure-local-runtime-v1.md)",
+        ),
+        PROJECT_ROOT / "docs" / "README.md": (
+            "[Secure Local Runtime]"
+            "(operations/secure-local-runtime.md)",
+            "[Secure Local Runtime v1 Proof]"
+            "(evidence/secure-local-runtime-v1.md)",
+            "[JSON report](evidence/secure-local-runtime-v1.json)",
+        ),
+        PROJECT_ROOT / "docs" / "evidence" / "README.md": (
+            "[secure-local-runtime-v1.json](secure-local-runtime-v1.json)",
+            "[secure-local-runtime-v1.md](secure-local-runtime-v1.md)",
+        ),
+    }
+    for path, links in discovery.items():
+        text = path.read_text(encoding="utf-8")
+        for link in links:
+            assert link in text
+
+    evidence_index = (
+        PROJECT_ROOT / "docs" / "evidence" / "README.md"
+    ).read_text(encoding="utf-8")
+    for phrase in (
+        "dra.secure-local-runtime.v1",
+        "deterministic 16-case",
+        "container-configuration",
+        "real image build",
+        "required Docker lane",
+    ):
+        assert phrase in evidence_index
 
 
 def test_demo_console_docs_track_frontend_node_requirements() -> None:

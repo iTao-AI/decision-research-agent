@@ -216,6 +216,15 @@ Evidence artifacts are not universal product claims. For example, the durable
 HITL gate proves only the documented single-node SQLite feasibility boundary,
 and real-source proof covers a small declared workflow sample.
 
+Secure local runtime evidence is deliberately split. The deterministic
+16-case proof exercises production access, WebSocket, CORS, source-launcher,
+and checked-in container-configuration paths without starting Docker. The
+required Docker lane separately owns real image build, exact backend/MySQL
+health, loopback host bindings, privilege inspection, named-volume persistence
+across restart, and task-owned cleanup. A later tag-archive smoke remains a
+separately authorized post-publication check. None is a hosted deployment,
+provider-quality, research-quality, TLS, identity, or RBAC certification.
+
 ## Credential, CORS, Public Demo, And Local-Prod Separation
 
 The current repository release is backend, API, CLI, tests, docs, scripts, and
@@ -236,13 +245,24 @@ credentials are header-only, and query credentials are rejected before run
 identity or connection ownership. Review and Evidence verification continue
 through independent feature-owned gates after the shared access boundary.
 
-The source launcher binds `127.0.0.1` with reload disabled. Uvicorn
-warning-level logging avoids info-level transport logging of rejected legacy
-query credentials in source mode. Compose warning-level hardening is deferred
-to PR B and is not delivered by this PR. Non-loopback direct use requires a
-configured key plus operator-owned TLS and is not a supported hosted
-deployment. TLS termination, caller identity, RBAC, and multi-tenant hosting
-remain outside this local runtime boundary.
+The source launcher binds `127.0.0.1` with reload disabled. The source and
+Compose launchers use Uvicorn warning-level logging, avoiding info-level
+transport logging of rejected legacy query credentials. Compose requires
+explicit API/MySQL secrets. Its backend listens on container-internal
+`0.0.0.0:8000`, while backend and MySQL host publication remains exact on
+`127.0.0.1`; private service communication stays on the Compose network.
+
+Compose gates backend startup on MySQL health, declares an exact backend
+process/service identity check, drops all backend capabilities, and enables
+`no-new-privileges`. Health does not establish database-query, provider,
+model, tool, or research readiness. The container root UID remains in place
+for compatibility with existing root-owned `data` and `output` volumes; a
+non-root image is a separate ownership migration.
+
+Non-loopback direct use requires a configured key plus operator-owned TLS and
+is not a supported hosted deployment. The shared key does not provide TLS,
+caller identity, authorization, RBAC, or multi-tenant hosting; those remain
+outside this local runtime boundary.
 
 Public demo videos are deterministic loopback contract demos. They are not
 live provider research recordings, not a public production service, and not

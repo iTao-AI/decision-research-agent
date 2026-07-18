@@ -68,7 +68,8 @@ def test_changelog_preserves_published_release_boundary() -> None:
     container_subsection = """### Secure local container delivery
 
 - Compose now requires `API_SECRET`, `MYSQL_ROOT_PASSWORD`, and
-  `MYSQL_PASSWORD`, and publishes the backend and MySQL only on `127.0.0.1`.
+  `MYSQL_PASSWORD`, publishes the backend and MySQL only on `127.0.0.1`, and
+  keeps the MySQL root credential value out of the backend service.
 - Backend and MySQL health declarations gate startup. The backend drops all
   capabilities and enables `no-new-privileges` while retaining the root UID
   for existing `data` and `output` volume compatibility.
@@ -184,6 +185,23 @@ def test_security_policy_matches_current_release_surface() -> None:
     ]
     for phrase in required:
         assert phrase in security
+
+
+def test_security_policy_separates_v0_1_4_from_unreleased_runtime_controls() -> None:
+    security = _read(PROJECT_ROOT / "SECURITY.md")
+    current_main_heading = "## Unreleased / Current Main Security Controls"
+
+    published_surface, current_main = security.split(current_main_heading, 1)
+    current_main = current_main.split("## Out Of Scope", 1)[0]
+    normalized_current_main = " ".join(current_main.split())
+
+    assert "Decision Research Agent v0.1.4 ships" in published_surface
+    assert "Compose requires non-empty" not in published_surface
+    assert "drops all backend capabilities" not in published_surface
+    assert "The source template uses `API_SECRET=`" in normalized_current_main
+    assert "Compose requires non-empty" in normalized_current_main
+    assert "drops all backend capabilities" in normalized_current_main
+    assert "v0.1.5" not in security
 
 
 def test_release_notes_document_breaking_migration_and_rollback() -> None:

@@ -141,11 +141,15 @@
       "case_id": "compose_loopback_required_secrets",
       "observations": {
         "api_secret_required": true,
+        "backend_default_host_port": 8000,
         "backend_host_ip": "127.0.0.1",
+        "backend_root_password_suppressed": true,
+        "mysql_default_host_port": 3306,
         "mysql_host_ip": "127.0.0.1",
         "mysql_password_required": true,
         "mysql_root_password_required": true,
-        "service_env_file_parameterized": true
+        "service_env_file_parameterized": true,
+        "test_host_ports_parameterized": true
       },
       "status": "passed"
     },

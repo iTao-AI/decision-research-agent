@@ -67,13 +67,42 @@ def _run_compose_config(env_file: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _resolved_compose_model(env_file: Path) -> dict:
+    scrubbed_env = {
+        "PATH": os.environ["PATH"],
+        "HOME": os.environ["HOME"],
+        "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE": str(env_file),
+    }
+    completed = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(env_file),
+            "config",
+            "--format",
+            "json",
+        ],
+        cwd=PROJECT_ROOT,
+        env=scrubbed_env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)
+
+
 def test_compose_declares_secure_local_container_boundary() -> None:
     compose_text = COMPOSE_PATH.read_text(encoding="utf-8")
     compose = yaml.safe_load(compose_text)
     backend = compose["services"]["backend"]
     mysql = compose["services"]["mysql"]
 
-    assert backend["ports"] == ["127.0.0.1:8000:8000"]
+    assert backend["ports"] == [
+        "127.0.0.1:${DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT:-8000}:8000"
+    ]
     assert backend["env_file"] == [
         "${DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE:-.env}"
     ]
@@ -81,10 +110,14 @@ def test_compose_declares_secure_local_container_boundary() -> None:
         "${API_SECRET:?Set API_SECRET for local Compose}"
     )
     assert backend["environment"]["MYSQL_HOST"] == "mysql"
+    assert backend["environment"]["MYSQL_ROOT_PASSWORD"] == ""
     assert backend["depends_on"]["mysql"]["condition"] == "service_healthy"
     assert backend["cap_drop"] == ["ALL"]
     assert backend["security_opt"] == ["no-new-privileges:true"]
 
+    assert mysql["ports"] == [
+        "127.0.0.1:${DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT:-3306}:3306"
+    ]
     assert mysql["environment"] == {
         "MYSQL_ROOT_PASSWORD": (
             "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"
@@ -270,6 +303,47 @@ def test_compose_config_accepts_explicit_values_in_a_scrubbed_environment(
     for value in values.values():
         assert value not in output
 
+    model = _resolved_compose_model(env_file)
+    assert model["services"]["backend"]["ports"] == [
+        {
+            "mode": "ingress",
+            "target": 8000,
+            "published": "8000",
+            "protocol": "tcp",
+            "host_ip": "127.0.0.1",
+        }
+    ]
+    assert model["services"]["mysql"]["ports"] == [
+        {
+            "mode": "ingress",
+            "target": 3306,
+            "published": "3306",
+            "protocol": "tcp",
+            "host_ip": "127.0.0.1",
+        }
+    ]
+
+
+def test_resolved_compose_model_does_not_expose_mysql_root_password_to_backend(
+    tmp_path: Path,
+) -> None:
+    values = {
+        **REQUIRED_COMPOSE_VALUES,
+        "OPENAI_API_KEY": "provider-disabled-test-only",
+        "LANGSMITH_TRACING": "false",
+    }
+    env_file = tmp_path / "resolved.env"
+    _write_compose_env(env_file, values)
+
+    model = _resolved_compose_model(env_file)
+    backend_environment = model["services"]["backend"]["environment"]
+    mysql_environment = model["services"]["mysql"]["environment"]
+
+    assert backend_environment.get("MYSQL_ROOT_PASSWORD") in {None, ""}
+    assert mysql_environment["MYSQL_ROOT_PASSWORD"] == values[
+        "MYSQL_ROOT_PASSWORD"
+    ]
+
 
 def test_container_helper_declares_isolated_bounded_lifecycles() -> None:
     durable = (
@@ -291,7 +365,12 @@ def test_container_helper_declares_isolated_bounded_lifecycles() -> None:
     assert "HEALTH_TIMEOUT_SECONDS = 60" in durable
     assert "DIAGNOSTIC_TIMEOUT_SECONDS = 30" in durable
     assert "COMPOSE_CLEANUP_TIMEOUT_SECONDS = 120" in durable
-    assert "MAX_COMPOSE_LIFECYCLE_SECONDS = 690" in durable
+    assert "LIFECYCLE_TIMEOUT_SECONDS = 840" in durable
+    assert "MAX_COMPOSE_LIFECYCLE_SECONDS = 960" in durable
+    assert "REQUIRED_DOCKER_LIFECYCLE_COUNT = 3" in durable
+    assert "_bounded_timeout" in durable
+    assert '"DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT": "0"' in durable
+    assert '"DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT": "0"' in durable
     assert "down" in combined
     assert '"--rmi"' in combined
     assert '"local"' in combined

@@ -22,7 +22,9 @@ COMPOSE_UP_TIMEOUT_SECONDS = 480
 HEALTH_TIMEOUT_SECONDS = 60
 DIAGNOSTIC_TIMEOUT_SECONDS = 30
 COMPOSE_CLEANUP_TIMEOUT_SECONDS = 120
-MAX_COMPOSE_LIFECYCLE_SECONDS = 690
+LIFECYCLE_TIMEOUT_SECONDS = 840
+MAX_COMPOSE_LIFECYCLE_SECONDS = 960
+REQUIRED_DOCKER_LIFECYCLE_COUNT = 3
 MAX_DIAGNOSTIC_CHARACTERS = 12_000
 
 DOCKER_HOST_ENV_KEYS = (
@@ -41,6 +43,10 @@ _ALLOWED_FEATURE_FLAGS = frozenset(
         "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION",
     }
 )
+_TEST_HOST_PORTS = {
+    "DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT": "0",
+    "DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT": "0",
+}
 CONTAINER_API_SECRET = "secure-local-runtime-test-only"
 ISOLATED_COMPOSE_VALUES = {
     "API_SECRET": CONTAINER_API_SECRET,
@@ -172,6 +178,7 @@ def build_compose_subprocess_env(
         if key in os.environ
     }
     env.update(feature_flags)
+    env.update(_TEST_HOST_PORTS)
     env["DOCKER_CONFIG"] = str(docker_config)
     env["DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE"] = str(env_file)
     return env
@@ -202,6 +209,8 @@ class DockerProject:
         docker_config: Path,
         feature_flags: dict[str, str],
         compose_files: tuple[Path, ...] = (),
+        monotonic=None,
+        sleep=None,
     ):
         self.root = root
         self.project_name = project_name
@@ -215,6 +224,24 @@ class DockerProject:
         self.compose_files = compose_files
         self.last_diagnostics = ""
         self._shared_mysql_image_id: str | None = None
+        self._monotonic = monotonic or time.monotonic
+        self._sleep = sleep or time.sleep
+        self._lifecycle_deadline: float | None = None
+        self._cleanup_deadline: float | None = None
+
+    def _bounded_timeout(self, requested: float) -> float:
+        if self._cleanup_deadline is not None:
+            deadline = self._cleanup_deadline
+            code = "container_cleanup_deadline_exceeded"
+        elif self._lifecycle_deadline is not None:
+            deadline = self._lifecycle_deadline
+            code = "container_lifecycle_deadline_exceeded"
+        else:
+            return requested
+        remaining = deadline - self._monotonic()
+        if remaining <= 0:
+            raise TimeoutError(code)
+        return min(requested, remaining)
 
     def _compose(
         self,
@@ -244,7 +271,7 @@ class DockerProject:
             text=True,
             capture_output=True,
             check=check,
-            timeout=timeout,
+            timeout=self._bounded_timeout(timeout),
             input=input_text,
         )
 
@@ -261,7 +288,7 @@ class DockerProject:
             text=True,
             capture_output=True,
             check=check,
-            timeout=timeout,
+            timeout=self._bounded_timeout(timeout),
         )
 
     def exec_json(
@@ -312,8 +339,10 @@ class DockerProject:
         timeout_seconds: float = HEALTH_TIMEOUT_SECONDS,
         poll_seconds: float = 0.25,
     ) -> bool:
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
+        deadline = self._monotonic() + timeout_seconds
+        if self._lifecycle_deadline is not None:
+            deadline = min(deadline, self._lifecycle_deadline)
+        while self._monotonic() < deadline:
             states = self.health_states(services)
             if all(states.get(service) == "healthy" for service in services):
                 return True
@@ -324,7 +353,13 @@ class DockerProject:
                 for service in services
             ):
                 raise RuntimeError("container_health_state_invalid")
-            time.sleep(poll_seconds)
+            remaining = deadline - self._monotonic()
+            self._sleep(min(poll_seconds, remaining))
+        if (
+            self._lifecycle_deadline is not None
+            and self._monotonic() >= self._lifecycle_deadline
+        ):
+            raise TimeoutError("container_lifecycle_deadline_exceeded")
         raise RuntimeError("container_health_timeout")
 
     def wait_until_ready(self) -> None:
@@ -345,6 +380,9 @@ class DockerProject:
 
     def inspect_backend(self) -> dict:
         return self._inspect_service("backend")
+
+    def inspect_mysql(self) -> dict:
+        return self._inspect_service("mysql")
 
     def published_bindings(self, service: str, port: str) -> list[dict[str, str]]:
         inspected = self._inspect_service(service)
@@ -503,8 +541,11 @@ class DockerProject:
     @contextmanager
     def running_backend(self):
         failure: BaseException | None = None
-        self._shared_mysql_image_id = self._mysql_image_id()
+        self._lifecycle_deadline = (
+            self._monotonic() + LIFECYCLE_TIMEOUT_SECONDS
+        )
         try:
+            self._shared_mysql_image_id = self._mysql_image_id()
             self._compose(
                 "up",
                 "-d",
@@ -524,11 +565,21 @@ class DockerProject:
                 pass
             raise
         finally:
+            self._lifecycle_deadline = None
+            self._cleanup_deadline = (
+                self._monotonic() + COMPOSE_CLEANUP_TIMEOUT_SECONDS
+            )
             try:
                 self.cleanup()
-            except BaseException:
+            except BaseException as cleanup_failure:
                 if failure is None:
                     raise
+                raise BaseExceptionGroup(
+                    "container_lifecycle_and_cleanup_failed",
+                    [failure, cleanup_failure],
+                )
+            finally:
+                self._cleanup_deadline = None
 
     def restart(self, service: str) -> None:
         self._compose("restart", service, timeout=120)
@@ -545,6 +596,15 @@ def _assert_secure_runtime_boundary(project: DockerProject) -> None:
     inspect = project.inspect_backend()
     assert inspect["HostConfig"]["CapDrop"] == ["ALL"]
     assert "no-new-privileges:true" in inspect["HostConfig"]["SecurityOpt"]
+    backend_environment = dict(
+        entry.partition("=")[::2] for entry in inspect["Config"]["Env"]
+    )
+    mysql_environment = dict(
+        entry.partition("=")[::2]
+        for entry in project.inspect_mysql()["Config"]["Env"]
+    )
+    assert backend_environment.get("MYSQL_ROOT_PASSWORD") in {None, ""}
+    assert mysql_environment.get("MYSQL_ROOT_PASSWORD")
 
     backend_bindings = project.published_bindings("backend", "8000/tcp")
     mysql_bindings = project.published_bindings("mysql", "3306/tcp")
@@ -552,6 +612,11 @@ def _assert_secure_runtime_boundary(project: DockerProject) -> None:
     assert mysql_bindings
     assert {binding["HostIp"] for binding in backend_bindings} == {"127.0.0.1"}
     assert {binding["HostIp"] for binding in mysql_bindings} == {"127.0.0.1"}
+    published_host_ports = {
+        binding["HostPort"] for binding in backend_bindings + mysql_bindings
+    }
+    assert len(published_host_ports) == 2
+    assert all(port.isdigit() and int(port) > 0 for port in published_host_ports)
 
     project.write_persistence_sentinels()
     project.restart("backend")

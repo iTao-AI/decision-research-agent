@@ -76,7 +76,9 @@ MYSQL_PASSWORD=
 The empty assignments above show names only; Compose deliberately rejects
 missing or empty values. Do not reuse the root password as the application
 password, commit the completed file, put credentials in Compose command
-arguments, or print resolved configuration.
+arguments, or print resolved configuration. Compose delivers the non-empty root
+credential to MySQL while explicitly overriding `MYSQL_ROOT_PASSWORD` to an
+empty value in the backend service environment.
 
 For an isolated environment, use a different mode-`0600` file through both
 Compose interpolation and the service env-file seam:

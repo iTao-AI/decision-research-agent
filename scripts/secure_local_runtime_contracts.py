@@ -105,9 +105,13 @@ EXPECTED_OBSERVATIONS: dict[str, dict[str, bool | int | str]] = {
     "compose_loopback_required_secrets": {
         "backend_host_ip": "127.0.0.1",
         "mysql_host_ip": "127.0.0.1",
+        "backend_default_host_port": 8000,
+        "mysql_default_host_port": 3306,
+        "test_host_ports_parameterized": True,
         "api_secret_required": True,
         "mysql_root_password_required": True,
         "mysql_password_required": True,
+        "backend_root_password_suppressed": True,
         "service_env_file_parameterized": True,
     },
     "container_health_privilege_contract": {

@@ -250,7 +250,9 @@ Compose launchers use Uvicorn warning-level logging, avoiding info-level
 transport logging of rejected legacy query credentials. Compose requires
 explicit API/MySQL secrets. Its backend listens on container-internal
 `0.0.0.0:8000`, while backend and MySQL host publication remains exact on
-`127.0.0.1`; private service communication stays on the Compose network.
+`127.0.0.1`; private service communication stays on the Compose network. The
+MySQL root credential value is isolated to the MySQL service and explicitly
+suppressed from the backend service environment.
 
 Compose gates backend startup on MySQL health, declares an exact backend
 process/service identity check, drops all backend capabilities, and enables

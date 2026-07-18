@@ -17,6 +17,9 @@ def _project(
     tmp_path: Path,
     *,
     feature_flags: dict[str, str] | None = None,
+    monotonic=None,
+    sleep=None,
+    project_name: str = "test",
 ) -> container_support.DockerProject:
     env_file = container_support._create_isolated_compose_env(tmp_path)
     docker_config = container_support._create_isolated_docker_config(tmp_path)
@@ -26,11 +29,13 @@ def _project(
     override.write_text("services: {}\n", encoding="utf-8")
     return container_support.DockerProject(
         root=tmp_path,
-        project_name="test",
+        project_name=project_name,
         env_file=env_file,
         docker_config=docker_config,
         feature_flags=feature_flags or {},
         compose_files=(base, override),
+        monotonic=monotonic,
+        sleep=sleep,
     )
 
 
@@ -66,6 +71,8 @@ def test_compose_subprocess_env_is_an_exact_scrubbed_allowlist(
         "COMPOSE_PROJECT_NAME": "host-project",
         "COMPOSE_FILE": "host-compose-file",
         "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE": "host-env-file",
+        "DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT": "8000",
+        "DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT": "3306",
     }
     for key, value in poisoned.items():
         monkeypatch.setenv(key, value)
@@ -91,11 +98,20 @@ def test_compose_subprocess_env_is_an_exact_scrubbed_allowlist(
         "DOCKER_CONFIG",
         "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE",
         "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL",
+        "DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT",
+        "DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT",
     }
     assert env["DOCKER_CONFIG"] == str(docker_config)
     assert env["DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE"] == str(env_file)
-    assert not set(poisoned) - {"DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE"} & set(env)
+    controlled_keys = {
+        "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE",
+        "DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT",
+        "DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT",
+    }
+    assert not (set(poisoned) - controlled_keys) & set(env)
     assert all(value not in env.values() for value in poisoned.values())
+    assert env["DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT"] == "0"
+    assert env["DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT"] == "0"
 
 
 def test_compose_subprocess_env_rejects_unknown_feature_flag(tmp_path: Path) -> None:
@@ -108,6 +124,25 @@ def test_compose_subprocess_env_rejects_unknown_feature_flag(tmp_path: Path) -> 
             docker_config=docker_config,
             feature_flags={"API_SECRET": "not-an-approved-feature-flag"},
         )
+
+
+def test_two_test_projects_request_distinct_engine_assigned_loopback_ports(
+    tmp_path: Path,
+) -> None:
+    first = _project(tmp_path / "first", project_name="first")
+    second = _project(tmp_path / "second", project_name="second")
+
+    assert first.project_name != second.project_name
+    expected_dynamic_ports = {
+        "DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT": "0",
+        "DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT": "0",
+    }
+    assert {
+        key: first.env[key] for key in expected_dynamic_ports
+    } == expected_dynamic_ports
+    assert {
+        key: second.env[key] for key in expected_dynamic_ports
+    } == expected_dynamic_ports
 
 
 def test_docker_availability_probe_uses_the_scrubbed_environment(
@@ -314,6 +349,50 @@ def test_lifecycle_failure_always_collects_logs_and_cleans_exact_project(
     assert "cleanup" in events
 
 
+def test_lifecycle_preserves_primary_and_cleanup_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(tmp_path)
+    events: list[str] = []
+
+    monkeypatch.setattr(project, "_mysql_image_id", lambda: None)
+    monkeypatch.setattr(
+        project,
+        "_compose",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["docker", "compose"], 0, stdout="", stderr=""
+        ),
+    )
+    monkeypatch.setattr(project, "wait_until_healthy", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        project,
+        "collect_bounded_diagnostics",
+        lambda: events.append("diagnostics") or "bounded",
+    )
+
+    def cleanup_failure() -> None:
+        events.append("cleanup")
+        raise RuntimeError("injected cleanup failure")
+
+    monkeypatch.setattr(project, "cleanup", cleanup_failure)
+
+    with pytest.raises(BaseExceptionGroup) as caught:
+        with project.running_backend():
+            raise AssertionError("injected primary failure")
+
+    assert caught.value.message == "container_lifecycle_and_cleanup_failed"
+    assert [type(item) for item in caught.value.exceptions] == [
+        AssertionError,
+        RuntimeError,
+    ]
+    assert [str(item) for item in caught.value.exceptions] == [
+        "injected primary failure",
+        "injected cleanup failure",
+    ]
+    assert events == ["diagnostics", "cleanup"]
+
+
 def test_cleanup_uses_rmi_local_and_checks_recorded_image_and_inventory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -359,18 +438,98 @@ def test_cleanup_uses_rmi_local_and_checks_recorded_image_and_inventory(
     ) in docker_calls
 
 
-def test_task7_timeout_budget_fits_required_ci_lane() -> None:
+def test_lifecycle_deadline_caps_subprocesses_and_cleanup_has_its_own_reserve(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [100.0]
+    timeouts: list[float] = []
+
+    def monotonic() -> float:
+        return now[0]
+
+    def fake_run(command, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    project = _project(
+        tmp_path,
+        monotonic=monotonic,
+        sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+    )
+    monkeypatch.setattr(container_support.subprocess, "run", fake_run)
+    monkeypatch.setattr(project, "_mysql_image_id", lambda: None)
+    monkeypatch.setattr(project, "wait_until_healthy", lambda **_kwargs: True)
+    monkeypatch.setattr(project, "collect_bounded_diagnostics", lambda: "bounded")
+
+    def cleanup() -> None:
+        project._compose("down", timeout=999)
+
+    monkeypatch.setattr(project, "cleanup", cleanup)
+
+    with pytest.raises(
+        TimeoutError,
+        match="container_lifecycle_deadline_exceeded",
+    ):
+        with project.running_backend():
+            now[0] += container_support.LIFECYCLE_TIMEOUT_SECONDS - 5
+            project._compose("exec", timeout=120)
+            assert timeouts[-1] == pytest.approx(5)
+            now[0] += 6
+            project._compose("exec", timeout=120)
+
+    assert timeouts[-1] == container_support.COMPOSE_CLEANUP_TIMEOUT_SECONDS
+
+
+def test_health_wait_cannot_outlive_the_active_lifecycle_deadline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [10.0]
+
+    project = _project(
+        tmp_path,
+        monotonic=lambda: now[0],
+        sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+    )
+    monkeypatch.setattr(project, "_mysql_image_id", lambda: None)
+    monkeypatch.setattr(project, "_compose", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(project, "cleanup", lambda: None)
+    real_wait_until_healthy = project.wait_until_healthy
+    monkeypatch.setattr(project, "wait_until_healthy", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        project,
+        "health_states",
+        lambda _services: {"backend": "starting"},
+    )
+
+    with project.running_backend():
+        now[0] += container_support.LIFECYCLE_TIMEOUT_SECONDS - 3
+        with pytest.raises(
+            TimeoutError,
+            match="container_lifecycle_deadline_exceeded",
+        ):
+            real_wait_until_healthy(
+                services=("backend",),
+                timeout_seconds=60,
+                poll_seconds=2,
+            )
+        assert now[0] == pytest.approx(
+            10.0 + container_support.LIFECYCLE_TIMEOUT_SECONDS
+        )
+
+
+def test_task7_enforced_timeout_budget_fits_required_ci_lane() -> None:
     assert container_support.COMPOSE_UP_TIMEOUT_SECONDS == 480
     assert container_support.HEALTH_TIMEOUT_SECONDS == 60
     assert container_support.DIAGNOSTIC_TIMEOUT_SECONDS == 30
     assert container_support.COMPOSE_CLEANUP_TIMEOUT_SECONDS == 120
-    assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS == 690
-    assert (
-        container_support.COMPOSE_UP_TIMEOUT_SECONDS
-        + container_support.HEALTH_TIMEOUT_SECONDS
-        + container_support.DIAGNOSTIC_TIMEOUT_SECONDS
+    assert container_support.LIFECYCLE_TIMEOUT_SECONDS == 840
+    assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS == 960
+    assert container_support.REQUIRED_DOCKER_LIFECYCLE_COUNT == 3
+    assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS == (
+        container_support.LIFECYCLE_TIMEOUT_SECONDS
         + container_support.COMPOSE_CLEANUP_TIMEOUT_SECONDS
-        == container_support.MAX_COMPOSE_LIFECYCLE_SECONDS
     )
-    assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS * 3 == 2070
-    assert 60 * 60 - container_support.MAX_COMPOSE_LIFECYCLE_SECONDS * 3 > 15 * 60
+    assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS * 3 == 2880
+    assert 60 * 60 - container_support.MAX_COMPOSE_LIFECYCLE_SECONDS * 3 == 720

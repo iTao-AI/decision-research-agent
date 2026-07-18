@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT:-8000}:8000"
     env_file:
       - ${DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE:-.env}
     environment:
@@ -15,6 +15,7 @@ services:
       DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL: ${DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL:-false}
       DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION: ${DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION:-false}
       API_SECRET: ${API_SECRET:?Set API_SECRET for local Compose}
+      MYSQL_ROOT_PASSWORD: ""
     volumes:
       - backend_data:/app/data
       - backend_output:/app/output
@@ -32,7 +33,7 @@ services:
     image: mysql:8.0
     # Bind to localhost only — no external network exposure
     ports:
-      - "127.0.0.1:3306:3306"
+      - "127.0.0.1:${DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT:-3306}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-decision_research}

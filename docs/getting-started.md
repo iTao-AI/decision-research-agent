@@ -75,6 +75,7 @@ warning-level logging, privilege settings, safe value generation, optional
 `DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE` isolation, existing-volume
 compatibility, and rollback are documented in
 [Secure Local Runtime Operations](operations/secure-local-runtime.md).
+The MySQL root credential value is not exposed to the backend service.
 
 ## 3. Verify Health
 

@@ -19,7 +19,8 @@ All notable changes to this project are documented in this file.
 ### Secure local container delivery
 
 - Compose now requires `API_SECRET`, `MYSQL_ROOT_PASSWORD`, and
-  `MYSQL_PASSWORD`, and publishes the backend and MySQL only on `127.0.0.1`.
+  `MYSQL_PASSWORD`, publishes the backend and MySQL only on `127.0.0.1`, and
+  keeps the MySQL root credential value out of the backend service.
 - Backend and MySQL health declarations gate startup. The backend drops all
   capabilities and enables `no-new-privileges` while retaining the root UID
   for existing `data` and `output` volume compatibility.

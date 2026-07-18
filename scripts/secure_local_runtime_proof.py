@@ -667,13 +667,22 @@ def _observe_container_artifacts() -> list[dict[str, Any]]:
     mysql_ports = mysql.get("ports")
     backend_host_ip = (
         "127.0.0.1"
-        if backend_ports == ["127.0.0.1:8000:8000"]
+        if backend_ports
+        == [
+            "127.0.0.1:${DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT:-8000}:8000"
+        ]
         else "not_loopback"
     )
     mysql_host_ip = (
         "127.0.0.1"
-        if mysql_ports == ["127.0.0.1:3306:3306"]
+        if mysql_ports
+        == [
+            "127.0.0.1:${DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT:-3306}:3306"
+        ]
         else "not_loopback"
+    )
+    host_ports_parameterized = (
+        backend_host_ip == "127.0.0.1" and mysql_host_ip == "127.0.0.1"
     )
     backend_environment = backend.get("environment")
     mysql_environment = mysql.get("environment")
@@ -697,6 +706,10 @@ def _observe_container_artifacts() -> list[dict[str, Any]]:
             mysql_environment.get("MYSQL_PASSWORD"),
             "MYSQL_PASSWORD",
         )
+    )
+    backend_root_password_suppressed = (
+        type(backend_environment) is dict
+        and backend_environment.get("MYSQL_ROOT_PASSWORD") == ""
     )
     env_file_parameterized = backend.get("env_file") == [
         "${DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE:-.env}"
@@ -781,9 +794,15 @@ def _observe_container_artifacts() -> list[dict[str, Any]]:
             {
                 "backend_host_ip": backend_host_ip,
                 "mysql_host_ip": mysql_host_ip,
+                "backend_default_host_port": 8000,
+                "mysql_default_host_port": 3306,
+                "test_host_ports_parameterized": host_ports_parameterized,
                 "api_secret_required": api_secret_required,
                 "mysql_root_password_required": mysql_root_required,
                 "mysql_password_required": mysql_password_required,
+                "backend_root_password_suppressed": (
+                    backend_root_password_suppressed
+                ),
                 "service_env_file_parameterized": env_file_parameterized,
             },
         ),

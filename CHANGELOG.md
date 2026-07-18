@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-18
+
 ### Secure local runtime access
 
 - Source execution now allows credential-free requests only when the direct

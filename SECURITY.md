@@ -1,10 +1,10 @@
 # Security Policy
 
-Decision Research Agent v0.1.4 ships the FastAPI backend, Python Tool Client,
-single-node application-owned run dispatch reconciliation and durable failure cause
-projection, operator scripts, tests, documentation, and the separately
-built Agent Research Operations Console. The loopback-only console does not accept credentials
-and is not a publicly hosted service.
+Decision Research Agent v0.1.5 ships the FastAPI backend, Python Tool Client,
+single-node application-owned run dispatch reconciliation, durable
+failure cause projection, secure local runtime controls, operator scripts, tests,
+documentation, and the separately built Agent Research Operations Console.
+The loopback-only console does not accept credentials and is not a publicly hosted service.
 
 ## Reporting A Vulnerability
 
@@ -24,10 +24,7 @@ API keys must be provided through environment variables. Do not pass API keys on
 the command line, commit them to source control, include them in logs, or paste
 them into issues, pull requests, release notes, or Agent conversations.
 
-## Unreleased / Current Main Security Controls
-
-The controls below describe the repository's current `main` branch after the
-v0.1.4 release. They are not part of the published v0.1.4 surface.
+## Secure Local Runtime Security Controls
 
 The source template uses `API_SECRET=` for credential-free loopback-only use;
 no sentinel value is accepted. In that mode, the direct peer and literal Host
@@ -70,4 +67,4 @@ input.
 - Public bug bounty commitments.
 - Hosted service operations outside this repository.
 - Hosted console operations, RBAC, multi-tenant, or multi-replica deployments
-  that are not part of v0.1.4.
+  that are not part of v0.1.5.

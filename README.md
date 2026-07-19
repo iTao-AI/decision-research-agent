@@ -261,10 +261,15 @@ Useful local checks:
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/secure_local_runtime_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/bounded_live_producer_proof.py check
 python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
 ```
+
+The bounded live producer `check` is provider-free and Docker-free. Its
+separately authorized `observe-live` command is documented without being run by
+tests or CI. No live report is committed by this implementation change.
 
 ## Documentation
 
@@ -279,6 +284,7 @@ python tools/decision_research_agent_tool.py doctor
 - [API Contract](docs/reference/api-contract.md)
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
+- [Bounded Live Producer Evaluation](docs/reference/bounded-live-producer-evaluation.md)
 - [Durable Run Failure Cause Proof](docs/evidence/run-failure-cause-v1.md)
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
 - [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
@@ -298,6 +304,10 @@ python tools/decision_research_agent_tool.py doctor
   result endpoint, its `409 run_failed` envelope, and the frozen
   `dra.downstream-consumer.v1` fixture remain unchanged; the bounded proof is
   not a provider diagnosis, billing record, or exactly-once execution claim.
+- The bounded live producer harness proves deterministic contracts and one
+  provider-free Docker lifecycle. Provider/model execution, live evidence
+  publication, provider quality, research truth, billing, hosted deployment,
+  and SLA claims remain separately authorized and outside this implementation.
 - The source launcher supports credential-free use only on the direct-loopback
   boundary. Compose is authenticated, publishes backend/MySQL only on
   `127.0.0.1`, and uses required secrets, health declarations, warning-level

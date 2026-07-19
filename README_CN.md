@@ -237,10 +237,15 @@ DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/secure_local_runtime_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/bounded_live_producer_proof.py check
 python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
 ```
+
+Bounded live producer 的 `check` 不使用 provider，也不启动 Docker。其需要
+单独授权的 `observe-live` 命令只在文档中说明，不会被 tests 或 CI 调用；本次
+implementation 未提交 live report。
 
 ## 文档
 
@@ -255,6 +260,7 @@ python tools/decision_research_agent_tool.py doctor
 - [API Contract](docs/reference/api-contract.md)
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
+- [Bounded Live Producer Evaluation](docs/reference/bounded-live-producer-evaluation.md)
 - [Durable Run Failure Cause Proof](docs/evidence/run-failure-cause-v1.md)
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
 - [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
@@ -274,6 +280,10 @@ python tools/decision_research_agent_tool.py doctor
   endpoint、`409 run_failed` envelope 与冻结的
   `dra.downstream-consumer.v1` fixture 保持不变；该有界证明不构成 provider
   diagnosis、billing record 或 exactly-once execution 声明。
+- Bounded live producer harness 只证明确定性 contracts 与一次 provider-free
+  Docker lifecycle；provider/model 执行、live evidence publication、provider
+  quality、research truth、billing、hosted deployment 与 SLA 声明仍需单独授权，
+  不属于本次 implementation。
 - Source launcher 仅在 direct-loopback 边界支持 credential-free 访问。
   Compose 要求认证，只把 backend/MySQL 发布到 `127.0.0.1`，并使用 required
   secrets、health declarations、warning-level logging、capability drop 与

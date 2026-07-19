@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Bounded live producer evaluation
+
+- Added a deterministic provider-free contract check and a separately
+  authorized `observe-live` harness for one bounded generic scenario.
+- Added a clean tracked-archive Docker lifecycle for protected create,
+  application-owned persistence, backend restart, same-key replay, privilege
+  inspection, and exact task-owned cleanup.
+- No live provider observation or JSON/Markdown evidence report is committed;
+  `VERSION` and the v0.1.5 release record remain unchanged.
+
 ## [0.1.5] - 2026-07-18
 
 ### Secure local runtime access

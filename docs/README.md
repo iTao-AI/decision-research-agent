@@ -36,6 +36,9 @@ external evaluation of the public contract surface.
   errors, and the additive durable run failure-cause status projection.
 - [Downstream Consumer Contract](reference/downstream-consumer-contract.md) — deterministic status, result, Evidence, fallback, and failure-handling proof.
 - [Agent Evaluation Regression Gate](reference/agent-evaluation-regression-gate.md) — deterministic eight-case, six-evaluator release gate and baseline workflow.
+- [Bounded Live Producer Evaluation](reference/bounded-live-producer-evaluation.md)
+  — provider-free contract check, separately authorized live command, bounded
+  loopback lifecycle, stable output, and explicit non-claims.
 - [Data Models](reference/data-models.md) — run, Evidence, artifact, review, and publication records.
 - [State Machines](reference/state-machines.md) — execution, delivery, review, and verification transitions.
 - [Tool Registry](reference/tool-registry.md) — server-owned tool and Skill boundaries.

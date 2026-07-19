@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
+import yaml
 
 from scripts.bounded_live_producer_contracts import (
     BOUNDARIES,
@@ -1100,3 +1101,43 @@ def test_container_fixture_uses_production_dispatch_fence_and_finalization(
         "peps.python.org",
     ]
     assert "live evidence" not in resolved.artifact["content"].lower()
+
+
+def test_bounded_live_producer_check_is_required_before_non_docker_ci() -> None:
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    backend_steps = workflow["jobs"]["backend"]["steps"]
+    check_step = {
+        "name": "Run bounded live producer contract check",
+        "env": {"PYTHON_DOTENV_DISABLED": "1"},
+        "run": "python scripts/bounded_live_producer_proof.py check",
+    }
+    assert backend_steps.count(check_step) == 1
+    assert backend_steps.index(check_step) > next(
+        index
+        for index, step in enumerate(backend_steps)
+        if step.get("name") == "Install dependencies"
+    )
+    assert backend_steps.index(check_step) < next(
+        index
+        for index, step in enumerate(backend_steps)
+        if step.get("run") == 'python -m pytest -q -m "not docker"'
+    )
+
+    workflow_text = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "observe-live" not in workflow_text
+    assert "bounded-live-producer-v1.json" not in workflow_text
+    assert "bounded-live-producer-v1.md" not in workflow_text
+    for credential in ("OPENAI_API_KEY", "TAVILY_API_KEY", "LANGSMITH_API_KEY"):
+        assert credential not in workflow_text
+
+    docker_steps = [
+        step
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("run") == "python -m pytest -q -m docker"
+    ]
+    assert len(docker_steps) == 1

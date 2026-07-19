@@ -21,6 +21,13 @@ not grant independent verification authority.
 | [secure-local-runtime-v1.json](secure-local-runtime-v1.json) | Canonical deterministic 16-case secure local runtime contract report; not a Docker runtime observation or deployment certification. |
 | [secure-local-runtime-v1.md](secure-local-runtime-v1.md) | Human-readable rendering of the validated secure local runtime report, ordered boundaries, and explicit limits. |
 
+The [Bounded Live Producer Evaluation](../reference/bounded-live-producer-evaluation.md)
+documents a deterministic provider-free contract check and a separately
+authorized live observation path. No live report is committed: the absent
+`bounded-live-producer-v1.json` and `bounded-live-producer-v1.md` paths are not
+completed evidence. A later authorized run and reviewed evidence-only change
+are required before either path may be indexed as an observation.
+
 The dispatch proof explicitly records `exactly_once_execution: not_claimed`,
 `running_execution_recovery: not_proven`,
 `provider_tool_side_effect_exactly_once: not_claimed`,

@@ -18,6 +18,9 @@ V012_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.2.md"
 V013_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.3.md"
 V014_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.4.md"
 V015_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
+V015_RELEASE_NOTES_SHA256 = (
+    "61cbac951a6513a3eb8f160647b9f16b95ca6ed96a4cca8bea80786462a90b6b"
+)
 PYTEST_FIXED_FLOOR = "9.0.3"
 V015_H2_ORDER = (
     "Supported Surface",
@@ -130,6 +133,7 @@ def test_current_release_version_is_consistent() -> None:
     assert lock["version"] == "0.1.5"
     assert lock["packages"][""]["version"] == "0.1.5"
     assert V015_RELEASE_NOTES.exists()
+    assert sha256(V015_RELEASE_NOTES.read_bytes()).hexdigest() == V015_RELEASE_NOTES_SHA256
 
 
 def test_changelog_preserves_published_release_boundary() -> None:
@@ -162,7 +166,16 @@ def test_changelog_preserves_published_release_boundary() -> None:
     assert changelog.index(v0_1_2_heading) < changelog.index(v0_1_1_heading)
     assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
     unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_5_heading, 1)[0]
-    assert unreleased.strip() == ""
+    bounded_producer_subsection = """### Bounded live producer evaluation
+
+- Added a deterministic provider-free contract check and a separately
+  authorized `observe-live` harness for one bounded generic scenario.
+- Added a clean tracked-archive Docker lifecycle for protected create,
+  application-owned persistence, backend restart, same-key replay, privilege
+  inspection, and exact task-owned cleanup.
+- No live provider observation or JSON/Markdown evidence report is committed;
+  `VERSION` and the v0.1.5 release record remain unchanged."""
+    assert unreleased.strip() == bounded_producer_subsection
     v0_1_5 = changelog.split(v0_1_5_heading, 1)[1].split(v0_1_4_heading, 1)[0]
     secure_runtime_subsection = """### Secure local runtime access
 

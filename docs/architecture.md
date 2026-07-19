@@ -225,6 +225,17 @@ across restart, and task-owned cleanup. A later tag-archive smoke remains a
 separately authorized post-publication check. None is a hosted deployment,
 provider-quality, research-quality, TLS, identity, or RBAC certification.
 
+The bounded live producer harness is another project-owned proof boundary. Its
+required `check` validates deterministic manifest, report, error, and lifecycle
+contracts without Docker, credentials, network, or Agent runtime imports. The
+required Docker lane separately builds an exact tracked archive and verifies
+protected create, application-owned persistence, dynamic loopback rebinding
+after backend restart, same-key replay, privilege isolation, and exact cleanup
+through a provider-free fixture. `observe-live` remains a separately authorized
+operator action; no live report is committed, and the harness does not move
+business authority into LangGraph, LangSmith, the frontend, or an external
+consumer.
+
 ## Credential, CORS, Public Demo, And Local-Prod Separation
 
 The current repository release is backend, API, CLI, tests, docs, scripts, and

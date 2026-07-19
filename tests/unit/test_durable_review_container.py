@@ -568,7 +568,7 @@ def test_task7_enforced_timeout_budget_fits_required_ci_lane() -> None:
     assert container_support.DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS == 30
     assert container_support.LIFECYCLE_TIMEOUT_SECONDS == 720
     assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS == 840
-    assert container_support.REQUIRED_DOCKER_LIFECYCLE_COUNT == 3
+    assert container_support.REQUIRED_DOCKER_LIFECYCLE_COUNT == 4
     assert container_support.MAX_COMPOSE_LIFECYCLE_SECONDS == (
         container_support.LIFECYCLE_TIMEOUT_SECONDS
         + container_support.COMPOSE_CLEANUP_TIMEOUT_SECONDS
@@ -581,6 +581,6 @@ def test_task7_enforced_timeout_budget_fits_required_ci_lane() -> None:
         container_support.DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS
         * container_support.REQUIRED_DOCKER_LIFECYCLE_COUNT
     )
-    assert lifecycle_bound + external_probe_bound == 2610
-    assert 60 * 60 - lifecycle_bound - external_probe_bound == 990
-    assert 60 * 60 - lifecycle_bound - external_probe_bound > 15 * 60
+    assert lifecycle_bound + external_probe_bound == 3480
+    assert 75 * 60 - lifecycle_bound - external_probe_bound == 1020
+    assert 75 * 60 - lifecycle_bound - external_probe_bound > 15 * 60

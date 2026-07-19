@@ -2055,6 +2055,13 @@ def test_fixture_override_is_exact_and_requires_explicit_test_mode(tmp_path: Pat
     assert "--cap-drop" in secure_command and "ALL" in secure_command
     assert "--security-opt" in secure_command
     assert "PYTHON_DOTENV_DISABLED=1" in secure_command
+    source_mount = secure_command[secure_command.index("--volume") + 1]
+    assert source_mount.endswith(":/proof:ro")
+    assert "--tmpfs" in secure_command
+    assert "/proof/data:rw,nosuid,nodev,noexec,size=16m" in secure_command
+    assert "/proof/output:rw,nosuid,nodev,noexec,size=16m" in secure_command
+    assert (root / "data").stat().st_mode & 0o777 == 0o700
+    assert (root / "output").stat().st_mode & 0o777 == 0o700
     assert secure_command[-2:] == (
         "scripts/secure_local_runtime_proof.py",
         "check",

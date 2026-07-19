@@ -1711,6 +1711,15 @@ class ManagedComposeProject:
                 False,
             )
         self._standalone_containers = (secure_check_name,)
+        try:
+            for state_directory in ("data", "output"):
+                (self.root / state_directory).mkdir(mode=0o700)
+        except OSError as exc:
+            raise EvaluationError(
+                FailureCode.SOURCE_ARCHIVE_INVALID,
+                FailurePhase.DOCKER,
+                False,
+            ) from exc
         result = self._invoke(
             (
                 "docker",
@@ -1728,8 +1737,12 @@ class ManagedComposeProject:
                 "no-new-privileges:true",
                 "--env",
                 "PYTHON_DOTENV_DISABLED=1",
+                "--tmpfs",
+                "/proof/data:rw,nosuid,nodev,noexec,size=16m",
+                "--tmpfs",
+                "/proof/output:rw,nosuid,nodev,noexec,size=16m",
                 "--volume",
-                f"{self.root}:/proof",
+                f"{self.root}:/proof:ro",
                 "--workdir",
                 "/proof",
                 "--entrypoint",

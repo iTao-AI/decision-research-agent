@@ -907,20 +907,18 @@ def test_managed_compose_uses_one_captured_credential_input_after_path_replaceme
         repository_root=repository,
     )
     captured_inputs: list[bytes] = []
+    captured_paths: list[Path] = []
 
     def runner(
         args: tuple[str, ...],
         *,
-        pass_fds: tuple[int, ...] = (),
+        env: dict[str, str],
         **_: object,
     ) -> subprocess.CompletedProcess[str]:
-        assert len(pass_fds) == 2
-        invocation_inputs = []
-        for descriptor in pass_fds:
-            os.lseek(descriptor, 0, os.SEEK_SET)
-            invocation_inputs.append(os.read(descriptor, 64 * 1024))
-        assert invocation_inputs[0] == invocation_inputs[1]
-        captured_inputs.append(invocation_inputs[0])
+        credential_path = Path(args[args.index("--env-file") + 1])
+        assert Path(env["DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE"]) == credential_path
+        captured_paths.append(credential_path)
+        captured_inputs.append(credential_path.read_bytes())
         if len(captured_inputs) == 1:
             replacement = {**original, "LLM_MODEL": "replacement-model"}
             replacement_path = tmp_path / "replacement.env"
@@ -951,13 +949,15 @@ def test_managed_compose_uses_one_captured_credential_input_after_path_replaceme
         project._invoke(("up", "-d", "mysql"), deadline, compose=True)
         assert len(captured_inputs) == 3
         assert captured_inputs[0] == captured_inputs[1] == captured_inputs[2]
+        assert len(set(captured_paths)) == 3
+        assert all(not path.exists() for path in captured_paths)
         assert b"LLM_MODEL=gpt-5\n" in captured_inputs[0]
         assert b"replacement-model" not in captured_inputs[0]
     finally:
         getattr(configuration, "close", lambda: None)()
 
 
-def test_managed_compose_passes_read_only_captured_credential_descriptors(
+def test_managed_compose_materializes_owner_read_only_single_command_snapshot(
     tmp_path: Path,
 ) -> None:
     repository = tmp_path / "repository"
@@ -974,19 +974,24 @@ def test_managed_compose_passes_read_only_captured_credential_descriptors(
         repository_root=repository,
     )
     captured_inputs: list[bytes] = []
+    captured_paths: list[Path] = []
 
     def runner(
         args: tuple[str, ...],
         *,
-        pass_fds: tuple[int, ...] = (),
+        env: dict[str, str],
         **_: object,
     ) -> subprocess.CompletedProcess[str]:
-        assert len(pass_fds) == 2
-        for descriptor in pass_fds:
-            with pytest.raises(OSError):
-                os.write(descriptor, b"mutated")
-            os.lseek(descriptor, 0, os.SEEK_SET)
-            captured_inputs.append(os.read(descriptor, 64 * 1024))
+        credential_path = Path(args[args.index("--env-file") + 1])
+        assert Path(env["DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE"]) == credential_path
+        metadata = credential_path.lstat()
+        assert stat.S_IMODE(metadata.st_mode) == 0o400
+        assert metadata.st_nlink == 1
+        assert stat.S_IMODE(credential_path.parent.stat().st_mode) == 0o700
+        with pytest.raises(PermissionError):
+            credential_path.open("wb")
+        captured_paths.append(credential_path)
+        captured_inputs.append(credential_path.read_bytes())
         return subprocess.CompletedProcess(args, 0, "", "")
 
     try:
@@ -1007,10 +1012,335 @@ def test_managed_compose_passes_read_only_captured_credential_descriptors(
             ),
             compose=True,
         )
-        assert captured_inputs[0] == captured_inputs[1]
+        assert len(captured_inputs) == 1
         assert b"LLM_MODEL=gpt-5\n" in captured_inputs[0]
+        assert not captured_paths[0].exists()
     finally:
         configuration.close()
+
+
+def test_managed_compose_fails_closed_when_command_snapshot_is_replaced(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    root = repository / "snapshot"
+    root.mkdir(parents=True)
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "external-live.env"
+    _write_env(env_file, _valid_env())
+    configuration = load_live_configuration(
+        env_file,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=repository,
+    )
+    captured_directory: Path | None = None
+
+    def runner(
+        args: tuple[str, ...],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal captured_directory
+        credential_path = Path(args[args.index("--env-file") + 1])
+        captured_directory = credential_path.parent
+        replacement = captured_directory / "replacement.env"
+        replacement.write_bytes(b"API_SECRET=replaced\n")
+        replacement.chmod(0o400)
+        os.replace(replacement, credential_path)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    try:
+        project = ManagedComposeProject(
+            root=root,
+            compose_paths=(compose,),
+            env_file=configuration,
+            project_name="dra-proof-92929292929292929292929292929292",
+            environment={},
+            runner=runner,
+        )
+        with pytest.raises(EvaluationError) as raised:
+            project._invoke(
+                ("config", "--format", "json"),
+                ActiveDeadline(
+                    5,
+                    code=FailureCode.COMPOSE_CONFIG_INVALID,
+                    phase=FailurePhase.DOCKER,
+                ),
+                compose=True,
+            )
+        assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
+        assert captured_directory is not None and not captured_directory.exists()
+    finally:
+        configuration.close()
+
+
+def test_managed_compose_fails_closed_and_cleans_after_pathname_rebinding(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    root = repository / "snapshot"
+    root.mkdir(parents=True)
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "external-live.env"
+    _write_env(env_file, _valid_env())
+    configuration = load_live_configuration(
+        env_file,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=repository,
+    )
+    paths: dict[str, Path] = {}
+    attacker_directory = tmp_path / "attacker-credential"
+    attacker_directory.mkdir()
+    attacker_env = attacker_directory / "live.env"
+    attacker_env.write_bytes(b"API_SECRET=attacker-controlled\n")
+    attacker_env.chmod(0o400)
+
+    def runner(
+        args: tuple[str, ...],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        credential_path = Path(args[args.index("--env-file") + 1])
+        original_directory = credential_path.parent
+        renamed_directory = original_directory.with_name(
+            original_directory.name + "-renamed"
+        )
+        original_directory.rename(renamed_directory)
+        original_directory.symlink_to(attacker_directory, target_is_directory=True)
+        paths.update(original=original_directory, renamed=renamed_directory)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    try:
+        project = ManagedComposeProject(
+            root=root,
+            compose_paths=(compose,),
+            env_file=configuration,
+            project_name="dra-proof-93939393939393939393939393939393",
+            environment={},
+            runner=runner,
+        )
+        with pytest.raises(EvaluationError) as raised:
+            project._invoke(
+                ("config", "--format", "json"),
+                ActiveDeadline(
+                    5,
+                    code=FailureCode.COMPOSE_CONFIG_INVALID,
+                    phase=FailurePhase.DOCKER,
+                ),
+                compose=True,
+            )
+        assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
+        assert not paths["original"].exists()
+        assert not paths["original"].is_symlink()
+        assert not paths["renamed"].exists()
+        assert attacker_env.read_bytes() == b"API_SECRET=attacker-controlled\n"
+    finally:
+        configuration.close()
+
+
+def test_managed_compose_closes_secret_fd_after_cross_parent_directory_rename(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    root = repository / "snapshot"
+    root.mkdir(parents=True)
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "external-live.env"
+    _write_env(env_file, _valid_env())
+    configuration = load_live_configuration(
+        env_file,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=repository,
+    )
+    moved_directory = tmp_path / "moved-credential"
+    original_directory: Path | None = None
+    reader_fd: int | None = None
+
+    def runner(
+        args: tuple[str, ...],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal original_directory, reader_fd
+        credential_path = Path(args[args.index("--env-file") + 1])
+        original_directory = credential_path.parent
+        snapshot = next(iter(configuration._active_snapshots))
+        reader_fd = snapshot.reader_fd
+        original_directory.rename(moved_directory)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=configuration,
+        project_name="dra-proof-94949494949494949494949494949493",
+        environment={},
+        runner=runner,
+    )
+    with pytest.raises(EvaluationError) as raised:
+        project._invoke(
+            ("config", "--format", "json"),
+            ActiveDeadline(
+                5,
+                code=FailureCode.COMPOSE_CONFIG_INVALID,
+                phase=FailurePhase.DOCKER,
+            ),
+            compose=True,
+        )
+    assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
+    assert reader_fd is not None
+    snapshot = next(iter(configuration._active_snapshots))
+    assert snapshot.reader_fd == -1
+    with pytest.raises(OSError):
+        os.fstat(reader_fd)
+    assert moved_directory.is_dir()
+    assert not (moved_directory / "live.env").exists()
+    with pytest.raises(EvaluationError) as cleanup_raised:
+        configuration.close()
+    assert cleanup_raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
+    assert original_directory is not None
+    moved_directory.rename(original_directory)
+    configuration.close()
+    assert not original_directory.exists()
+
+
+def test_managed_compose_retries_snapshot_cleanup_after_interrupt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
+    repository = tmp_path / "repository"
+    root = repository / "snapshot"
+    root.mkdir(parents=True)
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "external-live.env"
+    _write_env(env_file, _valid_env())
+    configuration = load_live_configuration(
+        env_file,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=repository,
+    )
+    credential_directory: Path | None = None
+    original_unlink = lifecycle.os.unlink
+    interrupted = False
+
+    def interrupt_first_unlink(path: object, *args: object, **kwargs: object) -> None:
+        nonlocal interrupted
+        if not interrupted and path == "live.env" and kwargs.get("dir_fd") is not None:
+            interrupted = True
+            raise KeyboardInterrupt
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(lifecycle.os, "unlink", interrupt_first_unlink)
+
+    def runner(
+        args: tuple[str, ...],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal credential_directory
+        credential_directory = Path(args[args.index("--env-file") + 1]).parent
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=configuration,
+        project_name="dra-proof-94949494949494949494949494949494",
+        environment={},
+        runner=runner,
+    )
+    with pytest.raises(EvaluationError) as raised:
+        project._invoke(
+            ("config", "--format", "json"),
+            ActiveDeadline(
+                5,
+                code=FailureCode.COMPOSE_CONFIG_INVALID,
+                phase=FailurePhase.DOCKER,
+            ),
+            compose=True,
+        )
+    assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
+    assert credential_directory is not None and credential_directory.exists()
+    configuration.close()
+    assert not credential_directory.exists()
+
+
+@pytest.mark.parametrize(
+    "primary",
+    [
+        EvaluationError(
+            FailureCode.COMPOSE_CONFIG_INVALID,
+            FailurePhase.DOCKER,
+            False,
+        ),
+        KeyboardInterrupt(),
+    ],
+)
+@pytest.mark.parametrize(
+    "cleanup_error",
+    [KeyboardInterrupt(), RuntimeError("cleanup")],
+)
+def test_managed_compose_preserves_primary_when_snapshot_cleanup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    primary: BaseException,
+    cleanup_error: BaseException,
+) -> None:
+    lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
+    repository = tmp_path / "repository"
+    root = repository / "snapshot"
+    root.mkdir(parents=True)
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "external-live.env"
+    _write_env(env_file, _valid_env())
+    configuration = load_live_configuration(
+        env_file,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=repository,
+    )
+    original_unlink = lifecycle.os.unlink
+    cleanup_failed = False
+
+    def fail_first_unlink(path: object, *args: object, **kwargs: object) -> None:
+        nonlocal cleanup_failed
+        if not cleanup_failed and path == "live.env" and kwargs.get("dir_fd") is not None:
+            cleanup_failed = True
+            raise cleanup_error
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(lifecycle.os, "unlink", fail_first_unlink)
+
+    def runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise primary
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=configuration,
+        project_name="dra-proof-95959595959595959595959595959595",
+        environment={},
+        runner=runner,
+    )
+    with pytest.raises(BaseExceptionGroup) as raised:
+        project._invoke(
+            ("config", "--format", "json"),
+            ActiveDeadline(
+                5,
+                code=FailureCode.COMPOSE_CONFIG_INVALID,
+                phase=FailurePhase.DOCKER,
+            ),
+            compose=True,
+        )
+    assert raised.value.exceptions[0] is primary
+    assert isinstance(raised.value.exceptions[1], EvaluationError)
+    configuration.close()
 
 
 def test_managed_compose_project_uses_exact_paths_services_ports_and_ownership(

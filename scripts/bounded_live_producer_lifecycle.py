@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import ipaddress
@@ -21,7 +22,7 @@ import tempfile
 import threading
 import time
 from types import MappingProxyType
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
 
 from scripts.bounded_live_producer_contracts import (
@@ -527,55 +528,33 @@ def prepare_source_snapshot(
     )
 
 
-class LiveConfiguration:
-    """Validated credential values backed by one anonymous immutable input."""
+@dataclass(eq=False)
+class _CredentialSnapshot:
+    parent_path: Path
+    directory_path: Path
+    parent_fd: int
+    directory_fd: int
+    directory_identity: os.stat_result
+    reader_fd: int = -1
+    source_identity: os.stat_result | None = None
 
-    def __init__(self, values: Mapping[str, str], raw: bytes) -> None:
-        self._values = MappingProxyType(dict(values))
-        self._descriptors: tuple[int, ...] = ()
-        writer = -1
-        anonymous_path: str | None = None
-        readers: list[int] = []
-        try:
-            writer, anonymous_path = tempfile.mkstemp(
-                prefix="dra-bounded-credential-"
-            )
-            os.fchmod(writer, 0o600)
-            view = memoryview(raw)
-            written = 0
-            while written < len(view):
-                written += os.write(writer, view[written:])
-            os.fsync(writer)
-            source = os.fstat(writer)
-            if not stat.S_ISREG(source.st_mode) or source.st_nlink != 1:
-                raise OSError("credential_descriptor_invalid")
-            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-            for _ in range(2):
-                descriptor = os.open(anonymous_path, flags)
-                opened = os.fstat(descriptor)
-                if (
-                    not stat.S_ISREG(opened.st_mode)
-                    or opened.st_nlink != 1
-                    or (opened.st_dev, opened.st_ino, opened.st_size)
-                    != (source.st_dev, source.st_ino, source.st_size)
-                ):
-                    os.close(descriptor)
-                    raise OSError("credential_descriptor_invalid")
-                readers.append(descriptor)
-            os.unlink(anonymous_path)
-            anonymous_path = None
-            self._descriptors = tuple(readers)
-            readers = []
-        finally:
-            for descriptor in readers:
-                os.close(descriptor)
-            if writer >= 0:
-                os.close(writer)
-            if anonymous_path is not None:
-                try:
-                    os.unlink(anonymous_path)
-                except FileNotFoundError:
-                    pass
+
+class LiveConfiguration:
+    """Validated values materialized only for one exact Compose invocation."""
+
+    def __init__(
+        self,
+        values: Mapping[str, str],
+        raw: bytes,
+        *,
+        repository_root: Path,
+    ) -> None:
+        self._value_store = dict(values)
+        self._values = MappingProxyType(self._value_store)
+        self._raw = bytearray(raw)
+        self._repository_root = repository_root.resolve()
+        self._active_snapshots: set[_CredentialSnapshot] = set()
+        self._closed = False
 
     def __getitem__(self, key: str) -> str:
         return self._values[key]
@@ -589,32 +568,344 @@ class LiveConfiguration:
     def get(self, key: str, default: str | None = None) -> str | None:
         return self._values.get(key, default)
 
-    @property
-    def compose_path(self) -> Path:
-        return Path(f"/dev/fd/{self._descriptors[0]}")
+    @staticmethod
+    def _clear_directory_fd(
+        directory_fd: int,
+        *,
+        remaining_entries: list[int],
+        depth: int = 0,
+    ) -> None:
+        if depth > 8:
+            raise OSError("credential_cleanup_depth_invalid")
+        names = os.listdir(directory_fd)
+        remaining_entries[0] -= len(names)
+        if remaining_entries[0] < 0:
+            raise OSError("credential_cleanup_entries_invalid")
+        for name in names:
+            metadata = os.stat(
+                name,
+                dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+            if stat.S_ISDIR(metadata.st_mode):
+                child_fd = os.open(
+                    name,
+                    os.O_RDONLY
+                    | getattr(os, "O_DIRECTORY", 0)
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=directory_fd,
+                )
+                try:
+                    LiveConfiguration._clear_directory_fd(
+                        child_fd,
+                        remaining_entries=remaining_entries,
+                        depth=depth + 1,
+                    )
+                finally:
+                    os.close(child_fd)
+                os.rmdir(name, dir_fd=directory_fd)
+            else:
+                os.unlink(name, dir_fd=directory_fd)
 
-    @property
-    def service_path(self) -> Path:
-        return Path(f"/dev/fd/{self._descriptors[1]}")
+    def _cleanup_snapshot(self, snapshot: _CredentialSnapshot) -> None:
+        directory_cleared = False
+        try:
+            self._clear_directory_fd(
+                snapshot.directory_fd,
+                remaining_entries=[256],
+            )
+            directory_cleared = True
+        finally:
+            if directory_cleared and snapshot.reader_fd >= 0:
+                reader_fd = snapshot.reader_fd
+                snapshot.reader_fd = -1
+                os.close(reader_fd)
+        matching_names: list[str] = []
+        for name in os.listdir(snapshot.parent_fd):
+            try:
+                metadata = os.stat(
+                    name,
+                    dir_fd=snapshot.parent_fd,
+                    follow_symlinks=False,
+                )
+            except FileNotFoundError:
+                continue
+            if (
+                stat.S_ISDIR(metadata.st_mode)
+                and (metadata.st_dev, metadata.st_ino)
+                == (
+                    snapshot.directory_identity.st_dev,
+                    snapshot.directory_identity.st_ino,
+                )
+            ):
+                matching_names.append(name)
+        if len(matching_names) != 1:
+            raise OSError("credential_directory_identity_invalid")
+        directory_name = matching_names[0]
+        original_name = snapshot.directory_path.name
+        if original_name != directory_name:
+            try:
+                replacement = os.stat(
+                    original_name,
+                    dir_fd=snapshot.parent_fd,
+                    follow_symlinks=False,
+                )
+            except FileNotFoundError:
+                pass
+            else:
+                if stat.S_ISDIR(replacement.st_mode):
+                    raise OSError("credential_directory_replacement_invalid")
+                os.unlink(original_name, dir_fd=snapshot.parent_fd)
+        os.rmdir(directory_name, dir_fd=snapshot.parent_fd)
+        os.close(snapshot.directory_fd)
+        snapshot.directory_fd = -1
+        os.close(snapshot.parent_fd)
+        snapshot.parent_fd = -1
+        self._active_snapshots.discard(snapshot)
 
-    @property
-    def pass_fds(self) -> tuple[int, ...]:
-        return self._descriptors
-
-    def rewind(self) -> None:
-        for descriptor in self._descriptors:
-            os.lseek(descriptor, 0, os.SEEK_SET)
+    @contextmanager
+    def materialized(
+        self,
+        *,
+        forbidden_roots: Sequence[Path] = (),
+    ) -> Iterator[Path]:
+        if self._closed:
+            raise _evaluation_error(
+                FailureCode.CREDENTIAL_SOURCE_INVALID,
+                FailurePhase.INPUT,
+            )
+        raw = bytes(self._raw)
+        writer_fd = -1
+        parent_fd = -1
+        directory_fd = -1
+        directory_path: Path | None = None
+        snapshot: _CredentialSnapshot | None = None
+        primary_error: BaseException | None = None
+        secondary_error: BaseException | None = None
+        validation_failed = False
+        try:
+            parent_path = Path(tempfile.gettempdir()).resolve()
+            parent_fd = os.open(
+                parent_path,
+                os.O_RDONLY
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+            directory_path = Path(
+                tempfile.mkdtemp(
+                    prefix="dra-bounded-credential-",
+                    dir=parent_path,
+                )
+            ).resolve()
+            for root in (self._repository_root, *forbidden_roots):
+                try:
+                    directory_path.relative_to(root.resolve())
+                except ValueError:
+                    continue
+                raise OSError("credential_directory_scope_invalid")
+            os.chmod(directory_path, 0o700)
+            directory_fd = os.open(
+                directory_path,
+                os.O_RDONLY
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+            directory_identity = os.fstat(directory_fd)
+            if (
+                not stat.S_ISDIR(directory_identity.st_mode)
+                or stat.S_IMODE(directory_identity.st_mode) != 0o700
+                or directory_identity.st_nlink < 1
+            ):
+                raise OSError("credential_directory_identity_invalid")
+            snapshot = _CredentialSnapshot(
+                parent_path=parent_path,
+                directory_path=directory_path,
+                parent_fd=parent_fd,
+                directory_fd=directory_fd,
+                directory_identity=directory_identity,
+            )
+            self._active_snapshots.add(snapshot)
+            parent_fd = -1
+            directory_fd = -1
+            writer_fd = os.open(
+                "live.env",
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=snapshot.directory_fd,
+            )
+            view = memoryview(raw)
+            written = 0
+            while written < len(view):
+                written += os.write(writer_fd, view[written:])
+            os.fsync(writer_fd)
+            os.fchmod(writer_fd, 0o400)
+            source = os.fstat(writer_fd)
+            os.close(writer_fd)
+            writer_fd = -1
+            snapshot.reader_fd = os.open(
+                "live.env",
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=snapshot.directory_fd,
+            )
+            snapshot.source_identity = os.fstat(snapshot.reader_fd)
+            directory_path_identity = os.stat(
+                snapshot.directory_path.name,
+                dir_fd=snapshot.parent_fd,
+                follow_symlinks=False,
+            )
+            if (
+                not stat.S_ISDIR(directory_path_identity.st_mode)
+                or (directory_path_identity.st_dev, directory_path_identity.st_ino)
+                != (
+                    snapshot.directory_identity.st_dev,
+                    snapshot.directory_identity.st_ino,
+                )
+                or not stat.S_ISREG(source.st_mode)
+                or stat.S_IMODE(source.st_mode) != 0o400
+                or source.st_nlink != 1
+                or source.st_size != len(raw)
+                or (source.st_dev, source.st_ino, source.st_size)
+                != (
+                    snapshot.source_identity.st_dev,
+                    snapshot.source_identity.st_ino,
+                    snapshot.source_identity.st_size,
+                )
+            ):
+                raise OSError("credential_snapshot_invalid")
+            try:
+                yield directory_path / "live.env"
+            except BaseException as exc:
+                primary_error = exc
+            try:
+                directory_after = os.fstat(snapshot.directory_fd)
+                directory_path_after = os.stat(
+                    snapshot.directory_path.name,
+                    dir_fd=snapshot.parent_fd,
+                    follow_symlinks=False,
+                )
+                path_after = os.stat(
+                    "live.env",
+                    dir_fd=snapshot.directory_fd,
+                    follow_symlinks=False,
+                )
+                source_after = os.fstat(snapshot.reader_fd)
+                os.lseek(snapshot.reader_fd, 0, os.SEEK_SET)
+                captured = os.read(snapshot.reader_fd, _MAX_ENV_BYTES + 1)
+                trailing = os.read(snapshot.reader_fd, 1)
+                if (
+                    stat.S_IMODE(directory_after.st_mode) != 0o700
+                    or (directory_after.st_dev, directory_after.st_ino)
+                    != (
+                        snapshot.directory_identity.st_dev,
+                        snapshot.directory_identity.st_ino,
+                    )
+                    or not stat.S_ISDIR(directory_path_after.st_mode)
+                    or (
+                        directory_path_after.st_dev,
+                        directory_path_after.st_ino,
+                    )
+                    != (
+                        snapshot.directory_identity.st_dev,
+                        snapshot.directory_identity.st_ino,
+                    )
+                    or not stat.S_ISREG(path_after.st_mode)
+                    or stat.S_IMODE(path_after.st_mode) != 0o400
+                    or path_after.st_nlink != 1
+                    or (path_after.st_dev, path_after.st_ino, path_after.st_size)
+                    != (
+                        snapshot.source_identity.st_dev,
+                        snapshot.source_identity.st_ino,
+                        snapshot.source_identity.st_size,
+                    )
+                    or (source_after.st_dev, source_after.st_ino, source_after.st_size)
+                    != (
+                        snapshot.source_identity.st_dev,
+                        snapshot.source_identity.st_ino,
+                        snapshot.source_identity.st_size,
+                    )
+                    or source_after.st_nlink != 1
+                    or trailing
+                    or captured != raw
+                ):
+                    validation_failed = True
+            except BaseException as exc:
+                validation_failed = True
+                secondary_error = exc
+        except BaseException as exc:
+            validation_failed = True
+            secondary_error = exc
+        finally:
+            if writer_fd >= 0:
+                try:
+                    os.close(writer_fd)
+                except BaseException as exc:
+                    secondary_error = secondary_error or exc
+                    validation_failed = True
+            if snapshot is not None:
+                try:
+                    self._cleanup_snapshot(snapshot)
+                except BaseException as exc:
+                    secondary_error = secondary_error or exc
+                    validation_failed = True
+            else:
+                if directory_fd >= 0:
+                    try:
+                        os.close(directory_fd)
+                    except BaseException as exc:
+                        secondary_error = secondary_error or exc
+                        validation_failed = True
+                if parent_fd >= 0:
+                    try:
+                        os.close(parent_fd)
+                    except BaseException as exc:
+                        secondary_error = secondary_error or exc
+                        validation_failed = True
+                if directory_path is not None:
+                    try:
+                        shutil.rmtree(directory_path)
+                    except BaseException as exc:
+                        secondary_error = secondary_error or exc
+                        validation_failed = True
+        materialization_error = _evaluation_error(
+            FailureCode.CREDENTIAL_SOURCE_INVALID,
+            FailurePhase.INPUT,
+        )
+        if primary_error is not None and validation_failed:
+            raise BaseExceptionGroup(
+                "credential invocation and snapshot validation failed",
+                [primary_error, materialization_error],
+            ) from secondary_error
+        if primary_error is not None:
+            raise primary_error
+        if validation_failed:
+            raise materialization_error from secondary_error
 
     def close(self) -> None:
-        descriptors = self._descriptors
-        self._descriptors = ()
-        for descriptor in descriptors:
-            os.close(descriptor)
+        if self._closed:
+            return
+        cleanup_error: BaseException | None = None
+        for snapshot in tuple(self._active_snapshots):
+            try:
+                self._cleanup_snapshot(snapshot)
+            except BaseException as exc:
+                cleanup_error = cleanup_error or exc
+        if self._active_snapshots:
+            raise _evaluation_error(
+                FailureCode.CREDENTIAL_SOURCE_INVALID,
+                FailurePhase.INPUT,
+            ) from cleanup_error
+        for index in range(len(self._raw)):
+            self._raw[index] = 0
+        self._value_store.clear()
+        self._closed = True
 
     def __del__(self) -> None:
         try:
             self.close()
-        except (AttributeError, OSError):
+        except (AttributeError, EvaluationError, OSError):
             pass
 
 
@@ -783,7 +1074,11 @@ def load_live_configuration(
             FailureCode.CREDENTIAL_SOURCE_INVALID, FailurePhase.INPUT
         ) from exc
     try:
-        return LiveConfiguration(values, raw)
+        return LiveConfiguration(
+            values,
+            raw,
+            repository_root=repository_path,
+        )
     except OSError as exc:
         raise _evaluation_error(
             FailureCode.CREDENTIAL_SOURCE_INVALID, FailurePhase.INPUT
@@ -1230,8 +1525,8 @@ class ManagedComposeProject:
         self._snapshot_secure_checked = not self.fixture_mode
         if isinstance(env_file, LiveConfiguration):
             self._credential_configuration: LiveConfiguration | None = env_file
-            self.env_file = env_file.compose_path
-            self.service_env_file = env_file.service_path
+            self.env_file = Path(os.devnull)
+            self.service_env_file = Path(os.devnull)
         else:
             self._credential_configuration = None
             self.env_file = env_file.resolve()
@@ -1265,8 +1560,9 @@ class ManagedComposeProject:
             raise ValueError("ownership_receipt_invalid")
         self._temp_paths = resolved
 
-    def _compose_prefix(self) -> tuple[str, ...]:
-        command = ["docker", "compose", "--env-file", str(self.env_file)]
+    def _compose_prefix(self, env_file: Path | None = None) -> tuple[str, ...]:
+        credential_path = self.env_file if env_file is None else env_file
+        command = ["docker", "compose", "--env-file", str(credential_path)]
         for path in self.compose_paths:
             command.extend(("-f", str(path)))
         command.extend(("--project-name", self.project_name))
@@ -1280,37 +1576,45 @@ class ManagedComposeProject:
         compose: bool = False,
         allow_failure: bool = False,
     ) -> subprocess.CompletedProcess[str]:
-        command = (*self._compose_prefix(), *arguments) if compose else tuple(arguments)
-        environment = {
-            **self.environment,
-            **self.port_overrides,
-            "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE": str(self.service_env_file),
-        }
         if self.root.is_dir():
             invocation_root = self.root
         elif self.env_file.parent.is_dir():
             invocation_root = self.env_file.parent
         else:
             invocation_root = Path(tempfile.gettempdir()).resolve()
-        try:
-            pass_fds: tuple[int, ...] = ()
-            if self._credential_configuration is not None:
-                self._credential_configuration.rewind()
-                pass_fds = self._credential_configuration.pass_fds
-            runner_arguments = {
-                "cwd": invocation_root,
-                "env": environment,
-                "deadline": deadline,
-                "allowed_environment": _DOCKER_ENV_ALLOWLIST,
-                "stream_bytes_max": _DEFAULT_STREAM_BYTES_MAX,
-                "allow_nonzero": allow_failure,
-            }
-            if pass_fds:
-                runner_arguments["pass_fds"] = pass_fds
-            result = self._runner(
-                command,
-                **runner_arguments,
+
+        def invoke(
+            env_file: Path,
+            service_env_file: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            command = (
+                (*self._compose_prefix(env_file), *arguments)
+                if compose
+                else tuple(arguments)
             )
+            environment = {
+                **self.environment,
+                **self.port_overrides,
+                "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE": str(service_env_file),
+            }
+            return self._runner(
+                command,
+                cwd=invocation_root,
+                env=environment,
+                deadline=deadline,
+                allowed_environment=_DOCKER_ENV_ALLOWLIST,
+                stream_bytes_max=_DEFAULT_STREAM_BYTES_MAX,
+                allow_nonzero=allow_failure,
+            )
+
+        try:
+            if self._credential_configuration is not None and compose:
+                with self._credential_configuration.materialized(
+                    forbidden_roots=(self.root, self.root.parent.parent),
+                ) as credential_path:
+                    result = invoke(credential_path, credential_path)
+            else:
+                result = invoke(self.env_file, self.service_env_file)
         except EvaluationError:
             raise
         if result.returncode != 0 and not allow_failure:

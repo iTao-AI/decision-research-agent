@@ -37,11 +37,19 @@ The credential file must be external to the repository, owned by the current
 user, a regular single-link non-symlink file, readable only by that user, no
 larger than 64 KiB, and owner-only mode `0400` or `0600`. Files inside the source
 checkout, hard links to another path, or files in another worktree of the same
-Git repository are rejected. The validated bytes become two read-only, identity-bound
-anonymous inputs for Compose interpolation and service configuration;
-replacing or editing the original path cannot change later commands. These
-inputs are never added to the tracked archive or task tree, and no credential
-value or secret-derived digest is printed or published. The
+Git repository are rejected. The validated bytes become one private in-memory
+snapshot. Each Compose command receives a new owner-read-only, single-link
+ephemeral file in a private random directory outside the repository and task
+tree. The harness revalidates its inode and exact bytes after the command and
+verifies the original pathname's directory identity before and after the
+command, then removes the file before the next command. Cleanup retains
+descriptor-based directory identity across path rename or symlink replacement
+and keeps failed removal authority for a close retry. Replacing or editing the
+original path cannot change later commands, while observed command-local
+replacement or mutation fails closed. These checks bind accepted harness
+results; they do not claim kernel-level pathname immutability against the
+invoking user. The snapshot is never added to the tracked archive or task tree,
+and no credential value or secret-derived digest is printed or published. The
 file's allowed keys are closed. Required non-empty entries cover provider,
 model, process API, search, and MySQL configuration; benchmark, durable review,
 Evidence verification, and LangSmith tracing must be `false`; LangSmith

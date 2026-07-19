@@ -1385,6 +1385,18 @@ def test_bounded_live_producer_reference_is_discoverable_without_live_evidence()
         "not exactly-once execution",
         "not a billing record",
         "not a hosted deployment",
+        "identity-bound anonymous inputs",
+        "regular single-link non-symlink file",
+        "two read-only, identity-bound anonymous inputs",
+        "same Git repository",
+        "Every raw Evidence row must match the accepted `run_id` and `segment_id`",
+        "`cost_estimate` remains `not_observed`",
+        "exact per-call model and rate",
+        "recorded before the mutation that can leave it behind",
+        "Successful exact resource inventories",
+        "not a failed inspection exit status",
+        "final directory `fsync`",
+        "`credential_source_invalid` in the `input` phase",
     ):
         assert phrase in normalized_reference
 

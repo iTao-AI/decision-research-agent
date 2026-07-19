@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import json
 import math
@@ -37,7 +36,6 @@ from scripts.bounded_live_producer_contracts import (
     CleanupReceipt,
     CleanupStatus,
     CostNotObserved,
-    CostObserved,
     EvaluationError,
     EvaluationValidationError,
     EvidenceReceipt,
@@ -86,7 +84,7 @@ _USAGE_KEYS = {
 _IDENTIFIER_CHARS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:-"
 )
-_DOCKER_ID_RE = re.compile(r"[0-9a-f]{12,64}\Z", re.ASCII)
+_DOCKER_ID_RE = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
 _DOCKER_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z", re.ASCII)
 
 
@@ -288,6 +286,13 @@ def project_live_observation(
         raise _error(FailureCode.EVIDENCE_MISSING, FailurePhase.EVIDENCE)
     if len(raw_evidence) > 100:
         raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE)
+    if any(
+        type(row) is not dict
+        or row.get("run_id") != expected_run_id
+        or row.get("segment_id") != expected_segment_id
+        for row in raw_evidence
+    ):
+        raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE)
     _validate_artifact_hash(result_payload)
     try:
         projection = project_consumer_case(
@@ -388,29 +393,7 @@ def observe_usage(
         return UsageNotObserved(status="not_observed")
     if payload["total_tokens"] <= 0:
         raise _error(FailureCode.USAGE_INVALID, FailurePhase.USAGE)
-    cost_estimate: CostObserved | CostNotObserved = CostNotObserved(
-        status="not_observed"
-    )
-    if (
-        primary_model_id == fallback_model_id
-        and pricing_basis is not None
-        and currency is not None
-        and pricing_identity_matches
-    ):
-        try:
-            amount = Decimal(str(cost)).quantize(
-                Decimal("0.00000001"),
-                rounding=ROUND_HALF_UP,
-            )
-            cost_estimate = CostObserved(
-                status="observed",
-                amount=f"{amount:.8f}",
-                currency=currency,
-                pricing_basis=pricing_basis,
-                estimate=True,
-            )
-        except (InvalidOperation, ValidationError) as exc:
-            raise _error(FailureCode.USAGE_INVALID, FailurePhase.USAGE) from exc
+    cost_estimate = CostNotObserved(status="not_observed")
     try:
         return ObservedUsage(
             status="observed",
@@ -512,15 +495,38 @@ def run_cleanup_guarded(
         primary_error = exc
     try:
         cleanup_result = cleanup()
-    except BaseException as cleanup_error:
+    except BaseException as raw_cleanup_error:
+        cleanup_error = (
+            raw_cleanup_error
+            if isinstance(raw_cleanup_error, EvaluationError)
+            and raw_cleanup_error.phase is FailurePhase.CLEANUP
+            else EvaluationError(
+                FailureCode.CLEANUP_FAILED,
+                FailurePhase.CLEANUP,
+                False,
+                CleanupStatus.FAILED,
+            )
+        )
         if primary_error is not None:
-            raise ExceptionGroup(
+            raise BaseExceptionGroup(
                 "bounded producer primary and cleanup failures",
                 [primary_error, cleanup_error],
             )
-        raise
+        raise cleanup_error from raw_cleanup_error
     if primary_error is not None:
-        raise primary_error
+        if isinstance(primary_error, EvaluationError):
+            raise EvaluationError(
+                primary_error.code,
+                primary_error.phase,
+                primary_error.retryable,
+                CleanupStatus.SUCCEEDED,
+            ) from primary_error
+        raise EvaluationError(
+            FailureCode.EVALUATION_INTERNAL_ERROR,
+            FailurePhase.INTERNAL,
+            False,
+            CleanupStatus.SUCCEEDED,
+        ) from primary_error
     return primary_result, cleanup_result  # type: ignore[return-value]
 
 
@@ -585,6 +591,8 @@ def publish_paired_output(
         f".bounded-live-producer-{secrets.token_hex(16)}.tmp" for _ in target_names
     )
     published: list[str] = []
+    committed = False
+    primary_error: EvaluationError | None = None
     try:
         for target in target_names:
             try:
@@ -603,26 +611,55 @@ def publish_paired_output(
                 follow_symlinks=False,
             )
             published.append(target)
+        for temporary in temporary_names:
+            os.unlink(temporary, dir_fd=directory_descriptor)
         os.fsync(directory_descriptor)
-    except EvaluationError:
-        raise
+        committed = True
+    except EvaluationError as exc:
+        primary_error = exc
     except OSError as exc:
-        raise _error(FailureCode.OUTPUT_WRITE_FAILED, FailurePhase.OUTPUT) from exc
+        primary_error = _error(FailureCode.OUTPUT_WRITE_FAILED, FailurePhase.OUTPUT)
+        primary_error.__cause__ = exc
     finally:
-        for target in reversed(published if len(published) != len(target_names) else []):
-            try:
-                os.unlink(target, dir_fd=directory_descriptor)
-            except OSError:
-                pass
+        if not committed:
+            for target in reversed(published):
+                try:
+                    os.unlink(target, dir_fd=directory_descriptor)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    rollback_name = (
+                        f".bounded-live-producer-{secrets.token_hex(16)}.rollback"
+                    )
+                    try:
+                        os.rename(
+                            target,
+                            rollback_name,
+                            src_dir_fd=directory_descriptor,
+                            dst_dir_fd=directory_descriptor,
+                        )
+                    except OSError:
+                        continue
+                    try:
+                        os.unlink(rollback_name, dir_fd=directory_descriptor)
+                    except OSError:
+                        pass
         for temporary in temporary_names:
             try:
                 os.unlink(temporary, dir_fd=directory_descriptor)
             except OSError:
                 pass
+        if not committed:
+            try:
+                os.fsync(directory_descriptor)
+            except OSError:
+                pass
         try:
-            os.fsync(directory_descriptor)
-        finally:
             os.close(directory_descriptor)
+        except OSError:
+            pass
+    if primary_error is not None:
+        raise primary_error
     return root / JSON_OUTPUT, root / MARKDOWN_OUTPUT
 
 
@@ -754,6 +791,7 @@ def _project_resource_ids(project: Any, deadline: Any) -> None:
                 "ls",
                 "-a",
                 "-q",
+                "--no-trunc",
                 "--filter",
                 f"label=com.docker.compose.project={project.project_name}",
             ),
@@ -786,6 +824,7 @@ def _project_resource_ids(project: Any, deadline: Any) -> None:
                 "network",
                 "ls",
                 "-q",
+                "--no-trunc",
                 "--filter",
                 f"label=com.docker.compose.project={project.project_name}",
             ),
@@ -803,9 +842,11 @@ def _project_resource_ids(project: Any, deadline: Any) -> None:
         or any(_DOCKER_ID_RE.fullmatch(value) is None for value in networks)
     ):
         raise _error(FailureCode.SERVICE_IDENTITY_INVALID, FailurePhase.DOCKER)
-    project._containers = containers
-    project._volumes = volumes
-    project._networks = networks
+    project.merge_resource_ownership(
+        container_ids=containers,
+        volume_ids=volumes,
+        network_ids=networks,
+    )
 
 
 def _compose_service_container(project: Any, service: str, deadline: Any) -> str:
@@ -963,19 +1004,26 @@ def observe_live(
         / "bounded-live-producer-v1"
         / "manifest.json"
     )
-    declaration = CredentialDeclaration(
-        provider_id=provider_id,
-        provider_base_url=provider_base_url,
-        primary_model=primary_model_id,
-        fallback_model=fallback_model_id,
-        pricing_basis=pricing_basis,
-        pricing_currency=currency,
-    )
+    try:
+        declaration = CredentialDeclaration(
+            provider_id=provider_id,
+            provider_base_url=provider_base_url,
+            primary_model=primary_model_id,
+            fallback_model=fallback_model_id,
+            pricing_basis=pricing_basis,
+            pricing_currency=currency,
+        )
+    except (TypeError, ValueError) as exc:
+        raise _error(
+            FailureCode.CREDENTIAL_SOURCE_INVALID,
+            FailurePhase.INPUT,
+        ) from exc
     process_api_key = os.environ.get("DECISION_RESEARCH_AGENT_API_KEY", "")
     live_configuration = load_live_configuration(
         env_file,
         declaration,
         process_api_key=process_api_key,
+        repository_root=repository_root,
     )
     docker_environment = _scrubbed_docker_environment()
     probe_started = time.monotonic()
@@ -1048,17 +1096,17 @@ def observe_live(
     project = ManagedComposeProject(
         root=snapshot.root,
         compose_paths=(snapshot.root / "docker-compose.yml",),
-        env_file=env_file,
+        env_file=live_configuration,
         project_name=project_name,
         environment=docker_environment,
         retain_image=retain_task_images,
     )
-    project._temp_paths = (task_temp_parent.resolve(),)
-    project.assert_unclaimed(active_deadline)
+    project.track_temp_paths((task_temp_parent,))
 
     cleanup_started = 0.0
 
     def primary() -> dict[str, Any]:
+        project.assert_unclaimed(active_deadline)
         build_started = time.monotonic()
         build_deadline = active_deadline.child(
             LIVE_BUDGET.build_start_seconds,
@@ -1217,12 +1265,34 @@ def observe_live(
             code=FailureCode.CLEANUP_FAILED,
             phase=FailurePhase.CLEANUP,
         )
-        _project_resource_ids(project, cleanup_deadline)
-        return _cleanup_model(cleanup_receipt(project, cleanup_deadline))
+        refresh_error: BaseException | None = None
+        if project._project_claimed:
+            try:
+                _project_resource_ids(project, cleanup_deadline)
+            except BaseException as exc:
+                refresh_error = exc
+        try:
+            receipt = _cleanup_model(cleanup_receipt(project, cleanup_deadline))
+        except BaseException as cleanup_error:
+            if refresh_error is not None:
+                raise BaseExceptionGroup(
+                    "bounded cleanup refresh and removal failures",
+                    [refresh_error, cleanup_error],
+                )
+            raise
+        if refresh_error is not None:
+            raise EvaluationError(
+                FailureCode.CLEANUP_FAILED,
+                FailurePhase.CLEANUP,
+                False,
+                CleanupStatus.FAILED,
+            ) from refresh_error
+        return receipt
 
     try:
         facts, cleanup_model = run_cleanup_guarded(primary, cleanup)
     except EvaluationError as exc:
+        live_configuration.close()
         raise EvaluationError(
             exc.code,
             exc.phase,
@@ -1234,16 +1304,21 @@ def observe_live(
                 else CleanupStatus.SUCCEEDED
             ),
         ) from exc
-    cleanup_ms = _milliseconds(cleanup_started, time.monotonic(), 120_000)
-    active_ms = _milliseconds(active_started, cleanup_started, 3_300_000)
-    active_ms = max(
-        active_ms,
-        facts["build_start_ms"] + facts["research_ms"] + facts["restart_replay_ms"],
-    )
-    total_ms = probe_ms + active_ms + cleanup_ms
-    total_deadline.remaining(30.0)
-    terminal = facts["terminal"]
+    except BaseException:
+        live_configuration.close()
+        raise
     try:
+        cleanup_ms = _milliseconds(cleanup_started, time.monotonic(), 120_000)
+        active_ms = _milliseconds(active_started, cleanup_started, 3_300_000)
+        active_ms = max(
+            active_ms,
+            facts["build_start_ms"]
+            + facts["research_ms"]
+            + facts["restart_replay_ms"],
+        )
+        total_ms = probe_ms + active_ms + cleanup_ms
+        total_deadline.remaining(30.0)
+        terminal = facts["terminal"]
         report = LiveReportModel.model_validate(
             {
                 "schema_version": REPORT_SCHEMA_VERSION,
@@ -1313,6 +1388,15 @@ def observe_live(
             False,
             CleanupStatus.SUCCEEDED,
         ) from exc
+    except BaseException as exc:
+        raise EvaluationError(
+            FailureCode.EVALUATION_INTERNAL_ERROR,
+            FailurePhase.INTERNAL,
+            False,
+            CleanupStatus.SUCCEEDED,
+        ) from exc
+    finally:
+        live_configuration.close()
 
 
 class _ParserExit(Exception):
@@ -1365,12 +1449,38 @@ def _validation_error(error: EvaluationValidationError) -> EvaluationError:
 
 
 def _group_error(group: BaseExceptionGroup) -> EvaluationError:
-    errors = [item for item in group.exceptions if isinstance(item, EvaluationError)]
+    leaves: list[BaseException] = []
+
+    def collect(error: BaseException) -> None:
+        if isinstance(error, BaseExceptionGroup):
+            for nested in error.exceptions:
+                collect(nested)
+        else:
+            leaves.append(error)
+
+    collect(group)
+    errors = [item for item in leaves if isinstance(item, EvaluationError)]
+    cleanup_failed = any(
+        item.phase is FailurePhase.CLEANUP
+        or item.cleanup_status is CleanupStatus.FAILED
+        for item in errors
+    )
     primary = next(
         (item for item in errors if item.phase is not FailurePhase.CLEANUP),
         None,
     )
+    unknown_primary = next(
+        (item for item in leaves if not isinstance(item, EvaluationError)),
+        None,
+    )
     if primary is None:
+        if unknown_primary is not None:
+            return EvaluationError(
+                FailureCode.EVALUATION_INTERNAL_ERROR,
+                FailurePhase.INTERNAL,
+                False,
+                CleanupStatus.FAILED if cleanup_failed else CleanupStatus.NOT_STARTED,
+            )
         return EvaluationError(
             FailureCode.CLEANUP_FAILED,
             FailurePhase.CLEANUP,
@@ -1381,7 +1491,7 @@ def _group_error(group: BaseExceptionGroup) -> EvaluationError:
         primary.code,
         primary.phase,
         primary.retryable,
-        CleanupStatus.FAILED,
+        CleanupStatus.FAILED if cleanup_failed else primary.cleanup_status,
     )
 
 
@@ -1419,7 +1529,7 @@ def main(argv: list[str] | None = None) -> int:
         error = exc
     except BaseExceptionGroup as exc:
         error = _group_error(exc)
-    except Exception:
+    except BaseException:
         error = _error(
             FailureCode.EVALUATION_INTERNAL_ERROR,
             FailurePhase.INTERNAL,

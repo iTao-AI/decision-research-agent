@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
 import hashlib
 import ipaddress
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -33,7 +35,13 @@ from scripts.bounded_live_producer_contracts import (
 _COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z", re.ASCII)
 _VERSION_RE = re.compile(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}\Z", re.ASCII)
 _PROJECT_RE = re.compile(r"dra-proof-[0-9a-f]{32}\Z", re.ASCII)
-_PUBLIC_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}\Z", re.ASCII)
+_DOCKER_FULL_ID_RE = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
+_PUBLIC_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z", re.ASCII)
+_PUBLIC_DNS_RE = re.compile(
+    r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?\Z",
+    re.ASCII,
+)
 _CURRENCY_RE = re.compile(r"[A-Z]{3}\Z", re.ASCII)
 _ENV_KEY_RE = re.compile(r"[A-Z][A-Z0-9_]*\Z", re.ASCII)
 _MAX_ENV_BYTES = 64 * 1024
@@ -245,6 +253,8 @@ def _public_provider_url(value: str) -> bool:
     except ValueError:
         return False
     host = parsed.hostname.lower().rstrip(".")
+    if not host.isascii():
+        return False
     if host.endswith((".local", ".internal", ".localhost")) or host in {
         "local",
         "internal",
@@ -254,15 +264,11 @@ def _public_provider_url(value: str) -> bool:
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
-        labels = host.split(".")
-        return len(labels) >= 2 and all(
-            label
-            and len(label) <= 63
-            and label[0].isalnum()
-            and label[-1].isalnum()
-            and all(character.isalnum() or character == "-" for character in label)
-            for label in labels
-        )
+        try:
+            socket.inet_aton(host)
+        except OSError:
+            return _PUBLIC_DNS_RE.fullmatch(host) is not None
+        return False
     return address.is_global
 
 
@@ -419,22 +425,24 @@ def prepare_source_snapshot(
         if type(verify_secure_runtime) is not bool:
             raise ValueError
         commit = _git_output(root, "rev-parse", "--verify", "HEAD")
-        tree = _git_output(root, "rev-parse", "--verify", "HEAD^{tree}")
+        tree = _git_output(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
         if not _COMMIT_RE.fullmatch(commit) or not _COMMIT_RE.fullmatch(tree):
             raise ValueError
         if _git_output(root, "status", "--porcelain=v1", "--untracked-files=all"):
             raise _evaluation_error(FailureCode.SOURCE_DIRTY, FailurePhase.INPUT)
         tracked = tuple(
-            _git_output(root, "ls-tree", "-r", "--name-only", "HEAD").splitlines()
+            _git_output(root, "ls-tree", "-r", "--name-only", commit).splitlines()
         )
         if not tracked or any(path not in tracked for path in required_paths):
             raise ValueError
-        version_bytes = (root / "VERSION").read_bytes()
-        if not version_bytes.endswith(b"\n") or version_bytes.count(b"\n") != 1:
-            raise ValueError
-        version = version_bytes[:-1].decode("ascii")
-        if not _VERSION_RE.fullmatch(version):
-            raise ValueError
+        if (
+            _git_output(root, "rev-parse", "--verify", "HEAD") != commit
+            or _git_output(root, "status", "--porcelain=v1", "--untracked-files=all")
+        ):
+            raise _evaluation_error(
+                FailureCode.SOURCE_IDENTITY_INVALID,
+                FailurePhase.INPUT,
+            )
     except EvaluationError:
         raise
     except (OSError, UnicodeError, ValueError) as exc:
@@ -452,7 +460,7 @@ def prepare_source_snapshot(
             if key in {"PATH", "HOME", "TMPDIR", "SYSTEMROOT"}
         }
         subprocess.run(
-            ["git", "archive", "--format=tar", f"--output={archive_path}", "HEAD"],
+            ["git", "archive", "--format=tar", f"--output={archive_path}", commit],
             cwd=root,
             env=environment,
             check=True,
@@ -470,6 +478,12 @@ def prepare_source_snapshot(
         )
         if any(not (snapshot_root / path).is_file() for path in required_paths):
             raise ValueError
+        version_bytes = (snapshot_root / "VERSION").read_bytes()
+        if not version_bytes.endswith(b"\n") or version_bytes.count(b"\n") != 1:
+            raise ValueError
+        version = version_bytes[:-1].decode("ascii")
+        if not _VERSION_RE.fullmatch(version):
+            raise ValueError
         if verify_secure_runtime:
             secure_check = subprocess.run(
                 [sys.executable, "scripts/secure_local_runtime_proof.py", "check"],
@@ -485,6 +499,14 @@ def prepare_source_snapshot(
             if secure_check.returncode != 0:
                 raise ValueError
         archive_sha256 = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+        if (
+            _git_output(root, "rev-parse", "--verify", "HEAD") != commit
+            or _git_output(root, "status", "--porcelain=v1", "--untracked-files=all")
+        ):
+            raise _evaluation_error(
+                FailureCode.SOURCE_IDENTITY_INVALID,
+                FailurePhase.INPUT,
+            )
     except EvaluationError:
         shutil.rmtree(task_temp_parent, ignore_errors=True)
         raise
@@ -505,15 +527,106 @@ def prepare_source_snapshot(
     )
 
 
-def _read_env_file(path: Path) -> dict[str, str]:
+class LiveConfiguration:
+    """Validated credential values backed by one anonymous immutable input."""
+
+    def __init__(self, values: Mapping[str, str], raw: bytes) -> None:
+        self._values = MappingProxyType(dict(values))
+        self._descriptors: tuple[int, ...] = ()
+        writer = -1
+        anonymous_path: str | None = None
+        readers: list[int] = []
+        try:
+            writer, anonymous_path = tempfile.mkstemp(
+                prefix="dra-bounded-credential-"
+            )
+            os.fchmod(writer, 0o600)
+            view = memoryview(raw)
+            written = 0
+            while written < len(view):
+                written += os.write(writer, view[written:])
+            os.fsync(writer)
+            source = os.fstat(writer)
+            if not stat.S_ISREG(source.st_mode) or source.st_nlink != 1:
+                raise OSError("credential_descriptor_invalid")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            for _ in range(2):
+                descriptor = os.open(anonymous_path, flags)
+                opened = os.fstat(descriptor)
+                if (
+                    not stat.S_ISREG(opened.st_mode)
+                    or opened.st_nlink != 1
+                    or (opened.st_dev, opened.st_ino, opened.st_size)
+                    != (source.st_dev, source.st_ino, source.st_size)
+                ):
+                    os.close(descriptor)
+                    raise OSError("credential_descriptor_invalid")
+                readers.append(descriptor)
+            os.unlink(anonymous_path)
+            anonymous_path = None
+            self._descriptors = tuple(readers)
+            readers = []
+        finally:
+            for descriptor in readers:
+                os.close(descriptor)
+            if writer >= 0:
+                os.close(writer)
+            if anonymous_path is not None:
+                try:
+                    os.unlink(anonymous_path)
+                except FileNotFoundError:
+                    pass
+
+    def __getitem__(self, key: str) -> str:
+        return self._values[key]
+
+    def __iter__(self):
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        return self._values.get(key, default)
+
+    @property
+    def compose_path(self) -> Path:
+        return Path(f"/dev/fd/{self._descriptors[0]}")
+
+    @property
+    def service_path(self) -> Path:
+        return Path(f"/dev/fd/{self._descriptors[1]}")
+
+    @property
+    def pass_fds(self) -> tuple[int, ...]:
+        return self._descriptors
+
+    def rewind(self) -> None:
+        for descriptor in self._descriptors:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+
+    def close(self) -> None:
+        descriptors = self._descriptors
+        self._descriptors = ()
+        for descriptor in descriptors:
+            os.close(descriptor)
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except (AttributeError, OSError):
+            pass
+
+
+def _read_env_file(path: Path) -> tuple[dict[str, str], bytes]:
     descriptor = -1
     try:
         before = path.lstat()
         if (
             not stat.S_ISREG(before.st_mode)
             or before.st_uid != os.getuid()
-            or before.st_mode & 0o077
-            or not before.st_mode & stat.S_IRUSR
+            or before.st_nlink != 1
+            or stat.S_IMODE(before.st_mode) not in {0o400, 0o600}
             or before.st_size > _MAX_ENV_BYTES
         ):
             raise ValueError
@@ -521,6 +634,7 @@ def _read_env_file(path: Path) -> dict[str, str]:
         opened = os.fstat(descriptor)
         if (
             not stat.S_ISREG(opened.st_mode)
+            or opened.st_nlink != 1
             or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
         ):
             raise ValueError
@@ -528,10 +642,11 @@ def _read_env_file(path: Path) -> dict[str, str]:
         if len(raw) > _MAX_ENV_BYTES or os.read(descriptor, 1):
             raise ValueError
         after = path.lstat()
-        if (after.st_dev, after.st_ino, after.st_size) != (
+        if (after.st_dev, after.st_ino, after.st_size, after.st_nlink) != (
             opened.st_dev,
             opened.st_ino,
             opened.st_size,
+            1,
         ):
             raise ValueError
         text = raw.decode("utf-8")
@@ -545,7 +660,7 @@ def _read_env_file(path: Path) -> dict[str, str]:
             if not _ENV_KEY_RE.fullmatch(key) or key in values:
                 raise ValueError
             values[key] = value
-        return values
+        return values, raw
     except (OSError, UnicodeError, ValueError) as exc:
         raise _evaluation_error(
             FailureCode.CREDENTIAL_SOURCE_INVALID, FailurePhase.INPUT
@@ -553,6 +668,33 @@ def _read_env_file(path: Path) -> dict[str, str]:
     finally:
         if descriptor >= 0:
             os.close(descriptor)
+
+
+def _git_common_directory(root: Path) -> Path | None:
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key in {"PATH", "HOME", "TMPDIR", "SYSTEMROOT"}
+    }
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = result.stdout.strip()
+    if result.returncode != 0 or not value:
+        return None
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    return candidate.resolve()
 
 
 def _validate_pricing(values: Mapping[str, str], declaration: CredentialDeclaration) -> None:
@@ -574,14 +716,22 @@ def _validate_pricing(values: Mapping[str, str], declaration: CredentialDeclarat
         raise ValueError
     if json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) != raw:
         raise ValueError
+    if not {declaration.primary_model, declaration.fallback_model}.issubset(payload):
+        raise ValueError
     for key, value in payload.items():
-        if type(key) is not str or not _PUBLIC_ID_RE.fullmatch(key) or type(value) is not str:
+        if (
+            type(key) is not str
+            or not _PUBLIC_ID_RE.fullmatch(key)
+            or type(value) is not dict
+            or set(value) != {"prompt", "completion"}
+        ):
             raise ValueError
-        try:
-            amount = Decimal(value)
-        except InvalidOperation as exc:
-            raise ValueError from exc
-        if not amount.is_finite() or amount < 0:
+        if any(
+            type(amount) not in {int, float}
+            or not math.isfinite(amount)
+            or amount < 0
+            for amount in value.values()
+        ):
             raise ValueError
 
 
@@ -590,9 +740,23 @@ def load_live_configuration(
     declaration: CredentialDeclaration,
     *,
     process_api_key: str,
-) -> Mapping[str, str]:
+    repository_root: Path,
+) -> LiveConfiguration:
+    raw = b""
     try:
-        values = _read_env_file(env_file)
+        credential_path = env_file.resolve(strict=True)
+        repository_path = repository_root.resolve()
+        try:
+            credential_path.relative_to(repository_path)
+        except ValueError:
+            pass
+        else:
+            raise ValueError
+        repository_common = _git_common_directory(repository_path)
+        credential_common = _git_common_directory(credential_path.parent)
+        if repository_common is not None and credential_common == repository_common:
+            raise ValueError
+        values, raw = _read_env_file(env_file)
         if not set(values).issubset(_LIVE_ENV_NAMES):
             raise ValueError
         if any(not values.get(key) for key in _REQUIRED_NONEMPTY_ENV):
@@ -618,7 +782,12 @@ def load_live_configuration(
         raise _evaluation_error(
             FailureCode.CREDENTIAL_SOURCE_INVALID, FailurePhase.INPUT
         ) from exc
-    return MappingProxyType(dict(values))
+    try:
+        return LiveConfiguration(values, raw)
+    except OSError as exc:
+        raise _evaluation_error(
+            FailureCode.CREDENTIAL_SOURCE_INVALID, FailurePhase.INPUT
+        ) from exc
 
 
 def _compose_error() -> EvaluationError:
@@ -892,19 +1061,30 @@ def run_bounded_subprocess(
     allowed_environment: Sequence[str],
     stream_bytes_max: int = _DEFAULT_STREAM_BYTES_MAX,
     allow_stream_overflow: bool = False,
+    pass_fds: Sequence[int] = (),
+    allow_nonzero: bool = False,
 ) -> subprocess.CompletedProcess[str]:
+    inherited_descriptors = tuple(pass_fds)
     if (
         not arguments
         or any(type(item) is not str or "\x00" in item for item in arguments)
         or not cwd.is_dir()
         or stream_bytes_max <= 0
         or (allow_stream_overflow and not any(item in {"--quiet", "-q"} for item in arguments))
+        or any(type(item) is not int or item < 0 for item in inherited_descriptors)
+        or len(set(inherited_descriptors)) != len(inherited_descriptors)
+        or (inherited_descriptors and os.name != "posix")
+        or type(allow_nonzero) is not bool
     ):
         raise ValueError("subprocess_invocation_invalid")
     allowed = frozenset(allowed_environment)
     process_environment = {key: value for key, value in env.items() if key in allowed}
     process_environment["PYTHON_DOTENV_DISABLED"] = "1"
+    window_started = time.monotonic()
     timeout = deadline.remaining(24 * 60 * 60)
+    window_ends = window_started + timeout
+    teardown_reserve = min(0.25, max(0.01, timeout * 0.05))
+    execution_ends = max(window_started, window_ends - teardown_reserve)
     try:
         process = subprocess.Popen(
             list(arguments),
@@ -913,6 +1093,8 @@ def run_bounded_subprocess(
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            start_new_session=os.name == "posix",
+            pass_fds=inherited_descriptors,
         )
     except OSError as exc:
         raise EvaluationError(deadline.code, deadline.phase, False) from exc
@@ -922,43 +1104,87 @@ def run_bounded_subprocess(
 
     def drain(name: str, stream: object) -> None:
         reader = stream
-        while True:
-            chunk = reader.read(64 * 1024)  # type: ignore[attr-defined]
-            if not chunk:
-                return
-            remaining = stream_bytes_max + 1 - len(buffers[name])
-            if remaining > 0:
-                buffers[name].extend(chunk[:remaining])
-            if len(chunk) > remaining or len(buffers[name]) > stream_bytes_max:
-                overflows[name] = True
+        try:
+            while True:
+                chunk = reader.read(64 * 1024)  # type: ignore[attr-defined]
+                if not chunk:
+                    return
+                remaining = stream_bytes_max + 1 - len(buffers[name])
+                if remaining > 0:
+                    buffers[name].extend(chunk[:remaining])
+                if len(chunk) > remaining or len(buffers[name]) > stream_bytes_max:
+                    overflows[name] = True
+        except (OSError, ValueError):
+            return
 
     threads = [
         threading.Thread(target=drain, args=("stdout", process.stdout), daemon=True),
         threading.Thread(target=drain, args=("stderr", process.stderr), daemon=True),
     ]
-    for thread in threads:
-        thread.start()
-    try:
-        process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        process.kill()
-        process.wait()
+
+    def remaining_until(boundary: float) -> float:
+        return max(0.0, boundary - time.monotonic())
+
+    def terminate_group() -> None:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except OSError:
+                pass
+        elif process.poll() is None:
+            try:
+                process.kill()
+            except OSError:
+                pass
+
+    def teardown() -> None:
+        terminate_group()
+        try:
+            process.wait(timeout=remaining_until(window_ends))
+        except BaseException:
+            pass
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except BaseException:
+                    pass
         for thread in threads:
-            thread.join()
-        raise EvaluationError(deadline.code, deadline.phase, False) from exc
-    for thread in threads:
-        thread.join()
-    if any(overflows.values()) and not allow_stream_overflow:
-        raise EvaluationError(deadline.code, deadline.phase, False)
+            try:
+                thread.join(remaining_until(window_ends))
+            except BaseException:
+                pass
+
     try:
-        stdout = bytes(buffers["stdout"][:stream_bytes_max]).decode("utf-8")
-        stderr = bytes(buffers["stderr"][:stream_bytes_max]).decode("utf-8")
-    except UnicodeError as exc:
-        raise EvaluationError(deadline.code, deadline.phase, False) from exc
-    result = subprocess.CompletedProcess(tuple(arguments), process.returncode, stdout, stderr)
-    if process.returncode != 0:
-        raise EvaluationError(deadline.code, deadline.phase, False)
-    return result
+        for thread in threads:
+            thread.start()
+        try:
+            process.wait(timeout=remaining_until(execution_ends))
+        except subprocess.TimeoutExpired as exc:
+            raise EvaluationError(deadline.code, deadline.phase, False) from exc
+        for thread in threads:
+            thread.join(remaining_until(execution_ends))
+            if thread.is_alive():
+                raise EvaluationError(deadline.code, deadline.phase, False)
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        if any(overflows.values()) and not allow_stream_overflow:
+            raise EvaluationError(deadline.code, deadline.phase, False)
+        try:
+            stdout = bytes(buffers["stdout"][:stream_bytes_max]).decode("utf-8")
+            stderr = bytes(buffers["stderr"][:stream_bytes_max]).decode("utf-8")
+        except UnicodeError as exc:
+            raise EvaluationError(deadline.code, deadline.phase, False) from exc
+        result = subprocess.CompletedProcess(
+            tuple(arguments), process.returncode, stdout, stderr
+        )
+        if process.returncode != 0 and not allow_nonzero:
+            raise EvaluationError(deadline.code, deadline.phase, False)
+        return result
+    except BaseException:
+        teardown()
+        raise
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -972,7 +1198,7 @@ class ManagedComposeProject:
         *,
         root: Path,
         compose_paths: Sequence[Path],
-        env_file: Path,
+        env_file: Path | LiveConfiguration,
         project_name: str,
         environment: Mapping[str, str],
         runner: Runner = run_bounded_subprocess,
@@ -1002,7 +1228,14 @@ class ManagedComposeProject:
         self.compose_paths = resolved_paths
         self.fixture_mode = len(relatives) == 2
         self._snapshot_secure_checked = not self.fixture_mode
-        self.env_file = env_file.resolve()
+        if isinstance(env_file, LiveConfiguration):
+            self._credential_configuration: LiveConfiguration | None = env_file
+            self.env_file = env_file.compose_path
+            self.service_env_file = env_file.service_path
+        else:
+            self._credential_configuration = None
+            self.env_file = env_file.resolve()
+            self.service_env_file = self.env_file
         self.project_name = project_name
         self.environment = dict(environment)
         self.port_overrides = {
@@ -1012,11 +1245,13 @@ class ManagedComposeProject:
         self._runner = runner
         self._retain_image = retain_image
         self._containers: tuple[str, ...] = ()
+        self._standalone_containers: tuple[str, ...] = ()
         self._volumes: tuple[str, ...] = ()
         self._networks: tuple[str, ...] = ()
         self._image_tag: str | None = None
         self._image_id: str | None = None
         self._temp_paths: tuple[Path, ...] = ()
+        self._project_claimed = False
 
     def track_temp_paths(self, temp_paths: Sequence[Path]) -> None:
         resolved = tuple(path.resolve() for path in temp_paths)
@@ -1049,7 +1284,7 @@ class ManagedComposeProject:
         environment = {
             **self.environment,
             **self.port_overrides,
-            "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE": str(self.env_file),
+            "DECISION_RESEARCH_AGENT_COMPOSE_ENV_FILE": str(self.service_env_file),
         }
         if self.root.is_dir():
             invocation_root = self.root
@@ -1058,23 +1293,33 @@ class ManagedComposeProject:
         else:
             invocation_root = Path(tempfile.gettempdir()).resolve()
         try:
+            pass_fds: tuple[int, ...] = ()
+            if self._credential_configuration is not None:
+                self._credential_configuration.rewind()
+                pass_fds = self._credential_configuration.pass_fds
+            runner_arguments = {
+                "cwd": invocation_root,
+                "env": environment,
+                "deadline": deadline,
+                "allowed_environment": _DOCKER_ENV_ALLOWLIST,
+                "stream_bytes_max": _DEFAULT_STREAM_BYTES_MAX,
+                "allow_nonzero": allow_failure,
+            }
+            if pass_fds:
+                runner_arguments["pass_fds"] = pass_fds
             result = self._runner(
                 command,
-                cwd=invocation_root,
-                env=environment,
-                deadline=deadline,
-                allowed_environment=_DOCKER_ENV_ALLOWLIST,
-                stream_bytes_max=_DEFAULT_STREAM_BYTES_MAX,
+                **runner_arguments,
             )
         except EvaluationError:
-            if allow_failure:
-                return subprocess.CompletedProcess(command, 1, "", "")
             raise
         if result.returncode != 0 and not allow_failure:
             raise EvaluationError(deadline.code, deadline.phase, False)
         return result
 
     def assert_unclaimed(self, deadline: ActiveDeadline) -> None:
+        if self._project_claimed:
+            raise ValueError("ownership_receipt_invalid")
         for resource in ("container", "volume", "network"):
             list_options = ("ls", "-a", "-q") if resource == "container" else ("ls", "-q")
             result = self._invoke(
@@ -1089,8 +1334,25 @@ class ManagedComposeProject:
             )
             if result.stdout.strip():
                 raise _compose_error()
+        self._project_claimed = True
 
     def build_backend(self, deadline: ActiveDeadline) -> None:
+        image_tag = f"{self.project_name}-backend"
+        if self._image_tag is None:
+            existing = self._invoke(
+                (
+                    "docker",
+                    "image",
+                    "ls",
+                    "-q",
+                    "--filter",
+                    f"reference={image_tag}",
+                ),
+                deadline,
+            )
+            if existing.stdout.strip():
+                raise _compose_error()
+            self._image_tag = image_tag
         self._invoke(("build", "backend"), deadline, compose=True)
         if self.fixture_mode:
             self._snapshot_secure_checked = False
@@ -1110,6 +1372,29 @@ class ManagedComposeProject:
                 FailurePhase.DOCKER,
                 False,
             )
+        self._image_tag = image_tag
+        self._image_id = image_id
+        secure_check_name = f"{self.project_name}-secure-check"
+        existing = self._invoke(
+            (
+                "docker",
+                "container",
+                "ls",
+                "-a",
+                "--format",
+                "{{.Names}}",
+                "--filter",
+                f"name=^{secure_check_name}$",
+            ),
+            deadline,
+        )
+        if existing.stdout.strip():
+            raise EvaluationError(
+                FailureCode.SOURCE_ARCHIVE_INVALID,
+                FailurePhase.DOCKER,
+                False,
+            )
+        self._standalone_containers = (secure_check_name,)
         result = self._invoke(
             (
                 "docker",
@@ -1120,7 +1405,7 @@ class ManagedComposeProject:
                 "--label",
                 f"com.docker.compose.project={self.project_name}",
                 "--name",
-                f"{self.project_name}-secure-check",
+                secure_check_name,
                 "--cap-drop",
                 "ALL",
                 "--security-opt",
@@ -1145,8 +1430,6 @@ class ManagedComposeProject:
                 FailurePhase.DOCKER,
                 False,
             )
-        self._image_tag = image_tag
-        self._image_id = image_id
         self._snapshot_secure_checked = True
 
     def start_mysql(self, deadline: ActiveDeadline) -> None:
@@ -1182,7 +1465,14 @@ class ManagedComposeProject:
         values = (*container_ids, *volume_ids, *network_ids)
         if (
             not values
-            or any(type(value) is not str or not value or any(c.isspace() for c in value) for value in values)
+            or any(
+                type(value) is not str
+                or not value
+                or any(character.isspace() for character in value)
+                for value in values
+            )
+            or any(_DOCKER_FULL_ID_RE.fullmatch(value) is None for value in container_ids)
+            or any(_DOCKER_FULL_ID_RE.fullmatch(value) is None for value in network_ids)
             or not image_tag
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id)
             or self._containers
@@ -1202,6 +1492,33 @@ class ManagedComposeProject:
         self._image_id = image_id
         if not self._temp_paths:
             self._temp_paths = resolved_temp
+        self._project_claimed = True
+
+    def merge_resource_ownership(
+        self,
+        *,
+        container_ids: Sequence[str],
+        volume_ids: Sequence[str],
+        network_ids: Sequence[str],
+    ) -> None:
+        if (
+            any(_DOCKER_FULL_ID_RE.fullmatch(value) is None for value in container_ids)
+            or any(_DOCKER_FULL_ID_RE.fullmatch(value) is None for value in network_ids)
+            or any(
+                type(value) is not str
+                or not value
+                or any(character.isspace() for character in value)
+                for value in volume_ids
+            )
+        ):
+            raise ValueError("ownership_receipt_invalid")
+
+        def merged(existing: tuple[str, ...], additions: Sequence[str]) -> tuple[str, ...]:
+            return (*existing, *(value for value in additions if value not in existing))
+
+        self._containers = merged(self._containers, container_ids)
+        self._volumes = merged(self._volumes, volume_ids)
+        self._networks = merged(self._networks, network_ids)
 
 
 def cleanup_receipt(
@@ -1246,7 +1563,10 @@ def cleanup_receipt(
                 )
             )
 
-    attempt(("down", "-v", "--remove-orphans"), compose=True)
+    if project._project_claimed:
+        attempt(("down", "-v", "--remove-orphans"), compose=True)
+    for identifier in project._standalone_containers:
+        attempt(("docker", "container", "rm", "-f", identifier), required=False)
     for identifier in project._containers:
         attempt(("docker", "container", "rm", "-f", identifier), required=False)
     for identifier in project._volumes:
@@ -1268,10 +1588,10 @@ def cleanup_receipt(
     if project._image_tag and not project._retain_image:
         attempt(("docker", "image", "rm", project._image_tag), required=False)
 
-    def verify_absent(resource: str, identifier: str) -> None:
+    def inventory(arguments: Sequence[str]) -> frozenset[str] | None:
         try:
             result = project._invoke(
-                ("docker", resource, "inspect", identifier),
+                arguments,
                 deadline,
                 allow_failure=True,
             )
@@ -1284,8 +1604,8 @@ def cleanup_receipt(
                     CleanupStatus.FAILED,
                 )
             )
-            return
-        if result.returncode == 0:
+            return None
+        if result.returncode != 0:
             failures.append(
                 EvaluationError(
                     FailureCode.CLEANUP_FAILED,
@@ -1294,15 +1614,82 @@ def cleanup_receipt(
                     CleanupStatus.FAILED,
                 )
             )
+            return None
+        return frozenset(value for value in result.stdout.splitlines() if value)
 
-    for identifier in project._containers:
-        verify_absent("container", identifier)
-    for identifier in project._volumes:
-        verify_absent("volume", identifier)
-    for identifier in project._networks:
-        verify_absent("network", identifier)
+    if project._standalone_containers or project._containers:
+        container_ids = inventory(
+            ("docker", "container", "ls", "-a", "-q", "--no-trunc")
+        )
+        container_names = inventory(
+            ("docker", "container", "ls", "-a", "--format", "{{.Names}}")
+        )
+        if (
+            container_ids is not None
+            and any(identifier in container_ids for identifier in project._containers)
+        ) or (
+            container_names is not None
+            and any(
+                identifier in container_names
+                for identifier in project._standalone_containers
+            )
+        ):
+            failures.append(
+                EvaluationError(
+                    FailureCode.CLEANUP_FAILED,
+                    FailurePhase.CLEANUP,
+                    False,
+                    CleanupStatus.FAILED,
+                )
+            )
+    if project._volumes:
+        volume_names = inventory(("docker", "volume", "ls", "-q"))
+        if volume_names is not None and any(
+            identifier in volume_names for identifier in project._volumes
+        ):
+            failures.append(
+                EvaluationError(
+                    FailureCode.CLEANUP_FAILED,
+                    FailurePhase.CLEANUP,
+                    False,
+                    CleanupStatus.FAILED,
+                )
+            )
+    if project._networks:
+        network_ids = inventory(
+            ("docker", "network", "ls", "-q", "--no-trunc")
+        )
+        if network_ids is not None and any(
+            identifier in network_ids for identifier in project._networks
+        ):
+            failures.append(
+                EvaluationError(
+                    FailureCode.CLEANUP_FAILED,
+                    FailurePhase.CLEANUP,
+                    False,
+                    CleanupStatus.FAILED,
+                )
+            )
     if project._image_tag and not project._retain_image:
-        verify_absent("image", project._image_tag)
+        image_ids = inventory(
+            (
+                "docker",
+                "image",
+                "ls",
+                "-q",
+                "--no-trunc",
+                project._image_tag,
+            )
+        )
+        if image_ids:
+            failures.append(
+                EvaluationError(
+                    FailureCode.CLEANUP_FAILED,
+                    FailurePhase.CLEANUP,
+                    False,
+                    CleanupStatus.FAILED,
+                )
+            )
     for path in project._temp_paths:
         if path.exists():
             failures.append(
@@ -1313,31 +1700,32 @@ def cleanup_receipt(
                     CleanupStatus.FAILED,
                 )
             )
-    for resource in ("container", "volume", "network"):
-        list_options = ("ls", "-a", "-q") if resource == "container" else ("ls", "-q")
-        try:
-            result = project._invoke(
-                (
-                    "docker",
-                    resource,
-                    *list_options,
-                    "--filter",
-                    f"label=com.docker.compose.project={project.project_name}",
-                ),
-                deadline,
-                allow_failure=True,
-            )
-        except BaseException:
-            result = subprocess.CompletedProcess((), 1, "", "")
-        if result.returncode != 0 or result.stdout.strip():
-            failures.append(
-                EvaluationError(
-                    FailureCode.CLEANUP_FAILED,
-                    FailurePhase.CLEANUP,
-                    False,
-                    CleanupStatus.FAILED,
+    if project._project_claimed:
+        for resource in ("container", "volume", "network"):
+            list_options = ("ls", "-a", "-q") if resource == "container" else ("ls", "-q")
+            try:
+                result = project._invoke(
+                    (
+                        "docker",
+                        resource,
+                        *list_options,
+                        "--filter",
+                        f"label=com.docker.compose.project={project.project_name}",
+                    ),
+                    deadline,
+                    allow_failure=True,
                 )
-            )
+            except BaseException:
+                result = subprocess.CompletedProcess((), 1, "", "")
+            if result.returncode != 0 or result.stdout.strip():
+                failures.append(
+                    EvaluationError(
+                        FailureCode.CLEANUP_FAILED,
+                        FailurePhase.CLEANUP,
+                        False,
+                        CleanupStatus.FAILED,
+                    )
+                )
 
     if failures:
         cleanup_failure = EvaluationError(
@@ -1347,7 +1735,10 @@ def cleanup_receipt(
             CleanupStatus.FAILED,
         )
         if primary_error is not None:
-            raise ExceptionGroup("bounded lifecycle and cleanup failed", [primary_error, cleanup_failure])
+            raise BaseExceptionGroup(
+                "bounded lifecycle and cleanup failed",
+                [primary_error, cleanup_failure],
+            )
         raise cleanup_failure
     if primary_error is not None:
         raise primary_error

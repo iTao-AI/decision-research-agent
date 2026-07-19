@@ -6,8 +6,10 @@ import importlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -46,6 +48,200 @@ ARTIFACT_TEXT = "# Free-threaded CPython pilot\n\nBounded public-source brief.\n
 ARTIFACT_HASH = hashlib.sha256(ARTIFACT_TEXT.encode("utf-8")).hexdigest()
 
 
+def _install_provider_free_live_boundaries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fail_preclaim: bool = False,
+    fail_cleanup_refresh: bool = False,
+    publication_error: BaseException | None = None,
+):
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
+    repository = tmp_path / "repository"
+    manifest_path = (
+        repository / "benchmarks/bounded-live-producer-v1/manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_bytes(MANIFEST_PATH.read_bytes())
+    (repository / "docs/evidence").mkdir(parents=True)
+    env_file = tmp_path / "external-live.env"
+    env_file.write_text("fixture-only\n", encoding="utf-8")
+    events: list[str] = []
+    holder: dict[str, Any] = {}
+
+    class FakeConfiguration(dict):
+        def close(self) -> None:
+            events.append("configuration_close")
+
+    def load_configuration(
+        _env_file: Path,
+        declaration: Any,
+        *,
+        process_api_key: str,
+        repository_root: Path,
+    ) -> FakeConfiguration:
+        events.append("configuration")
+        assert declaration.provider_id == "approved-provider"
+        assert process_api_key == ""
+        assert repository_root == repository
+        return FakeConfiguration()
+
+    def run_subprocess(arguments, **_kwargs):
+        events.append("probe:" + " ".join(arguments[1:3]))
+        value = "28.0.0\n" if arguments[1] == "version" else "2.39.0\n"
+        return subprocess.CompletedProcess(arguments, 0, value, "")
+
+    def prepare_snapshot(
+        checkout_root: Path,
+        task_temp_parent: Path,
+        **_kwargs,
+    ) -> Any:
+        events.append("snapshot")
+        assert checkout_root == repository
+        task_temp_parent.mkdir()
+        holder["task_temp"] = task_temp_parent
+        return SimpleNamespace(
+            root=repository,
+            commit="a" * 40,
+            tree="b" * 40,
+            version="0.1.5",
+            archive_sha256="c" * 64,
+        )
+
+    class FakeProject:
+        def __init__(self, **kwargs: Any) -> None:
+            events.append("project")
+            self.project_name = kwargs["project_name"]
+            self._temp_paths: tuple[Path, ...] = ()
+            self._project_claimed = False
+            holder["project"] = self
+
+        def track_temp_paths(self, paths) -> None:
+            events.append("track_temp")
+            self._temp_paths = tuple(Path(path).resolve() for path in paths)
+
+        def assert_unclaimed(self, _deadline: Any) -> None:
+            events.append("assert_unclaimed")
+            if fail_preclaim:
+                raise EvaluationError("compose_config_invalid", "docker", False)
+            self._project_claimed = True
+
+        def _invoke(self, arguments, _deadline, **_kwargs):
+            events.append("invoke:" + " ".join(arguments[:3]))
+            if tuple(arguments[:3]) == ("config", "--format", "json"):
+                return subprocess.CompletedProcess(arguments, 0, "{}", "")
+            if tuple(arguments[:3]) == ("docker", "image", "inspect"):
+                return subprocess.CompletedProcess(
+                    arguments,
+                    0,
+                    "sha256:" + "d" * 64 + "\n",
+                    "",
+                )
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        def build_backend(self, _deadline: Any) -> None:
+            events.append("build")
+
+        def start_mysql(self, _deadline: Any) -> None:
+            events.append("start_mysql")
+
+        def start_backend(self, _deadline: Any) -> None:
+            events.append("start_backend")
+
+    resource_refreshes = 0
+
+    def refresh_resources(project: Any, _deadline: Any) -> None:
+        nonlocal resource_refreshes
+        resource_refreshes += 1
+        events.append(f"resource_refresh:{resource_refreshes}")
+        if fail_cleanup_refresh and resource_refreshes == 3:
+            raise RuntimeError("private refresh failure")
+
+    class FakeClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            events.append("client")
+
+        def usage(self, **_kwargs: Any) -> dict[str, Any]:
+            events.append("usage")
+            return {
+                "total_prompt": 10,
+                "total_completion": 5,
+                "total_tokens": 15,
+                "total_cost": 0.125,
+                "call_count": 1,
+            }
+
+        def create(self, **_kwargs: Any) -> dict[str, Any]:
+            events.append("replay_create")
+            return _create_ack(replay=True)
+
+    client = FakeClient()
+
+    def reconcile(_client: Any, *, request_bytes: bytes, key: str) -> dict[str, Any]:
+        events.append("create")
+        request = json.loads(request_bytes)
+        assert key.startswith("proof-key-")
+        return {
+            "run_id": "run-proof-1",
+            "thread_id": request["thread_id"],
+            "segment_id": "segment-proof-1",
+            "idempotent_replay": False,
+        }
+
+    def terminal(*_args, **_kwargs):
+        events.append("terminal")
+        return _snapshot(), _status(), _result()
+
+    def restart(*_args, **_kwargs):
+        events.append("restart")
+        return client
+
+    def cleanup(project: Any, _deadline: Any) -> dict[str, bool]:
+        events.append("cleanup_receipt")
+        for path in project._temp_paths:
+            shutil.rmtree(path)
+        return {
+            "attempted": True,
+            "succeeded": True,
+            "zero_unapproved_containers": True,
+            "zero_unapproved_volumes": True,
+            "zero_unapproved_networks": True,
+            "zero_temp_residue": True,
+        }
+
+    monkeypatch.setattr(lifecycle, "load_live_configuration", load_configuration)
+    monkeypatch.setattr(lifecycle, "run_bounded_subprocess", run_subprocess)
+    monkeypatch.setattr(lifecycle, "prepare_source_snapshot", prepare_snapshot)
+    monkeypatch.setattr(lifecycle, "ManagedComposeProject", FakeProject)
+    monkeypatch.setattr(lifecycle, "sanitize_compose_projection", lambda _value: {})
+    monkeypatch.setattr(lifecycle, "cleanup_receipt", cleanup)
+    monkeypatch.setattr(module, "_project_resource_ids", refresh_resources)
+    monkeypatch.setattr(module, "_loopback_port", lambda *_args, **_kwargs: 18000)
+    monkeypatch.setattr(module, "_wait_for_health", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "ProofHttpClient", FakeClient)
+    monkeypatch.setattr(module, "reconcile_create", reconcile)
+    monkeypatch.setattr(module, "observe_terminal", terminal)
+    monkeypatch.setattr(module, "restart_backend_transport", restart)
+    if publication_error is not None:
+        def fail_publication(*_args, **_kwargs):
+            raise publication_error
+
+        monkeypatch.setattr(module, "publish_paired_output", fail_publication)
+
+    def invoke() -> Any:
+        return module.observe_live(
+            env_file=env_file,
+            provider_id="approved-provider",
+            provider_base_url="https://provider.example/v1",
+            primary_model_id="approved-model",
+            fallback_model_id="approved-model",
+            repository_root=repository,
+        )
+
+    return invoke, repository, events, holder
+
+
 def _evidence(
     evidence_id: str,
     source_url: str,
@@ -69,6 +265,73 @@ def _evidence(
         "verification_status": "unverified",
         "created_at": "2026-07-18T00:00:00+00:00",
     }
+
+
+def test_project_resource_ids_uses_full_docker_identity_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    calls: list[tuple[str, ...]] = []
+    merged: dict[str, tuple[str, ...]] = {}
+
+    class Project:
+        project_name = "dra-proof-26262626262626262626262626262626"
+
+        def _invoke(self, arguments, _deadline, **_kwargs):
+            calls.append(tuple(arguments))
+            resource = arguments[1]
+            if resource == "container":
+                output = "a" * 64 + "\n"
+            elif resource == "volume":
+                output = f"{self.project_name}_data\n"
+            else:
+                output = "b" * 64 + "\n"
+            return subprocess.CompletedProcess(arguments, 0, output, "")
+
+        def merge_resource_ownership(self, **values: tuple[str, ...]) -> None:
+            merged.update(values)
+
+    module._project_resource_ids(
+        Project(),
+        SimpleNamespace(code="service_identity_invalid", phase="docker"),
+    )
+    container_call = next(call for call in calls if call[1] == "container")
+    network_call = next(call for call in calls if call[1] == "network")
+    assert "--no-trunc" in container_call
+    assert "--no-trunc" in network_call
+    assert merged["container_ids"] == ("a" * 64,)
+    assert merged["network_ids"] == ("b" * 64,)
+
+
+@pytest.mark.parametrize("resource", ["container", "network"])
+def test_project_resource_ids_rejects_short_docker_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    resource: str,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+
+    class Project:
+        project_name = "dra-proof-27272727272727272727272727272727"
+
+        def _invoke(self, arguments, _deadline, **_kwargs):
+            current = arguments[1]
+            if current == "volume":
+                output = f"{self.project_name}_data\n"
+            elif current == resource:
+                output = "a" * 12 + "\n"
+            else:
+                output = "b" * 64 + "\n"
+            return subprocess.CompletedProcess(arguments, 0, output, "")
+
+        def merge_resource_ownership(self, **_values: tuple[str, ...]) -> None:
+            pytest.fail("short Docker identity reached ownership receipt")
+
+    with pytest.raises(EvaluationError) as raised:
+        module._project_resource_ids(
+            Project(),
+            SimpleNamespace(code="service_identity_invalid", phase="docker"),
+        )
+    assert raised.value.code.value == "service_identity_invalid"
 
 
 def _status(**overrides: Any) -> dict[str, Any]:
@@ -617,7 +880,26 @@ def test_project_live_observation_rejects_evidence_mutations(mutator, expected_c
     assert caught.value.code.value == expected_code
 
 
-def test_observe_usage_maps_absence_and_positive_consistent_usage() -> None:
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"run_id": "foreign-run"},
+        {"segment_id": "foreign-segment"},
+        {"run_id": None},
+        {"segment_id": None},
+    ],
+)
+def test_project_live_observation_rejects_foreign_or_missing_evidence_ownership(
+    mutation: dict[str, Any],
+) -> None:
+    status = _status()
+    status["evidence"][0] = {**status["evidence"][0], **mutation}
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot(status=status)
+    assert caught.value.code.value == "evidence_invalid"
+
+
+def test_observe_usage_maps_absence_and_keeps_cost_unobserved_without_model_identity() -> None:
     absent = observe_usage(
         {
             "total_prompt": 0,
@@ -654,15 +936,40 @@ def test_observe_usage_maps_absence_and_positive_consistent_usage() -> None:
         "completion_tokens": 5,
         "total_tokens": 15,
         "call_count": 2,
-        "cost_estimate": {
-            "status": "observed",
-            "amount": "0.12500000",
-            "currency": "USD",
-            "pricing_basis": "operator-v1",
-            "estimate": True,
-        },
+        "cost_estimate": {"status": "not_observed"},
         "search_cost": {"status": "not_observed"},
     }
+
+
+def test_observe_usage_rejects_runtime_default_fallback_as_observed_cost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token_tracking = importlib.import_module("agent.token_tracking")
+    monkeypatch.setattr(
+        token_tracking,
+        "PRICING",
+        {
+            "qwen-max": {"prompt": 0.04, "completion": 0.12},
+            "model-a": {"prompt": 0.001, "completion": 0.002},
+        },
+    )
+    fallback_cost = token_tracking._calculate_cost("unknown-response-model", 10, 5)
+    usage = observe_usage(
+        {
+            "total_prompt": 10,
+            "total_completion": 5,
+            "total_tokens": 15,
+            "total_cost": fallback_cost,
+            "call_count": 1,
+        },
+        primary_model_id="model-a",
+        fallback_model_id="model-a",
+        pricing_basis="operator-v1",
+        currency="USD",
+        pricing_identity_matches=True,
+    )
+    assert usage.status == "observed"
+    assert usage.cost_estimate.status == "not_observed"
 
 
 def test_observe_usage_keeps_cost_unobserved_for_model_ambiguity_or_missing_declaration() -> None:
@@ -848,6 +1155,59 @@ def test_publish_paired_output_rolls_back_first_target_when_second_link_fails(
     assert list((root / "docs/evidence").iterdir()) == []
 
 
+def test_publish_paired_output_rolls_back_both_targets_when_commit_fsync_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _output_root(tmp_path)
+    real_fsync = os.fsync
+    calls = 0
+
+    def fail_commit_fsync(descriptor: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise OSError("injected commit fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fail_commit_fsync)
+    with pytest.raises(EvaluationError, match="output_write_failed"):
+        publish_paired_output(root, _report())
+    assert list((root / "docs/evidence").iterdir()) == []
+
+
+def test_publish_paired_output_removes_formal_target_when_rollback_unlink_fails_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _output_root(tmp_path)
+    real_link = os.link
+    real_unlink = os.unlink
+    link_calls = 0
+    failed_unlink = False
+
+    def fail_second_link(*args, **kwargs):
+        nonlocal link_calls
+        link_calls += 1
+        if link_calls == 2:
+            raise OSError("injected second link failure")
+        return real_link(*args, **kwargs)
+
+    def fail_first_target_unlink(path, *args, **kwargs):
+        nonlocal failed_unlink
+        if path == "bounded-live-producer-v1.json" and not failed_unlink:
+            failed_unlink = True
+            raise OSError("injected rollback unlink failure")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", fail_second_link)
+    monkeypatch.setattr(os, "unlink", fail_first_target_unlink)
+    with pytest.raises(EvaluationError, match="output_write_failed"):
+        publish_paired_output(root, _report())
+    assert not (root / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (root / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
 def test_run_cleanup_guarded_preserves_primary_and_cleanup_causes() -> None:
     primary = EvaluationError("run_failed", "observe", False)
     cleanup = EvaluationError(
@@ -880,6 +1240,52 @@ def test_run_cleanup_guarded_returns_cleanup_receipt_after_success() -> None:
     assert run_cleanup_guarded(lambda: "result", lambda: receipt) == ("result", receipt)
 
 
+@pytest.mark.parametrize("primary", [RuntimeError("private"), KeyboardInterrupt()])
+def test_run_cleanup_guarded_preserves_unknown_or_interrupt_with_cleanup_failure(
+    primary: BaseException,
+) -> None:
+    cleanup = EvaluationError(
+        "cleanup_failed",
+        "cleanup",
+        False,
+        CleanupStatus.FAILED,
+    )
+
+    def fail_primary():
+        raise primary
+
+    def fail_cleanup():
+        raise cleanup
+
+    with pytest.raises(BaseExceptionGroup) as caught:
+        run_cleanup_guarded(fail_primary, fail_cleanup)
+    assert caught.value.exceptions == (primary, cleanup)
+
+
+@pytest.mark.parametrize("primary", [RuntimeError("private"), KeyboardInterrupt()])
+def test_run_cleanup_guarded_maps_unknown_or_interrupt_after_successful_cleanup(
+    primary: BaseException,
+) -> None:
+    receipt = CleanupReceipt(
+        attempted=True,
+        succeeded=True,
+        zero_container_residue=True,
+        zero_volume_residue=True,
+        zero_network_residue=True,
+        zero_temp_residue=True,
+    )
+
+    def fail_primary():
+        raise primary
+
+    with pytest.raises(EvaluationError) as caught:
+        run_cleanup_guarded(fail_primary, lambda: receipt)
+    assert caught.value.code.value == "evaluation_internal_error"
+    assert caught.value.phase.value == "internal"
+    assert caught.value.cleanup_status is CleanupStatus.SUCCEEDED
+    assert caught.value.__cause__ is primary
+
+
 def test_main_projects_unknown_exception_without_exception_text(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -895,6 +1301,221 @@ def test_main_projects_unknown_exception_without_exception_text(
     assert captured.out == ""
     assert "credential-value-must-not-appear" not in captured.err
     assert json.loads(captured.err)["code"] == "evaluation_internal_error"
+
+
+def test_main_projects_keyboard_interrupt_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+
+    def fail(**_kwargs):
+        raise KeyboardInterrupt("private-interrupt-text")
+
+    monkeypatch.setattr(module, "run_provider_free_check", fail)
+    try:
+        result = module.main(["check"])
+    except KeyboardInterrupt:
+        result = None
+    assert result == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "private-interrupt-text" not in captured.err
+    assert json.loads(captured.err) == {
+        "schema_version": "dra.bounded-live-producer-evaluation-error.v1",
+        "code": "evaluation_internal_error",
+        "phase": "internal",
+        "retryable": False,
+        "cleanup_status": "not_started",
+    }
+
+
+def test_main_projects_unknown_primary_with_cleanup_failure_as_internal_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    cleanup = EvaluationError(
+        "cleanup_failed",
+        "cleanup",
+        False,
+        CleanupStatus.FAILED,
+    )
+
+    def fail(**_kwargs):
+        raise BaseExceptionGroup(
+            "local-only",
+            [KeyboardInterrupt("private"), cleanup],
+        )
+
+    monkeypatch.setattr(module, "run_provider_free_check", fail)
+    assert module.main(["check"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {
+        "schema_version": "dra.bounded-live-producer-evaluation-error.v1",
+        "code": "evaluation_internal_error",
+        "phase": "internal",
+        "retryable": False,
+        "cleanup_status": "failed",
+    }
+
+
+def test_main_maps_malformed_live_declaration_to_credential_input_error(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
+
+    def forbidden_probe(*_args, **_kwargs):
+        raise AssertionError("Docker probe must not run")
+
+    monkeypatch.setattr(lifecycle, "run_bounded_subprocess", forbidden_probe)
+    result = main(
+        [
+            "observe-live",
+            "--env-file",
+            "missing.env",
+            "--provider-id",
+            "invalid provider",
+            "--provider-base-url",
+            "https://provider.example/v1",
+            "--primary-model-id",
+            "model-a",
+            "--fallback-model-id",
+            "model-a",
+        ]
+    )
+    assert result == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {
+        "schema_version": "dra.bounded-live-producer-evaluation-error.v1",
+        "code": "credential_source_invalid",
+        "phase": "input",
+        "retryable": False,
+        "cleanup_status": "not_started",
+    }
+
+
+def test_observe_live_runs_real_orchestrator_through_provider_free_fake_boundaries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+    )
+    report = invoke()
+    assert report.status == "valid"
+    assert report.usage.status == "observed"
+    assert report.usage.cost_estimate.status == "not_observed"
+    assert events.index("configuration") < events.index("snapshot")
+    assert events.index("track_temp") < events.index("assert_unclaimed")
+    assert events.index("assert_unclaimed") < events.index("build")
+    assert events.count("terminal") == 3
+    assert events.index("cleanup_receipt") > events.index("replay_create")
+    assert not holder["task_temp"].exists()
+    json_path = repository / "docs/evidence/bounded-live-producer-v1.json"
+    markdown_path = repository / "docs/evidence/bounded-live-producer-v1.md"
+    assert json_path.is_file() and markdown_path.is_file()
+    public_bytes = json_path.read_bytes() + markdown_path.read_bytes()
+    for forbidden in (b"must-not-be-published", b"fixture-only", b"snippet"):
+        assert forbidden not in public_bytes
+
+
+def test_observe_live_preclaim_failure_still_cleans_temp_without_claiming_project(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        fail_preclaim=True,
+    )
+    with pytest.raises(EvaluationError) as raised:
+        invoke()
+    assert raised.value.code.value == "compose_config_invalid"
+    assert raised.value.cleanup_status is CleanupStatus.SUCCEEDED
+    assert "cleanup_receipt" in events
+    assert holder["project"]._project_claimed is False
+    assert not holder["task_temp"].exists()
+
+
+def test_observe_live_cleanup_refresh_failure_still_executes_owned_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        fail_cleanup_refresh=True,
+    )
+    with pytest.raises(EvaluationError) as raised:
+        invoke()
+    assert raised.value.code.value == "cleanup_failed"
+    assert raised.value.phase.value == "cleanup"
+    assert raised.value.cleanup_status is CleanupStatus.FAILED
+    assert "resource_refresh:3" in events
+    assert "cleanup_receipt" in events
+    assert not holder["task_temp"].exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
+@pytest.mark.parametrize(
+    "publication_error",
+    [RuntimeError("private publication failure"), KeyboardInterrupt("private cancellation")],
+)
+def test_observe_live_post_cleanup_unknown_or_interrupt_reports_cleanup_succeeded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    publication_error: BaseException,
+) -> None:
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        publication_error=publication_error,
+    )
+    try:
+        invoke()
+    except BaseException as raised:
+        error = raised
+    else:
+        pytest.fail("publication failure was not propagated")
+    assert isinstance(error, EvaluationError)
+    assert error.code.value == "evaluation_internal_error"
+    assert error.phase.value == "internal"
+    assert error.cleanup_status is CleanupStatus.SUCCEEDED
+    assert "cleanup_receipt" in events
+    assert not holder["task_temp"].exists()
+
+
+def test_observe_live_post_cleanup_accounting_failure_is_stable_and_closes_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+    )
+    original_milliseconds = module._milliseconds
+
+    def fail_after_cleanup(*args: Any, **kwargs: Any) -> int:
+        if "cleanup_receipt" in events:
+            raise RuntimeError("private accounting failure")
+        return original_milliseconds(*args, **kwargs)
+
+    monkeypatch.setattr(module, "_milliseconds", fail_after_cleanup)
+    with pytest.raises(EvaluationError) as raised:
+        invoke()
+    assert raised.value.code.value == "evaluation_internal_error"
+    assert raised.value.phase.value == "internal"
+    assert raised.value.cleanup_status is CleanupStatus.SUCCEEDED
+    assert "cleanup_receipt" in events
+    assert "configuration_close" in events
+    assert not holder["task_temp"].exists()
 
 
 def test_main_projects_dual_failure_as_primary_with_failed_cleanup(

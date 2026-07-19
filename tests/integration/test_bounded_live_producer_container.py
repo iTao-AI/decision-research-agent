@@ -15,8 +15,10 @@ from scripts.bounded_live_producer_contracts import FailureCode, FailurePhase
 from scripts.bounded_live_producer_http import ProofHttpClient
 from scripts.bounded_live_producer_lifecycle import (
     ActiveDeadline,
+    CredentialDeclaration,
     ManagedComposeProject,
     cleanup_receipt,
+    load_live_configuration,
     prepare_source_snapshot,
     run_bounded_subprocess,
     sanitize_compose_projection,
@@ -167,7 +169,16 @@ def _refresh_ownership(
     containers = tuple(
         _project_output(
             project,
-            ("docker", "container", "ls", "-a", "-q", "--filter", label),
+            (
+                "docker",
+                "container",
+                "ls",
+                "-a",
+                "-q",
+                "--no-trunc",
+                "--filter",
+                label,
+            ),
             deadline,
         ).splitlines()
     )
@@ -181,7 +192,15 @@ def _refresh_ownership(
     networks = tuple(
         _project_output(
             project,
-            ("docker", "network", "ls", "-q", "--filter", label),
+            (
+                "docker",
+                "network",
+                "ls",
+                "-q",
+                "--no-trunc",
+                "--filter",
+                label,
+            ),
             deadline,
         ).splitlines()
     )
@@ -243,6 +262,17 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
     )
     env_file = tmp_path / "fixture.env"
     api_secret = _write_fixture_env(env_file)
+    configuration = load_live_configuration(
+        env_file,
+        CredentialDeclaration(
+            provider_id="fixture-provider",
+            provider_base_url="https://provider.invalid/v1",
+            primary_model="fixture-model",
+            fallback_model="fixture-model",
+        ),
+        process_api_key=api_secret,
+        repository_root=PROJECT_ROOT,
+    )
     project = ManagedComposeProject(
         root=snapshot.root,
         compose_paths=(
@@ -250,7 +280,7 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
             snapshot.root
             / "tests/fixtures/bounded-live-producer-v1/docker-compose.fixture.yml",
         ),
-        env_file=env_file,
+        env_file=configuration,
         project_name=f"dra-proof-{secrets.token_hex(16)}",
         environment=docker_environment,
     )
@@ -339,11 +369,14 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
         code=FailureCode.CLEANUP_FAILED,
         phase=FailurePhase.CLEANUP,
     )
-    cleanup = cleanup_receipt(
-        project,
-        cleanup_deadline,
-        primary_error=primary_error,
-    )
+    try:
+        cleanup = cleanup_receipt(
+            project,
+            cleanup_deadline,
+            primary_error=primary_error,
+        )
+    finally:
+        configuration.close()
     assert cleanup == {
         "attempted": True,
         "succeeded": True,

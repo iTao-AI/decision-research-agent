@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import io
+import importlib
 import json
 import os
 from pathlib import Path
+import signal
 import stat
 import subprocess
 import sys
 import tarfile
+import time
 
 import pytest
 import yaml
@@ -279,6 +282,44 @@ def test_prepare_source_snapshot_rejects_missing_required_tracked_path(tmp_path:
     assert raised.value.code is FailureCode.SOURCE_IDENTITY_INVALID
 
 
+def test_prepare_source_snapshot_fails_closed_when_head_changes_after_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _tiny_repository(tmp_path)
+    captured_commit = _git(source, "rev-parse", "HEAD")
+    (source / "VERSION").write_text("0.1.6\n", encoding="utf-8")
+    _git(source, "add", "VERSION")
+    _git(source, "commit", "-qm", "second fixture")
+    changed_commit = _git(source, "rev-parse", "HEAD")
+    _git(source, "reset", "--hard", captured_commit)
+
+    module = importlib.import_module("scripts.bounded_live_producer_lifecycle")
+    real_git_output = module._git_output
+    switched = False
+
+    def switch_after_commit(root: Path, *arguments: str) -> str:
+        nonlocal switched
+        result = real_git_output(root, *arguments)
+        if arguments == ("rev-parse", "--verify", "HEAD") and not switched:
+            switched = True
+            _git(root, "reset", "--hard", changed_commit)
+        return result
+
+    monkeypatch.setattr(module, "_git_output", switch_after_commit)
+    with pytest.raises(EvaluationError) as raised:
+        prepare_source_snapshot(
+            source,
+            tmp_path / "raced-tasks",
+            required_paths=REQUIRED_PATHS,
+        )
+    assert raised.value.code in {
+        FailureCode.SOURCE_IDENTITY_INVALID,
+        FailureCode.SOURCE_ARCHIVE_INVALID,
+    }
+    assert not (tmp_path / "raced-tasks").exists()
+
+
 @pytest.mark.parametrize(
     ("name", "kind"),
     [
@@ -345,12 +386,20 @@ def test_load_live_configuration_accepts_owner_only_file_and_matching_declaratio
 ) -> None:
     path = tmp_path / "live.env"
     _write_env(path, _valid_env())
-    loaded = load_live_configuration(path, _declaration(), process_api_key="service-secret")
-    assert loaded["LLM_MODEL"] == "gpt-5"
-    assert loaded["LANGSMITH_API_KEY"] == ""
+    loaded = load_live_configuration(
+        path,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=tmp_path / "repository",
+    )
+    try:
+        assert loaded["LLM_MODEL"] == "gpt-5"
+        assert loaded["LANGSMITH_API_KEY"] == ""
+    finally:
+        getattr(loaded, "close", lambda: None)()
 
 
-@pytest.mark.parametrize("mode", [0o004, 0o040, 0o200])
+@pytest.mark.parametrize("mode", [0o004, 0o040, 0o200, 0o500, 0o700])
 def test_load_live_configuration_rejects_unsafe_permissions(
     tmp_path: Path, mode: int
 ) -> None:
@@ -358,7 +407,12 @@ def test_load_live_configuration_rejects_unsafe_permissions(
     _write_env(path, _valid_env())
     path.chmod(mode)
     with pytest.raises(EvaluationError) as raised:
-        load_live_configuration(path, _declaration(), process_api_key="service-secret")
+        load_live_configuration(
+            path,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
     assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
 
 
@@ -370,23 +424,102 @@ def test_load_live_configuration_rejects_symlink_unknown_duplicate_and_api_misma
     link = tmp_path / "link.env"
     link.symlink_to(target)
     with pytest.raises(EvaluationError):
-        load_live_configuration(link, _declaration(), process_api_key="service-secret")
+        load_live_configuration(
+            link,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
 
     values = _valid_env()
     values["HTTP_PROXY"] = "http://proxy.invalid"
     _write_env(target, values)
     with pytest.raises(EvaluationError):
-        load_live_configuration(target, _declaration(), process_api_key="service-secret")
+        load_live_configuration(
+            target,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
 
     _write_env(target, _valid_env())
     with target.open("a", encoding="utf-8") as handle:
         handle.write("API_SECRET=again\n")
     with pytest.raises(EvaluationError):
-        load_live_configuration(target, _declaration(), process_api_key="service-secret")
+        load_live_configuration(
+            target,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
 
     _write_env(target, _valid_env())
     with pytest.raises(EvaluationError):
-        load_live_configuration(target, _declaration(), process_api_key="different")
+        load_live_configuration(
+            target,
+            _declaration(),
+            process_api_key="different",
+            repository_root=tmp_path / "repository",
+        )
+
+
+def test_load_live_configuration_rejects_repository_contained_credential_file(
+    tmp_path: Path,
+) -> None:
+    source = _tiny_repository(tmp_path)
+    path = source / "tracked-live.env"
+    _write_env(path, _valid_env())
+    _git(source, "add", path.name)
+    _git(source, "commit", "-qm", "tracked credential fixture")
+
+    with pytest.raises(EvaluationError) as raised:
+        load_live_configuration(
+            path,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=source,
+        )
+    assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
+
+
+def test_load_live_configuration_rejects_external_hard_link_to_tracked_credential(
+    tmp_path: Path,
+) -> None:
+    source = _tiny_repository(tmp_path)
+    tracked = source / "tracked-live.env"
+    _write_env(tracked, _valid_env())
+    _git(source, "add", tracked.name)
+    _git(source, "commit", "-qm", "tracked credential fixture")
+    external = tmp_path / "external-live.env"
+    os.link(tracked, external)
+
+    with pytest.raises(EvaluationError) as raised:
+        load_live_configuration(
+            external,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=source,
+        )
+    assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
+
+
+def test_load_live_configuration_rejects_credential_from_linked_worktree_of_same_repo(
+    tmp_path: Path,
+) -> None:
+    source = _tiny_repository(tmp_path)
+    linked = tmp_path / "linked-credentials"
+    _git(source, "worktree", "add", "-q", "-b", "credential-fixture", str(linked))
+    path = linked / "live.env"
+    _write_env(path, _valid_env())
+
+    with pytest.raises(EvaluationError) as raised:
+        load_live_configuration(
+            path,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=source,
+        )
+    assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
 
 
 @pytest.mark.parametrize(
@@ -406,6 +539,50 @@ def test_credential_declaration_rejects_unsafe_provider_urls(url: str) -> None:
         _declaration(provider_base_url=url)
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.1/v1",
+        "https://127.0.1/v1",
+        "https://0x7f.1/v1",
+        "https://0177.0.0.1/v1",
+        "https://2130706433/v1",
+        "https://１２７.０.０.１/v1",
+        "https://１２７.0.0.1/v1",
+    ],
+)
+def test_credential_declaration_rejects_numeric_and_unicode_address_aliases(
+    url: str,
+) -> None:
+    with pytest.raises(ValueError, match="credential_declaration_invalid"):
+        _declaration(provider_base_url=url)
+
+
+def test_credential_declaration_accepts_public_https_dns_host_and_approved_path() -> None:
+    assert _declaration(provider_base_url="https://provider.example/v1").provider_id == (
+        "openai-compatible"
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"provider_id": "vendor/provider"},
+        {"primary_model": "vendor/model"},
+        {"fallback_model": "vendor/model"},
+        {
+            "pricing_basis": "operator/basis",
+            "pricing_currency": "USD",
+        },
+    ],
+)
+def test_credential_declaration_rejects_report_incompatible_identifiers(
+    change: dict[str, str],
+) -> None:
+    with pytest.raises(ValueError, match="credential_declaration_invalid"):
+        _declaration(**change)
+
+
 def test_load_live_configuration_validates_flags_privacy_and_pricing_bundle(
     tmp_path: Path,
 ) -> None:
@@ -414,12 +591,20 @@ def test_load_live_configuration_validates_flags_privacy_and_pricing_bundle(
     values["LANGSMITH_TRACING"] = "true"
     _write_env(path, values)
     with pytest.raises(EvaluationError):
-        load_live_configuration(path, _declaration(), process_api_key="service-secret")
+        load_live_configuration(
+            path,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
 
     values = _valid_env()
     values.update(
         {
-            "TOKEN_PRICING_JSON": '{"input":"0.10000000","output":"0.20000000"}',
+            "TOKEN_PRICING_JSON": (
+                '{"gpt-5":{"completion":0.2,"prompt":0.1},'
+                '"gpt-5-mini":{"completion":0.04,"prompt":0.02}}'
+            ),
             "TOKEN_PRICING_BASIS": "openai-public-2026-07",
             "TOKEN_PRICING_CURRENCY": "USD",
         }
@@ -431,8 +616,47 @@ def test_load_live_configuration_validates_flags_privacy_and_pricing_bundle(
             pricing_basis="openai-public-2026-07", pricing_currency="USD"
         ),
         process_api_key="service-secret",
+        repository_root=tmp_path / "repository",
     )
-    assert loaded["TOKEN_PRICING_CURRENCY"] == "USD"
+    try:
+        assert loaded["TOKEN_PRICING_CURRENCY"] == "USD"
+    finally:
+        getattr(loaded, "close", lambda: None)()
+
+
+@pytest.mark.parametrize(
+    "pricing",
+    [
+        '{"gpt-5":"0.10000000","gpt-5-mini":"0.20000000"}',
+        '{"gpt-5":{"completion":0.2,"prompt":0.1}}',
+        '{"gpt-5":{"completion":"0.2","prompt":0.1},'
+        '"gpt-5-mini":{"completion":0.04,"prompt":0.02}}',
+        '{"gpt-5":{"completion":0.2,"input":0.1},'
+        '"gpt-5-mini":{"completion":0.04,"prompt":0.02}}',
+    ],
+)
+def test_load_live_configuration_rejects_runtime_incompatible_pricing(
+    tmp_path: Path,
+    pricing: str,
+) -> None:
+    path = tmp_path / "live.env"
+    values = _valid_env()
+    values.update(
+        {
+            "TOKEN_PRICING_JSON": pricing,
+            "TOKEN_PRICING_BASIS": "operator-v1",
+            "TOKEN_PRICING_CURRENCY": "USD",
+        }
+    )
+    _write_env(path, values)
+    with pytest.raises(EvaluationError) as raised:
+        load_live_configuration(
+            path,
+            _declaration(pricing_basis="operator-v1", pricing_currency="USD"),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
+    assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
 
 
 def test_sanitize_compose_projection_redacts_secrets_paths_and_names_deterministically() -> None:
@@ -560,6 +784,235 @@ def test_run_bounded_subprocess_rejects_overflow_and_kills_timeout(tmp_path: Pat
     assert raised.value.code is FailureCode.SERVICE_START_FAILED
 
 
+@pytest.mark.skipif(os.name != "posix", reason="process-group contract requires POSIX")
+def test_run_bounded_subprocess_kills_inherited_pipe_descendant_within_deadline(
+    tmp_path: Path,
+) -> None:
+    pid_path = tmp_path / "descendant.pid"
+    script = (
+        "import pathlib,subprocess,sys; "
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(2)'],"
+        "stdout=sys.stdout,stderr=sys.stderr); "
+        f"pathlib.Path({str(pid_path)!r}).write_text(str(child.pid)); "
+        "raise SystemExit(0)"
+    )
+    descendant_pid: int | None = None
+    started = time.monotonic()
+    try:
+        with pytest.raises(EvaluationError) as raised:
+            run_bounded_subprocess(
+                [sys.executable, "-c", script],
+                cwd=tmp_path,
+                env={"PATH": os.environ.get("PATH", "")},
+                deadline=ActiveDeadline(
+                    0.2,
+                    code=FailureCode.SERVICE_START_FAILED,
+                    phase=FailurePhase.DOCKER,
+                ),
+                allowed_environment=("PATH",),
+                stream_bytes_max=1024,
+            )
+        elapsed = time.monotonic() - started
+        assert raised.value.code is FailureCode.SERVICE_START_FAILED
+        assert elapsed < 0.75
+        descendant_pid = int(pid_path.read_text(encoding="utf-8"))
+        for _ in range(50):
+            try:
+                os.kill(descendant_pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail("descendant survived bounded subprocess deadline")
+    finally:
+        if descendant_pid is not None:
+            try:
+                os.kill(descendant_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process-group contract requires POSIX")
+def test_run_bounded_subprocess_kills_group_when_join_is_interrupted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
+    pid_path = tmp_path / "descendant.pid"
+    script = (
+        "import pathlib,subprocess,sys; "
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(2)'],"
+        "stdout=sys.stdout,stderr=sys.stderr); "
+        f"pathlib.Path({str(pid_path)!r}).write_text(str(child.pid)); "
+        "raise SystemExit(0)"
+    )
+    original_join = lifecycle.threading.Thread.join
+    join_interrupted = False
+
+    def interrupt_first_join(thread: object, timeout: float | None = None) -> None:
+        nonlocal join_interrupted
+        if not join_interrupted:
+            join_interrupted = True
+            raise KeyboardInterrupt
+        original_join(thread, timeout)
+
+    monkeypatch.setattr(lifecycle.threading.Thread, "join", interrupt_first_join)
+    descendant_pid: int | None = None
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            run_bounded_subprocess(
+                [sys.executable, "-c", script],
+                cwd=tmp_path,
+                env={"PATH": os.environ.get("PATH", "")},
+                deadline=ActiveDeadline(
+                    0.5,
+                    code=FailureCode.SERVICE_START_FAILED,
+                    phase=FailurePhase.DOCKER,
+                ),
+                allowed_environment=("PATH",),
+                stream_bytes_max=1024,
+            )
+        descendant_pid = int(pid_path.read_text(encoding="utf-8"))
+        for _ in range(50):
+            try:
+                os.kill(descendant_pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail("descendant survived interrupted subprocess drain")
+    finally:
+        if descendant_pid is not None:
+            try:
+                os.kill(descendant_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def test_managed_compose_uses_one_captured_credential_input_after_path_replacement(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    root = repository / "snapshot"
+    root.mkdir(parents=True)
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "external-live.env"
+    original = _valid_env()
+    _write_env(env_file, original)
+    configuration = load_live_configuration(
+        env_file,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=repository,
+    )
+    captured_inputs: list[bytes] = []
+
+    def runner(
+        args: tuple[str, ...],
+        *,
+        pass_fds: tuple[int, ...] = (),
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        assert len(pass_fds) == 2
+        invocation_inputs = []
+        for descriptor in pass_fds:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            invocation_inputs.append(os.read(descriptor, 64 * 1024))
+        assert invocation_inputs[0] == invocation_inputs[1]
+        captured_inputs.append(invocation_inputs[0])
+        if len(captured_inputs) == 1:
+            replacement = {**original, "LLM_MODEL": "replacement-model"}
+            replacement_path = tmp_path / "replacement.env"
+            _write_env(replacement_path, replacement)
+            os.replace(replacement_path, env_file)
+        elif len(captured_inputs) == 2:
+            current = env_file.read_bytes()
+            env_file.write_bytes(b"x" * len(current))
+            env_file.chmod(0o600)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    try:
+        project = ManagedComposeProject(
+            root=root,
+            compose_paths=(compose,),
+            env_file=configuration,
+            project_name="dra-proof-90909090909090909090909090909090",
+            environment={},
+            runner=runner,
+        )
+        deadline = ActiveDeadline(
+            5,
+            code=FailureCode.SERVICE_START_FAILED,
+            phase=FailurePhase.DOCKER,
+        )
+        project._invoke(("config", "--format", "json"), deadline, compose=True)
+        project._invoke(("build", "backend"), deadline, compose=True)
+        project._invoke(("up", "-d", "mysql"), deadline, compose=True)
+        assert len(captured_inputs) == 3
+        assert captured_inputs[0] == captured_inputs[1] == captured_inputs[2]
+        assert b"LLM_MODEL=gpt-5\n" in captured_inputs[0]
+        assert b"replacement-model" not in captured_inputs[0]
+    finally:
+        getattr(configuration, "close", lambda: None)()
+
+
+def test_managed_compose_passes_read_only_captured_credential_descriptors(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    root = repository / "snapshot"
+    root.mkdir(parents=True)
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "external-live.env"
+    _write_env(env_file, _valid_env())
+    configuration = load_live_configuration(
+        env_file,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=repository,
+    )
+    captured_inputs: list[bytes] = []
+
+    def runner(
+        args: tuple[str, ...],
+        *,
+        pass_fds: tuple[int, ...] = (),
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        assert len(pass_fds) == 2
+        for descriptor in pass_fds:
+            with pytest.raises(OSError):
+                os.write(descriptor, b"mutated")
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            captured_inputs.append(os.read(descriptor, 64 * 1024))
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    try:
+        project = ManagedComposeProject(
+            root=root,
+            compose_paths=(compose,),
+            env_file=configuration,
+            project_name="dra-proof-91919191919191919191919191919191",
+            environment={},
+            runner=runner,
+        )
+        project._invoke(
+            ("config", "--format", "json"),
+            ActiveDeadline(
+                5,
+                code=FailureCode.COMPOSE_CONFIG_INVALID,
+                phase=FailurePhase.DOCKER,
+            ),
+            compose=True,
+        )
+        assert captured_inputs[0] == captured_inputs[1]
+        assert b"LLM_MODEL=gpt-5\n" in captured_inputs[0]
+    finally:
+        configuration.close()
+
+
 def test_managed_compose_project_uses_exact_paths_services_ports_and_ownership(
     tmp_path: Path,
 ) -> None:
@@ -573,6 +1026,8 @@ def test_managed_compose_project_uses_exact_paths_services_ports_and_ownership(
 
     def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
         commands.append(args)
+        if args[:3] == ("docker", "image", "inspect"):
+            return subprocess.CompletedProcess(args, 1, "", "not found")
         if args[-3:] == ("ps", "-aq",):
             return subprocess.CompletedProcess(args, 0, "", "")
         return subprocess.CompletedProcess(args, 0, "", "")
@@ -664,6 +1119,115 @@ def test_managed_compose_project_preflight_includes_stopped_containers(tmp_path:
     assert "-a" in container_command
 
 
+def test_build_success_registers_image_tag_before_later_inspection_failure(
+    tmp_path: Path,
+) -> None:
+    task_root = tmp_path / "task-root"
+    root = task_root / "snapshot-build" / "snapshot"
+    root.mkdir(parents=True)
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+    commands: list[tuple[str, ...]] = []
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        if "inspect" in args:
+            return subprocess.CompletedProcess(args, 1, "", "not found")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project_name = "dra-proof-56565656565656565656565656565656"
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name=project_name,
+        environment={},
+        runner=runner,
+    )
+    project.track_temp_paths((task_root,))
+    deadline = ActiveDeadline(
+        5,
+        code=FailureCode.IMAGE_BUILD_FAILED,
+        phase=FailurePhase.DOCKER,
+    )
+    project.assert_unclaimed(deadline)
+    project.build_backend(deadline)
+    cleanup_receipt(
+        project,
+        ActiveDeadline(
+            5,
+            code=FailureCode.CLEANUP_FAILED,
+            phase=FailurePhase.CLEANUP,
+        ),
+    )
+    assert (
+        "docker",
+        "image",
+        "rm",
+        f"{project_name}-backend",
+    ) in commands
+
+
+def test_secure_check_timeout_registers_exact_container_and_image_for_cleanup(
+    tmp_path: Path,
+) -> None:
+    task_root = tmp_path / "task-root"
+    root = task_root / "snapshot-build" / "snapshot"
+    override = root / "tests/fixtures/bounded-live-producer-v1/docker-compose.fixture.yml"
+    override.parent.mkdir(parents=True)
+    base = root / "docker-compose.yml"
+    base.write_text("services: {}\n", encoding="utf-8")
+    override.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "fixture.env"
+    env_file.write_text("", encoding="utf-8")
+    commands: list[tuple[str, ...]] = []
+    project_name = "dra-proof-78787878787878787878787878787878"
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        if args[:5] == ("docker", "image", "inspect", "--format", "{{.Id}}"):
+            return subprocess.CompletedProcess(args, 0, "sha256:" + "d" * 64 + "\n", "")
+        if args[:2] == ("docker", "run"):
+            raise EvaluationError(
+                FailureCode.SOURCE_ARCHIVE_INVALID,
+                FailurePhase.DOCKER,
+                False,
+            )
+        if "inspect" in args:
+            return subprocess.CompletedProcess(args, 1, "", "not found")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(base, override),
+        env_file=env_file,
+        project_name=project_name,
+        environment={},
+        runner=runner,
+    )
+    project.track_temp_paths((task_root,))
+    with pytest.raises(EvaluationError):
+        project.verify_snapshot_secure_runtime(
+            ActiveDeadline(
+                5,
+                code=FailureCode.SOURCE_ARCHIVE_INVALID,
+                phase=FailurePhase.DOCKER,
+            )
+        )
+    cleanup_receipt(
+        project,
+        ActiveDeadline(
+            5,
+            code=FailureCode.CLEANUP_FAILED,
+            phase=FailurePhase.CLEANUP,
+        ),
+    )
+    assert ("docker", "container", "rm", "-f", f"{project_name}-secure-check") in commands
+    assert ("docker", "image", "rm", f"{project_name}-backend") in commands
+
+
 def test_cleanup_receipt_uses_recorded_ids_fixed_order_and_preserves_preexisting_images(
     tmp_path: Path,
 ) -> None:
@@ -692,9 +1256,9 @@ def test_cleanup_receipt_uses_recorded_ids_fixed_order_and_preserves_preexisting
         runner=runner,
     )
     project.record_ownership(
-        container_ids=("container-backend", "container-mysql"),
+        container_ids=("a" * 64, "b" * 64),
         volume_ids=("volume-backend", "volume-mysql"),
-        network_ids=("network-app",),
+        network_ids=("c" * 64,),
         image_tag="dra-proof-image:fedcba9876543210fedcba9876543210",
         image_id="sha256:" + "a" * 64,
         temp_paths=(task_temp,),
@@ -712,6 +1276,42 @@ def test_cleanup_receipt_uses_recorded_ids_fixed_order_and_preserves_preexisting
     assert "prune" not in flattened
     assert "--rmi" not in flattened
     assert "mysql:8.0" not in flattened
+
+
+@pytest.mark.parametrize(
+    ("container_ids", "network_ids"),
+    [
+        (("a" * 12,), ("b" * 64,)),
+        (("a" * 64,), ("b" * 12,)),
+    ],
+)
+def test_record_ownership_rejects_short_docker_ids(
+    tmp_path: Path,
+    container_ids: tuple[str, ...],
+    network_ids: tuple[str, ...],
+) -> None:
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name="dra-proof-25252525252525252525252525252525",
+        environment={},
+    )
+    with pytest.raises(ValueError, match="ownership_receipt_invalid"):
+        project.record_ownership(
+            container_ids=container_ids,
+            volume_ids=("dra-proof-25252525252525252525252525252525_data",),
+            network_ids=network_ids,
+            image_tag="dra-proof-25252525252525252525252525252525-backend",
+            image_id="sha256:" + "c" * 64,
+            temp_paths=(),
+        )
 
 
 def test_cleanup_receipt_removes_tracked_temp_before_resource_receipt_exists(
@@ -765,9 +1365,9 @@ def test_cleanup_receipt_fails_when_recorded_resource_still_exists(tmp_path: Pat
         runner=runner,
     )
     project.record_ownership(
-        container_ids=("container-backend",),
+        container_ids=("d" * 64,),
         volume_ids=("volume-backend",),
-        network_ids=("network-app",),
+        network_ids=("e" * 64,),
         image_tag="dra-proof-image:22222222222222222222222222222222",
         image_id="sha256:" + "b" * 64,
         temp_paths=(),
@@ -780,6 +1380,108 @@ def test_cleanup_receipt_fails_when_recorded_resource_still_exists(tmp_path: Pat
             ),
         )
     assert raised.value.code is FailureCode.CLEANUP_FAILED
+
+
+def test_cleanup_receipt_does_not_treat_failed_inspect_as_absence(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+    container_id = "a" * 64
+    volume_id = "volume-backend"
+    network_id = "b" * 64
+    image_tag = "dra-proof-image:23232323232323232323232323232323"
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        if "rm" in args:
+            return subprocess.CompletedProcess(args, 1, "", "daemon unavailable")
+        if "inspect" in args:
+            return subprocess.CompletedProcess(args, 1, "", "daemon unavailable")
+        if "--filter" in args and any(
+            value.startswith("label=com.docker.compose.project=") for value in args
+        ):
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[:5] == ("docker", "container", "ls", "-a", "-q"):
+            return subprocess.CompletedProcess(args, 0, f"{container_id}\n", "")
+        if args[:4] == ("docker", "volume", "ls", "-q"):
+            return subprocess.CompletedProcess(args, 0, f"{volume_id}\n", "")
+        if args[:5] == ("docker", "network", "ls", "-q", "--no-trunc"):
+            return subprocess.CompletedProcess(args, 0, f"{network_id}\n", "")
+        if args[:5] == ("docker", "image", "ls", "-q", "--no-trunc"):
+            return subprocess.CompletedProcess(args, 0, "sha256:" + "a" * 64 + "\n", "")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name="dra-proof-23232323232323232323232323232323",
+        environment={},
+        runner=runner,
+    )
+    project.record_ownership(
+        container_ids=(container_id,),
+        volume_ids=(volume_id,),
+        network_ids=(network_id,),
+        image_tag=image_tag,
+        image_id="sha256:" + "a" * 64,
+        temp_paths=(),
+    )
+    with pytest.raises(EvaluationError) as raised:
+        cleanup_receipt(
+            project,
+            ActiveDeadline(
+                5,
+                code=FailureCode.CLEANUP_FAILED,
+                phase=FailurePhase.CLEANUP,
+            ),
+        )
+    assert raised.value.code is FailureCode.CLEANUP_FAILED
+
+
+def test_cleanup_receipt_accepts_nonzero_exact_remove_only_after_empty_inventory(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        if "rm" in args:
+            return subprocess.CompletedProcess(args, 1, "", "already absent")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name="dra-proof-24242424242424242424242424242424",
+        environment={},
+        runner=runner,
+    )
+    project.record_ownership(
+        container_ids=("f" * 64,),
+        volume_ids=("volume-backend",),
+        network_ids=("e" * 64,),
+        image_tag="dra-proof-image:24242424242424242424242424242424",
+        image_id="sha256:" + "a" * 64,
+        temp_paths=(),
+    )
+    assert cleanup_receipt(
+        project,
+        ActiveDeadline(
+            5,
+            code=FailureCode.CLEANUP_FAILED,
+            phase=FailurePhase.CLEANUP,
+        ),
+    )["succeeded"] is True
 
 
 def test_cleanup_receipt_rejects_unrecorded_exact_project_label_residue(
@@ -808,9 +1510,9 @@ def test_cleanup_receipt_rejects_unrecorded_exact_project_label_residue(
         runner=runner,
     )
     project.record_ownership(
-        container_ids=("container-backend",),
+        container_ids=("1" * 64,),
         volume_ids=("volume-backend",),
-        network_ids=("network-app",),
+        network_ids=("2" * 64,),
         image_tag="dra-proof-image:44444444444444444444444444444444",
         image_id="sha256:" + "c" * 64,
         temp_paths=(),
@@ -843,11 +1545,49 @@ def test_cleanup_failure_is_typed_and_dual_failure_preserves_both_causes(tmp_pat
         environment={},
         runner=failing_runner,
     )
+    project._project_claimed = True
     primary = EvaluationError(FailureCode.RUN_FAILED, FailurePhase.OBSERVE, False)
     with pytest.raises(ExceptionGroup) as raised:
         cleanup_receipt(
             project,
             ActiveDeadline(5, code=FailureCode.CLEANUP_FAILED, phase=FailurePhase.CLEANUP),
+            primary_error=primary,
+        )
+    assert raised.value.exceptions[0] is primary
+    assert isinstance(raised.value.exceptions[1], EvaluationError)
+
+
+def test_cleanup_failure_preserves_keyboard_interrupt_in_base_exception_group(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+
+    def failing_runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 1, "", "failed")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name="dra-proof-cacacacacacacacacacacacacacacaca",
+        environment={},
+        runner=failing_runner,
+    )
+    project._project_claimed = True
+    primary = KeyboardInterrupt()
+    with pytest.raises(BaseExceptionGroup) as raised:
+        cleanup_receipt(
+            project,
+            ActiveDeadline(
+                5,
+                code=FailureCode.CLEANUP_FAILED,
+                phase=FailurePhase.CLEANUP,
+            ),
             primary_error=primary,
         )
     assert raised.value.exceptions[0] is primary
@@ -922,6 +1662,8 @@ def test_fixture_override_is_exact_and_requires_explicit_test_mode(tmp_path: Pat
         commands.append(args)
         if args[:5] == ("docker", "image", "inspect", "--format", "{{.Id}}"):
             return subprocess.CompletedProcess(args, 0, "sha256:" + "f" * 64 + "\n", "")
+        if args[:3] == ("docker", "container", "inspect"):
+            return subprocess.CompletedProcess(args, 1, "", "not found")
         if args[:2] == ("docker", "run"):
             return subprocess.CompletedProcess(args, 0, '{"status":"valid","match":true}\n', "")
         return subprocess.CompletedProcess(args, 0, "", "")

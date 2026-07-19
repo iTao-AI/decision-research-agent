@@ -222,6 +222,21 @@ It must not parse Markdown into typed facts. Pydantic owns structural schemas;
 project evaluators own DRA policy. AgentEvals and DeepAgents live evaluation
 remain deferred, while LangSmith remains separate diagnostics.
 
+## Bounded Live Producer Evaluation
+
+The provider-free harness contract is checked with:
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python scripts/bounded_live_producer_proof.py check
+```
+
+See the [Bounded Live Producer Evaluation](reference/bounded-live-producer-evaluation.md)
+for the separately authorized `observe-live` syntax, external credential-file
+boundary, one-run deadline, accepted `supported` / `accept_draft` projection,
+restart and replay checks, fixed output paths, stable failures, and non-claims.
+This harness consumes the canonical REST result contract; it does not change
+the Tool Client, REST/OpenAPI schema, Agent runtime, or business authority.
+
 ## Error And Security Behavior
 
 The client exits non-zero and prints structured JSON for connection errors,

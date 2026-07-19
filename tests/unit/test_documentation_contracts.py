@@ -1362,3 +1362,89 @@ def test_run_failure_cause_links_reject_deliberate_mutation(
         replacements=replacements,
         contract=test_run_failure_cause_proof_is_indexed_and_bounded,
     )
+
+
+def test_bounded_live_producer_reference_is_discoverable_without_live_evidence() -> None:
+    reference_path = (
+        PROJECT_ROOT
+        / "docs"
+        / "reference"
+        / "bounded-live-producer-evaluation.md"
+    )
+    assert reference_path.is_file()
+    reference = reference_path.read_text(encoding="utf-8")
+    normalized_reference = " ".join(reference.split())
+    for phrase in (
+        "python scripts/bounded_live_producer_proof.py check",
+        "python scripts/bounded_live_producer_proof.py observe-live",
+        "3,450 seconds",
+        "supported",
+        "accept_draft",
+        "estimate-only",
+        "No provider-backed observation claim",
+        "not exactly-once execution",
+        "not a billing record",
+        "not a hosted deployment",
+        "regular single-link non-symlink file",
+        "one private in-memory snapshot",
+        "owner-read-only, single-link ephemeral file",
+        "revalidates its inode and exact bytes after the command",
+        "verifies the original pathname's directory identity before and after",
+        "descriptor-based directory identity",
+        "keeps failed removal authority for a close retry",
+        "observed command-local replacement or mutation fails closed",
+        "do not claim kernel-level pathname immutability",
+        "same Git repository",
+        "Every raw Evidence row must match the accepted `run_id` and `segment_id`",
+        "`cost_estimate` remains `not_observed`",
+        "exact per-call model and rate",
+        "outer deadline starts before input and credential validation",
+        "publication use only time left after cleanup",
+        "Markdown is linked first",
+        "JSON machine authority is linked last",
+        "A JSON path alone is never authority",
+        "unremovable Markdown-only residue is non-authoritative",
+        "closed on every path after successful validation",
+        "Before project cleanup takes ownership",
+        "recorded before the mutation that can leave it behind",
+        "Successful exact resource inventories",
+        "not a failed inspection exit status",
+        "final directory `fsync`",
+        "`credential_source_invalid` in the `input` phase",
+    ):
+        assert phrase in normalized_reference
+
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    readme_cn = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")
+    docs_index = (PROJECT_ROOT / "docs/README.md").read_text(encoding="utf-8")
+    integration = (PROJECT_ROOT / "docs/AGENT_INTEGRATION.md").read_text(
+        encoding="utf-8"
+    )
+    evidence_index = (PROJECT_ROOT / "docs/evidence/README.md").read_text(
+        encoding="utf-8"
+    )
+    root_link = (
+        "[Bounded Live Producer Evaluation]"
+        "(docs/reference/bounded-live-producer-evaluation.md)"
+    )
+    docs_link = (
+        "[Bounded Live Producer Evaluation]"
+        "(reference/bounded-live-producer-evaluation.md)"
+    )
+    evidence_link = (
+        "[Bounded Live Producer Evaluation]"
+        "(../reference/bounded-live-producer-evaluation.md)"
+    )
+    assert root_link in readme
+    assert root_link in readme_cn
+    assert docs_link in docs_index
+    assert docs_link in integration
+    assert evidence_link in evidence_index
+
+    json_evidence = PROJECT_ROOT / "docs/evidence/bounded-live-producer-v1.json"
+    markdown_evidence = PROJECT_ROOT / "docs/evidence/bounded-live-producer-v1.md"
+    assert not json_evidence.exists()
+    assert not markdown_evidence.exists()
+    assert "No live report is committed" in readme
+    assert "未提交 live report" in readme_cn
+    assert "No live report is committed" in evidence_index

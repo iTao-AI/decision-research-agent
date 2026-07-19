@@ -1,0 +1,73 @@
+{
+  "schema_version": "dra.bounded-live-producer-manifest.v1",
+  "scenario_id": "cpython-313-free-threaded-pilot",
+  "profile_id": "generic",
+  "query": "Using official Python documentation and Python Enhancement Proposals, compare the principal deployment benefits, compatibility limits, and operational caveats of the optional free-threaded CPython 3.13 build. Produce a concise decision brief for a backend team evaluating a bounded pilot, cite factual claims, and state unresolved limitations.",
+  "scope": {},
+  "required_cited_domains": [
+    "docs.python.org",
+    "peps.python.org"
+  ],
+  "terminal_policy": {
+    "execution_status": "completed",
+    "review_status": "not_required",
+    "delivery_status": "ready",
+    "failure_cause": null,
+    "artifact_id": "research-report.md",
+    "artifact_kind": "research_report_markdown",
+    "artifact_media_type": "text/markdown",
+    "consumer_support": "supported",
+    "consumer_disposition": "accept_draft"
+  },
+  "bounds": {
+    "query_utf8_bytes_min": 1,
+    "query_utf8_bytes_max": 4096,
+    "scope_utf8_bytes_max": 16384,
+    "scope_depth_max": 8,
+    "scope_nodes_max": 256,
+    "required_domains_min": 1,
+    "required_domains_max": 8,
+    "idempotency_key_ascii_length_min": 8,
+    "idempotency_key_ascii_length_max": 128,
+    "idempotency_key_entropy_bits_min": 128,
+    "archive_bytes_max": 67108864,
+    "archive_members_max": 4096,
+    "archive_member_bytes_max": 16777216,
+    "subprocess_stream_bytes_max": 1048576,
+    "http_response_bytes_max": 2097152,
+    "artifact_utf8_bytes_min": 1,
+    "artifact_utf8_bytes_max": 1048576,
+    "evidence_count_min": 1,
+    "evidence_count_max": 100,
+    "public_json_bytes_max": 1048576,
+    "public_markdown_bytes_max": 1048576,
+    "docker_probe_seconds": 30,
+    "active_lifecycle_seconds": 3300,
+    "build_start_seconds": 1200,
+    "research_seconds": 1800,
+    "restart_replay_seconds": 300,
+    "cleanup_seconds": 120,
+    "total_wall_seconds": 3450
+  },
+  "usage_policy": {
+    "token_usage": "observed_or_not_observed",
+    "cost_estimate": "not_observed",
+    "search_cost": "not_observed",
+    "durable_usage": "not_claimed",
+    "provider_invoice": "not_claimed"
+  },
+  "output_policy": {
+    "json_path": "docs/evidence/bounded-live-producer-v1.json",
+    "markdown_path": "docs/evidence/bounded-live-producer-v1.md",
+    "overwrite": false
+  },
+  "non_claims": [
+    "downstream_business_acceptance",
+    "source_truth_or_independent_verification",
+    "exactly_once_execution_or_provider_side_effects",
+    "running_execution_recovery",
+    "multi_instance_high_availability",
+    "durable_usage_or_provider_billing",
+    "hosted_production_or_sla"
+  ]
+}

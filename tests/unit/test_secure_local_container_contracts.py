@@ -368,7 +368,7 @@ def test_container_helper_declares_isolated_bounded_lifecycles() -> None:
     assert "DOCKER_DAEMON_PROBE_TIMEOUT_SECONDS = 30" in durable
     assert "LIFECYCLE_TIMEOUT_SECONDS = 720" in durable
     assert "MAX_COMPOSE_LIFECYCLE_SECONDS = 840" in durable
-    assert "REQUIRED_DOCKER_LIFECYCLE_COUNT = 3" in durable
+    assert "REQUIRED_DOCKER_LIFECYCLE_COUNT = 4" in durable
     assert "_bounded_timeout" in durable
     assert '"DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT": "0"' in durable
     assert '"DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT": "0"' in durable
@@ -429,7 +429,7 @@ def test_ci_uses_disjoint_non_docker_and_required_container_jobs() -> None:
     container = workflow["jobs"]["container"]
     assert container["name"] == "Secure Local Runtime Containers"
     assert container["runs-on"] == "ubuntu-latest"
-    assert container["timeout-minutes"] == 60
+    assert container["timeout-minutes"] == 75
     assert container["steps"][:3] == [
         {
             "uses": (

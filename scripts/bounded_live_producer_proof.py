@@ -875,6 +875,25 @@ def _wait_for_health(
         time.sleep(remaining_seconds(1.0))
 
 
+def restart_backend_transport(
+    project: Any,
+    *,
+    api_key: str,
+    deadline: Any,
+) -> ProofHttpClient:
+    """Restart backend and bind a fresh client to its current loopback port."""
+
+    project.restart_backend(deadline)
+    backend_port = _loopback_port(project, "backend", 8000, deadline)
+    client = ProofHttpClient(
+        port=backend_port,
+        api_key=api_key,
+        remaining_seconds=deadline.remaining,
+    )
+    _wait_for_health(client, remaining_seconds=deadline.remaining)
+    return client
+
+
 def _cleanup_model(payload: Mapping[str, bool]) -> CleanupReceipt:
     if payload != {
         "attempted": True,
@@ -1144,13 +1163,11 @@ def observe_live(
             code=FailureCode.BACKEND_RESTART_FAILED,
             phase=FailurePhase.RESTART,
         )
-        project.restart_backend(restart_deadline)
-        restart_client = ProofHttpClient(
-            port=backend_port,
+        restart_client = restart_backend_transport(
+            project,
             api_key=process_api_key,
-            remaining_seconds=restart_deadline.remaining,
+            deadline=restart_deadline,
         )
-        _wait_for_health(restart_client, remaining_seconds=restart_deadline.remaining)
         after_restart, _status, _result = observe_terminal(
             restart_client,
             accepted=accepted,

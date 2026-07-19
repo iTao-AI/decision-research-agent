@@ -489,6 +489,65 @@ def test_observe_terminal_uses_one_remaining_deadline_and_never_cancels() -> Non
     assert not hasattr(client, "cancel")
 
 
+def test_restart_backend_transport_reinspects_loopback_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    events: list[tuple[object, ...]] = []
+
+    class Deadline:
+        def remaining(self, requested: float) -> float:
+            return requested
+
+    class Project:
+        def restart_backend(self, deadline: object) -> None:
+            events.append(("restart", deadline))
+
+    class Client:
+        def __init__(
+            self,
+            *,
+            port: int,
+            api_key: str,
+            remaining_seconds: object,
+        ) -> None:
+            events.append(("client", port, api_key, remaining_seconds))
+
+        def health(self, *, timeout_seconds: float) -> dict[str, str]:
+            events.append(("health", timeout_seconds))
+            return {"status": "ok", "service": "decision-research-agent"}
+
+    deadline = Deadline()
+    project = Project()
+
+    def inspect_port(
+        inspected_project: object,
+        service: str,
+        target: int,
+        inspected_deadline: object,
+    ) -> int:
+        events.append(
+            ("port", inspected_project, service, target, inspected_deadline)
+        )
+        return 48001
+
+    monkeypatch.setattr(module, "_loopback_port", inspect_port)
+    monkeypatch.setattr(module, "ProofHttpClient", Client)
+
+    client = module.restart_backend_transport(
+        project,
+        api_key="test-api-secret",
+        deadline=deadline,
+    )
+
+    assert isinstance(client, Client)
+    assert events[0] == ("restart", deadline)
+    assert events[1] == ("port", project, "backend", 8000, deadline)
+    assert events[2][:3] == ("client", 48001, "test-api-secret")
+    assert getattr(events[2][3], "__self__", None) is deadline
+    assert events[3] == ("health", 30.0)
+
+
 @pytest.mark.parametrize(
     ("status", "result", "expected_code"),
     [

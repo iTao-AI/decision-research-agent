@@ -25,6 +25,7 @@ from scripts.bounded_live_producer_proof import (
     compare_restart,
     observe_terminal,
     reconcile_create,
+    restart_backend_transport,
     validate_replay,
 )
 
@@ -300,8 +301,11 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
             remaining_seconds=active.remaining,
         )
         assert status["state_version"] == 2
-        project.restart_backend(active)
-        _wait_health(client, active)
+        client = restart_backend_transport(
+            project,
+            api_key=api_secret,
+            deadline=active,
+        )
         after_restart, _status, _result = observe_terminal(
             client,
             accepted=accepted,

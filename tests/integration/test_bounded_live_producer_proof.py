@@ -48,6 +48,17 @@ ARTIFACT_TEXT = "# Free-threaded CPython pilot\n\nBounded public-source brief.\n
 ARTIFACT_HASH = hashlib.sha256(ARTIFACT_TEXT.encode("utf-8")).hexdigest()
 
 
+class _FakeMonotonic:
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def __call__(self) -> float:
+        return self.value
+
+    def advance(self, seconds: float) -> None:
+        self.value += seconds
+
+
 def _install_provider_free_live_boundaries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -55,6 +66,10 @@ def _install_provider_free_live_boundaries(
     fail_preclaim: bool = False,
     fail_cleanup_refresh: bool = False,
     publication_error: BaseException | None = None,
+    clock: _FakeMonotonic | None = None,
+    configuration_seconds: float = 0.0,
+    cleanup_seconds: float = 0.0,
+    publication_seconds: float = 0.0,
 ):
     module = importlib.import_module("scripts.bounded_live_producer_proof")
     lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
@@ -69,6 +84,8 @@ def _install_provider_free_live_boundaries(
     env_file.write_text("fixture-only\n", encoding="utf-8")
     events: list[str] = []
     holder: dict[str, Any] = {}
+    if clock is not None:
+        monkeypatch.setattr(module.time, "monotonic", clock)
 
     class FakeConfiguration(dict):
         def close(self) -> None:
@@ -82,6 +99,8 @@ def _install_provider_free_live_boundaries(
         repository_root: Path,
     ) -> FakeConfiguration:
         events.append("configuration")
+        if clock is not None:
+            clock.advance(configuration_seconds)
         assert declaration.provider_id == "approved-provider"
         assert process_api_key == ""
         assert repository_root == repository
@@ -199,6 +218,8 @@ def _install_provider_free_live_boundaries(
 
     def cleanup(project: Any, _deadline: Any) -> dict[str, bool]:
         events.append("cleanup_receipt")
+        if clock is not None:
+            clock.advance(cleanup_seconds)
         for path in project._temp_paths:
             shutil.rmtree(path)
         return {
@@ -228,6 +249,15 @@ def _install_provider_free_live_boundaries(
             raise publication_error
 
         monkeypatch.setattr(module, "publish_paired_output", fail_publication)
+    elif clock is not None and publication_seconds:
+        publish = module.publish_paired_output
+
+        def advance_then_publish(*args, **kwargs):
+            events.append("publication")
+            clock.advance(publication_seconds)
+            return publish(*args, **kwargs)
+
+        monkeypatch.setattr(module, "publish_paired_output", advance_then_publish)
 
     def invoke() -> Any:
         return module.observe_live(
@@ -1176,7 +1206,7 @@ def test_publish_paired_output_rolls_back_both_targets_when_commit_fsync_fails(
     assert list((root / "docs/evidence").iterdir()) == []
 
 
-def test_publish_paired_output_removes_formal_target_when_rollback_unlink_fails_once(
+def test_publish_paired_output_removes_projection_when_rollback_unlink_fails_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1195,13 +1225,49 @@ def test_publish_paired_output_removes_formal_target_when_rollback_unlink_fails_
 
     def fail_first_target_unlink(path, *args, **kwargs):
         nonlocal failed_unlink
-        if path == "bounded-live-producer-v1.json" and not failed_unlink:
+        if path == "bounded-live-producer-v1.md" and not failed_unlink:
             failed_unlink = True
             raise OSError("injected rollback unlink failure")
         return real_unlink(path, *args, **kwargs)
 
     monkeypatch.setattr(os, "link", fail_second_link)
     monkeypatch.setattr(os, "unlink", fail_first_target_unlink)
+    with pytest.raises(EvaluationError, match="output_write_failed"):
+        publish_paired_output(root, _report())
+    assert not (root / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (root / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
+def test_publish_paired_output_never_links_json_before_fallible_pair_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _output_root(tmp_path)
+    real_link = os.link
+    real_unlink = os.unlink
+    real_rename = os.rename
+    link_calls = 0
+
+    def fail_second_link(*args, **kwargs):
+        nonlocal link_calls
+        link_calls += 1
+        if link_calls == 2:
+            raise OSError("injected second link failure")
+        return real_link(*args, **kwargs)
+
+    def persistently_fail_json_unlink(path, *args, **kwargs):
+        if path == "bounded-live-producer-v1.json":
+            raise OSError("injected persistent JSON unlink failure")
+        return real_unlink(path, *args, **kwargs)
+
+    def persistently_fail_json_rename(source, *args, **kwargs):
+        if source == "bounded-live-producer-v1.json":
+            raise OSError("injected persistent JSON rename failure")
+        return real_rename(source, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", fail_second_link)
+    monkeypatch.setattr(os, "unlink", persistently_fail_json_unlink)
+    monkeypatch.setattr(os, "rename", persistently_fail_json_rename)
     with pytest.raises(EvaluationError, match="output_write_failed"):
         publish_paired_output(root, _report())
     assert not (root / "docs/evidence/bounded-live-producer-v1.json").exists()
@@ -1422,6 +1488,51 @@ def test_observe_live_runs_real_orchestrator_through_provider_free_fake_boundari
     public_bytes = json_path.read_bytes() + markdown_path.read_bytes()
     for forbidden in (b"must-not-be-published", b"fixture-only", b"snippet"):
         assert forbidden not in public_bytes
+
+
+def test_observe_live_outer_deadline_blocks_probe_after_input_budget_exhaustion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _FakeMonotonic()
+    invoke, repository, events, _holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        clock=clock,
+        configuration_seconds=3_331.0,
+    )
+    with pytest.raises(EvaluationError) as raised:
+        invoke()
+    assert raised.value.code.value == "evaluation_internal_error"
+    assert raised.value.phase.value == "internal"
+    assert "configuration_close" in events
+    assert not any(event.startswith("probe:") for event in events)
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
+def test_observe_live_outer_deadline_blocks_post_cleanup_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _FakeMonotonic()
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        clock=clock,
+        cleanup_seconds=119.0,
+        publication_seconds=3_332.0,
+    )
+    with pytest.raises(EvaluationError) as raised:
+        invoke()
+    assert raised.value.code.value == "evaluation_internal_error"
+    assert raised.value.phase.value == "internal"
+    assert raised.value.cleanup_status is CleanupStatus.SUCCEEDED
+    assert "cleanup_receipt" in events
+    assert "publication" in events
+    assert not holder["task_temp"].exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
 
 
 def test_observe_live_preclaim_failure_still_cleans_temp_without_claiming_project(

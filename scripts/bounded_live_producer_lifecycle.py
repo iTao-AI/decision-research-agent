@@ -301,7 +301,7 @@ def _evaluation_error(code: FailureCode, phase: FailurePhase) -> EvaluationError
     return EvaluationError(code, phase, False)
 
 
-def _git_output(root: Path, *arguments: str) -> str:
+def _git_output(root: Path, *arguments: str, timeout: float = 30.0) -> str:
     environment = {
         key: value
         for key, value in os.environ.items()
@@ -315,7 +315,7 @@ def _git_output(root: Path, *arguments: str) -> str:
             check=True,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise _evaluation_error(
@@ -416,34 +416,44 @@ def prepare_source_snapshot(
     task_temp_parent: Path,
     *,
     required_paths: Sequence[str],
+    deadline: ActiveDeadline | None = None,
     archive_bytes_max: int = _DEFAULT_ARCHIVE_BYTES_MAX,
     archive_members_max: int = _DEFAULT_ARCHIVE_MEMBERS_MAX,
     archive_member_bytes_max: int = _DEFAULT_ARCHIVE_MEMBER_BYTES_MAX,
     verify_secure_runtime: bool = True,
 ) -> SourceSnapshot:
     root = checkout_root.resolve()
+
+    def remaining(requested: float) -> float:
+        return deadline.remaining(requested) if deadline is not None else requested
+
+    def git_output(*arguments: str) -> str:
+        return _git_output(root, *arguments, timeout=remaining(30.0))
+
     try:
+        remaining(1.0)
         if type(verify_secure_runtime) is not bool:
             raise ValueError
-        commit = _git_output(root, "rev-parse", "--verify", "HEAD")
-        tree = _git_output(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
+        commit = git_output("rev-parse", "--verify", "HEAD")
+        tree = git_output("rev-parse", "--verify", f"{commit}^{{tree}}")
         if not _COMMIT_RE.fullmatch(commit) or not _COMMIT_RE.fullmatch(tree):
             raise ValueError
-        if _git_output(root, "status", "--porcelain=v1", "--untracked-files=all"):
+        if git_output("status", "--porcelain=v1", "--untracked-files=all"):
             raise _evaluation_error(FailureCode.SOURCE_DIRTY, FailurePhase.INPUT)
         tracked = tuple(
-            _git_output(root, "ls-tree", "-r", "--name-only", commit).splitlines()
+            git_output("ls-tree", "-r", "--name-only", commit).splitlines()
         )
         if not tracked or any(path not in tracked for path in required_paths):
             raise ValueError
         if (
-            _git_output(root, "rev-parse", "--verify", "HEAD") != commit
-            or _git_output(root, "status", "--porcelain=v1", "--untracked-files=all")
+            git_output("rev-parse", "--verify", "HEAD") != commit
+            or git_output("status", "--porcelain=v1", "--untracked-files=all")
         ):
             raise _evaluation_error(
                 FailureCode.SOURCE_IDENTITY_INVALID,
                 FailurePhase.INPUT,
             )
+        remaining(1.0)
     except EvaluationError:
         raise
     except (OSError, UnicodeError, ValueError) as exc:
@@ -466,7 +476,7 @@ def prepare_source_snapshot(
             env=environment,
             check=True,
             capture_output=True,
-            timeout=30,
+            timeout=remaining(30.0),
         )
         snapshot_root = task_root / "snapshot"
         members = _validate_and_extract_archive(
@@ -477,6 +487,7 @@ def prepare_source_snapshot(
             archive_members_max=archive_members_max,
             archive_member_bytes_max=archive_member_bytes_max,
         )
+        remaining(1.0)
         if any(not (snapshot_root / path).is_file() for path in required_paths):
             raise ValueError
         version_bytes = (snapshot_root / "VERSION").read_bytes()
@@ -495,14 +506,15 @@ def prepare_source_snapshot(
                 },
                 check=False,
                 capture_output=True,
-                timeout=30,
+                timeout=remaining(30.0),
             )
             if secure_check.returncode != 0:
                 raise ValueError
         archive_sha256 = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+        remaining(1.0)
         if (
-            _git_output(root, "rev-parse", "--verify", "HEAD") != commit
-            or _git_output(root, "status", "--porcelain=v1", "--untracked-files=all")
+            git_output("rev-parse", "--verify", "HEAD") != commit
+            or git_output("status", "--porcelain=v1", "--untracked-files=all")
         ):
             raise _evaluation_error(
                 FailureCode.SOURCE_IDENTITY_INVALID,

@@ -117,13 +117,7 @@ def _safe_report() -> dict:
             "completion_tokens": 20,
             "total_tokens": 30,
             "call_count": 1,
-            "cost_estimate": {
-                "status": "observed",
-                "amount": "0.01000000",
-                "currency": "USD",
-                "pricing_basis": "operator-pricing-v1",
-                "estimate": True,
-            },
+            "cost_estimate": {"status": "not_observed"},
             "search_cost": {"status": "not_observed"},
         },
         "restart": {
@@ -224,6 +218,11 @@ def test_manifest_rejects_symlink(tmp_path: Path) -> None:
         load_manifest(candidate)
 
 
+def test_manifest_requires_change1_cost_to_remain_not_observed() -> None:
+    manifest = load_manifest(MANIFEST_PATH)
+    assert manifest.usage_policy.cost_estimate == "not_observed"
+
+
 def test_strict_usage_rejects_bool_as_integer() -> None:
     with pytest.raises(ValidationError):
         ObservedUsage.model_validate(
@@ -281,9 +280,28 @@ def test_report_rejects_unknown_or_unsafe_fields(
     "amount",
     ["1", "1.0", "01.00000000", "NaN", "Infinity", "-1.00000000"],
 )
-def test_report_rejects_noncanonical_cost(amount: str) -> None:
+def test_report_rejects_legacy_observed_cost_regardless_of_amount(amount: str) -> None:
     report = _safe_report()
-    report["usage"]["cost_estimate"]["amount"] = amount
+    report["usage"]["cost_estimate"] = {
+        "status": "observed",
+        "amount": amount,
+        "currency": "USD",
+        "pricing_basis": "operator-pricing-v1",
+        "estimate": True,
+    }
+    with pytest.raises(EvaluationValidationError, match="usage_invalid"):
+        validate_live_report(report)
+
+
+def test_report_rejects_observed_cost_in_change1() -> None:
+    report = _safe_report()
+    report["usage"]["cost_estimate"] = {
+        "status": "observed",
+        "amount": "0.01000000",
+        "currency": "USD",
+        "pricing_basis": "operator-pricing-v1",
+        "estimate": True,
+    }
     with pytest.raises(EvaluationValidationError, match="usage_invalid"):
         validate_live_report(report)
 

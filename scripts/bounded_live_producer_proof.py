@@ -575,9 +575,13 @@ def _write_at(descriptor: int, name: str, payload: bytes) -> None:
 def publish_paired_output(
     repository_root: Path,
     report: LiveReportModel | dict[str, Any],
+    *,
+    remaining_seconds: Callable[[float], float] | None = None,
 ) -> tuple[Path, Path]:
-    """Publish the fixed JSON/Markdown pair atomically without overwriting."""
+    """Publish the fixed JSON/Markdown pair without exposing partial JSON authority."""
 
+    if remaining_seconds is not None:
+        remaining_seconds(1.0)
     try:
         json_payload = serialize_report(report)
         if serialize_report(report) != json_payload:
@@ -585,6 +589,8 @@ def publish_paired_output(
         markdown_payload = render_markdown(report).encode("utf-8")
     except (EvaluationValidationError, ValidationError, TypeError, ValueError) as exc:
         raise _error(FailureCode.REPORT_INVALID, FailurePhase.OUTPUT) from exc
+    if remaining_seconds is not None:
+        remaining_seconds(1.0)
     root, directory_descriptor = _output_directory(repository_root)
     target_names = (JSON_OUTPUT.name, MARKDOWN_OUTPUT.name)
     temporary_names = tuple(
@@ -595,14 +601,22 @@ def publish_paired_output(
     primary_error: EvaluationError | None = None
     try:
         for target in target_names:
+            if remaining_seconds is not None:
+                remaining_seconds(1.0)
             try:
                 os.stat(target, dir_fd=directory_descriptor, follow_symlinks=False)
             except FileNotFoundError:
                 continue
             raise _error(FailureCode.OUTPUT_EXISTS, FailurePhase.OUTPUT)
         _write_at(directory_descriptor, temporary_names[0], json_payload)
+        if remaining_seconds is not None:
+            remaining_seconds(1.0)
         _write_at(directory_descriptor, temporary_names[1], markdown_payload)
-        for temporary, target in zip(temporary_names, target_names, strict=True):
+        for index in (1, 0):
+            if remaining_seconds is not None:
+                remaining_seconds(1.0)
+            temporary = temporary_names[index]
+            target = target_names[index]
             os.link(
                 temporary,
                 target,
@@ -613,7 +627,11 @@ def publish_paired_output(
             published.append(target)
         for temporary in temporary_names:
             os.unlink(temporary, dir_fd=directory_descriptor)
+        if remaining_seconds is not None:
+            remaining_seconds(1.0)
         os.fsync(directory_descriptor)
+        if remaining_seconds is not None:
+            remaining_seconds(1.0)
         committed = True
     except EvaluationError as exc:
         primary_error = exc
@@ -992,18 +1010,27 @@ def observe_live(
         sanitize_compose_projection,
     )
 
+    clock = time.monotonic
     total_deadline = ActiveDeadline(
         LIVE_BUDGET.total_wall_seconds,
         code=FailureCode.EVALUATION_INTERNAL_ERROR,
         phase=FailurePhase.INTERNAL,
+        monotonic=clock,
+    )
+    non_cleanup_deadline = total_deadline.child(
+        LIVE_BUDGET.total_wall_seconds - LIVE_BUDGET.cleanup_seconds,
+        code=FailureCode.EVALUATION_INTERNAL_ERROR,
+        phase=FailurePhase.INTERNAL,
     )
     _preflight_output_paths(repository_root)
+    non_cleanup_deadline.remaining(1.0)
     manifest = load_manifest(
         repository_root
         / "benchmarks"
         / "bounded-live-producer-v1"
         / "manifest.json"
     )
+    non_cleanup_deadline.remaining(1.0)
     try:
         declaration = CredentialDeclaration(
             provider_id=provider_id,
@@ -1018,6 +1045,7 @@ def observe_live(
             FailureCode.CREDENTIAL_SOURCE_INVALID,
             FailurePhase.INPUT,
         ) from exc
+    non_cleanup_deadline.remaining(1.0)
     process_api_key = os.environ.get("DECISION_RESEARCH_AGENT_API_KEY", "")
     live_configuration = load_live_configuration(
         env_file,
@@ -1025,9 +1053,14 @@ def observe_live(
         process_api_key=process_api_key,
         repository_root=repository_root,
     )
+    try:
+        non_cleanup_deadline.remaining(1.0)
+    except BaseException:
+        live_configuration.close()
+        raise
     docker_environment = _scrubbed_docker_environment()
-    probe_started = time.monotonic()
-    probe_deadline = ActiveDeadline(
+    probe_started = clock()
+    probe_deadline = non_cleanup_deadline.child(
         LIVE_BUDGET.docker_probe_seconds,
         code=FailureCode.DOCKER_UNAVAILABLE,
         phase=FailurePhase.DOCKER,
@@ -1054,7 +1087,8 @@ def observe_live(
         compose_version.stdout,
         code=FailureCode.DOCKER_UNAVAILABLE,
     )
-    probe_ms = _milliseconds(probe_started, time.monotonic(), 30_000)
+    probe_ms = _milliseconds(probe_started, clock(), 30_000)
+    non_cleanup_deadline.remaining(1.0)
 
     task_temp_parent = Path(tempfile.gettempdir()) / (
         f"dra-bounded-producer-{secrets.token_hex(16)}"
@@ -1070,8 +1104,8 @@ def observe_live(
         "scripts/bounded_live_producer_lifecycle.py",
         "scripts/bounded_live_producer_proof.py",
     )
-    active_started = time.monotonic()
-    active_deadline = ActiveDeadline(
+    active_started = clock()
+    active_deadline = non_cleanup_deadline.child(
         LIVE_BUDGET.active_seconds,
         code=FailureCode.SERVICE_START_FAILED,
         phase=FailurePhase.DOCKER,
@@ -1080,6 +1114,7 @@ def observe_live(
         repository_root,
         task_temp_parent,
         required_paths=required_paths,
+        deadline=active_deadline,
     )
     snapshot_manifest_path = (
         snapshot.root
@@ -1102,12 +1137,13 @@ def observe_live(
         retain_image=retain_task_images,
     )
     project.track_temp_paths((task_temp_parent,))
+    active_deadline.remaining(1.0)
 
     cleanup_started = 0.0
 
     def primary() -> dict[str, Any]:
         project.assert_unclaimed(active_deadline)
-        build_started = time.monotonic()
+        build_started = clock()
         build_deadline = active_deadline.child(
             LIVE_BUDGET.build_start_seconds,
             code=FailureCode.IMAGE_BUILD_FAILED,
@@ -1160,9 +1196,9 @@ def observe_live(
             remaining_seconds=build_deadline.remaining,
         )
         _wait_for_health(build_client, remaining_seconds=build_deadline.remaining)
-        build_start_ms = _milliseconds(build_started, time.monotonic(), 1_200_000)
+        build_start_ms = _milliseconds(build_started, clock(), 1_200_000)
 
-        research_started = time.monotonic()
+        research_started = clock()
         research_deadline = active_deadline.child(
             LIVE_BUDGET.research_seconds,
             code=FailureCode.RUN_OBSERVATION_DEADLINE,
@@ -1203,9 +1239,9 @@ def observe_live(
                 and live_configuration.get("TOKEN_PRICING_CURRENCY") == currency
             ),
         )
-        research_ms = _milliseconds(research_started, time.monotonic(), 1_800_000)
+        research_ms = _milliseconds(research_started, clock(), 1_800_000)
 
-        restart_started = time.monotonic()
+        restart_started = clock()
         restart_deadline = active_deadline.child(
             LIVE_BUDGET.restart_replay_seconds,
             code=FailureCode.BACKEND_RESTART_FAILED,
@@ -1241,9 +1277,10 @@ def observe_live(
         )
         restart_replay_ms = _milliseconds(
             restart_started,
-            time.monotonic(),
+            clock(),
             300_000,
         )
+        active_deadline.remaining(1.0)
         return {
             "sanitized_compose_sha256": sanitized_compose_sha256,
             "image_id": image_id,
@@ -1259,8 +1296,8 @@ def observe_live(
 
     def cleanup() -> CleanupReceipt:
         nonlocal cleanup_started
-        cleanup_started = time.monotonic()
-        cleanup_deadline = ActiveDeadline(
+        cleanup_started = clock()
+        cleanup_deadline = total_deadline.child(
             LIVE_BUDGET.cleanup_seconds,
             code=FailureCode.CLEANUP_FAILED,
             phase=FailurePhase.CLEANUP,
@@ -1308,7 +1345,7 @@ def observe_live(
         live_configuration.close()
         raise
     try:
-        cleanup_ms = _milliseconds(cleanup_started, time.monotonic(), 120_000)
+        cleanup_ms = _milliseconds(cleanup_started, clock(), 120_000)
         active_ms = _milliseconds(active_started, cleanup_started, 3_300_000)
         active_ms = max(
             active_ms,
@@ -1317,7 +1354,7 @@ def observe_live(
             + facts["restart_replay_ms"],
         )
         total_ms = probe_ms + active_ms + cleanup_ms
-        total_deadline.remaining(30.0)
+        total_deadline.remaining(1.0)
         terminal = facts["terminal"]
         report = LiveReportModel.model_validate(
             {
@@ -1371,8 +1408,12 @@ def observe_live(
             },
             strict=True,
         )
-        total_deadline.remaining(30.0)
-        publish_paired_output(repository_root, report)
+        total_deadline.remaining(1.0)
+        publish_paired_output(
+            repository_root,
+            report,
+            remaining_seconds=total_deadline.remaining,
+        )
         return report
     except EvaluationError as exc:
         raise EvaluationError(

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from enum import Enum
 import ipaddress
 import json
@@ -41,8 +40,6 @@ _VERSION_RE = re.compile(
     r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}\Z",
     re.ASCII,
 )
-_AMOUNT_RE = re.compile(r"(?:0|[1-9][0-9]*)\.[0-9]{8}\Z", re.ASCII)
-_CURRENCY_RE = re.compile(r"[A-Z]{3}\Z", re.ASCII)
 _HOST_ABSOLUTE_PATH_RE = re.compile(
     r"(?:(?:/Users|/private|/var|/tmp|/Volumes|/home|/opt)/[^\s)\"']+)"
 )
@@ -348,7 +345,7 @@ class ManifestBounds(StrictModel):
 
 class UsagePolicy(StrictModel):
     token_usage: Literal["observed_or_not_observed"]
-    cost_estimate: Literal["observed_or_not_observed"]
+    cost_estimate: Literal["not_observed"]
     search_cost: Literal["not_observed"]
     durable_usage: Literal["not_claimed"]
     provider_invoice: Literal["not_claimed"]
@@ -461,35 +458,8 @@ class ManifestModel(StrictModel):
         return self
 
 
-class CostObserved(StrictModel):
-    status: Literal["observed"]
-    amount: str
-    currency: str
-    pricing_basis: str
-    estimate: Literal[True]
-
-    @model_validator(mode="after")
-    def validate_cost(self) -> "CostObserved":
-        try:
-            amount = Decimal(self.amount)
-        except InvalidOperation as exc:
-            raise ValueError("cost_invalid") from exc
-        if (
-            not _AMOUNT_RE.fullmatch(self.amount)
-            or not amount.is_finite()
-            or amount < 0
-            or not _CURRENCY_RE.fullmatch(self.currency)
-            or not _IDENTIFIER_RE.fullmatch(self.pricing_basis)
-        ):
-            raise ValueError("cost_invalid")
-        return self
-
-
 class CostNotObserved(StrictModel):
     status: Literal["not_observed"]
-
-
-CostEstimate = Annotated[CostObserved | CostNotObserved, Field(discriminator="status")]
 
 
 class ObservedUsage(StrictModel):
@@ -498,15 +468,13 @@ class ObservedUsage(StrictModel):
     completion_tokens: int = Field(ge=0)
     total_tokens: int = Field(ge=0)
     call_count: int = Field(gt=0)
-    cost_estimate: CostEstimate
-    search_cost: CostEstimate
+    cost_estimate: CostNotObserved
+    search_cost: CostNotObserved
 
     @model_validator(mode="after")
     def validate_total(self) -> "ObservedUsage":
         if self.total_tokens != self.prompt_tokens + self.completion_tokens:
             raise ValueError("usage_total_invalid")
-        if not isinstance(self.search_cost, CostNotObserved):
-            raise ValueError("search_cost_invalid")
         return self
 
 

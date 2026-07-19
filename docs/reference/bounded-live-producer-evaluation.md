@@ -108,14 +108,16 @@ The harness inspects the current backend binding again after restart before it
 rebuilds the HTTP client. It never publishes local ports or Docker resource
 names and never performs a global prune or prefix-based delete.
 
-One monotonic active lifecycle allows 3,300 seconds: build/start/initial health
-is capped at 1,200 seconds, terminal research observation at 1,800 seconds, and
-restart/comparison/replay at 300 seconds. The Docker probe receives 30 seconds
-before the active lifecycle; cleanup has an independent 120-second reserve.
-Together they form the fixed 3,450-second wall bound. No retry or child phase
-receives a fresh budget. Subprocess termination, process-group wait, descendant
-termination, stream draining, and pipe closure all consume the same remaining
-deadline.
+One monotonic 3,450-second outer deadline starts before input and credential
+validation. Non-cleanup work is limited to the first 3,330 seconds: the Docker
+probe has a 30-second child bound, the active lifecycle has a 3,300-second child
+bound, and its build, research, and restart/replay children retain their
+1,200/1,800/300-second caps. Cleanup has an independent 120-second child reserve
+that remains inside the outer wall time. Report serialization and publication
+use only time left after cleanup; expiration blocks output before mutation. No
+retry or child phase receives a fresh budget. Subprocess termination,
+process-group wait, descendant termination, stream draining, and pipe closure
+all consume the same remaining authority.
 
 ## Accepted Public Contract
 
@@ -167,15 +169,16 @@ docs/evidence/bounded-live-producer-v1.json
 docs/evidence/bounded-live-producer-v1.md
 ```
 
-JSON is the machine authority; Markdown is a deterministic projection. Both are
-written only after successful cleanup with symlink/no-follow validation,
-non-overwrite publication, and partial-pair rollback. The pair is committed
-only after the final directory `fsync`. Any earlier failure removes every final
-link created by that run and persists the rollback without touching a path that
-predated the run; a secondary rollback failure never replaces the stable
-primary output error. No live report is committed by this implementation
-change. A later authorized run and reviewed evidence-only change are required
-before either file can be treated as observed provider evidence.
+Markdown is linked first as a deterministic projection; JSON machine authority
+is linked last. JSON is acceptable only when the matching Markdown path exists,
+the final directory `fsync` succeeds, the command reports success, and the pair
+is later accepted through a reviewed evidence-only change. A JSON path alone is
+never authority, and a failure before its final link cannot leave machine
+authority even if rollback operations fail. Rollback removes run-created links
+when the filesystem permits it without touching pre-existing paths. An
+unremovable Markdown-only residue is non-authoritative and blocks a later
+overwrite; rollback failure never replaces the stable primary output error. No
+live report is committed by this implementation change.
 
 ## Stable Failure Taxonomy
 

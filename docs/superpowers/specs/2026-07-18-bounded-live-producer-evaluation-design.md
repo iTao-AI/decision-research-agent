@@ -491,21 +491,16 @@ report uses a discriminated union:
   total token counts; or
 - `not_observed`: zero/missing provider usage metadata or an unavailable bounded endpoint.
 
-An observed usage object contains a nested cost-estimate variant. An observed `total_cost` is
-serialized as `cost_estimate.status=observed`, with currency and pricing basis supplied by an
-approved public configuration identity, and `estimate=true`. Unknown model identity, default-price
-fallback, missing currency, non-finite values, or a mismatch between declared pricing and runtime
-configuration makes `cost_estimate.status=not_observed` even when token counts remain observed.
-An observed estimate uses a non-negative canonical decimal string with eight fractional digits, an
-uppercase three-letter currency code, and a bounded pricing-basis identifier. Floating-point JSON
-values are never used as the public monetary contract.
+An observed usage object always contains `cost_estimate.status=not_observed` in Change 1. The
+aggregate token endpoint does not expose exact per-call model identity or rate selection, so its
+`total_cost` cannot be bound to the operator declaration, runtime pricing entry, unknown response
+model, or default-price fallback. A declaration, currency, or runtime-compatible pricing map does
+not upgrade that aggregate amount to observed cost. The strict manifest and report schemas reject
+an observed cost variant even when its decimal and currency fields are well formed.
 
-The token endpoint does not report per-call model identity and does not report search-provider
-usage. When primary and fallback model identifiers differ, the pricing basis cannot bind token
-counts to one model, or search-provider billing is otherwise material, the report keeps the
-affected cost component `not_observed`. No aggregate amount is presented as total run cost unless
-every included component and exclusion is explicit. V1 normally records search-provider cost as
-`not_observed`.
+The endpoint also does not report search-provider usage, so search cost remains `not_observed`.
+No aggregate amount is presented as total run cost. A later change may introduce an observed cost
+variant only after a separately approved per-call model/rate identity contract exists.
 
 The process-local usage endpoint is expected to reset after backend restart. The proof records only
 the pre-restart observation and does not treat post-restart absence as run corruption. This stage
@@ -543,23 +538,29 @@ internal reconciliation work occurred or that provider-side execution was exactl
 
 ## Deadlines And Resource Budgets
 
-`observe-live` uses one monotonic active lifecycle deadline and an independent cleanup reserve.
-Every subprocess, Docker operation, HTTP request, readiness loop, sleep, and restart consumes the
-remaining active time.
+`observe-live` creates one monotonic 3,450-second outer deadline before input validation. Its first
+3,330 seconds are the maximum non-cleanup window, covering input and credential validation, the
+Docker probe, source preparation, and the active lifecycle. Every subprocess, Docker operation,
+HTTP request, readiness loop, sleep, restart, phase transition, report build, and publication
+consumes that same outer authority.
 
 | Phase | Maximum |
 |---|---|
-| Docker daemon and Compose probe | 30 seconds before active lifecycle |
-| Active lifecycle from source validation through replay | 3,300 seconds total |
+| Input/credential validation, probe and active lifecycle | 3,330-second non-cleanup window |
+| Docker daemon and Compose probe | 30-second child bound |
+| Active lifecycle from source validation through replay | 3,300-second child bound |
 | Build/start/initial health sub-bound | 1,200 seconds within the active lifecycle |
 | Research terminal observation sub-bound | 1,800 seconds within the active lifecycle |
 | Restart, persistence comparison, and replay sub-bound | 300 seconds within the active lifecycle |
-| Cleanup reserve | 120 seconds independent of the active deadline |
+| Cleanup reserve | 120-second child bound independent of active work but contained in outer wall time |
 | Total wall-clock bound | 3,450 seconds |
 
-The total combines one 30-second probe, one 3,300-second active lifecycle, and one 120-second
-cleanup reserve. No retry receives a fresh phase budget. A fake monotonic clock must prove deadline
-exhaustion before any negative sleep or fresh timeout allocation.
+The outer deadline reserves the final 120 seconds from non-cleanup work. Cleanup may consume at
+most that reserve and never extends the total wall deadline. Report serialization and paired
+publication use only outer time remaining after cleanup; expiration prevents publication rather
+than being detected only after output. No retry receives a fresh phase budget. A fake monotonic
+clock must prove phase-transition and post-cleanup publication exhaustion before any mutation,
+negative sleep, or fresh timeout allocation.
 
 The cost boundary is one operator-authorized DRA run intent, at most one ambiguous create replay,
 and the current server-owned call-limit middleware. It is not a hard currency cap. The operator
@@ -675,8 +676,13 @@ only v1 public destinations are the exact absent repository paths
 `docs/evidence/bounded-live-producer-v1.json` and
 `docs/evidence/bounded-live-producer-v1.md`. Both parents and destinations must pass
 symlink/no-follow validation before Docker mutation. Writes use temporary sibling files, file
-synchronization, and atomic non-overwrite publication. A partial pair is removed on failure. The
-harness must not overwrite a previous observation or accept arbitrary output paths.
+synchronization, and atomic non-overwrite links. Markdown is linked first and JSON machine
+authority last. JSON is acceptable only with the matching Markdown projection and a successful,
+separately reviewed evidence publication; a JSON path alone is never authority. A failure before
+the JSON link cannot leave machine authority. Rollback removes run-created links when the
+filesystem permits it; an unremovable Markdown-only residue remains non-authoritative and blocks a
+later overwrite. The harness never touches a path that predated the run and must not accept
+arbitrary output paths.
 
 ## Deterministic Required CI
 

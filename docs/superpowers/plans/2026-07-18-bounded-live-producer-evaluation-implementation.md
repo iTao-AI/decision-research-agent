@@ -51,8 +51,10 @@ SQLite application authority, `scripts/downstream_consumer_contract.py`, and Git
 - Preserve the exact request bytes and one idempotency key through at most one ambiguous-create
   replay. Do not retry complete HTTP errors, terminal execution failures, provider/tool failures,
   restart drift, replay drift, output failures, or cleanup failures.
-- Every subprocess and HTTP request consumes a shared monotonic phase/lifecycle budget. Cleanup has
-  its independent 120-second reserve. Tests must prove no negative sleep and no fresh retry budget.
+- One outer monotonic 3,450-second deadline starts before input validation. Non-cleanup work is
+  capped at 3,330 seconds, cleanup has a 120-second child reserve contained in the outer bound, and
+  report publication consumes only outer time remaining after cleanup. Tests must prove no
+  negative sleep, post-deadline publication, or fresh retry budget.
 - Public reports and stable errors must contain no secrets, raw query/scope, report content,
   snippets, tool/provider payloads, logs, raw errors, tracebacks, local paths, local ports, Docker
   resource names, host identity, private consumer names, or unsupported production claims.
@@ -148,7 +150,7 @@ The checked-in manifest is canonical JSON with these exact field-order keys and 
   },
   "usage_policy": {
     "token_usage": "observed_or_not_observed",
-    "cost_estimate": "observed_or_not_observed",
+    "cost_estimate": "not_observed",
     "search_cost": "not_observed",
     "durable_usage": "not_claimed",
     "provider_invoice": "not_claimed"
@@ -337,22 +339,8 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class CostObserved(StrictModel):
-    status: Literal["observed"]
-    amount: str
-    currency: str
-    pricing_basis: str
-    estimate: Literal[True]
-
-
 class CostNotObserved(StrictModel):
     status: Literal["not_observed"]
-
-
-CostEstimate = Annotated[
-    CostObserved | CostNotObserved,
-    Field(discriminator="status"),
-]
 
 
 class ObservedUsage(StrictModel):
@@ -361,7 +349,8 @@ class ObservedUsage(StrictModel):
     completion_tokens: int = Field(ge=0)
     total_tokens: int = Field(ge=0)
     call_count: int = Field(gt=0)
-    cost_estimate: CostEstimate
+    cost_estimate: CostNotObserved
+    search_cost: CostNotObserved
 
 
 class UsageNotObserved(StrictModel):
@@ -374,8 +363,8 @@ UsageObservation = Annotated[
 ]
 ```
 
-Validate monetary strings with `Decimal`, require canonical `0.00000000` formatting, reject
-non-finite values, and never serialize a JSON float as a monetary value. Enforce exact six-field
+Reject every observed-cost object in Change 1, including a syntactically canonical legacy variant;
+only `{"status":"not_observed"}` is valid for cost estimate and search cost. Enforce exact six-field
 Evidence models and URL/domain rules independently of the current consumer validator so unsafe
 additive fields cannot enter the report; still use the existing consumer projection later for
 semantic acceptance.
@@ -768,11 +757,11 @@ bounded memory and is absent from report/error/diagnostic serialization.
 
 - [ ] **Step 4: Write RED usage, restart and replay tests**
 
-Cover zero/missing usage as `not_observed`; positive consistent token totals as `observed`; malformed
-totals as `usage_invalid`; observed cost only when declaration, runtime pricing identity, currency
-and model binding permit it. When primary and fallback model IDs differ, the cost estimate must be
-`not_observed` because the endpoint cannot bind aggregate tokens to one model. Require eight
-fractional digits, `estimate=true`, and search cost `not_observed`.
+Cover zero/missing usage as `not_observed`; positive consistent token totals as `observed`; and
+malformed totals as `usage_invalid`. In Change 1, cost estimate and search cost are always
+`not_observed`: the aggregate endpoint cannot bind tokens to exact per-call model and rate
+selection, even when declarations and runtime pricing configuration are present. Mutation-test a
+well-formed legacy observed-cost variant and require strict rejection.
 
 After a fake backend restart, require exact health, run/thread/segment identity, non-regressing state
 version, byte-identical ordered Evidence allowlist, artifact metadata/length/hash, and unchanged
@@ -783,8 +772,11 @@ identities and unchanged terminal projection. Mutations must map to the stable r
 
 Validate only the exact repository destinations before mutation. Reject existing files, symlinks,
 aliases, unwritable parents and path replacement races. Stage sibling files with `O_EXCL`, fsync,
-publish each using atomic no-replace hard-link semantics, fsync the directory, and remove the first
-published target if the second publication fails. Assert no temp or partial pair remains.
+publish Markdown first and JSON machine authority last using atomic no-replace hard-link semantics,
+then fsync the directory. A failure before the JSON link must leave no authoritative JSON even when
+unlink and rename rollback persistently fail. JSON is acceptable only with matching Markdown and a
+successful reviewed publication; an unremovable Markdown-only residue is non-authoritative and
+blocks overwrite. Preserve stable primary output errors and all pre-existing paths.
 
 Inject primary-only, cleanup-only and dual failures. The internal grouped exception retains both
 typed causes; the public line retains only stable primary code plus `cleanup_status=failed`.
@@ -862,9 +854,10 @@ consumer projection and require exact acceptance before usage/restart/replay.
 Capture bounded comparison facts before restart, not raw content. Build and validate the final
 report only after cleanup succeeds and its receipt is added. Serialize the same validated model
 twice and require byte equality before paired publication. On any failure after mutation, always
-attempt cleanup. A wall deadline created before the Docker probe also bounds post-cleanup report
-serialization and paired publication so the total remains at most 3,450 seconds. Do not write a
-failed or partial live evidence artifact.
+attempt cleanup. One wall deadline created before input validation reserves cleanup inside the
+3,450-second total, narrows every non-cleanup phase, and bounds post-cleanup report serialization
+and paired publication before output mutation. Do not expose failed output as acceptable live
+evidence.
 
 - [ ] **Step 10: Run Task 4 GREEN and combined focused tests**
 

@@ -261,6 +261,38 @@ def test_prepare_source_snapshot_binds_clean_exact_tracked_archive(tmp_path: Pat
     assert (snapshot.root / "VERSION").read_text(encoding="utf-8") == "0.1.5\n"
 
 
+def test_prepare_source_snapshot_narrows_every_subprocess_to_outer_deadline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_lifecycle")
+    source = _tiny_repository(tmp_path)
+    real_run = module.subprocess.run
+    timeouts: list[float] = []
+
+    def record_timeout(*args: object, **kwargs: object):
+        timeout = kwargs.get("timeout")
+        assert isinstance(timeout, (int, float))
+        timeouts.append(float(timeout))
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", record_timeout)
+    deadline = ActiveDeadline(
+        5,
+        code=FailureCode.SOURCE_ARCHIVE_INVALID,
+        phase=FailurePhase.DOCKER,
+    )
+    prepare_source_snapshot(
+        source,
+        tmp_path / "tasks",
+        required_paths=REQUIRED_PATHS,
+        deadline=deadline,
+        verify_secure_runtime=False,
+    )
+    assert timeouts
+    assert max(timeouts) <= 5.0
+
+
 @pytest.mark.parametrize("dirty_name", ["untracked.txt", "VERSION"])
 def test_prepare_source_snapshot_rejects_dirty_or_untracked_source(
     tmp_path: Path, dirty_name: str
@@ -298,9 +330,9 @@ def test_prepare_source_snapshot_fails_closed_when_head_changes_after_capture(
     real_git_output = module._git_output
     switched = False
 
-    def switch_after_commit(root: Path, *arguments: str) -> str:
+    def switch_after_commit(root: Path, *arguments: str, **kwargs: object) -> str:
         nonlocal switched
-        result = real_git_output(root, *arguments)
+        result = real_git_output(root, *arguments, **kwargs)
         if arguments == ("rev-parse", "--verify", "HEAD") and not switched:
             switched = True
             _git(root, "reset", "--hard", changed_commit)

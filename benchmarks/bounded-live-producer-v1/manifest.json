@@ -51,7 +51,7 @@
   },
   "usage_policy": {
     "token_usage": "observed_or_not_observed",
-    "cost_estimate": "observed_or_not_observed",
+    "cost_estimate": "not_observed",
     "search_cost": "not_observed",
     "durable_usage": "not_claimed",
     "provider_invoice": "not_claimed"

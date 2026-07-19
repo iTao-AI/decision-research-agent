@@ -530,6 +530,55 @@ def run_cleanup_guarded(
     return primary_result, cleanup_result  # type: ignore[return-value]
 
 
+def _cleanup_pre_guard_task_temp(
+    task_temp_parent: Path,
+    *,
+    remaining_seconds: Callable[[float], float],
+) -> CleanupReceipt:
+    """Remove only the exact task temp created before project cleanup takes ownership."""
+
+    resolved = task_temp_parent.resolve()
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    if (
+        resolved.parent != temp_root
+        or re.fullmatch(r"dra-bounded-producer-[0-9a-f]{32}", resolved.name) is None
+    ):
+        raise EvaluationError(
+            FailureCode.CLEANUP_FAILED,
+            FailurePhase.CLEANUP,
+            False,
+            CleanupStatus.FAILED,
+        )
+    remaining_seconds(1.0)
+    try:
+        shutil.rmtree(resolved)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise EvaluationError(
+            FailureCode.CLEANUP_FAILED,
+            FailurePhase.CLEANUP,
+            False,
+            CleanupStatus.FAILED,
+        ) from exc
+    remaining_seconds(1.0)
+    if resolved.exists():
+        raise EvaluationError(
+            FailureCode.CLEANUP_FAILED,
+            FailurePhase.CLEANUP,
+            False,
+            CleanupStatus.FAILED,
+        )
+    return CleanupReceipt(
+        attempted=True,
+        succeeded=True,
+        zero_container_residue=True,
+        zero_volume_residue=True,
+        zero_network_residue=True,
+        zero_temp_residue=True,
+    )
+
+
 def _output_directory(repository_root: Path) -> tuple[Path, int]:
     try:
         root = repository_root.resolve(strict=True)
@@ -1058,86 +1107,109 @@ def observe_live(
     except BaseException:
         live_configuration.close()
         raise
-    docker_environment = _scrubbed_docker_environment()
-    probe_started = clock()
-    probe_deadline = non_cleanup_deadline.child(
-        LIVE_BUDGET.docker_probe_seconds,
-        code=FailureCode.DOCKER_UNAVAILABLE,
-        phase=FailurePhase.DOCKER,
-    )
-    docker_version = run_bounded_subprocess(
-        ("docker", "version", "--format", "{{.Client.Version}}"),
-        cwd=repository_root,
-        env=docker_environment,
-        deadline=probe_deadline,
-        allowed_environment=_DOCKER_PROCESS_ENV,
-    )
-    compose_version = run_bounded_subprocess(
-        ("docker", "compose", "version", "--short"),
-        cwd=repository_root,
-        env=docker_environment,
-        deadline=probe_deadline,
-        allowed_environment=_DOCKER_PROCESS_ENV,
-    )
-    docker_version_value = _bounded_public_version(
-        docker_version.stdout,
-        code=FailureCode.DOCKER_UNAVAILABLE,
-    )
-    compose_version_value = _bounded_public_version(
-        compose_version.stdout,
-        code=FailureCode.DOCKER_UNAVAILABLE,
-    )
-    probe_ms = _milliseconds(probe_started, clock(), 30_000)
-    non_cleanup_deadline.remaining(1.0)
+    task_temp_parent: Path | None = None
+    try:
+        docker_environment = _scrubbed_docker_environment()
+        probe_started = clock()
+        probe_deadline = non_cleanup_deadline.child(
+            LIVE_BUDGET.docker_probe_seconds,
+            code=FailureCode.DOCKER_UNAVAILABLE,
+            phase=FailurePhase.DOCKER,
+        )
+        docker_version = run_bounded_subprocess(
+            ("docker", "version", "--format", "{{.Client.Version}}"),
+            cwd=repository_root,
+            env=docker_environment,
+            deadline=probe_deadline,
+            allowed_environment=_DOCKER_PROCESS_ENV,
+        )
+        compose_version = run_bounded_subprocess(
+            ("docker", "compose", "version", "--short"),
+            cwd=repository_root,
+            env=docker_environment,
+            deadline=probe_deadline,
+            allowed_environment=_DOCKER_PROCESS_ENV,
+        )
+        docker_version_value = _bounded_public_version(
+            docker_version.stdout,
+            code=FailureCode.DOCKER_UNAVAILABLE,
+        )
+        compose_version_value = _bounded_public_version(
+            compose_version.stdout,
+            code=FailureCode.DOCKER_UNAVAILABLE,
+        )
+        probe_ms = _milliseconds(probe_started, clock(), 30_000)
+        non_cleanup_deadline.remaining(1.0)
 
-    task_temp_parent = Path(tempfile.gettempdir()) / (
-        f"dra-bounded-producer-{secrets.token_hex(16)}"
-    )
-    required_paths = (
-        "VERSION",
-        "Dockerfile.backend",
-        "docker-compose.yml",
-        "benchmarks/bounded-live-producer-v1/manifest.json",
-        "scripts/secure_local_runtime_proof.py",
-        "scripts/bounded_live_producer_contracts.py",
-        "scripts/bounded_live_producer_http.py",
-        "scripts/bounded_live_producer_lifecycle.py",
-        "scripts/bounded_live_producer_proof.py",
-    )
-    active_started = clock()
-    active_deadline = non_cleanup_deadline.child(
-        LIVE_BUDGET.active_seconds,
-        code=FailureCode.SERVICE_START_FAILED,
-        phase=FailurePhase.DOCKER,
-    )
-    snapshot = prepare_source_snapshot(
-        repository_root,
-        task_temp_parent,
-        required_paths=required_paths,
-        deadline=active_deadline,
-    )
-    snapshot_manifest_path = (
-        snapshot.root
-        / "benchmarks"
-        / "bounded-live-producer-v1"
-        / "manifest.json"
-    )
-    snapshot_manifest = load_manifest(snapshot_manifest_path)
-    if snapshot_manifest != manifest:
-        shutil.rmtree(task_temp_parent, ignore_errors=True)
-        raise _error(FailureCode.SOURCE_ARCHIVE_INVALID, FailurePhase.DOCKER)
-    manifest_sha256 = hashlib.sha256(snapshot_manifest_path.read_bytes()).hexdigest()
-    project_name = f"dra-proof-{secrets.token_hex(16)}"
-    project = ManagedComposeProject(
-        root=snapshot.root,
-        compose_paths=(snapshot.root / "docker-compose.yml",),
-        env_file=live_configuration,
-        project_name=project_name,
-        environment=docker_environment,
-        retain_image=retain_task_images,
-    )
-    project.track_temp_paths((task_temp_parent,))
-    active_deadline.remaining(1.0)
+        task_temp_parent = Path(tempfile.gettempdir()) / (
+            f"dra-bounded-producer-{secrets.token_hex(16)}"
+        )
+        required_paths = (
+            "VERSION",
+            "Dockerfile.backend",
+            "docker-compose.yml",
+            "benchmarks/bounded-live-producer-v1/manifest.json",
+            "scripts/secure_local_runtime_proof.py",
+            "scripts/bounded_live_producer_contracts.py",
+            "scripts/bounded_live_producer_http.py",
+            "scripts/bounded_live_producer_lifecycle.py",
+            "scripts/bounded_live_producer_proof.py",
+        )
+        active_started = clock()
+        active_deadline = non_cleanup_deadline.child(
+            LIVE_BUDGET.active_seconds,
+            code=FailureCode.SERVICE_START_FAILED,
+            phase=FailurePhase.DOCKER,
+        )
+        snapshot = prepare_source_snapshot(
+            repository_root,
+            task_temp_parent,
+            required_paths=required_paths,
+            deadline=active_deadline,
+        )
+        snapshot_manifest_path = (
+            snapshot.root
+            / "benchmarks"
+            / "bounded-live-producer-v1"
+            / "manifest.json"
+        )
+        snapshot_manifest = load_manifest(snapshot_manifest_path)
+        if snapshot_manifest != manifest:
+            raise _error(FailureCode.SOURCE_ARCHIVE_INVALID, FailurePhase.DOCKER)
+        manifest_sha256 = hashlib.sha256(snapshot_manifest_path.read_bytes()).hexdigest()
+        project_name = f"dra-proof-{secrets.token_hex(16)}"
+        project = ManagedComposeProject(
+            root=snapshot.root,
+            compose_paths=(snapshot.root / "docker-compose.yml",),
+            env_file=live_configuration,
+            project_name=project_name,
+            environment=docker_environment,
+            retain_image=retain_task_images,
+        )
+        project.track_temp_paths((task_temp_parent,))
+        active_deadline.remaining(1.0)
+    except BaseException as primary_error:
+        try:
+            if task_temp_parent is not None:
+                cleanup_deadline = total_deadline.child(
+                    LIVE_BUDGET.cleanup_seconds,
+                    code=FailureCode.CLEANUP_FAILED,
+                    phase=FailurePhase.CLEANUP,
+                )
+
+                def raise_primary() -> None:
+                    raise primary_error
+
+                def cleanup_pre_guard() -> CleanupReceipt:
+                    return _cleanup_pre_guard_task_temp(
+                        task_temp_parent,
+                        remaining_seconds=cleanup_deadline.remaining,
+                    )
+
+                run_cleanup_guarded(raise_primary, cleanup_pre_guard)
+            raise
+        finally:
+            live_configuration.close()
 
     cleanup_started = 0.0
 

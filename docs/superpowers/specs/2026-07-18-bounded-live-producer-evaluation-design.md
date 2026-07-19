@@ -562,6 +562,12 @@ than being detected only after output. No retry receives a fresh phase budget. A
 clock must prove phase-transition and post-cleanup publication exhaustion before any mutation,
 negative sleep, or fresh timeout allocation.
 
+After credential validation succeeds, its in-memory snapshot is closed on every exit path. The
+exact random task-temp path is owned before snapshot preparation can create it. Failures before the
+managed project cleanup guard starts remove only that path using a cleanup child inside the outer
+reserve; cleanup failure remains paired with the stable primary cause. After the guard starts, the
+managed project receipt owns the existing cleanup sequence.
+
 The cost boundary is one operator-authorized DRA run intent, at most one ambiguous create replay,
 and the current server-owned call-limit middleware. It is not a hard currency cap. The operator
 must approve provider credentials, provider/model declaration, the manifest request, and this

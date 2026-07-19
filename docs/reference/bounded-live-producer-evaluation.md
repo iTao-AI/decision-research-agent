@@ -119,6 +119,12 @@ retry or child phase receives a fresh budget. Subprocess termination,
 process-group wait, descendant termination, stream draining, and pipe closure
 all consume the same remaining authority.
 
+The validated credential snapshot is closed on every path after successful validation.
+Before project cleanup takes ownership, the harness records the exact random task-temp path; a
+probe, snapshot, project-construction, ownership-transition, or deadline failure removes only that
+path through a cleanup child contained in the outer 120-second reserve. Once project cleanup takes
+ownership, the normal exact project receipt remains authoritative.
+
 ## Accepted Public Contract
 
 The accepted terminal tuple is exact:

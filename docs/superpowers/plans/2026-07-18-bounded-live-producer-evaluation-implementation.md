@@ -613,6 +613,13 @@ only remaining time, no negative sleep occurs, and cleanup gets exactly its inde
 timeout, reject overflow unless the exact command uses an approved quiet mode, and never inherit
 proxy/provider/credential variables outside the scrubbed allowlist.
 
+Close the validated in-memory credential snapshot on every later exit path. Record the exact
+random task-temp path before snapshot preparation; if probe, snapshot, project construction,
+ownership transition, or the final pre-guard deadline check fails, remove only that path through a
+cleanup child inside the total deadline's 120-second reserve. Preserve primary plus cleanup failure
+as the existing stable dual-cause contract, then hand authority to normal project cleanup only
+after the pre-guard transition succeeds.
+
 - [ ] **Step 4: Write RED ownership and cleanup tests**
 
 Require a random exact project ID, refusal if any resource already has its exact Compose label,

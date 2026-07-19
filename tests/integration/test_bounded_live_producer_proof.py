@@ -68,8 +68,11 @@ def _install_provider_free_live_boundaries(
     publication_error: BaseException | None = None,
     clock: _FakeMonotonic | None = None,
     configuration_seconds: float = 0.0,
+    snapshot_seconds: float = 0.0,
     cleanup_seconds: float = 0.0,
     publication_seconds: float = 0.0,
+    pre_guard_failure: str | None = None,
+    fail_pre_guard_cleanup: bool = False,
 ):
     module = importlib.import_module("scripts.bounded_live_producer_proof")
     lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
@@ -84,6 +87,17 @@ def _install_provider_free_live_boundaries(
     env_file.write_text("fixture-only\n", encoding="utf-8")
     events: list[str] = []
     holder: dict[str, Any] = {}
+    if fail_pre_guard_cleanup:
+        real_rmtree = module.shutil.rmtree
+        holder["real_rmtree"] = real_rmtree
+
+        def fail_task_temp_cleanup(path: Path, *args: Any, **kwargs: Any) -> None:
+            task_temp = holder.get("task_temp")
+            if task_temp is not None and Path(path).resolve() == task_temp.resolve():
+                raise OSError("private pre-guard cleanup failure")
+            real_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(module.shutil, "rmtree", fail_task_temp_cleanup)
     if clock is not None:
         monkeypatch.setattr(module.time, "monotonic", clock)
 
@@ -108,6 +122,8 @@ def _install_provider_free_live_boundaries(
 
     def run_subprocess(arguments, **_kwargs):
         events.append("probe:" + " ".join(arguments[1:3]))
+        if pre_guard_failure == "probe":
+            raise EvaluationError("docker_unavailable", "docker", False)
         value = "28.0.0\n" if arguments[1] == "version" else "2.39.0\n"
         return subprocess.CompletedProcess(arguments, 0, value, "")
 
@@ -120,6 +136,10 @@ def _install_provider_free_live_boundaries(
         assert checkout_root == repository
         task_temp_parent.mkdir()
         holder["task_temp"] = task_temp_parent
+        if clock is not None:
+            clock.advance(snapshot_seconds)
+        if pre_guard_failure == "snapshot":
+            raise EvaluationError("source_archive_invalid", "docker", False)
         return SimpleNamespace(
             root=repository,
             commit="a" * 40,
@@ -131,6 +151,8 @@ def _install_provider_free_live_boundaries(
     class FakeProject:
         def __init__(self, **kwargs: Any) -> None:
             events.append("project")
+            if pre_guard_failure == "project":
+                raise RuntimeError("private project construction failure")
             self.project_name = kwargs["project_name"]
             self._temp_paths: tuple[Path, ...] = ()
             self._project_claimed = False
@@ -138,6 +160,8 @@ def _install_provider_free_live_boundaries(
 
         def track_temp_paths(self, paths) -> None:
             events.append("track_temp")
+            if pre_guard_failure == "track":
+                raise RuntimeError("private ownership transition failure")
             self._temp_paths = tuple(Path(path).resolve() for path in paths)
 
         def assert_unclaimed(self, _deadline: Any) -> None:
@@ -1533,6 +1557,75 @@ def test_observe_live_outer_deadline_blocks_post_cleanup_publication(
     assert not holder["task_temp"].exists()
     assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
     assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
+@pytest.mark.parametrize(
+    ("pre_guard_failure", "snapshot_seconds", "expected_code", "has_task_temp"),
+    [
+        ("probe", 0.0, "docker_unavailable", False),
+        ("snapshot", 0.0, "source_archive_invalid", True),
+        ("project", 0.0, "evaluation_internal_error", True),
+        ("track", 0.0, "evaluation_internal_error", True),
+        (None, 3_331.0, "service_start_failed", True),
+    ],
+)
+def test_observe_live_pre_guard_failure_closes_configuration_and_removes_task_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pre_guard_failure: str | None,
+    snapshot_seconds: float,
+    expected_code: str,
+    has_task_temp: bool,
+) -> None:
+    clock = _FakeMonotonic()
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        clock=clock,
+        snapshot_seconds=snapshot_seconds,
+        pre_guard_failure=pre_guard_failure,
+    )
+    with pytest.raises(EvaluationError) as raised:
+        invoke()
+    assert raised.value.code.value == expected_code
+    assert "configuration_close" in events
+    assert "assert_unclaimed" not in events
+    assert "cleanup_receipt" not in events
+    if has_task_temp:
+        assert not holder["task_temp"].exists()
+    else:
+        assert "task_temp" not in holder
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
+def test_observe_live_pre_guard_failure_preserves_primary_and_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _FakeMonotonic()
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        clock=clock,
+        snapshot_seconds=3_331.0,
+        fail_pre_guard_cleanup=True,
+    )
+    try:
+        with pytest.raises(BaseExceptionGroup) as caught:
+            invoke()
+        primary, cleanup = caught.value.exceptions
+        assert isinstance(primary, EvaluationError)
+        assert primary.code.value == "service_start_failed"
+        assert isinstance(cleanup, EvaluationError)
+        assert cleanup.code.value == "cleanup_failed"
+        assert cleanup.cleanup_status is CleanupStatus.FAILED
+        assert "configuration_close" in events
+        assert holder["task_temp"].exists()
+        assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+        assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+    finally:
+        holder["real_rmtree"](holder["task_temp"])
 
 
 def test_observe_live_preclaim_failure_still_cleans_temp_without_claiming_project(

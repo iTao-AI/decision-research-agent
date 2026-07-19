@@ -1404,6 +1404,8 @@ def test_bounded_live_producer_reference_is_discoverable_without_live_evidence()
         "JSON machine authority is linked last",
         "A JSON path alone is never authority",
         "unremovable Markdown-only residue is non-authoritative",
+        "closed on every path after successful validation",
+        "Before project cleanup takes ownership",
         "recorded before the mutation that can leave it behind",
         "Successful exact resource inventories",
         "not a failed inspection exit status",

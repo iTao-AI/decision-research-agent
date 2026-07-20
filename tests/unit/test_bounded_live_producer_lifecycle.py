@@ -1388,8 +1388,20 @@ def test_managed_compose_project_uses_exact_paths_services_ports_and_ownership(
 
     def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
         commands.append(args)
-        if args[:3] == ("docker", "image", "inspect"):
-            return subprocess.CompletedProcess(args, 1, "", "not found")
+        if args[:5] == ("docker", "image", "inspect", "--format", "{{.Id}}"):
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                "sha256:" + "e" * 64 + "\n",
+                "",
+            )
+        if args[:2] == ("docker", "run"):
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                '{"status":"valid","match":true}\n',
+                "",
+            )
         if args[-3:] == ("ps", "-aq",):
             return subprocess.CompletedProcess(args, 0, "", "")
         return subprocess.CompletedProcess(args, 0, "", "")
@@ -1404,6 +1416,13 @@ def test_managed_compose_project_uses_exact_paths_services_ports_and_ownership(
     )
     project.assert_unclaimed(ActiveDeadline(5, code=FailureCode.COMPOSE_CONFIG_INVALID, phase=FailurePhase.DOCKER))
     project.build_backend(ActiveDeadline(5, code=FailureCode.IMAGE_BUILD_FAILED, phase=FailurePhase.DOCKER))
+    project.verify_snapshot_secure_runtime(
+        ActiveDeadline(
+            5,
+            code=FailureCode.SOURCE_ARCHIVE_INVALID,
+            phase=FailurePhase.DOCKER,
+        )
+    )
     project.start_mysql(ActiveDeadline(5, code=FailureCode.SERVICE_START_FAILED, phase=FailurePhase.DOCKER))
     project.start_backend(ActiveDeadline(5, code=FailureCode.SERVICE_START_FAILED, phase=FailurePhase.DOCKER))
     flattened = "\n".join(" ".join(command) for command in commands)
@@ -1416,6 +1435,88 @@ def test_managed_compose_project_uses_exact_paths_services_ports_and_ownership(
         "DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT": "0",
         "DECISION_RESEARCH_AGENT_MYSQL_HOST_PORT": "0",
     }
+
+
+def test_live_project_requires_shared_locked_image_secure_check_before_services(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+    commands: list[tuple[str, ...]] = []
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        if args[:5] == ("docker", "image", "inspect", "--format", "{{.Id}}"):
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                "sha256:" + "f" * 64 + "\n",
+                "",
+            )
+        if args[:2] == ("docker", "run"):
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                '{"status":"valid","match":true}\n',
+                "",
+            )
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name="dra-proof-45454545454545454545454545454545",
+        environment={},
+        runner=runner,
+    )
+    deadline = ActiveDeadline(
+        5,
+        code=FailureCode.SOURCE_ARCHIVE_INVALID,
+        phase=FailurePhase.DOCKER,
+    )
+    project.build_backend(deadline)
+    with pytest.raises(ValueError, match="snapshot_secure_check_required"):
+        project.start_mysql(deadline)
+    with pytest.raises(ValueError, match="snapshot_secure_check_required"):
+        project.start_backend(deadline)
+
+    project.verify_snapshot_secure_runtime(deadline)
+    project.start_mysql(deadline)
+    project.start_backend(deadline)
+
+    secure_command = next(
+        command for command in commands if command[:2] == ("docker", "run")
+    )
+    assert secure_command[secure_command.index("--network") + 1] == "none"
+    assert secure_command[secure_command.index("--cap-drop") + 1] == "ALL"
+    assert secure_command[secure_command.index("--security-opt") + 1] == (
+        "no-new-privileges:true"
+    )
+    assert f"{root}:/proof:ro" in secure_command
+    assert "/proof/data:rw,nosuid,nodev,noexec,size=16m" in secure_command
+    assert "/proof/output:rw,nosuid,nodev,noexec,size=16m" in secure_command
+    build_index = next(
+        index
+        for index, command in enumerate(commands)
+        if command[-2:] == ("build", "backend")
+    )
+    secure_index = commands.index(secure_command)
+    mysql_index = next(
+        index
+        for index, command in enumerate(commands)
+        if command[-3:] == ("up", "-d", "mysql")
+    )
+    backend_index = next(
+        index
+        for index, command in enumerate(commands)
+        if command[-3:] == ("up", "-d", "backend")
+    )
+    assert build_index < secure_index < mysql_index < backend_index
 
 
 def test_managed_compose_project_refuses_preexisting_exact_project_resource(
@@ -1532,7 +1633,7 @@ def test_build_success_registers_image_tag_before_later_inspection_failure(
     ) in commands
 
 
-def test_secure_check_timeout_registers_exact_container_and_image_for_cleanup(
+def test_secure_check_failure_registers_exact_container_and_image_for_cleanup(
     tmp_path: Path,
 ) -> None:
     task_root = tmp_path / "task-root"
@@ -1552,11 +1653,7 @@ def test_secure_check_timeout_registers_exact_container_and_image_for_cleanup(
         if args[:5] == ("docker", "image", "inspect", "--format", "{{.Id}}"):
             return subprocess.CompletedProcess(args, 0, "sha256:" + "d" * 64 + "\n", "")
         if args[:2] == ("docker", "run"):
-            raise EvaluationError(
-                FailureCode.SOURCE_ARCHIVE_INVALID,
-                FailurePhase.DOCKER,
-                False,
-            )
+            return subprocess.CompletedProcess(args, 1, "", "bounded failure")
         if "inspect" in args:
             return subprocess.CompletedProcess(args, 1, "", "not found")
         return subprocess.CompletedProcess(args, 0, "", "")
@@ -1570,14 +1667,15 @@ def test_secure_check_timeout_registers_exact_container_and_image_for_cleanup(
         runner=runner,
     )
     project.track_temp_paths((task_root,))
-    with pytest.raises(EvaluationError):
+    with pytest.raises(EvaluationError) as raised:
         project.verify_snapshot_secure_runtime(
             ActiveDeadline(
                 5,
-                code=FailureCode.SOURCE_ARCHIVE_INVALID,
+                code=FailureCode.SERVICE_START_FAILED,
                 phase=FailurePhase.DOCKER,
             )
         )
+    assert raised.value.code is FailureCode.SOURCE_ARCHIVE_INVALID
     cleanup_receipt(
         project,
         ActiveDeadline(

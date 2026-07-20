@@ -1411,8 +1411,25 @@ def test_bounded_live_producer_reference_is_discoverable_without_live_evidence()
         "not a failed inspection exit status",
         "final directory `fsync`",
         "`credential_source_invalid` in the `input` phase",
+        "exact locked backend image after build and before any service or provider activity",
+        "provider-free fixture and separately authorized live paths use this same precheck authority",
     ):
         assert phrase in normalized_reference
+
+    changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "host production dependency graph" in changelog
+    assert "exact locked backend image" in changelog
+
+    plan = (
+        PROJECT_ROOT
+        / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md"
+    ).read_text(encoding="utf-8")
+    normalized_plan = " ".join(plan.split())
+    assert (
+        "Execute the existing `scripts/secure_local_runtime_proof.py check` inside the exact "
+        "locked backend image after build and before any service starts"
+        in normalized_plan
+    )
 
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     readme_cn = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")

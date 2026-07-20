@@ -73,6 +73,7 @@ def _install_provider_free_live_boundaries(
     publication_seconds: float = 0.0,
     pre_guard_failure: str | None = None,
     fail_pre_guard_cleanup: bool = False,
+    secure_check_error: BaseException | None = None,
 ):
     module = importlib.import_module("scripts.bounded_live_producer_proof")
     lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
@@ -134,6 +135,7 @@ def _install_provider_free_live_boundaries(
     ) -> Any:
         events.append("snapshot")
         assert checkout_root == repository
+        assert _kwargs["verify_secure_runtime"] is False
         task_temp_parent.mkdir()
         holder["task_temp"] = task_temp_parent
         if clock is not None:
@@ -185,6 +187,13 @@ def _install_provider_free_live_boundaries(
 
         def build_backend(self, _deadline: Any) -> None:
             events.append("build")
+
+        def verify_snapshot_secure_runtime(self, deadline: Any) -> None:
+            events.append("secure_check")
+            assert deadline.code.value == "source_archive_invalid"
+            assert deadline.phase.value == "docker"
+            if secure_check_error is not None:
+                raise secure_check_error
 
         def start_mysql(self, _deadline: Any) -> None:
             events.append("start_mysql")
@@ -1503,6 +1512,9 @@ def test_observe_live_runs_real_orchestrator_through_provider_free_fake_boundari
     assert events.index("configuration") < events.index("snapshot")
     assert events.index("track_temp") < events.index("assert_unclaimed")
     assert events.index("assert_unclaimed") < events.index("build")
+    assert events.index("build") < events.index("secure_check")
+    assert events.index("secure_check") < events.index("start_mysql")
+    assert events.index("secure_check") < events.index("start_backend")
     assert events.count("terminal") == 3
     assert events.index("cleanup_receipt") > events.index("replay_create")
     assert not holder["task_temp"].exists()
@@ -1512,6 +1524,34 @@ def test_observe_live_runs_real_orchestrator_through_provider_free_fake_boundari
     public_bytes = json_path.read_bytes() + markdown_path.read_bytes()
     for forbidden in (b"must-not-be-published", b"fixture-only", b"snippet"):
         assert forbidden not in public_bytes
+
+
+def test_observe_live_locked_image_secure_failure_stops_before_services_and_cleans(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        secure_check_error=EvaluationError(
+            "source_archive_invalid",
+            "docker",
+            False,
+        ),
+    )
+    with pytest.raises(EvaluationError) as raised:
+        invoke()
+    assert raised.value.code.value == "source_archive_invalid"
+    assert raised.value.phase.value == "docker"
+    assert raised.value.cleanup_status is CleanupStatus.SUCCEEDED
+    assert events.index("build") < events.index("secure_check")
+    assert "start_mysql" not in events
+    assert "start_backend" not in events
+    assert "create" not in events
+    assert "cleanup_receipt" in events
+    assert not holder["task_temp"].exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
 
 
 def test_observe_live_outer_deadline_blocks_probe_after_input_budget_exhaustion(

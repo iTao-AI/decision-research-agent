@@ -11,6 +11,9 @@ All notable changes to this project are documented in this file.
 - Added a clean tracked-archive Docker lifecycle for protected create,
   application-owned persistence, backend restart, same-key replay, privilege
   inspection, and exact task-owned cleanup.
+- Moved the secure-runtime precheck from the host production dependency graph
+  into the exact locked backend image before service or provider startup while
+  retaining the existing network, privilege, mount, and cleanup boundaries.
 - No live provider observation or JSON/Markdown evidence report is committed;
   `VERSION` and the v0.1.5 release record remain unchanged.
 

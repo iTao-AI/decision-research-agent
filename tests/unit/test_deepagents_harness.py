@@ -250,10 +250,10 @@ def test_pinned_deepagents_middleware_stack_and_subagents(monkeypatch):
         "SubAgentMiddleware",
         "SummarizationMiddleware",
         "PatchToolCallsMiddleware",
+        "CanonicalReportCompletionMiddleware",
         "ModelCallLimitMiddleware",
         "ToolCallLimitMiddleware",
         "ToolCallLimitMiddleware",
-        "CanonicalReportCompletionMiddleware",
         "AnthropicPromptCachingMiddleware",
     ]
     subagent_middleware = captured["middleware"][3]

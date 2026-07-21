@@ -1527,6 +1527,8 @@ def test_canonical_report_completion_and_fallback_failure_contracts_are_current(
     for phrase in (
         "one run-scoped correction",
         "native `write_file` tool",
+        "registered before the existing call-limit middleware",
+        "reverse `after_model` execution accounts for the completed call",
         "does not enlarge the existing model, tool, or recursion budgets",
         "does not promote chat text or fallback content",
     ):
@@ -1563,3 +1565,89 @@ def test_canonical_report_completion_and_fallback_failure_contracts_are_current(
         "Malformed result or consumer projection data remains "
         "`consumer_projection_invalid`"
     ) in reference
+
+
+def test_bounded_live_targeted_runtime_repair_amendment_is_scoped() -> None:
+    design_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+    )
+    plan_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md"
+    )
+    common_phrases = (
+        "### Post-Observation Targeted Runtime Repair Amendment",
+        "separately authorized after a bounded observation exposed a runtime closure defect",
+        "generic coordinator canonical completion middleware and precise fallback failure classification",
+        "native LangChain `after_model` hook with `jump_to=\"model\"` and the "
+        "DeepAgents `write_file` tool",
+        "registered before the existing call-limit middleware",
+        "reverse `after_model` execution",
+        "remains within the existing model, tool, and recursion budgets",
+        "No live-success claim is made and no live evidence is published.",
+        "does not change REST/OpenAPI, database, canonical result or Evidence authority, the "
+        "provider contract, VERSION, dependencies, CI, or release metadata",
+    )
+    for path in (design_path, plan_path):
+        normalized = " ".join(path.read_text(encoding="utf-8").split())
+        for phrase in common_phrases:
+            assert phrase in normalized
+
+    design = " ".join(design_path.read_text(encoding="utf-8").split())
+    assert "For Change 1, this stage does not add or claim:" in design
+    assert "in Change 1, no profile or middleware change" in design
+    assert "Add LangChain or DeepAgents middleware to the Change 1 proof" in design
+
+    plan = " ".join(plan_path.read_text(encoding="utf-8").split())
+    assert "For Change 1 only, do not modify REST/OpenAPI paths or payloads" in plan
+    assert "For the Change 1 implementation commits, no diff in" in plan
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new"),
+    (
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md",
+            "The correction remains within the existing model, tool, and recursion\nbudgets",
+            "The correction may exceed the existing model, tool, and recursion\nbudgets",
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md",
+            "The correction remains within the existing model, tool, and recursion\nbudgets",
+            "The correction may exceed the existing model, tool, and recursion\nbudgets",
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md",
+            "For Change 1, this stage does not add or claim:",
+            "This stage does not add or claim:",
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md",
+            "For Change 1 only, do not modify REST/OpenAPI paths or payloads",
+            "Do not modify REST/OpenAPI paths or payloads",
+        ),
+    ),
+    ids=(
+        "design-budget-expansion",
+        "plan-budget-expansion",
+        "design-change1-scope-removed",
+        "plan-change1-scope-removed",
+    ),
+)
+def test_bounded_live_targeted_runtime_repair_amendment_rejects_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    old: str,
+    new: str,
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=path,
+        replacements=((old, new),),
+        contract=test_bounded_live_targeted_runtime_repair_amendment_is_scoped,
+    )

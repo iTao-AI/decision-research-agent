@@ -5,6 +5,7 @@ from typing import Any, Sequence
 import pytest
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
+from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -165,18 +166,28 @@ class RecordingHarness:
         return observer.snapshot_outcome()
 
 
-def _real_deepagents_harness(model: BaseChatModel, *, completion_guard: bool):
+def _real_deepagents_harness(
+    model: BaseChatModel,
+    *,
+    completion_guard: bool,
+    middleware_override: Sequence[Any] | None = None,
+):
     backend = CompositeBackend(default=StateBackend(), routes={})
     permissions = tuple(build_filesystem_permissions())
+    middleware = (
+        list(middleware_override)
+        if middleware_override is not None
+        else (
+            build_profile_middleware("generic", role="coordinator")
+            if completion_guard
+            else []
+        )
+    )
     graph = create_deep_agent(
         model=model,
         tools=[],
         system_prompt="Write the requested canonical report.",
-        middleware=(
-            build_profile_middleware("generic", role="coordinator")
-            if completion_guard
-            else []
-        ),
+        middleware=middleware,
         subagents=[],
         permissions=list(permissions),
         backend=backend,
@@ -283,6 +294,40 @@ async def test_generic_completion_guard_stops_after_one_unsuccessful_correction(
 
     assert model.call_count == 2
     assert outcome.report_candidate is None
+
+
+@pytest.mark.asyncio
+async def test_generic_completion_guard_cannot_bypass_model_call_limit(tmp_path):
+    model = ScriptedNeverWriteModel()
+    middleware = build_profile_middleware("generic", role="coordinator")
+    model_limit_index = next(
+        index
+        for index, item in enumerate(middleware)
+        if isinstance(item, ModelCallLimitMiddleware)
+    )
+    middleware[model_limit_index] = ModelCallLimitMiddleware(
+        run_limit=1,
+        exit_behavior="error",
+    )
+    service = ResearchExecutionService(
+        harness=_real_deepagents_harness(
+            model,
+            completion_guard=False,
+            middleware_override=middleware,
+        ),
+        project_root=tmp_path,
+    )
+
+    outcome = await service.execute(
+        "Produce the canonical report.",
+        "thread-budget-1",
+        run_id="run-budget-1",
+        segment_id="segment-budget-1",
+        profile_id="generic",
+    )
+
+    assert outcome.failure_kind == "call_budget_exceeded"
+    assert model.call_count == 1
 
 
 @pytest.mark.asyncio

@@ -86,6 +86,7 @@ def build_profile_middleware(
     """Return immutable-policy Middleware for one profile role."""
     if profile_id == "generic" and role == "coordinator":
         return [
+            CanonicalReportCompletionMiddleware(),
             ModelCallLimitMiddleware(run_limit=40, exit_behavior="error"),
             ToolCallLimitMiddleware(run_limit=40, exit_behavior="error"),
             ToolCallLimitMiddleware(
@@ -93,7 +94,6 @@ def build_profile_middleware(
                 run_limit=8,
                 exit_behavior="error",
             ),
-            CanonicalReportCompletionMiddleware(),
         ]
     if profile_id == "generic" and role in {
         "network_search",

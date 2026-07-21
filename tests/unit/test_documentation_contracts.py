@@ -1565,6 +1565,16 @@ def test_canonical_report_completion_and_fallback_failure_contracts_are_current(
         "Malformed result or consumer projection data remains "
         "`consumer_projection_invalid`"
     ) in reference
+    assert (
+        "Only an exact canonical `409` `run_result_unavailable` envelope with "
+        "bounded keys and types, `retryable=true`, and the requested `run_id` "
+        "maps to `artifact_invalid`"
+    ) in reference
+    assert (
+        "`contract_artifact_invalid` maps to `artifact_invalid` in the `result` "
+        "phase, while defensive `contract_state_invalid` maps to "
+        "`run_state_invalid` in the `observe` phase"
+    ) in reference
 
 
 def test_bounded_live_targeted_runtime_repair_amendment_is_scoped() -> None:

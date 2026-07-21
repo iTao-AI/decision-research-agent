@@ -378,6 +378,161 @@ def test_run_responses_must_match_the_requested_run_identity(
         getattr(client, method_name)(run_id="run-1")
 
 
+def test_result_maps_only_exact_matching_unavailable_envelope_to_artifact_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    body = {
+        "code": "run_result_unavailable",
+        "problem": "The run completed without a canonical result artifact.",
+        "fix": "Inspect the run and retry with a new run intent if authorized.",
+        "retryable": True,
+        "run_id": "run-1",
+    }
+    client, _, _ = _client(
+        monkeypatch,
+        FakeResponse(status=409, body=_json_body(body)),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    assert caught.value.code.value == "artifact_invalid"
+    assert caught.value.phase.value == "result"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"code": "run_not_terminal"},
+        {"retryable": False},
+        {"retryable": 1},
+        {"run_id": "run-2"},
+        {"code": 409},
+        {"problem": 1},
+        {"problem": ""},
+        {"fix": None},
+        {"fix": ""},
+        {"extra": "field"},
+    ],
+)
+def test_result_rejects_noncanonical_unavailable_envelopes(
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: dict[str, Any],
+):
+    body: dict[str, Any] = {
+        "code": "run_result_unavailable",
+        "problem": "The run completed without a canonical result artifact.",
+        "fix": "Inspect the run and retry with a new run intent if authorized.",
+        "retryable": True,
+        "run_id": "run-1",
+    }
+    body.update(mutation)
+    client, _, _ = _client(
+        monkeypatch,
+        FakeResponse(status=409, body=_json_body(body)),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.phase.value == "result"
+
+
+def test_result_rejects_unavailable_envelope_with_missing_key(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    body = {
+        "code": "run_result_unavailable",
+        "problem": "The run completed without a canonical result artifact.",
+        "retryable": True,
+        "run_id": "run-1",
+    }
+    client, _, _ = _client(
+        monkeypatch,
+        FakeResponse(status=409, body=_json_body(body)),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.phase.value == "result"
+
+
+@pytest.mark.parametrize("status", [404, 409, 500])
+def test_result_keeps_other_non_success_responses_generic(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+):
+    client, _, _ = _client(
+        monkeypatch,
+        FakeResponse(status=status, body=_json_body({"code": "other"})),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.phase.value == "result"
+
+
+@pytest.mark.parametrize("body", [b"not-json", b"[]", b"null"])
+def test_result_keeps_malformed_409_json_generic(
+    monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
+):
+    client, _, _ = _client(monkeypatch, FakeResponse(status=409, body=body))
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.phase.value == "result"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        FakeResponse(status=409, content_length=str(2 * 1024 * 1024 + 1)),
+        FakeResponse(status=409, read_error=OSError("injected private error")),
+    ],
+)
+def test_result_keeps_409_read_failures_generic(
+    monkeypatch: pytest.MonkeyPatch,
+    response: FakeResponse,
+):
+    client, _, _ = _client(monkeypatch, response)
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.phase.value == "result"
+
+
+@pytest.mark.parametrize("failure", [OSError("injected"), TimeoutError("injected")])
+def test_result_keeps_connection_and_timeout_failures_generic(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: BaseException,
+):
+    def fail_connection(*_args: Any, **_kwargs: Any) -> None:
+        raise failure
+
+    monkeypatch.setattr(http.client, "HTTPConnection", fail_connection)
+    client = ProofHttpClient(
+        port=49152,
+        api_key=API_KEY,
+        remaining_seconds=lambda requested: requested,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.phase.value == "result"
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

@@ -304,6 +304,10 @@ def project_live_observation(
     except ContractValidationError as exc:
         if exc.code == "contract_evidence_invalid":
             raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE) from exc
+        if exc.code == "contract_artifact_invalid":
+            raise _error(FailureCode.ARTIFACT_INVALID, FailurePhase.RESULT) from exc
+        if exc.code == "contract_state_invalid":
+            raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE) from exc
         raise _error(
             FailureCode.CONSUMER_PROJECTION_INVALID,
             FailurePhase.RESULT,

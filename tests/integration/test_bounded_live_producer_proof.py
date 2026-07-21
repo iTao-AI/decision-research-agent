@@ -917,6 +917,17 @@ def test_restart_backend_transport_reinspects_loopback_binding(
             _result(
                 artifact={
                     **_result()["artifact"],
+                    "media_type": "text/plain",
+                }
+            ),
+            "artifact_invalid",
+            "result",
+        ),
+        (
+            _status(),
+            _result(
+                artifact={
+                    **_result()["artifact"],
                     "kind": "research_report_fallback_markdown",
                 }
             ),
@@ -940,6 +951,35 @@ def test_project_live_observation_rejects_terminal_consumer_and_identity_mutatio
             expected_segment_id="segment-proof-1",
             required_cited_domains=("docs.python.org", "peps.python.org"),
         )
+    assert caught.value.code.value == expected_code
+    assert caught.value.phase.value == expected_phase
+
+
+@pytest.mark.parametrize(
+    ("contract_code", "expected_code", "expected_phase"),
+    [
+        ("contract_artifact_invalid", "artifact_invalid", "result"),
+        ("contract_state_invalid", "run_state_invalid", "observe"),
+        ("contract_evidence_invalid", "evidence_invalid", "evidence"),
+        ("contract_result_invalid", "consumer_projection_invalid", "result"),
+    ],
+)
+def test_project_live_observation_preserves_precise_consumer_failure_class(
+    monkeypatch: pytest.MonkeyPatch,
+    contract_code: str,
+    expected_code: str,
+    expected_phase: str,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+
+    def fail_projection(**_kwargs: Any) -> dict[str, Any]:
+        raise module.ContractValidationError(contract_code)
+
+    monkeypatch.setattr(module, "project_consumer_case", fail_projection)
+
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot()
+
     assert caught.value.code.value == expected_code
     assert caught.value.phase.value == expected_phase
 

@@ -192,6 +192,7 @@ FAILURE_REGISTRY: dict[FailurePhase, frozenset[FailureCode]] = {
     ),
     FailurePhase.RESULT: frozenset(
         {
+            FailureCode.RUN_FALLBACK_REJECTED,
             FailureCode.CONSUMER_PROJECTION_INVALID,
             FailureCode.ARTIFACT_INVALID,
             FailureCode.ARTIFACT_HASH_MISMATCH,

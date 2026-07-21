@@ -31,9 +31,10 @@ SQLite application authority, `scripts/downstream_consumer_contract.py`, and Git
   Docker fixture, reference documentation, and `Unreleased` discovery. Keep `VERSION=0.1.5`.
 - Do not execute `observe-live`, use provider credentials, make a model/search request, or create
   `docs/evidence/bounded-live-producer-v1.json` or `.md` during implementation or required CI.
-- Do not modify REST/OpenAPI paths or payloads, database schemas or migrations, canonical result or
-  Evidence schemas, Tool Client behavior, profiles, middleware, LangGraph/DeepAgents/LangChain
-  authority, LangSmith authority, Docker product defaults, or existing evidence baselines.
+- For Change 1 only, do not modify REST/OpenAPI paths or payloads, database schemas or migrations,
+  canonical result or Evidence schemas, Tool Client behavior, profiles, middleware,
+  LangGraph/DeepAgents/LangChain authority, LangSmith authority, Docker product defaults, or
+  existing evidence baselines.
 - Do not add dependencies. Prefer strict Pydantic models and the existing downstream projection;
   keep Git, Docker, HTTP observation, report publication, and cleanup in small application-owned
   modules because the Agent frameworks do not own those concerns.
@@ -216,7 +217,7 @@ The failure registry uses the approved phase/code pairs and rejects cross-phase 
 | `docker` | `docker_unavailable`, `compose_config_invalid`, `source_archive_invalid`, `image_build_failed`, `service_start_failed`, `service_identity_invalid` |
 | `create` | `create_rejected`, `create_response_invalid`, `create_identity_mismatch`, `create_reconciliation_unresolved` |
 | `observe` | `run_observation_deadline`, `run_state_invalid`, `run_failed`, `run_fallback_rejected`, `run_delivery_not_ready` |
-| `result` | `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
+| `result` | `run_fallback_rejected`, `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
 | `evidence` | `evidence_missing`, `evidence_invalid`, `evidence_domain_rejected`, `required_cited_domain_missing` |
 | `usage` | `usage_invalid` |
 | `restart` | `backend_restart_failed`, `restart_identity_drift`, `restart_evidence_drift`, `restart_artifact_drift` |
@@ -1287,8 +1288,9 @@ Return to the repository root before the remaining audits.
 Confirm:
 
 - `git diff --check origin/main..HEAD` is clean;
-- no diff in `VERSION`, frontend manifests, dependencies, constraints, runtime API/DB/migrations,
-  Tool Client, profiles, middleware, Compose product defaults or existing evidence baselines;
+- For the Change 1 implementation commits, no diff in `VERSION`, frontend manifests, dependencies,
+  constraints, runtime API/DB/migrations, Tool Client, profiles, middleware, Compose product
+  defaults or existing evidence baselines;
 - no committed `bounded-live-producer-v1.json` or `.md` live evidence;
 - no private paths/names, credentials, query duplication, raw content, local ports, Docker resource
   names, tracebacks, development markers or unsupported claims in added public files;
@@ -1324,6 +1326,22 @@ authorization covering the merged commit, manifest, provider/model declaration, 
 credential source, one-run intent, 3,450-second bound, estimate-only cost boundary and two absent
 evidence paths. Successful sanitized JSON/Markdown plus index updates are evidence-only. Any
 runtime/contract defect stops the attempt and becomes a separate design/fix.
+
+### Post-Observation Targeted Runtime Repair Amendment
+
+This targeted repair was separately authorized after a bounded observation exposed a runtime
+closure defect. Its exact scope is the generic coordinator canonical completion middleware and
+precise fallback failure classification.
+
+The correction uses the native LangChain `after_model` hook with `jump_to="model"` and the
+DeepAgents `write_file` tool. The completion middleware is registered before the existing
+call-limit middleware so reverse `after_model` execution records the completed call before any
+conditional model re-entry. The correction remains within the existing model, tool, and recursion
+budgets.
+
+This amendment does not change REST/OpenAPI, database, canonical result or Evidence authority, the
+provider contract, VERSION, dependencies, CI, or release metadata. No live-success claim is made
+and no live evidence is published.
 
 ### Change 3 — `v0.1.6` Release Preparation
 

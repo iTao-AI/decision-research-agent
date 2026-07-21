@@ -112,6 +112,16 @@ A completed generic run persists `research-report.md` in
 completed, delivery is ready, the artifact is safe, and the content hash
 matches the persisted payload.
 
+Before a generic coordinator exits normally without a valid
+`/workspace/research-report.md`, framework middleware may issue one run-scoped
+correction that asks the model to use the native `write_file` tool. The
+completion middleware is registered before the existing call-limit middleware
+so reverse `after_model` execution accounts for the completed call before any
+re-entry. The correction does not enlarge the existing model, tool, or
+recursion budgets and does not promote chat text or fallback content into the
+canonical artifact. If the one correction still produces no valid file,
+finalization keeps the existing fallback and fail-closed delivery behavior.
+
 ## Talent Review And Publication
 
 ```mermaid

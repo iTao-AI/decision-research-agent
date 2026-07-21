@@ -1,12 +1,127 @@
 import asyncio
 from pathlib import PurePosixPath
+from typing import Any, Sequence
 
 import pytest
-from langchain_core.messages import AIMessage, ToolMessage
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend
+from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from pydantic import Field
 
+from agent.deepagents_harness import (
+    DeepAgentsHarness,
+    build_filesystem_permissions,
+)
 from agent.harness_contracts import HarnessExecutionError, ReportCandidate
+from agent.profile_middleware import build_profile_middleware
 from agent.run_result import OutcomeBox
+from agent.runtime_context import ResearchRuntimeContext
 from api.research_execution_service import ResearchExecutionService
+
+
+class ScriptedCanonicalWriteModel(BaseChatModel):
+    call_count: int = 0
+    bound_tool_names: list[str] = Field(default_factory=list)
+
+    @property
+    def _llm_type(self) -> str:
+        return "scripted-canonical-write-model"
+
+    def bind_tools(
+        self,
+        tools: Sequence,
+        *,
+        tool_choice: dict | str | bool | None = None,
+        **kwargs: Any,
+    ):
+        del tool_choice, kwargs
+        self.bound_tool_names = [
+            getattr(tool, "name", "")
+            if not isinstance(tool, dict)
+            else str(tool.get("name", ""))
+            for tool in tools
+        ]
+        return self
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        self.call_count += 1
+        if self.call_count == 1:
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "write_file",
+                        "args": {
+                            "file_path": "/workspace/research-report.md",
+                            "content": "# Canonical report\n",
+                        },
+                        "id": "call-write-report",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        else:
+            message = AIMessage(content="Canonical report written.")
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class ScriptedMissingThenWriteModel(ScriptedCanonicalWriteModel):
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        self.call_count += 1
+        if self.call_count == 1:
+            message = AIMessage(content="Finished without a canonical file.")
+        elif self.call_count == 2:
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "write_file",
+                        "args": {
+                            "file_path": "/workspace/research-report.md",
+                            "content": "# Corrected canonical report\n",
+                        },
+                        "id": "call-corrected-write",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        else:
+            message = AIMessage(content="Corrected canonical report written.")
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class ScriptedNeverWriteModel(ScriptedCanonicalWriteModel):
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        self.call_count += 1
+        return ChatResult(
+            generations=[
+                ChatGeneration(message=AIMessage(content="No canonical file."))
+            ]
+        )
 
 
 class RecordingHarness:
@@ -49,6 +164,170 @@ class RecordingHarness:
             }
         )
         return observer.snapshot_outcome()
+
+
+def _real_deepagents_harness(
+    model: BaseChatModel,
+    *,
+    completion_guard: bool,
+    middleware_override: Sequence[Any] | None = None,
+):
+    backend = CompositeBackend(default=StateBackend(), routes={})
+    permissions = tuple(build_filesystem_permissions())
+    middleware = (
+        list(middleware_override)
+        if middleware_override is not None
+        else (
+            build_profile_middleware("generic", role="coordinator")
+            if completion_guard
+            else []
+        )
+    )
+    graph = create_deep_agent(
+        model=model,
+        tools=[],
+        system_prompt="Write the requested canonical report.",
+        middleware=middleware,
+        subagents=[],
+        permissions=list(permissions),
+        backend=backend,
+        context_schema=ResearchRuntimeContext,
+        name="canonical-write-integration",
+    )
+    return DeepAgentsHarness(
+        graph=graph,
+        backend=backend,
+        permissions=permissions,
+        skills=(),
+        profile_graphs={"generic": graph},
+    )
+
+
+@pytest.mark.asyncio
+async def test_locked_deepagents_write_file_reaches_application_observer(tmp_path):
+    model = ScriptedCanonicalWriteModel()
+    harness = _real_deepagents_harness(model, completion_guard=False)
+    service = ResearchExecutionService(
+        harness=harness,
+        project_root=tmp_path,
+    )
+
+    outcome = await service.execute(
+        "Produce the canonical report.",
+        "thread-write-1",
+        run_id="run-write-1",
+        segment_id="segment-write-1",
+        profile_id="generic",
+    )
+
+    assert "write_file" in model.bound_tool_names
+    assert model.call_count == 2
+    assert outcome.report_candidate == ReportCandidate(
+        path=PurePosixPath("/workspace/research-report.md"),
+        content="# Canonical report\n",
+    )
+
+
+@pytest.mark.asyncio
+async def test_generic_completion_guard_adds_no_call_when_report_exists(tmp_path):
+    model = ScriptedCanonicalWriteModel()
+    service = ResearchExecutionService(
+        harness=_real_deepagents_harness(model, completion_guard=True),
+        project_root=tmp_path,
+    )
+
+    outcome = await service.execute(
+        "Produce the canonical report.",
+        "thread-existing-report-1",
+        run_id="run-existing-report-1",
+        segment_id="segment-existing-report-1",
+        profile_id="generic",
+    )
+
+    assert model.call_count == 2
+    assert outcome.report_candidate == ReportCandidate(
+        path=PurePosixPath("/workspace/research-report.md"),
+        content="# Canonical report\n",
+    )
+
+
+@pytest.mark.asyncio
+async def test_generic_completion_guard_uses_native_write_file_once(tmp_path):
+    model = ScriptedMissingThenWriteModel()
+    service = ResearchExecutionService(
+        harness=_real_deepagents_harness(model, completion_guard=True),
+        project_root=tmp_path,
+    )
+
+    outcome = await service.execute(
+        "Produce the canonical report.",
+        "thread-correction-1",
+        run_id="run-correction-1",
+        segment_id="segment-correction-1",
+        profile_id="generic",
+    )
+
+    assert model.call_count == 3
+    assert outcome.report_candidate == ReportCandidate(
+        path=PurePosixPath("/workspace/research-report.md"),
+        content="# Corrected canonical report\n",
+    )
+
+
+@pytest.mark.asyncio
+async def test_generic_completion_guard_stops_after_one_unsuccessful_correction(
+    tmp_path,
+):
+    model = ScriptedNeverWriteModel()
+    service = ResearchExecutionService(
+        harness=_real_deepagents_harness(model, completion_guard=True),
+        project_root=tmp_path,
+    )
+
+    outcome = await service.execute(
+        "Produce the canonical report.",
+        "thread-correction-2",
+        run_id="run-correction-2",
+        segment_id="segment-correction-2",
+        profile_id="generic",
+    )
+
+    assert model.call_count == 2
+    assert outcome.report_candidate is None
+
+
+@pytest.mark.asyncio
+async def test_generic_completion_guard_cannot_bypass_model_call_limit(tmp_path):
+    model = ScriptedNeverWriteModel()
+    middleware = build_profile_middleware("generic", role="coordinator")
+    model_limit_index = next(
+        index
+        for index, item in enumerate(middleware)
+        if isinstance(item, ModelCallLimitMiddleware)
+    )
+    middleware[model_limit_index] = ModelCallLimitMiddleware(
+        run_limit=1,
+        exit_behavior="error",
+    )
+    service = ResearchExecutionService(
+        harness=_real_deepagents_harness(
+            model,
+            completion_guard=False,
+            middleware_override=middleware,
+        ),
+        project_root=tmp_path,
+    )
+
+    outcome = await service.execute(
+        "Produce the canonical report.",
+        "thread-budget-1",
+        run_id="run-budget-1",
+        segment_id="segment-budget-1",
+        profile_id="generic",
+    )
+
+    assert outcome.failure_kind == "call_budget_exceeded"
+    assert model.call_count == 1
 
 
 @pytest.mark.asyncio

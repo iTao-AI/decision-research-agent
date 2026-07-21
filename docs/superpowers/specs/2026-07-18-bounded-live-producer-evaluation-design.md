@@ -141,7 +141,7 @@ observation because it cannot support the intended downstream Evidence boundary.
 
 ## Non-Goals
 
-This stage does not add or claim:
+For Change 1, this stage does not add or claim:
 
 - a downstream product decision, domain-specific consumer, human verification, business approval,
   or product adoption;
@@ -656,7 +656,7 @@ Required failure codes include:
 | Docker | `docker_unavailable`, `compose_config_invalid`, `source_archive_invalid`, `image_build_failed`, `service_start_failed`, `service_identity_invalid` |
 | Create | `create_rejected`, `create_response_invalid`, `create_identity_mismatch`, `create_reconciliation_unresolved` |
 | Observe | `run_observation_deadline`, `run_state_invalid`, `run_failed`, `run_fallback_rejected`, `run_delivery_not_ready` |
-| Result | `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
+| Result | `run_fallback_rejected`, `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
 | Evidence | `evidence_missing`, `evidence_invalid`, `evidence_domain_rejected`, `required_cited_domain_missing` |
 | Usage | `usage_invalid` for malformed or inconsistent data; valid absence maps to `not_observed` |
 | Restart | `backend_restart_failed`, `restart_identity_drift`, `restart_evidence_drift`, `restart_artifact_drift` |
@@ -786,6 +786,22 @@ commit. A successful sanitized JSON/Markdown report and its documentation/index 
 small evidence-only pull request. If the live run exposes a contract or runtime defect, stop and
 design a separate targeted fix rather than hiding it in the evidence change.
 
+### Post-Observation Targeted Runtime Repair Amendment
+
+This targeted repair was separately authorized after a bounded observation exposed a runtime
+closure defect. Its exact scope is the generic coordinator canonical completion middleware and
+precise fallback failure classification.
+
+The correction uses the native LangChain `after_model` hook with `jump_to="model"` and the
+DeepAgents `write_file` tool. The completion middleware is registered before the existing
+call-limit middleware so reverse `after_model` execution records the completed call before any
+conditional model re-entry. The correction remains within the existing model, tool, and recursion
+budgets.
+
+This amendment does not change REST/OpenAPI, database, canonical result or Evidence authority, the
+provider contract, VERSION, dependencies, CI, or release metadata. No live-success claim is made
+and no live evidence is published.
+
 ### Change 3: release preparation
 
 Only after the live evidence change merges should release preparation evaluate `v0.1.6`. Release
@@ -821,13 +837,13 @@ The public documentation must distinguish:
 
 ## Compatibility And Migration
 
-The feature is additive and proof-owned:
+The Change 1 feature is additive and proof-owned:
 
 - no migration or backfill;
 - no API or OpenAPI change;
 - no canonical result or Evidence change;
 - no Tool Client CLI or environment-variable change;
-- no profile or middleware change;
+- in Change 1, no profile or middleware change;
 - no Compose product-default change unless a separately reviewed harness blocker requires one;
 - no required credential in ordinary deterministic tests; and
 - no change to existing evidence baselines.
@@ -872,7 +888,7 @@ The design is implemented only when all of these are true:
 10. Usage is truthfully `observed` or `not_observed`; any cost is an estimate with explicit basis.
 11. Primary and cleanup failures remain distinguishable and public-safe.
 12. JSON and Markdown serialization are stable for the same captured observation.
-13. The harness PR changes no runtime/API/DB/framework authority and makes no live claim.
+13. The Change 1 harness PR changes no runtime/API/DB/framework authority and makes no live claim.
 14. The live evidence PR contains only a successful reviewed sanitized observation and discovery
     updates.
 15. Release preparation remains separate and does not begin before the live evidence is merged.
@@ -907,10 +923,11 @@ cost without strengthening the producer contract.
 Rejected because usage persistence is a separate application contract. The live observation first
 determines whether process-local usage is an actual consumer or operator blocker.
 
-### Add LangChain or DeepAgents middleware to the proof
+### Add LangChain or DeepAgents middleware to the Change 1 proof
 
-Rejected because the missing lifecycle is outside Agent invocation. The project already uses
-framework-native call-limit middleware where it matches runtime semantics.
+Rejected for Change 1 because the missing proof lifecycle is outside Agent invocation. This does
+not prohibit the separately authorized post-observation runtime repair. The project uses
+framework-native middleware only where it matches runtime semantics.
 
 ### Combine live producer proof and downstream product closure
 

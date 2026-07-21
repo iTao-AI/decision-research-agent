@@ -876,16 +876,42 @@ def test_restart_backend_transport_reinspects_loopback_binding(
 
 
 @pytest.mark.parametrize(
-    ("status", "result", "expected_code"),
+    ("status", "result", "expected_code", "expected_phase"),
     [
-        (_status(execution_status="failed"), _result(), "run_failed"),
-        (_status(execution_status="completed_with_fallback"), _result(), "run_fallback_rejected"),
-        (_status(delivery_status="blocked"), _result(), "run_delivery_not_ready"),
-        (_status(failure_cause={"code": "execution_error"}), _result(), "run_state_invalid"),
-        (_status(thread_id="other-thread"), _result(), "run_state_invalid"),
-        (_status(segments=[]), _result(), "run_state_invalid"),
-        (_status(evidence=[]), _result(), "evidence_missing"),
-        (_status(), _result(run_id="other-run"), "consumer_projection_invalid"),
+        (_status(execution_status="failed"), _result(), "run_failed", "observe"),
+        (
+            _status(execution_status="completed_with_fallback"),
+            _result(),
+            "run_fallback_rejected",
+            "observe",
+        ),
+        (
+            _status(delivery_status="blocked"),
+            _result(),
+            "run_delivery_not_ready",
+            "observe",
+        ),
+        (
+            _status(failure_cause={"code": "execution_error"}),
+            _result(),
+            "run_state_invalid",
+            "observe",
+        ),
+        (_status(thread_id="other-thread"), _result(), "run_state_invalid", "observe"),
+        (_status(segments=[]), _result(), "run_state_invalid", "observe"),
+        (_status(evidence=[]), _result(), "evidence_missing", "evidence"),
+        (
+            _status(),
+            _result(run_id="other-run"),
+            "consumer_projection_invalid",
+            "result",
+        ),
+        (
+            _status(),
+            {**_result(), "unexpected": True},
+            "consumer_projection_invalid",
+            "result",
+        ),
         (
             _status(),
             _result(
@@ -894,7 +920,8 @@ def test_restart_backend_transport_reinspects_loopback_binding(
                     "kind": "research_report_fallback_markdown",
                 }
             ),
-            "consumer_projection_invalid",
+            "run_fallback_rejected",
+            "result",
         ),
     ],
 )
@@ -902,6 +929,7 @@ def test_project_live_observation_rejects_terminal_consumer_and_identity_mutatio
     status: dict[str, Any],
     result: dict[str, Any],
     expected_code: str,
+    expected_phase: str,
 ) -> None:
     with pytest.raises(EvaluationError) as caught:
         project_live_observation(
@@ -913,6 +941,7 @@ def test_project_live_observation_rejects_terminal_consumer_and_identity_mutatio
             required_cited_domains=("docs.python.org", "peps.python.org"),
         )
     assert caught.value.code.value == expected_code
+    assert caught.value.phase.value == expected_phase
 
 
 @pytest.mark.parametrize(

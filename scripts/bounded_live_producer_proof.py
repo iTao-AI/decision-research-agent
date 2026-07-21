@@ -309,6 +309,8 @@ def project_live_observation(
             FailurePhase.RESULT,
         ) from exc
     expected = projection.get("expected")
+    if expected == {"support": "partial", "disposition": "block_fallback"}:
+        raise _error(FailureCode.RUN_FALLBACK_REJECTED, FailurePhase.RESULT)
     if expected != {"support": "supported", "disposition": "accept_draft"}:
         raise _error(FailureCode.CONSUMER_PROJECTION_INVALID, FailurePhase.RESULT)
     try:

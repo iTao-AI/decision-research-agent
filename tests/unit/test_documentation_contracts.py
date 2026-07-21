@@ -1517,3 +1517,49 @@ def test_bounded_live_producer_design_rejects_precheck_order_mutation(
         ),
         contract=test_bounded_live_producer_reference_is_discoverable_without_live_evidence,
     )
+
+
+def test_canonical_report_completion_and_fallback_failure_contracts_are_current() -> None:
+    state_machines = (PROJECT_ROOT / "docs/reference/state-machines.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_state_machines = " ".join(state_machines.split())
+    for phrase in (
+        "one run-scoped correction",
+        "native `write_file` tool",
+        "does not enlarge the existing model, tool, or recursion budgets",
+        "does not promote chat text or fallback content",
+    ):
+        assert phrase in normalized_state_machines
+
+    failure_rows = (
+        (
+            PROJECT_ROOT
+            / "docs/reference/bounded-live-producer-evaluation.md"
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md"
+        ),
+    )
+    expected_result_row = (
+        "`run_fallback_rejected`, `consumer_projection_invalid`, "
+        "`artifact_invalid`, `artifact_hash_mismatch`"
+    )
+    for path in failure_rows:
+        normalized = " ".join(path.read_text(encoding="utf-8").split())
+        assert expected_result_row in normalized
+
+    reference = " ".join(failure_rows[0].read_text(encoding="utf-8").split())
+    assert (
+        "A structurally valid fallback result maps to `run_fallback_rejected` "
+        "in the `result` phase"
+    ) in reference
+    assert (
+        "Malformed result or consumer projection data remains "
+        "`consumer_projection_invalid`"
+    ) in reference

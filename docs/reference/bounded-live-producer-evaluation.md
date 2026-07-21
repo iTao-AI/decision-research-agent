@@ -203,7 +203,7 @@ and only stable schema, code, phase, retryability, and cleanup status fields.
 | Docker | `docker_unavailable`, `compose_config_invalid`, `source_archive_invalid`, `image_build_failed`, `service_start_failed`, `service_identity_invalid` |
 | Create | `create_rejected`, `create_response_invalid`, `create_identity_mismatch`, `create_reconciliation_unresolved` |
 | Observe | `run_observation_deadline`, `run_state_invalid`, `run_failed`, `run_fallback_rejected`, `run_delivery_not_ready` |
-| Result | `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
+| Result | `run_fallback_rejected`, `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
 | Evidence | `evidence_missing`, `evidence_invalid`, `evidence_domain_rejected`, `required_cited_domain_missing` |
 | Usage | `usage_invalid` |
 | Restart | `backend_restart_failed`, `restart_identity_drift`, `restart_evidence_drift`, `restart_artifact_drift` |
@@ -211,6 +211,11 @@ and only stable schema, code, phase, retryability, and cleanup status fields.
 | Output | `report_invalid`, `output_exists`, `output_write_failed` |
 | Cleanup | `cleanup_failed` |
 | Internal | `evaluation_internal_error` |
+
+A structurally valid fallback result maps to `run_fallback_rejected` in the
+`result` phase. Malformed result or consumer projection data remains
+`consumer_projection_invalid`; terminal-state fallback remains
+`run_fallback_rejected` in the `observe` phase.
 
 Unknown exceptions map to `evaluation_internal_error`; raw exceptions and
 tracebacks never enter public output. A primary plus cleanup failure preserves

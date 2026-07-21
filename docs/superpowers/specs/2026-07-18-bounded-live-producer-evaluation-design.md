@@ -656,7 +656,7 @@ Required failure codes include:
 | Docker | `docker_unavailable`, `compose_config_invalid`, `source_archive_invalid`, `image_build_failed`, `service_start_failed`, `service_identity_invalid` |
 | Create | `create_rejected`, `create_response_invalid`, `create_identity_mismatch`, `create_reconciliation_unresolved` |
 | Observe | `run_observation_deadline`, `run_state_invalid`, `run_failed`, `run_fallback_rejected`, `run_delivery_not_ready` |
-| Result | `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
+| Result | `run_fallback_rejected`, `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
 | Evidence | `evidence_missing`, `evidence_invalid`, `evidence_domain_rejected`, `required_cited_domain_missing` |
 | Usage | `usage_invalid` for malformed or inconsistent data; valid absence maps to `not_observed` |
 | Restart | `backend_restart_failed`, `restart_identity_drift`, `restart_evidence_drift`, `restart_artifact_drift` |

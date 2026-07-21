@@ -216,7 +216,7 @@ The failure registry uses the approved phase/code pairs and rejects cross-phase 
 | `docker` | `docker_unavailable`, `compose_config_invalid`, `source_archive_invalid`, `image_build_failed`, `service_start_failed`, `service_identity_invalid` |
 | `create` | `create_rejected`, `create_response_invalid`, `create_identity_mismatch`, `create_reconciliation_unresolved` |
 | `observe` | `run_observation_deadline`, `run_state_invalid`, `run_failed`, `run_fallback_rejected`, `run_delivery_not_ready` |
-| `result` | `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
+| `result` | `run_fallback_rejected`, `consumer_projection_invalid`, `artifact_invalid`, `artifact_hash_mismatch` |
 | `evidence` | `evidence_missing`, `evidence_invalid`, `evidence_domain_rejected`, `required_cited_domain_missing` |
 | `usage` | `usage_invalid` |
 | `restart` | `backend_restart_failed`, `restart_identity_drift`, `restart_evidence_drift`, `restart_artifact_drift` |

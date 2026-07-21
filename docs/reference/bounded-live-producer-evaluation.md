@@ -104,6 +104,12 @@ probe -> validate -> archive -> build/start -> health -> protected create
 ```
 
 Docker receives unique project ownership and engine-assigned loopback ports.
+The existing secure-local-runtime proof runs inside the exact locked backend
+image after build and before any service or provider activity. The provider-free
+fixture and separately authorized live paths use this same precheck authority,
+with no network, all capabilities dropped, `no-new-privileges`, a read-only
+`/proof` source mount, and bounded `data` / `output` tmpfs mounts. The invoking
+host's production dependency graph is not archive-validation authority.
 The harness inspects the current backend binding again after restart before it
 rebuilds the HTTP client. It never publishes local ports or Docker resource
 names and never performs a global prune or prefix-based delete.

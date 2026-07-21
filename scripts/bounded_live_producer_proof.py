@@ -1166,6 +1166,7 @@ def observe_live(
             task_temp_parent,
             required_paths=required_paths,
             deadline=active_deadline,
+            verify_secure_runtime=False,
         )
         snapshot_manifest_path = (
             snapshot.root
@@ -1242,6 +1243,12 @@ def observe_live(
             ).encode("utf-8")
         ).hexdigest()
         project.build_backend(build_deadline)
+        secure_check_deadline = build_deadline.child(
+            LIVE_BUDGET.build_start_seconds,
+            code=FailureCode.SOURCE_ARCHIVE_INVALID,
+            phase=FailurePhase.DOCKER,
+        )
+        project.verify_snapshot_secure_runtime(secure_check_deadline)
         image_tag = f"{project_name}-backend"
         image_id = _project_result(
             project,

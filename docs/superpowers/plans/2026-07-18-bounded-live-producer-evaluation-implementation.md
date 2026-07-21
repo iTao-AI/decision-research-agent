@@ -677,8 +677,10 @@ class ActiveDeadline:
 Create archive output only inside a new task temp directory. Inspect with `tarfile` but extract
 members manually; do not call `extractall`. Hash exact archive bytes and verify every required file
 exists in the extracted snapshot before Compose runs. Execute the existing
-`scripts/secure_local_runtime_proof.py check` from the extracted snapshot under the scrubbed
-provider-free environment; do not copy its Compose/Dockerfile security rules into the new harness.
+`scripts/secure_local_runtime_proof.py check` inside the exact locked backend image after build and
+before any service starts, using the provider-free Docker security boundary; do not copy its
+Compose/Dockerfile security rules into the new harness or depend on the host production dependency
+graph.
 
 - [ ] **Step 7: Implement managed lifecycle and cleanup**
 

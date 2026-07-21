@@ -1411,8 +1411,44 @@ def test_bounded_live_producer_reference_is_discoverable_without_live_evidence()
         "not a failed inspection exit status",
         "final directory `fsync`",
         "`credential_source_invalid` in the `input` phase",
+        "exact locked backend image after build and before any service or provider activity",
+        "provider-free fixture and separately authorized live paths use this same precheck authority",
     ):
         assert phrase in normalized_reference
+
+    changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "host production dependency graph" in changelog
+    assert "exact locked backend image" in changelog
+
+    plan = (
+        PROJECT_ROOT
+        / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md"
+    ).read_text(encoding="utf-8")
+    normalized_plan = " ".join(plan.split())
+    assert (
+        "Execute the existing `scripts/secure_local_runtime_proof.py check` inside the exact "
+        "locked backend image after build and before any service starts"
+        in normalized_plan
+    )
+
+    design_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+    )
+    design = design_path.read_text(encoding="utf-8")
+    normalized_design = " ".join(design.split())
+    ordered_lifecycle = (
+        "6. build the backend image from the tracked snapshot;",
+        "7. execute `scripts/secure_local_runtime_proof.py check` inside the exact locked backend "
+        "image and require it to pass before any MySQL, backend, or provider activity;",
+        "8. start MySQL and backend under the unique project;",
+    )
+    for step in ordered_lifecycle:
+        assert step in normalized_design
+    lifecycle_positions = tuple(
+        normalized_design.index(step) for step in ordered_lifecycle
+    )
+    assert lifecycle_positions == tuple(sorted(lifecycle_positions))
 
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     readme_cn = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")
@@ -1448,3 +1484,36 @@ def test_bounded_live_producer_reference_is_discoverable_without_live_evidence()
     assert "No live report is committed" in readme
     assert "未提交 live report" in readme_cn
     assert "No live report is committed" in evidence_index
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    (
+        "7. continue directly from the build to service startup;",
+        "7. start MySQL and backend under the unique project;\n"
+        "8. execute `scripts/secure_local_runtime_proof.py check` inside the exact locked "
+        "backend image after service startup;",
+    ),
+    ids=("missing-locked-image-precheck", "precheck-after-service-start"),
+)
+def test_bounded_live_producer_design_rejects_precheck_order_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    replacement: str,
+) -> None:
+    design_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+    )
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=design_path,
+        replacements=(
+            (
+                "7. execute `scripts/secure_local_runtime_proof.py check` inside the exact locked "
+                "backend image and\n   require it to pass before any MySQL, backend, or provider "
+                "activity;",
+                replacement,
+            ),
+        ),
+        contract=test_bounded_live_producer_reference_is_discoverable_without_live_evidence,
+    )

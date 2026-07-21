@@ -1534,7 +1534,7 @@ class ManagedComposeProject:
             raise ValueError("managed_compose_project_invalid")
         self.compose_paths = resolved_paths
         self.fixture_mode = len(relatives) == 2
-        self._snapshot_secure_checked = not self.fixture_mode
+        self._snapshot_secure_checked = False
         if isinstance(env_file, LiveConfiguration):
             self._credential_configuration: LiveConfiguration | None = env_file
             self.env_file = Path(os.devnull)
@@ -1670,16 +1670,18 @@ class ManagedComposeProject:
                 raise _compose_error()
             self._image_tag = image_tag
         self._invoke(("build", "backend"), deadline, compose=True)
-        if self.fixture_mode:
-            self._snapshot_secure_checked = False
+        self._snapshot_secure_checked = False
 
     def verify_snapshot_secure_runtime(self, deadline: ActiveDeadline) -> None:
-        if not self.fixture_mode:
-            raise ValueError("fixture_secure_check_unavailable")
+        secure_deadline = deadline.child(
+            LIVE_BUDGET.build_start_seconds,
+            code=FailureCode.SOURCE_ARCHIVE_INVALID,
+            phase=FailurePhase.DOCKER,
+        )
         image_tag = f"{self.project_name}-backend"
         image_result = self._invoke(
             ("docker", "image", "inspect", "--format", "{{.Id}}", image_tag),
-            deadline,
+            secure_deadline,
         )
         image_id = image_result.stdout.strip()
         if re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
@@ -1702,7 +1704,7 @@ class ManagedComposeProject:
                 "--filter",
                 f"name=^{secure_check_name}$",
             ),
-            deadline,
+            secure_deadline,
         )
         if existing.stdout.strip():
             raise EvaluationError(
@@ -1751,7 +1753,7 @@ class ManagedComposeProject:
                 "scripts/secure_local_runtime_proof.py",
                 "check",
             ),
-            deadline,
+            secure_deadline,
         )
         if result.stdout != '{"status":"valid","match":true}\n' or result.stderr:
             raise EvaluationError(
@@ -1762,13 +1764,20 @@ class ManagedComposeProject:
         self._snapshot_secure_checked = True
 
     def start_mysql(self, deadline: ActiveDeadline) -> None:
-        if self.fixture_mode and not self._snapshot_secure_checked:
-            raise ValueError("fixture_secure_check_required")
+        if not self._snapshot_secure_checked:
+            message = (
+                "fixture_secure_check_required"
+                if self.fixture_mode
+                else "snapshot_secure_check_required"
+            )
+            raise ValueError(message)
         self._invoke(("up", "-d", "mysql"), deadline, compose=True)
 
     def start_backend(self, deadline: ActiveDeadline) -> None:
         if self.fixture_mode:
             raise ValueError("fixture_backend_requires_explicit_start")
+        if not self._snapshot_secure_checked:
+            raise ValueError("snapshot_secure_check_required")
         self._invoke(("up", "-d", "backend"), deadline, compose=True)
 
     def start_fixture_backend(self, deadline: ActiveDeadline) -> None:

@@ -350,16 +350,18 @@ The ordered lifecycle is:
 4. resolve and sanitize the effective Compose configuration;
 5. request engine-assigned host ports while preserving exact `127.0.0.1` HostIp;
 6. build the backend image from the tracked snapshot;
-7. start MySQL and backend under the unique project;
-8. inspect both containers, networks, volumes, image identity, health state, and port bindings;
-9. poll exact `/health` until the supported identity is observed;
-10. execute the one bounded run workflow;
-11. restart only the backend service and repeat readiness plus persistence checks;
-12. replay the exact original keyed create request;
-13. validate the complete captured observation while retaining it only in bounded process memory;
-14. attempt bounded cleanup of all task-owned containers, volumes, networks, temporary files, and
+7. execute `scripts/secure_local_runtime_proof.py check` inside the exact locked backend image and
+   require it to pass before any MySQL, backend, or provider activity;
+8. start MySQL and backend under the unique project;
+9. inspect both containers, networks, volumes, image identity, health state, and port bindings;
+10. poll exact `/health` until the supported identity is observed;
+11. execute the one bounded run workflow;
+12. restart only the backend service and repeat readiness plus persistence checks;
+13. replay the exact original keyed create request;
+14. validate the complete captured observation while retaining it only in bounded process memory;
+15. attempt bounded cleanup of all task-owned containers, volumes, networks, temporary files, and
     task-built image tags; and
-15. after successful cleanup, add the cleanup observation, serialize the final report, and
+16. after successful cleanup, add the cleanup observation, serialize the final report, and
     atomically publish the two exact non-existing evidence files.
 
 The harness must refuse an existing Compose project with the same name and must never issue a

@@ -14,12 +14,20 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from agent.run_result import ExecutionOutcome
-from api.run_repository import get_artifact, get_run
+from agent.talent_contracts import DecisionBrief
+from api.decision_brief import render_markdown, with_content_hash
+from api.run_repository import (
+    RunDeliverySnapshotConflict,
+    get_run_delivery_snapshot,
+)
 
 
 CANONICAL_RESULT_ARTIFACT_ID = "research-report.md"
 CANONICAL_RESULT_PATH = PurePosixPath("/workspace/research-report.md")
 MAX_RESULT_BYTES = 1024 * 1024
+_DECISION_BRIEF_MARKDOWN_ID_RE = re.compile(
+    r"decision-brief(?:\.r[1-9][0-9]*)?(?P<reviewed>\.reviewed)?\.md"
+)
 
 
 @dataclass(frozen=True)
@@ -166,7 +174,10 @@ def resolve_run_result(
     db_path: str | None = None,
 ) -> ResolvedRunResult:
     """Resolve the current deliverable result for a persisted run."""
-    run = get_run(run_id=run_id, db_path=db_path)
+    try:
+        run = get_run_delivery_snapshot(run_id=run_id, db_path=db_path)
+    except RunDeliverySnapshotConflict as exc:
+        raise _unavailable() from exc
     if run is None:
         raise RunResultUnavailable(
             status_code=404,
@@ -214,14 +225,16 @@ def resolve_run_result(
         )
 
     artifact_id = _select_artifact_id(run)
-    if artifact_id is None:
-        raise _unavailable()
-    artifact = get_artifact(
+    by_id = {row["artifact_id"]: row for row in run["artifacts"]}
+    artifact = by_id.get(artifact_id) if artifact_id is not None else None
+    if not _valid_artifact(
+        artifact,
+        selected_artifact_id=artifact_id,
+        artifacts_by_id=by_id,
+        current_artifact_ids=run["current_artifact_ids"],
+        profile_id=run["profile_id"],
         run_id=run_id,
-        artifact_id=artifact_id,
-        db_path=db_path,
-    )
-    if not _valid_artifact(artifact):
+    ):
         raise _unavailable()
 
     return ResolvedRunResult(
@@ -242,18 +255,18 @@ def _select_artifact_id(run: dict[str, Any]) -> str | None:
     if run.get("profile_id") == "generic":
         return CANONICAL_RESULT_ARTIFACT_ID
 
-    current_ids = [
-        item["artifact_id"]
-        for item in run.get("current_artifacts", [])
-        if item.get("media_type") == "text/markdown"
-    ]
-    if current_ids:
-        return current_ids[0]
-
     artifact_ids = {
         item["artifact_id"]: item
         for item in run.get("artifacts", [])
     }
+    current_ids = run.get("current_artifact_ids", ())
+    if current_ids:
+        for artifact_id in current_ids:
+            artifact = artifact_ids.get(artifact_id)
+            if artifact is not None and artifact.get("media_type") == "text/markdown":
+                return artifact_id
+        return None
+
     if "decision-brief.md" in artifact_ids:
         return "decision-brief.md"
     if CANONICAL_RESULT_ARTIFACT_ID in artifact_ids:
@@ -261,8 +274,48 @@ def _select_artifact_id(run: dict[str, Any]) -> str | None:
     return None
 
 
-def _valid_artifact(artifact: dict[str, Any] | None) -> bool:
+def _valid_artifact(
+    artifact: dict[str, Any] | None,
+    *,
+    selected_artifact_id: str | None,
+    artifacts_by_id: dict[str, dict[str, Any]],
+    current_artifact_ids: tuple[str, ...],
+    profile_id: str,
+    run_id: str,
+) -> bool:
     if artifact is None:
+        return False
+    if artifact.get("artifact_id") != selected_artifact_id:
+        return False
+    if profile_id == "generic":
+        return _valid_generic_artifact(
+            artifact,
+            selected_artifact_id=selected_artifact_id,
+        )
+    if profile_id == "talent-hiring-signal":
+        return _valid_talent_artifact(
+            artifact,
+            selected_artifact_id=selected_artifact_id,
+            artifacts_by_id=artifacts_by_id,
+            current_artifact_ids=current_artifact_ids,
+            run_id=run_id,
+        )
+    return False
+
+
+def _valid_generic_artifact(
+    artifact: dict[str, Any],
+    *,
+    selected_artifact_id: str | None,
+) -> bool:
+    if selected_artifact_id != CANONICAL_RESULT_ARTIFACT_ID:
+        return False
+    if artifact.get("kind") not in {
+        "research_report_markdown",
+        "research_report_fallback_markdown",
+    }:
+        return False
+    if artifact.get("media_type") != "text/markdown":
         return False
     content = artifact.get("content")
     content_hash = artifact.get("content_hash")
@@ -272,11 +325,73 @@ def _valid_artifact(artifact: dict[str, Any] | None) -> bool:
         return False
     if not re.fullmatch(r"[0-9a-f]{64}", content_hash):
         return False
-    if str(artifact.get("kind", "")).startswith("research_report_"):
-        if _contains_unsafe_result_content(content):
-            return False
-        return hashlib.sha256(content.encode("utf-8")).hexdigest() == content_hash
-    return True
+    if _contains_unsafe_result_content(content):
+        return False
+    return hashlib.sha256(content.encode("utf-8")).hexdigest() == content_hash
+
+
+def _valid_talent_artifact(
+    artifact: dict[str, Any],
+    *,
+    selected_artifact_id: str | None,
+    artifacts_by_id: dict[str, dict[str, Any]],
+    current_artifact_ids: tuple[str, ...],
+    run_id: str,
+) -> bool:
+    if not isinstance(selected_artifact_id, str):
+        return False
+    match = _DECISION_BRIEF_MARKDOWN_ID_RE.fullmatch(selected_artifact_id)
+    if match is None:
+        return False
+    reviewed = match.group("reviewed") is not None
+    expected_markdown_kind = (
+        "decision_brief_reviewed_markdown"
+        if reviewed
+        else "decision_brief_markdown"
+    )
+    expected_json_kind = (
+        "decision_brief_reviewed_json"
+        if reviewed
+        else "decision_brief_json"
+    )
+    if artifact.get("kind") != expected_markdown_kind:
+        return False
+    if artifact.get("media_type") != "text/markdown":
+        return False
+    content = artifact.get("content")
+    if not _is_non_empty_bounded_text(content):
+        return False
+    if _contains_unsafe_result_content(content):
+        return False
+
+    json_artifact_id = f"{selected_artifact_id[:-3]}.json"
+    if current_artifact_ids and json_artifact_id not in current_artifact_ids:
+        return False
+    json_artifact = artifacts_by_id.get(json_artifact_id)
+    if json_artifact is None:
+        return False
+    if json_artifact.get("kind") != expected_json_kind:
+        return False
+    if json_artifact.get("media_type") != "application/json":
+        return False
+    json_content = json_artifact.get("content")
+    if not _is_non_empty_bounded_text(json_content):
+        return False
+
+    try:
+        brief = DecisionBrief.model_validate_json(json_content, strict=True)
+    except (TypeError, ValueError):
+        return False
+    if brief.run_id != run_id or brief.profile_id != "talent-hiring-signal":
+        return False
+    canonical_hash = with_content_hash(brief).content_hash
+    if brief.content_hash != canonical_hash:
+        return False
+    if artifact.get("content_hash") != canonical_hash:
+        return False
+    if json_artifact.get("content_hash") != canonical_hash:
+        return False
+    return render_markdown(brief) == content
 
 
 def _unavailable() -> RunResultUnavailable:

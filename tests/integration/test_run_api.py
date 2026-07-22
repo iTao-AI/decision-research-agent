@@ -1811,31 +1811,6 @@ async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypa
     assert artifact["content"] == "# Generic Report"
 
 
-def test_run_artifact_api_resolves_by_run_and_artifact_id(tmp_path, monkeypatch):
-    from api.run_repository import create_run, finalize_run_transaction
-
-    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
-    os.environ["API_SECRET"] = "test-integration-key"
-    created = create_run(thread_id="thread-1", query="query")
-    finalize_run_transaction(
-        run_id=created["run_id"], segment_id=created["segment_id"],
-        expected_state_version=0, allowed_previous_statuses={"pending"},
-        execution_status="completed", delivery_status="ready", evidence_entries=[],
-        artifacts=[{
-            "artifact_id": "brief.md", "kind": "markdown", "media_type": "text/markdown",
-            "content": "# Brief", "content_hash": "hash",
-        }],
-    )
-    client = TestClient(app)
-
-    response = client.get(
-        f"/api/runs/{created['run_id']}/artifacts/brief.md", headers=AUTH_HEADERS
-    )
-
-    assert response.status_code == 200
-    assert response.text == "# Brief"
-
-
 def test_run_projection_exposes_current_publication_and_artifacts(
     tmp_path,
     monkeypatch,

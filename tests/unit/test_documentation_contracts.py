@@ -988,6 +988,35 @@ def test_run_failure_cause_status_contract_is_public_and_additive() -> None:
         assert "docs/reference/api-contract.md" in readme
 
 
+def test_artifact_delivery_contract_is_canonical_and_snapshot_consistent() -> None:
+    api = (PROJECT_ROOT / "docs" / "reference" / "api-contract.md").read_text(
+        encoding="utf-8"
+    )
+    artifact_section = _section_between(
+        api,
+        "### GET /api/runs/{run_id}/artifacts/{artifact_id}",
+        "### GET /api/profiles/{profile_id}",
+    )
+
+    for phrase in (
+        "current canonical deliverable",
+        "same SQLite request snapshot",
+        "ready fallback artifact",
+        "does not expose historical artifact content",
+        '`404 {"detail":"Artifact 不存在"}`',
+    ):
+        assert phrase in artifact_section
+    for code in (
+        "run_not_found",
+        "run_not_terminal",
+        "run_failed",
+        "run_review_required",
+        "run_delivery_blocked",
+        "run_result_unavailable",
+    ):
+        assert code in artifact_section
+
+
 def test_run_failure_cause_ledger_schema_and_migration_are_public() -> None:
     data_models = (
         PROJECT_ROOT / "docs" / "reference" / "data-models.md"

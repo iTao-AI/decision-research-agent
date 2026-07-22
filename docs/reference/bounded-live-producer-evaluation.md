@@ -82,8 +82,46 @@ compatibility; they do not by themselves authorize observed cost.
 `--retain-task-images` is an operator-local cleanup choice and never enters the
 public report.
 
-The command accepts no query, scope, output path, project name, API key, retry,
-fixture, or Compose override option.
+The command accepts no query, scope, arbitrary output filename, general output
+root, project name, API key, retry, fixture, or Compose override option.
+
+## Opt-In Result Diagnostic Receipt
+
+The live command accepts one optional operator-only argument,
+`--diagnostic-dir <owner-only repo-external directory>`. It selects a
+pre-existing directory, not a filename: the writer always uses the fixed
+basename `bounded-live-producer-result-diagnostic-v1.json`. This exception does
+not permit an arbitrary filename or general output root.
+
+The receipt uses schema `dra.bounded-live-producer-result-diagnostic.v1`. It is
+eligible only for a final `consumer_projection_invalid` failure in phase
+`result`; the existing public error envelope remains unchanged. The receipt is
+written after cleanup so it can include the final cleanup status. Its canonical
+UTF-8 JSON is bounded to 4 KiB and the resulting regular file is mode `0600`.
+The directory must be absolute, owner-only, repo-external, owned by the current
+user, free of symlink traversal, and identity-stable for the command lifetime.
+Publication is non-overwriting and uses the fixed basename only.
+
+The bounded classification records one of these stages without retaining the
+response or exception text:
+
+| Stage | Bounded reason |
+|---|---|
+| `connection` | connection, read, or timeout failure |
+| `response_status` | rejected HTTP status or invalid bounded error envelope |
+| `response_body` | response exceeds the bounded read limit |
+| `response_json` | response is not valid JSON |
+| `response_identity` | result or run identity does not match the request |
+| `consumer_contract` | the downstream consumer contract rejects the projection |
+| `projection_disposition` | the projection returns an unsupported disposition |
+
+Raw response bodies, artifact content, Evidence content, URLs, paths,
+credentials, provider payloads, and exception text are excluded. A successful
+observation, a more precise stable failure, an omitted diagnostic option, or
+the provider-free `check` command creates no receipt. The receipt is not live
+evidence, canonical result authority, Evidence authority, or downstream
+business authority, and it does not authorize a retry. If best-effort receipt
+publication fails, it does not replace the primary public failure.
 
 ## Source, Lifecycle, And Deadlines
 

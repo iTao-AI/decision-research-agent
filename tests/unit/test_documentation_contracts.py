@@ -1519,6 +1519,95 @@ def test_bounded_live_producer_design_rejects_precheck_order_mutation(
     )
 
 
+def test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable() -> None:
+    reference_path = (
+        PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md"
+    )
+    design_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+    )
+    plan_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md"
+    )
+    reference = " ".join(reference_path.read_text(encoding="utf-8").split())
+    design = " ".join(design_path.read_text(encoding="utf-8").split())
+    plan = " ".join(plan_path.read_text(encoding="utf-8").split())
+    for text in (design, plan):
+        assert "### Post-Observation Result Diagnostic Amendment" in text
+        assert "the only exception to Change 1's prohibition on output-path options" in text
+        assert "does not permit an arbitrary filename or general output root" in text
+    for phrase in (
+        "dra.bounded-live-producer-result-diagnostic.v1",
+        "--diagnostic-dir",
+        "bounded-live-producer-result-diagnostic-v1.json",
+        "existing public error envelope remains unchanged",
+        "not live evidence",
+        "does not authorize a retry",
+        "fixed basename",
+        "after cleanup",
+        "4 KiB",
+        "owner-only repo-external directory",
+    ):
+        assert phrase in reference
+    for stage in (
+        "connection",
+        "response_status",
+        "response_body",
+        "response_json",
+        "response_identity",
+        "consumer_contract",
+        "projection_disposition",
+    ):
+        assert f"`{stage}`" in reference
+    for forbidden in (
+        "raw response is retained",
+        "automatic retry",
+        "new REST error contract",
+        "diagnostic receipt is canonical",
+        "permits an arbitrary filename",
+    ):
+        assert forbidden not in " ".join((reference, design, plan))
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new"),
+    (
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md",
+            "### Post-Observation Result Diagnostic Amendment",
+            "### Removed Result Diagnostic Amendment",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "--diagnostic-dir",
+            "--diagnostic-file",
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md",
+            "does not permit an arbitrary filename or general output root",
+            "permits an arbitrary filename",
+        ),
+    ),
+    ids=("missing-amendment", "arbitrary-filename-option", "scope-expanded"),
+)
+def test_bounded_result_diagnostic_receipt_rejects_documentation_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    old: str,
+    new: str,
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=path,
+        replacements=((old, new),),
+        contract=test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable,
+    )
+
+
 def test_canonical_report_completion_and_fallback_failure_contracts_are_current() -> None:
     state_machines = (PROJECT_ROOT / "docs/reference/state-machines.md").read_text(
         encoding="utf-8"

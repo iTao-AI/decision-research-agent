@@ -348,21 +348,71 @@ async def test_runtime_config_is_owned_by_adapter(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("native_exception", "expected_failure_kind"),
+    ("native_exception", "expected_failure_kind", "expected_diagnostic"),
     [
         pytest.param(
-            ModelCallLimitExceededError(1, 1, 1, 1),
+            ModelCallLimitExceededError(
+                thread_count=40,
+                run_count=40,
+                thread_limit=None,
+                run_limit=40,
+            ),
             "call_budget_exceeded",
+            {
+                "limiter_kind": "model",
+                "tool_scope": "not_applicable",
+                "run_count": 40,
+                "run_limit": 40,
+                "thread_count": 40,
+                "thread_limit": None,
+                "agent_role": "not_observed",
+            },
             id="model-call-limit",
         ),
         pytest.param(
-            ToolCallLimitExceededError(1, 1, 1, 1, tool_name="search"),
+            ToolCallLimitExceededError(
+                thread_count=10,
+                run_count=11,
+                thread_limit=10,
+                run_limit=10,
+                tool_name=None,
+            ),
             "call_budget_exceeded",
+            {
+                "limiter_kind": "tool",
+                "tool_scope": "all_tools",
+                "run_count": 11,
+                "run_limit": 10,
+                "thread_count": 10,
+                "thread_limit": 10,
+                "agent_role": "not_observed",
+            },
+            id="global-tool-call-limit",
+        ),
+        pytest.param(
+            ToolCallLimitExceededError(
+                thread_count=6,
+                run_count=6,
+                thread_limit=None,
+                run_limit=5,
+                tool_name="task",
+            ),
+            "call_budget_exceeded",
+            {
+                "limiter_kind": "tool",
+                "tool_scope": "task",
+                "run_count": 6,
+                "run_limit": 5,
+                "thread_count": 6,
+                "thread_limit": None,
+                "agent_role": "not_observed",
+            },
             id="tool-call-limit",
         ),
         pytest.param(
             GraphRecursionError("bounded recursion"),
             "recursion_limit_exceeded",
+            None,
             id="graph-recursion-limit",
         ),
     ],
@@ -370,6 +420,197 @@ async def test_runtime_config_is_owned_by_adapter(monkeypatch):
 async def test_installed_native_limit_signals_reach_bounded_harness_mapping(
     native_exception,
     expected_failure_kind,
+    expected_diagnostic,
+):
+    from agent.deepagents_harness import DeepAgentsHarness
+    from agent.harness_contracts import (
+        CallBudgetDiagnostic,
+        HarnessExecutionError,
+        HarnessRequest,
+    )
+    from agent.runtime_context import ResearchRuntimeContext
+
+    class RaisingGraph:
+        async def astream(self, _input, *, config, context):
+            del config, context
+            if False:
+                yield {}
+            raise native_exception
+
+    class Observer:
+        def callbacks(self):
+            return []
+
+        def on_stream_chunk(self, _chunk):
+            raise AssertionError("no chunks expected")
+
+        def snapshot_outcome(self):
+            raise AssertionError("native failure must not produce success")
+
+    graph = RaisingGraph()
+    harness = DeepAgentsHarness(
+        graph=graph,
+        backend=object(),
+        permissions=(),
+        skills=(),
+        profile_graphs={"generic": graph},
+    )
+    request = HarnessRequest(
+        query="query",
+        thread_id="thread-1",
+        run_id="run-1",
+        segment_id="segment-1",
+        profile_id="generic",
+        scope={},
+        trace_metadata={},
+    )
+    context = ResearchRuntimeContext(
+        thread_id="thread-1",
+        run_id="run-1",
+        segment_id="segment-1",
+        profile_id="generic",
+    )
+
+    with pytest.raises(HarnessExecutionError) as raised:
+        await harness.execute(
+            request,
+            runtime_context=context,
+            observer=Observer(),
+        )
+
+    assert raised.value.failure_kind == expected_failure_kind
+    assert raised.value.__cause__ is native_exception
+    assert raised.value.call_budget_diagnostic == (
+        CallBudgetDiagnostic(**expected_diagnostic)
+        if expected_diagnostic is not None
+        else None
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("origin", ["coordinator", "subagent"])
+@pytest.mark.parametrize(
+    ("native_exception", "expected_kind"),
+    [
+        pytest.param(
+            ModelCallLimitExceededError(
+                thread_count=7,
+                run_count=7,
+                thread_limit=None,
+                run_limit=7,
+            ),
+            "model",
+            id="model",
+        ),
+        pytest.param(
+            ToolCallLimitExceededError(
+                thread_count=4,
+                run_count=5,
+                thread_limit=None,
+                run_limit=4,
+                tool_name="task",
+            ),
+            "tool",
+            id="task-tool",
+        ),
+    ],
+)
+async def test_native_call_limit_projection_never_infers_agent_role(
+    native_exception,
+    expected_kind,
+    origin,
+):
+    from agent.deepagents_harness import DeepAgentsHarness
+    from agent.harness_contracts import HarnessExecutionError, HarnessRequest
+    from agent.runtime_context import ResearchRuntimeContext
+
+    class PropagatingGraph:
+        async def astream(self, _input, *, config, context):
+            del config, context
+            assert origin in {"coordinator", "subagent"}
+            if False:
+                yield {}
+            raise native_exception
+
+    class Observer:
+        def callbacks(self):
+            return []
+
+        def on_stream_chunk(self, _chunk):
+            raise AssertionError("no chunks expected")
+
+        def snapshot_outcome(self):
+            raise AssertionError("native failure must not produce success")
+
+    graph = PropagatingGraph()
+    harness = DeepAgentsHarness(
+        graph=graph,
+        backend=object(),
+        permissions=(),
+        skills=(),
+        profile_graphs={"generic": graph},
+    )
+    request = HarnessRequest(
+        query="query",
+        thread_id="thread-1",
+        run_id="run-1",
+        segment_id="segment-1",
+        profile_id="generic",
+        scope={},
+        trace_metadata={},
+    )
+    context = ResearchRuntimeContext(
+        thread_id="thread-1",
+        run_id="run-1",
+        segment_id="segment-1",
+        profile_id="generic",
+    )
+
+    with pytest.raises(HarnessExecutionError) as raised:
+        await harness.execute(
+            request,
+            runtime_context=context,
+            observer=Observer(),
+        )
+
+    assert raised.value.failure_kind == "call_budget_exceeded"
+    assert raised.value.call_budget_diagnostic.limiter_kind == expected_kind
+    assert raised.value.call_budget_diagnostic.agent_role == "not_observed"
+    assert raised.value.__cause__ is native_exception
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "native_exception",
+    [
+        pytest.param(
+            ToolCallLimitExceededError(1, 1, 1, 1, tool_name="search"),
+            id="unknown-tool",
+        ),
+        pytest.param(
+            ModelCallLimitExceededError(1, 1, 1, None),
+            id="missing-run-limit",
+        ),
+        pytest.param(
+            ModelCallLimitExceededError(1, True, 1, 1),
+            id="boolean-count",
+        ),
+        pytest.param(
+            ModelCallLimitExceededError(1, -1, 1, 1),
+            id="negative-count",
+        ),
+        pytest.param(
+            ModelCallLimitExceededError(1, 1, 1, 0),
+            id="zero-limit",
+        ),
+        pytest.param(
+            ModelCallLimitExceededError(1, 1_000_001, 1, 1),
+            id="above-bound",
+        ),
+    ],
+)
+async def test_malformed_native_call_limit_keeps_public_kind_without_projection(
+    native_exception,
 ):
     from agent.deepagents_harness import DeepAgentsHarness
     from agent.harness_contracts import HarnessExecutionError, HarnessRequest
@@ -423,5 +664,6 @@ async def test_installed_native_limit_signals_reach_bounded_harness_mapping(
             observer=Observer(),
         )
 
-    assert raised.value.failure_kind == expected_failure_kind
+    assert raised.value.failure_kind == "call_budget_exceeded"
+    assert raised.value.call_budget_diagnostic is None
     assert raised.value.__cause__ is native_exception

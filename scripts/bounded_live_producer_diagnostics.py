@@ -1,4 +1,4 @@
-"""Safe operator-owned sink for bounded result diagnostic receipts."""
+"""Safe operator-owned sink for bounded diagnostic receipts."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,10 +12,21 @@ from scripts.bounded_live_producer_contracts import (
     EvaluationError,
     MAX_DIAGNOSTIC_BYTES,
     serialize_result_diagnostic,
+    serialize_run_failure_diagnostic,
 )
 
 
-DIAGNOSTIC_FILENAME = "bounded-live-producer-result-diagnostic-v1.json"
+RESULT_DIAGNOSTIC_FILENAME = "bounded-live-producer-result-diagnostic-v1.json"
+RUN_FAILURE_DIAGNOSTIC_FILENAME = (
+    "bounded-live-producer-run-failure-diagnostic-v1.json"
+)
+DIAGNOSTIC_FILENAME = RESULT_DIAGNOSTIC_FILENAME
+_DIAGNOSTIC_SERIALIZERS: dict[str, Callable[[EvaluationError], bytes]] = {
+    RESULT_DIAGNOSTIC_FILENAME: lambda error: serialize_result_diagnostic(error),
+    RUN_FAILURE_DIAGNOSTIC_FILENAME: lambda error: serialize_run_failure_diagnostic(
+        error
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,12 +88,13 @@ def _preflight_diagnostic_dir(
             or permissions & 0o300 != 0o300
         ):
             raise DiagnosticOutputError
-        try:
-            os.stat(DIAGNOSTIC_FILENAME, dir_fd=descriptor, follow_symlinks=False)
-        except FileNotFoundError:
-            pass
-        else:
-            raise DiagnosticOutputError
+        for filename in _DIAGNOSTIC_SERIALIZERS:
+            try:
+                os.stat(filename, dir_fd=descriptor, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise DiagnosticOutputError
         return DiagnosticSink(
             path=resolved,
             device=observed.st_dev,
@@ -153,18 +165,22 @@ def _unlink_if_owned(
         os.close(cleanup_descriptor)
 
 
-def _publish_result_diagnostic(
+def _publish_diagnostic(
     sink: DiagnosticSink,
     error: EvaluationError,
     *,
+    filename: str,
     remaining_seconds: Callable[[float], float],
 ) -> Path:
-    raw = serialize_result_diagnostic(error)
+    serializer = _DIAGNOSTIC_SERIALIZERS.get(filename)
+    if serializer is None:
+        raise DiagnosticOutputError
+    raw = serializer(error)
     if len(raw) > MAX_DIAGNOSTIC_BYTES:
         raise DiagnosticOutputError
     remaining_seconds(1.0)
     descriptor = _open_directory_no_symlinks(sink.path)
-    temporary = f".{DIAGNOSTIC_FILENAME}.{secrets.token_hex(16)}.tmp"
+    temporary = f".{filename}.{secrets.token_hex(16)}.tmp"
     temporary_created = False
     temporary_identity: tuple[int, int] | None = None
     try:
@@ -172,7 +188,7 @@ def _publish_result_diagnostic(
         if not _identity_matches(sink, observed):
             raise DiagnosticOutputError
         try:
-            os.stat(DIAGNOSTIC_FILENAME, dir_fd=descriptor, follow_symlinks=False)
+            os.stat(filename, dir_fd=descriptor, follow_symlinks=False)
         except FileNotFoundError:
             pass
         else:
@@ -209,13 +225,13 @@ def _publish_result_diagnostic(
             remaining_seconds(1.0)
             os.link(
                 temporary,
-                DIAGNOSTIC_FILENAME,
+                filename,
                 src_dir_fd=descriptor,
                 dst_dir_fd=descriptor,
                 follow_symlinks=False,
             )
             linked = os.stat(
-                DIAGNOSTIC_FILENAME,
+                filename,
                 dir_fd=descriptor,
                 follow_symlinks=False,
             )
@@ -246,7 +262,7 @@ def _publish_result_diagnostic(
                 raise DiagnosticOutputError
             remaining_seconds(1.0)
             os.fsync(descriptor)
-            return sink.path / DIAGNOSTIC_FILENAME
+            return sink.path / filename
         finally:
             os.close(file_descriptor)
     finally:
@@ -269,9 +285,29 @@ def publish_result_diagnostic(
     remaining_seconds: Callable[[float], float],
 ) -> Path:
     try:
-        return _publish_result_diagnostic(
+        return _publish_diagnostic(
             sink,
             error,
+            filename=RESULT_DIAGNOSTIC_FILENAME,
+            remaining_seconds=remaining_seconds,
+        )
+    except DiagnosticOutputError:
+        raise
+    except Exception as exc:
+        raise DiagnosticOutputError from exc
+
+
+def publish_run_failure_diagnostic(
+    sink: DiagnosticSink,
+    error: EvaluationError,
+    *,
+    remaining_seconds: Callable[[float], float],
+) -> Path:
+    try:
+        return _publish_diagnostic(
+            sink,
+            error,
+            filename=RUN_FAILURE_DIAGNOSTIC_FILENAME,
             remaining_seconds=remaining_seconds,
         )
     except DiagnosticOutputError:

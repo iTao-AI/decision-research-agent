@@ -28,6 +28,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from pydantic import ValidationError
 
 from api.run_creation_models import run_create_request_hash
+from api.run_failure_cause_models import (
+    ObservedRunFailureCause,
+    RunFailureCauseProjectionAdapter,
+)
 from scripts.bounded_live_producer_contracts import (
     BOUNDARIES,
     LIMITS,
@@ -48,6 +52,7 @@ from scripts.bounded_live_producer_contracts import (
     ResultBoundaryDiagnostic,
     ResultDiagnosticReason,
     ResultDiagnosticStage,
+    RunFailureDiagnostic,
     RestartReceipt,
     ResultReceipt,
     RunReceipt,
@@ -63,6 +68,7 @@ from scripts.bounded_live_producer_diagnostics import (
     DiagnosticSink,
     preflight_diagnostic_dir,
     publish_result_diagnostic,
+    publish_run_failure_diagnostic,
 )
 from scripts.bounded_live_producer_http import CreateAmbiguous, ProofHttpClient
 from scripts.downstream_consumer_contract import (
@@ -101,7 +107,7 @@ def _error(
     code: FailureCode | str,
     phase: FailurePhase | str,
     *,
-    diagnostic: ResultBoundaryDiagnostic | None = None,
+    diagnostic: ResultBoundaryDiagnostic | RunFailureDiagnostic | None = None,
 ) -> EvaluationError:
     return EvaluationError(code, phase, False, diagnostic=diagnostic)
 
@@ -243,16 +249,56 @@ def reconcile_create(
     return _require_create_identity(accepted, thread_id=thread_id, replay=False)
 
 
-def _terminal_error(status: Mapping[str, Any]) -> EvaluationError | None:
+def _run_failure_diagnostic(value: object) -> RunFailureDiagnostic:
+    try:
+        raw = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        cause = RunFailureCauseProjectionAdapter.validate_json(raw, strict=True)
+    except (TypeError, ValueError, ValidationError):
+        raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE) from None
+    if type(cause) is not ObservedRunFailureCause:
+        raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
+    return RunFailureDiagnostic(
+        cause_schema_version=cause.schema_version,
+        observation_status=cause.observation_status,
+        phase=cause.phase,
+        code=cause.code,
+    )
+
+
+def _validated_execution_status(status: Mapping[str, Any]) -> str:
     execution = status.get("execution_status")
+    review = status.get("review_status")
+    if type(execution) is not str or type(review) is not str:
+        raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
+    if review != "not_required":
+        raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
+    return execution
+
+
+def _terminal_error(status: Mapping[str, Any]) -> EvaluationError | None:
+    execution = _validated_execution_status(status)
     delivery = status.get("delivery_status")
     if execution == "failed":
-        return _error(FailureCode.RUN_FAILED, FailurePhase.OBSERVE)
+        return _error(
+            FailureCode.RUN_FAILED,
+            FailurePhase.OBSERVE,
+            diagnostic=_run_failure_diagnostic(status.get("failure_cause")),
+        )
+    if status.get("failure_cause") is not None:
+        return _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
     if execution == "completed_with_fallback":
         return _error(FailureCode.RUN_FALLBACK_REJECTED, FailurePhase.OBSERVE)
     if execution == "completed" and delivery != "ready":
         return _error(FailureCode.RUN_DELIVERY_NOT_READY, FailurePhase.OBSERVE)
-    return None
+    if execution == "completed" and delivery == "ready":
+        return None
+    return _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
 
 
 def _validate_artifact_hash(result_payload: object) -> None:
@@ -280,14 +326,17 @@ def project_live_observation(
 
     if type(status_payload) is not dict:
         raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
-    terminal_error = _terminal_error(status_payload)
-    if terminal_error is not None:
-        raise terminal_error
     if (
         status_payload.get("run_id") != expected_run_id
         or status_payload.get("thread_id") != expected_thread_id
         or status_payload.get("profile_id") != "generic"
-        or status_payload.get("execution_status") != "completed"
+    ):
+        raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
+    terminal_error = _terminal_error(status_payload)
+    if terminal_error is not None:
+        raise terminal_error
+    if (
+        status_payload.get("execution_status") != "completed"
         or status_payload.get("review_status") != "not_required"
         or status_payload.get("delivery_status") != "ready"
         or status_payload.get("failure_cause") is not None
@@ -830,16 +879,20 @@ def observe_terminal(
         remaining_seconds(30.0)
         status = client.status(run_id=run_id, timeout_seconds=30.0)
         if (
-            status.get("run_id") != run_id
+            type(status) is not dict
+            or status.get("run_id") != run_id
             or status.get("thread_id") != thread_id
             or status.get("profile_id") != "generic"
         ):
             raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
-        execution = status.get("execution_status")
-        if execution in {"pending", "running"}:
+        execution = _validated_execution_status(status)
+        if execution in ("pending", "running"):
             delay = remaining_seconds(1.0)
             sleep(delay)
             continue
+        terminal_error = _terminal_error(status)
+        if terminal_error is not None:
+            raise terminal_error
         result_observation = client.result_observation(
             run_id=run_id,
             timeout_seconds=30.0,
@@ -1102,10 +1155,25 @@ def _publish_diagnostic_best_effort(
     *,
     remaining_seconds: Callable[[float], float],
 ) -> None:
-    if sink is None or error.diagnostic is None:
+    if sink is None:
+        return
+    publisher: Callable[..., Path]
+    if (
+        type(error.diagnostic) is ResultBoundaryDiagnostic
+        and error.code is FailureCode.CONSUMER_PROJECTION_INVALID
+        and error.phase is FailurePhase.RESULT
+    ):
+        publisher = publish_result_diagnostic
+    elif (
+        type(error.diagnostic) is RunFailureDiagnostic
+        and error.code is FailureCode.RUN_FAILED
+        and error.phase is FailurePhase.OBSERVE
+    ):
+        publisher = publish_run_failure_diagnostic
+    else:
         return
     try:
-        publish_result_diagnostic(
+        publisher(
             sink,
             error,
             remaining_seconds=remaining_seconds,

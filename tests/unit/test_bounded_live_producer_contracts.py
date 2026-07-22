@@ -9,6 +9,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
+from api.run_failure_cause_models import RUN_FAILURE_CAUSE_CODES
 from scripts.bounded_live_producer_contracts import (
     BOUNDARIES,
     LIMITS,
@@ -26,12 +27,15 @@ from scripts.bounded_live_producer_contracts import (
     ResultDiagnosticReason,
     ResultDiagnosticReceipt,
     ResultDiagnosticStage,
+    RunFailureDiagnostic,
+    RunFailureDiagnosticReceipt,
     load_manifest,
     render_markdown,
     serialize_error,
     serialize_manifest,
     serialize_report,
     serialize_result_diagnostic,
+    serialize_run_failure_diagnostic,
     validate_live_report,
 )
 
@@ -423,6 +427,187 @@ def test_default_public_error_bytes_ignore_internal_diagnostic() -> None:
     )
 
     assert serialize_error(enriched) == serialize_error(baseline)
+
+
+def _run_failure_diagnostic(
+    *, phase: str = "execution", code: str = "execution_error"
+) -> RunFailureDiagnostic:
+    return RunFailureDiagnostic(
+        cause_schema_version="dra.run-failure-cause.v1",
+        observation_status="observed",
+        phase=phase,
+        code=code,
+    )
+
+
+@pytest.mark.parametrize(
+    ("phase", "code"),
+    [
+        (phase, code)
+        for phase, codes in RUN_FAILURE_CAUSE_CODES.items()
+        for code in sorted(codes)
+    ],
+)
+def test_run_failure_diagnostic_reuses_application_pairs(
+    phase: str, code: str
+) -> None:
+    error = EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_run_failure_diagnostic(phase=phase, code=code),
+    )
+
+    raw = serialize_run_failure_diagnostic(error)
+    receipt = RunFailureDiagnosticReceipt.model_validate_json(raw, strict=True)
+
+    assert receipt.run_failure.phase == phase
+    assert receipt.run_failure.code == code
+    assert len(raw) <= MAX_DIAGNOSTIC_BYTES
+
+
+def test_run_failure_diagnostic_has_exact_canonical_bytes() -> None:
+    error = EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        CleanupStatus.FAILED,
+        diagnostic=_run_failure_diagnostic(),
+    )
+
+    assert serialize_run_failure_diagnostic(error) == (
+        b'{"primary":{"cleanup_status":"failed","code":"run_failed",'
+        b'"phase":"observe","retryable":false},"run_failure":'
+        b'{"cause_schema_version":"dra.run-failure-cause.v1","code":'
+        b'"execution_error","observation_status":"observed","phase":'
+        b'"execution"},"schema_version":'
+        b'"dra.bounded-live-producer-run-failure-diagnostic.v1"}\n'
+    )
+
+
+@pytest.mark.parametrize(
+    "cleanup_status", [CleanupStatus.SUCCEEDED, CleanupStatus.FAILED]
+)
+def test_run_failure_diagnostic_accepts_only_final_cleanup_status(
+    cleanup_status: CleanupStatus,
+) -> None:
+    error = EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        cleanup_status,
+        diagnostic=_run_failure_diagnostic(),
+    )
+
+    receipt = RunFailureDiagnosticReceipt.model_validate_json(
+        serialize_run_failure_diagnostic(error), strict=True
+    )
+    assert receipt.primary.cleanup_status is cleanup_status
+
+
+def test_run_failure_diagnostic_rejects_not_started_cleanup() -> None:
+    error = EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        diagnostic=_run_failure_diagnostic(),
+    )
+
+    with pytest.raises(ValidationError):
+        serialize_run_failure_diagnostic(error)
+
+
+def test_run_failure_diagnostic_is_strict_frozen_and_forbids_extra_fields() -> None:
+    diagnostic = _run_failure_diagnostic()
+    with pytest.raises(ValidationError):
+        diagnostic.code = "run_timeout"  # type: ignore[misc]
+
+    payload = diagnostic.model_dump(mode="python")
+    payload["recorded_at"] = "2026-07-22T00:00:00Z"
+    with pytest.raises(ValidationError):
+        RunFailureDiagnostic.model_validate(payload, strict=True)
+
+    payload = diagnostic.model_dump(mode="python")
+    payload["phase"] = 1
+    with pytest.raises(ValidationError):
+        RunFailureDiagnostic.model_validate(payload, strict=True)
+
+
+@pytest.mark.parametrize(
+    "field", ["cause_schema_version", "observation_status", "phase", "code"]
+)
+def test_run_failure_diagnostic_requires_every_exact_field(field: str) -> None:
+    payload = _run_failure_diagnostic().model_dump(mode="python")
+    payload.pop(field)
+
+    with pytest.raises(ValidationError):
+        RunFailureDiagnostic.model_validate(payload, strict=True)
+
+
+def test_run_failure_diagnostic_rejects_cross_phase_pair_and_unsafe_code() -> None:
+    for code in ("run_finalization_failed", "execution_error\nraw"):
+        with pytest.raises(ValidationError):
+            RunFailureDiagnostic(
+                cause_schema_version="dra.run-failure-cause.v1",
+                observation_status="observed",
+                phase="execution",
+                code=code,
+            )
+
+
+@pytest.mark.parametrize(
+    ("code", "phase"),
+    [
+        ("run_failed", "result"),
+        ("run_state_invalid", "observe"),
+        ("consumer_projection_invalid", "result"),
+    ],
+)
+def test_run_failure_diagnostic_rejects_ineligible_primary(
+    code: str, phase: str
+) -> None:
+    with pytest.raises(ValueError, match="evaluation_error_invalid"):
+        EvaluationError(
+            code,
+            phase,
+            False,
+            diagnostic=_run_failure_diagnostic(),
+        )
+
+
+def test_default_public_error_bytes_ignore_run_failure_diagnostic() -> None:
+    baseline = EvaluationError(
+        "run_failed", "observe", False, CleanupStatus.SUCCEEDED
+    )
+    enriched = EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_run_failure_diagnostic(),
+    )
+
+    assert serialize_error(enriched) == serialize_error(baseline)
+
+
+def test_result_diagnostic_compatibility_bytes_are_unchanged() -> None:
+    error = EvaluationError(
+        "consumer_projection_invalid",
+        "result",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_diagnostic(),
+    )
+
+    assert serialize_result_diagnostic(error) == (
+        b'{"primary":{"cleanup_status":"succeeded","code":'
+        b'"consumer_projection_invalid","phase":"result","retryable":false},'
+        b'"result_boundary":{"http_status":200,"reason":'
+        b'"contract_result_invalid","response_bytes":1234,"stage":'
+        b'"consumer_contract"},"schema_version":'
+        b'"dra.bounded-live-producer-result-diagnostic.v1"}\n'
+    )
 
 
 @pytest.mark.parametrize(

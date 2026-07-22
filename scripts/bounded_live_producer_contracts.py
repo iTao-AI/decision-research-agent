@@ -21,11 +21,20 @@ from pydantic import (
     model_validator,
 )
 
+from api.run_failure_cause_models import (
+    RUN_FAILURE_CAUSE_CODES,
+    RUN_FAILURE_CAUSE_SCHEMA_VERSION,
+    RunFailurePhase,
+)
+
 
 MANIFEST_SCHEMA_VERSION = "dra.bounded-live-producer-manifest.v1"
 REPORT_SCHEMA_VERSION = "dra.bounded-live-producer-evaluation.v1"
 ERROR_SCHEMA_VERSION = "dra.bounded-live-producer-evaluation-error.v1"
 RESULT_DIAGNOSTIC_SCHEMA_VERSION = "dra.bounded-live-producer-result-diagnostic.v1"
+RUN_FAILURE_DIAGNOSTIC_SCHEMA_VERSION = (
+    "dra.bounded-live-producer-run-failure-diagnostic.v1"
+)
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_PUBLIC_BYTES = 1024 * 1024
 MAX_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -328,6 +337,34 @@ class ResultDiagnosticReceipt(StrictModel):
     result_boundary: ResultBoundaryDiagnostic
 
 
+class RunFailureDiagnostic(StrictModel):
+    cause_schema_version: Literal[RUN_FAILURE_CAUSE_SCHEMA_VERSION]
+    observation_status: Literal["observed"]
+    phase: RunFailurePhase
+    code: str
+
+    @model_validator(mode="after")
+    def require_application_pair(self) -> "RunFailureDiagnostic":
+        if self.code not in RUN_FAILURE_CAUSE_CODES[self.phase]:
+            raise ValueError("run_failure_diagnostic_pair_invalid")
+        return self
+
+
+class RunFailureDiagnosticPrimary(StrictModel):
+    code: Literal[FailureCode.RUN_FAILED]
+    phase: Literal[FailurePhase.OBSERVE]
+    retryable: Literal[False]
+    cleanup_status: Literal[CleanupStatus.SUCCEEDED, CleanupStatus.FAILED]
+
+
+class RunFailureDiagnosticReceipt(StrictModel):
+    schema_version: Literal[
+        "dra.bounded-live-producer-run-failure-diagnostic.v1"
+    ]
+    primary: RunFailureDiagnosticPrimary
+    run_failure: RunFailureDiagnostic
+
+
 class EvaluationError(Exception):
     """Typed operational failure with a validated public projection."""
 
@@ -340,7 +377,7 @@ class EvaluationError(Exception):
         retryable: bool,
         cleanup_status: CleanupStatus | str = CleanupStatus.NOT_STARTED,
         *,
-        diagnostic: ResultBoundaryDiagnostic | None = None,
+        diagnostic: ResultBoundaryDiagnostic | RunFailureDiagnostic | None = None,
     ) -> None:
         try:
             validated_code = FailureCode(code)
@@ -351,12 +388,18 @@ class EvaluationError(Exception):
         if (
             type(retryable) is not bool
             or validated_code not in FAILURE_REGISTRY[validated_phase]
-            or diagnostic is not None
+            or type(diagnostic) is ResultBoundaryDiagnostic
             and (
-                type(diagnostic) is not ResultBoundaryDiagnostic
-                or validated_code is not FailureCode.CONSUMER_PROJECTION_INVALID
+                validated_code is not FailureCode.CONSUMER_PROJECTION_INVALID
                 or validated_phase is not FailurePhase.RESULT
             )
+            or type(diagnostic) is RunFailureDiagnostic
+            and (
+                validated_code is not FailureCode.RUN_FAILED
+                or validated_phase is not FailurePhase.OBSERVE
+            )
+            or diagnostic is not None
+            and type(diagnostic) not in {ResultBoundaryDiagnostic, RunFailureDiagnostic}
         ):
             raise ValueError("evaluation_error_invalid")
         super().__init__(validated_code.value)
@@ -1087,7 +1130,7 @@ def serialize_error(error: EvaluationError) -> bytes:
 
 
 def serialize_result_diagnostic(error: EvaluationError) -> bytes:
-    if error.diagnostic is None:
+    if type(error.diagnostic) is not ResultBoundaryDiagnostic:
         _validation_fail("diagnostic_invalid")
     receipt = ResultDiagnosticReceipt(
         schema_version=RESULT_DIAGNOSTIC_SCHEMA_VERSION,
@@ -1098,6 +1141,36 @@ def serialize_result_diagnostic(error: EvaluationError) -> bytes:
             cleanup_status=error.cleanup_status,
         ),
         result_boundary=error.diagnostic,
+    )
+    payload = receipt.model_dump(mode="json")
+    _assert_public_safe(payload)
+    raw = (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if len(raw) > MAX_DIAGNOSTIC_BYTES:
+        _validation_fail("diagnostic_invalid")
+    return raw
+
+
+def serialize_run_failure_diagnostic(error: EvaluationError) -> bytes:
+    if type(error.diagnostic) is not RunFailureDiagnostic:
+        _validation_fail("diagnostic_invalid")
+    receipt = RunFailureDiagnosticReceipt(
+        schema_version=RUN_FAILURE_DIAGNOSTIC_SCHEMA_VERSION,
+        primary=RunFailureDiagnosticPrimary(
+            code=error.code,
+            phase=error.phase,
+            retryable=error.retryable,
+            cleanup_status=error.cleanup_status,
+        ),
+        run_failure=error.diagnostic,
     )
     payload = receipt.model_dump(mode="json")
     _assert_public_safe(payload)

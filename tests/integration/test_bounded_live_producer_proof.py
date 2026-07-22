@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 import pytest
 import yaml
 
+from api.run_failure_cause_models import RUN_FAILURE_CAUSE_CODES
 from scripts.bounded_live_producer_contracts import (
     BOUNDARIES,
     LIMITS,
@@ -26,8 +27,12 @@ from scripts.bounded_live_producer_contracts import (
     ResultBoundaryDiagnostic,
     ResultDiagnosticReason,
     ResultDiagnosticStage,
+    RunFailureDiagnostic,
 )
 from scripts.bounded_live_producer_diagnostics import DIAGNOSTIC_FILENAME
+from scripts.bounded_live_producer_diagnostics import (
+    RUN_FAILURE_DIAGNOSTIC_FILENAME,
+)
 from scripts.bounded_live_producer_http import CreateAmbiguous, HttpObservation
 from scripts.bounded_live_producer_proof import (
     TerminalSnapshot,
@@ -96,6 +101,7 @@ def _install_provider_free_live_boundaries(
     env_file.write_text("fixture-only\n", encoding="utf-8")
     events: list[str] = []
     holder: dict[str, Any] = {}
+    holder["diagnostic_publications"] = []
     if fail_pre_guard_cleanup:
         real_rmtree = module.shutil.rmtree
         holder["real_rmtree"] = real_rmtree
@@ -290,15 +296,31 @@ def _install_provider_free_live_boundaries(
     monkeypatch.setattr(module, "reconcile_create", reconcile)
     monkeypatch.setattr(module, "observe_terminal", terminal)
     monkeypatch.setattr(module, "restart_backend_transport", restart)
-    real_diagnostic_publish = module.publish_result_diagnostic
+    real_result_diagnostic_publish = module.publish_result_diagnostic
+    real_run_failure_diagnostic_publish = module.publish_run_failure_diagnostic
 
-    def diagnostic_publish(*args, **kwargs):
+    def result_diagnostic_publish(*args, **kwargs):
         events.append("diagnostic_publish")
+        holder["diagnostic_publications"].append("result")
         if diagnostic_publication_error is not None:
             raise diagnostic_publication_error
-        return real_diagnostic_publish(*args, **kwargs)
+        return real_result_diagnostic_publish(*args, **kwargs)
 
-    monkeypatch.setattr(module, "publish_result_diagnostic", diagnostic_publish)
+    def run_failure_diagnostic_publish(*args, **kwargs):
+        events.append("diagnostic_publish")
+        holder["diagnostic_publications"].append("run_failure")
+        if diagnostic_publication_error is not None:
+            raise diagnostic_publication_error
+        return real_run_failure_diagnostic_publish(*args, **kwargs)
+
+    monkeypatch.setattr(
+        module, "publish_result_diagnostic", result_diagnostic_publish
+    )
+    monkeypatch.setattr(
+        module,
+        "publish_run_failure_diagnostic",
+        run_failure_diagnostic_publish,
+    )
     if publication_error is not None:
         def fail_publication(*_args, **_kwargs):
             raise publication_error
@@ -453,6 +475,18 @@ def _status(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _observed_failure_cause(
+    *, phase: str = "execution", code: str = "execution_error"
+) -> dict[str, Any]:
+    return {
+        "schema_version": "dra.run-failure-cause.v1",
+        "observation_status": "observed",
+        "phase": phase,
+        "code": code,
+        "recorded_at": "2026-07-22T00:00:00Z",
+    }
+
+
 def _result(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "run_id": "run-proof-1",
@@ -500,6 +534,20 @@ def _result_diagnostic_error() -> EvaluationError:
             reason=ResultDiagnosticReason.CONTRACT_RESULT_INVALID,
             http_status=200,
             response_bytes=512,
+        ),
+    )
+
+
+def _run_failure_diagnostic_error() -> EvaluationError:
+    return EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        diagnostic=RunFailureDiagnostic(
+            cause_schema_version="dra.run-failure-cause.v1",
+            observation_status="observed",
+            phase="execution",
+            code="execution_error",
         ),
     )
 
@@ -877,6 +925,237 @@ def test_observe_terminal_uses_one_remaining_deadline_and_never_cancels() -> Non
     assert not hasattr(client, "cancel")
 
 
+def test_observe_terminal_rejects_noncanonical_completed_review_before_result() -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(review_status="required")
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("noncanonical terminal review must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.phase.value == "observe"
+    assert client.result_calls == 0
+
+
+def test_observe_terminal_rejects_non_string_execution_before_result() -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(execution_status=[])
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("invalid terminal execution must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.phase.value == "observe"
+    assert client.result_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("phase", "code"),
+    [
+        (phase, code)
+        for phase, codes in RUN_FAILURE_CAUSE_CODES.items()
+        for code in sorted(codes)
+    ],
+)
+def test_observe_terminal_failure_reuses_exact_application_cause_without_result(
+    phase: str, code: str
+) -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(
+                execution_status="failed",
+                delivery_status="blocked",
+                failure_cause=_observed_failure_cause(phase=phase, code=code),
+            )
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("failed terminal state must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_failed"
+    assert raised.value.phase.value == "observe"
+    assert isinstance(raised.value.diagnostic, RunFailureDiagnostic)
+    assert raised.value.diagnostic.phase == phase
+    assert raised.value.diagnostic.code == code
+    assert client.result_calls == 0
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        None,
+        {
+            "schema_version": "dra.run-failure-cause.v1",
+            "observation_status": "not_observed",
+        },
+        {**_observed_failure_cause(), "recorded_at": "not-a-timestamp"},
+        {
+            **_observed_failure_cause(),
+            "phase": "execution",
+            "code": "run_finalization_failed",
+        },
+        {**_observed_failure_cause(), "phase": 1},
+        {**_observed_failure_cause(), "unexpected": True},
+        {
+            key: value
+            for key, value in _observed_failure_cause().items()
+            if key != "recorded_at"
+        },
+    ],
+)
+def test_observe_terminal_failure_rejects_invalid_cause_without_result(
+    cause: object,
+) -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(
+                execution_status="failed",
+                delivery_status="blocked",
+                failure_cause=cause,
+            )
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("invalid failed state must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.phase.value == "observe"
+    assert raised.value.diagnostic is None
+    assert client.result_calls == 0
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        _status(execution_status="completed_with_fallback", delivery_status="blocked"),
+        _status(execution_status="completed", delivery_status="blocked"),
+        _status(execution_status="unknown", delivery_status="blocked"),
+    ],
+)
+def test_observe_terminal_fallback_delivery_and_unknown_skip_result(
+    status: dict[str, Any],
+) -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return status
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("ineligible terminal state must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError):
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert client.result_calls == 0
+
+
+def test_observe_terminal_failure_identity_precedes_cause_classification() -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(
+                thread_id="other-thread",
+                execution_status="failed",
+                delivery_status="blocked",
+                failure_cause=_observed_failure_cause(),
+            )
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("identity failure must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.diagnostic is None
+    assert client.result_calls == 0
+
+
+def test_project_live_observation_failure_identity_precedes_cause_classification() -> None:
+    with pytest.raises(EvaluationError) as raised:
+        project_live_observation(
+            status_payload=_status(
+                thread_id="other-thread",
+                execution_status="failed",
+                delivery_status="blocked",
+                failure_cause=_observed_failure_cause(),
+            ),
+            result_payload=_result(),
+            result_response_bytes=1,
+            expected_run_id="run-proof-1",
+            expected_thread_id="thread-proof-1",
+            expected_segment_id="segment-proof-1",
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.diagnostic is None
+
+
 def test_restart_backend_transport_reinspects_loopback_binding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -939,7 +1218,15 @@ def test_restart_backend_transport_reinspects_loopback_binding(
 @pytest.mark.parametrize(
     ("status", "result", "expected_code", "expected_phase"),
     [
-        (_status(execution_status="failed"), _result(), "run_failed", "observe"),
+        (
+            _status(
+                execution_status="failed",
+                failure_cause=_observed_failure_cause(),
+            ),
+            _result(),
+            "run_failed",
+            "observe",
+        ),
         (
             _status(execution_status="completed_with_fallback"),
             _result(),
@@ -1764,6 +2051,117 @@ def test_observe_live_publishes_diagnostic_only_after_cleanup(
     assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
 
 
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_observe_live_selects_run_failure_diagnostic_after_final_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup_fails: bool,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=_run_failure_diagnostic_error(),
+        diagnostic_dir=diagnostic_dir,
+        fail_cleanup_refresh=cleanup_fails,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "run_failed"
+    expected_cleanup = "failed" if cleanup_fails else "succeeded"
+    assert caught.value.cleanup_status.value == expected_cleanup
+    receipt = json.loads(
+        (diagnostic_dir / RUN_FAILURE_DIAGNOSTIC_FILENAME).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert receipt == {
+        "schema_version": "dra.bounded-live-producer-run-failure-diagnostic.v1",
+        "primary": {
+            "code": "run_failed",
+            "phase": "observe",
+            "retryable": False,
+            "cleanup_status": expected_cleanup,
+        },
+        "run_failure": {
+            "cause_schema_version": "dra.run-failure-cause.v1",
+            "observation_status": "observed",
+            "phase": "execution",
+            "code": "execution_error",
+        },
+    }
+    assert holder["diagnostic_publications"] == ["run_failure"]
+    assert not (diagnostic_dir / DIAGNOSTIC_FILENAME).exists()
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not holder["task_temp"].exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+
+
+def test_run_failure_diagnostic_publication_failure_preserves_primary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=_run_failure_diagnostic_error(),
+        diagnostic_dir=diagnostic_dir,
+        diagnostic_publication_error=RuntimeError("private publication detail"),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "run_failed"
+    assert caught.value.cleanup_status is CleanupStatus.SUCCEEDED
+    assert isinstance(caught.value.diagnostic, RunFailureDiagnostic)
+    assert holder["diagnostic_publications"] == ["run_failure"]
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not (diagnostic_dir / RUN_FAILURE_DIAGNOSTIC_FILENAME).exists()
+
+
+def test_configuration_close_failure_preserves_run_failure_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=_run_failure_diagnostic_error(),
+        diagnostic_dir=diagnostic_dir,
+        configuration_close_error=EvaluationError(
+            "credential_source_invalid",
+            "input",
+            False,
+        ),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "run_failed"
+    assert caught.value.cleanup_status is CleanupStatus.FAILED
+    assert isinstance(caught.value.diagnostic, RunFailureDiagnostic)
+    receipt = json.loads(
+        (diagnostic_dir / RUN_FAILURE_DIAGNOSTIC_FILENAME).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert receipt["primary"]["cleanup_status"] == "failed"
+    assert holder["diagnostic_publications"] == ["run_failure"]
+    assert events.index("configuration_close") < events.index("diagnostic_publish")
+
+
 def test_observe_live_rejects_invalid_diagnostic_dir_before_live_configuration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1788,6 +2186,36 @@ def test_observe_live_rejects_invalid_diagnostic_dir_before_live_configuration(
     assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
 
 
+@pytest.mark.parametrize(
+    "filename", [DIAGNOSTIC_FILENAME, RUN_FAILURE_DIAGNOSTIC_FILENAME]
+)
+def test_observe_live_preflight_rejects_either_fixed_diagnostic_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    filename: str,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    existing = diagnostic_dir / filename
+    existing.write_bytes(b"existing")
+    invoke, repository, events, _holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        diagnostic_dir=diagnostic_dir,
+    )
+    events.clear()
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "output_invalid"
+    assert caught.value.phase.value == "input"
+    assert events == []
+    assert existing.read_bytes() == b"existing"
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+
+
 def test_observe_live_success_or_precise_failure_produces_no_generic_diagnostic(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1802,6 +2230,7 @@ def test_observe_live_success_or_precise_failure_produces_no_generic_diagnostic(
     )
     assert invoke().status == "valid"
     assert not (diagnostic_dir / DIAGNOSTIC_FILENAME).exists()
+    assert not (diagnostic_dir / RUN_FAILURE_DIAGNOSTIC_FILENAME).exists()
 
     second_root = tmp_path / "second"
     second_root.mkdir()
@@ -1817,6 +2246,7 @@ def test_observe_live_success_or_precise_failure_produces_no_generic_diagnostic(
     with pytest.raises(EvaluationError, match="artifact_invalid"):
         invoke()
     assert not (second_diagnostic / DIAGNOSTIC_FILENAME).exists()
+    assert not (second_diagnostic / RUN_FAILURE_DIAGNOSTIC_FILENAME).exists()
 
 
 def test_diagnostic_publication_failure_preserves_primary_and_cleanup(

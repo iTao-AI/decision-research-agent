@@ -68,6 +68,7 @@ from scripts.bounded_live_producer_diagnostics import (
     DiagnosticSink,
     preflight_diagnostic_dir,
     publish_result_diagnostic,
+    publish_run_failure_diagnostic,
 )
 from scripts.bounded_live_producer_http import CreateAmbiguous, ProofHttpClient
 from scripts.downstream_consumer_contract import (
@@ -1144,10 +1145,25 @@ def _publish_diagnostic_best_effort(
     *,
     remaining_seconds: Callable[[float], float],
 ) -> None:
-    if sink is None or error.diagnostic is None:
+    if sink is None:
+        return
+    publisher: Callable[..., Path]
+    if (
+        type(error.diagnostic) is ResultBoundaryDiagnostic
+        and error.code is FailureCode.CONSUMER_PROJECTION_INVALID
+        and error.phase is FailurePhase.RESULT
+    ):
+        publisher = publish_result_diagnostic
+    elif (
+        type(error.diagnostic) is RunFailureDiagnostic
+        and error.code is FailureCode.RUN_FAILED
+        and error.phase is FailurePhase.OBSERVE
+    ):
+        publisher = publish_run_failure_diagnostic
+    else:
         return
     try:
-        publish_result_diagnostic(
+        publisher(
             sink,
             error,
             remaining_seconds=remaining_seconds,

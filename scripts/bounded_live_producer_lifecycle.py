@@ -50,6 +50,9 @@ _DEFAULT_ARCHIVE_BYTES_MAX = 64 * 1024 * 1024
 _DEFAULT_ARCHIVE_MEMBERS_MAX = 4096
 _DEFAULT_ARCHIVE_MEMBER_BYTES_MAX = 16 * 1024 * 1024
 _DEFAULT_STREAM_BYTES_MAX = 1024 * 1024
+LIMITER_DIAGNOSTICS_ENV = (
+    "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS"
+)
 
 _LIVE_ENV_NAMES = frozenset(
     {
@@ -66,6 +69,7 @@ _LIVE_ENV_NAMES = frozenset(
         "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES",
         "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL",
         "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION",
+        LIMITER_DIAGNOSTICS_ENV,
         "LANGSMITH_TRACING",
         "LANGSMITH_API_KEY",
         "LANGSMITH_HIDE_INPUTS",
@@ -1069,6 +1073,11 @@ def load_live_configuration(
         if any(values.get(key) != "true" for key in _TRUE_ENV):
             raise ValueError
         if any(values.get(key) != "" for key in _EMPTY_ENV):
+            raise ValueError
+        if (
+            LIMITER_DIAGNOSTICS_ENV in values
+            and values[LIMITER_DIAGNOSTICS_ENV] != "true"
+        ):
             raise ValueError
         if not process_api_key or values["API_SECRET"] != process_api_key:
             raise ValueError

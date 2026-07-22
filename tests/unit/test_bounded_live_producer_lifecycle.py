@@ -431,6 +431,97 @@ def test_load_live_configuration_accepts_owner_only_file_and_matching_declaratio
         getattr(loaded, "close", lambda: None)()
 
 
+def test_limiter_diagnostics_mode_is_absent_or_exact_true_in_materialized_snapshot(
+    tmp_path: Path,
+) -> None:
+    key = "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS"
+    for value in (None, "true"):
+        path = tmp_path / f"live-{value or 'absent'}.env"
+        values = _valid_env()
+        if value is not None:
+            values[key] = value
+        _write_env(path, values)
+        loaded = load_live_configuration(
+            path,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
+        try:
+            with loaded.materialized() as materialized:
+                captured = materialized.read_bytes()
+                assignments = [
+                    line for line in captured.splitlines() if line.startswith(key.encode() + b"=")
+                ]
+                assert assignments == ([] if value is None else [f"{key}=true".encode()])
+        finally:
+            loaded.close()
+
+
+@pytest.mark.parametrize("value", ["", "false", "TRUE", "1", " true", "true "])
+def test_limiter_diagnostics_mode_rejects_non_exact_values_before_materialization(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    path = tmp_path / "live.env"
+    values = _valid_env()
+    values[
+        "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS"
+    ] = value
+    _write_env(path, values)
+
+    with pytest.raises(EvaluationError) as raised:
+        load_live_configuration(
+            path,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
+
+    assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
+    assert not any(
+        candidate.name.startswith("dra-bounded-credential-")
+        for candidate in tmp_path.iterdir()
+    )
+
+
+@pytest.mark.parametrize("primary_failure", [False, True])
+def test_limiter_diagnostics_configuration_close_zeroes_raw_and_removes_snapshot(
+    tmp_path: Path,
+    primary_failure: bool,
+) -> None:
+    path = tmp_path / "live.env"
+    values = _valid_env()
+    values[
+        "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS"
+    ] = "true"
+    _write_env(path, values)
+    loaded = load_live_configuration(
+        path,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=tmp_path / "repository",
+    )
+    raw_reference = loaded._raw
+    materialized_directory: Path | None = None
+
+    if primary_failure:
+        with pytest.raises(RuntimeError, match="primary"):
+            with loaded.materialized() as materialized:
+                materialized_directory = materialized.parent
+                raise RuntimeError("primary")
+    else:
+        with loaded.materialized() as materialized:
+            materialized_directory = materialized.parent
+
+    assert materialized_directory is not None
+    assert not materialized_directory.exists()
+    loaded.close()
+    assert raw_reference
+    assert set(raw_reference) == {0}
+    assert len(loaded) == 0
+
+
 @pytest.mark.parametrize("mode", [0o004, 0o040, 0o200, 0o500, 0o700])
 def test_load_live_configuration_rejects_unsafe_permissions(
     tmp_path: Path, mode: int

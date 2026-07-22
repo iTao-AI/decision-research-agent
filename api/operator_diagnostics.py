@@ -133,14 +133,42 @@ def _unlink_owned_temporary(
     name: str,
     identity: tuple[int, int],
 ) -> bool:
+    quarantine = (
+        f".{CALL_BUDGET_SIDECAR_FILENAME}."
+        f"{secrets.token_hex(16)}.cleanup"
+    )
     try:
-        observed = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        os.rename(
+            name,
+            quarantine,
+            src_dir_fd=directory,
+            dst_dir_fd=directory,
+        )
     except FileNotFoundError:
         return False
-    if (observed.st_dev, observed.st_ino) != identity:
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    cleanup_descriptor = os.open(quarantine, flags, dir_fd=directory)
+    try:
+        observed = os.fstat(cleanup_descriptor)
+        if (
+            (observed.st_dev, observed.st_ino) != identity
+            or not stat.S_ISREG(observed.st_mode)
+            or observed.st_uid != os.geteuid()
+            or stat.S_IMODE(observed.st_mode) != 0o600
+        ):
+            return False
+        os.unlink(quarantine, dir_fd=directory)
+        try:
+            os.stat(name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            return True
         return False
-    os.unlink(name, dir_fd=directory)
-    return True
+    finally:
+        os.close(cleanup_descriptor)
 
 
 def _write_call_budget_sidecar(
@@ -230,19 +258,36 @@ def _write_call_budget_sidecar(
                     or json.loads(observed_raw) != json.loads(raw)
                 ):
                     raise OperatorDiagnosticWriteError
-                if not _unlink_owned_temporary(
+                removed = _unlink_owned_temporary(
                     run_directory,
                     temporary_name,
                     temporary_identity,
-                ):
-                    raise OperatorDiagnosticWriteError
+                )
                 temporary_name = None
+                if not removed:
+                    raise OperatorDiagnosticWriteError
                 final = os.stat(
                     CALL_BUDGET_SIDECAR_FILENAME,
                     dir_fd=run_directory,
                     follow_symlinks=False,
                 )
-                if final.st_nlink != 1:
+                opened = os.fstat(file_descriptor)
+                observed_raw = os.pread(file_descriptor, len(raw) + 1, 0)
+                if (
+                    (final.st_dev, final.st_ino) != temporary_identity
+                    or (opened.st_dev, opened.st_ino) != temporary_identity
+                    or not stat.S_ISREG(final.st_mode)
+                    or not stat.S_ISREG(opened.st_mode)
+                    or final.st_nlink != 1
+                    or opened.st_nlink != 1
+                    or final.st_uid != os.geteuid()
+                    or opened.st_uid != os.geteuid()
+                    or stat.S_IMODE(final.st_mode) != 0o600
+                    or stat.S_IMODE(opened.st_mode) != 0o600
+                    or final.st_size != len(raw)
+                    or opened.st_size != len(raw)
+                    or observed_raw != raw
+                ):
                     raise OperatorDiagnosticWriteError
                 os.fsync(run_directory)
             finally:

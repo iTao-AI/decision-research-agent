@@ -192,6 +192,169 @@ def test_call_budget_operator_diagnostic_concurrent_publication_has_one_winner(
     assert sidecar.is_file()
 
 
+def test_call_budget_operator_diagnostic_cleanup_replacement_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import api.operator_diagnostics as module
+
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS",
+        "true",
+    )
+    writer = module.call_budget_diagnostic_writer_from_environment(
+        output_root=tmp_path
+    )
+    assert writer is not None
+    replacement = b"operator replacement"
+    observed_temporary: str | None = None
+    race_fired = False
+    real_stat = module.os.stat
+    real_unlink = module.os.unlink
+    real_rename = module.os.rename
+
+    def is_temporary(name: object) -> bool:
+        return (
+            isinstance(name, str)
+            and name.startswith(f".{module.CALL_BUDGET_SIDECAR_FILENAME}.")
+            and name.endswith(".tmp")
+        )
+
+    def create_replacement(name: str, *, directory: int) -> None:
+        descriptor = module.os.open(
+            name,
+            module.os.O_WRONLY | module.os.O_CREAT | module.os.O_EXCL,
+            0o600,
+            dir_fd=directory,
+        )
+        try:
+            assert module.os.write(descriptor, replacement) == len(replacement)
+        finally:
+            module.os.close(descriptor)
+
+    def observe_temporary(name: object, *args: object, **kwargs: object):
+        nonlocal observed_temporary
+        observed = real_stat(name, *args, **kwargs)
+        if is_temporary(name):
+            observed_temporary = name
+        return observed
+
+    def replace_between_stat_and_unlink(
+        name: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal race_fired
+        if name == observed_temporary and not race_fired:
+            assert isinstance(name, str)
+            directory = kwargs.get("dir_fd")
+            assert isinstance(directory, int)
+            real_unlink(name, *args, **kwargs)
+            create_replacement(name, directory=directory)
+            race_fired = True
+        real_unlink(name, *args, **kwargs)
+
+    def replace_after_quarantine_rename(
+        source: object,
+        destination: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal race_fired
+        real_rename(source, destination, *args, **kwargs)
+        if is_temporary(source) and not race_fired:
+            assert isinstance(source, str)
+            directory = kwargs.get("src_dir_fd")
+            assert isinstance(directory, int)
+            create_replacement(source, directory=directory)
+            race_fired = True
+
+    monkeypatch.setattr(module.os, "stat", observe_temporary)
+    monkeypatch.setattr(module.os, "unlink", replace_between_stat_and_unlink)
+    monkeypatch.setattr(module.os, "rename", replace_after_quarantine_rename)
+
+    with pytest.raises(
+        module.OperatorDiagnosticWriteError,
+        match="operator_diagnostic_write_invalid",
+    ):
+        writer("run-cleanup-race", _diagnostic())
+
+    assert race_fired
+    run_directory = (
+        tmp_path / module.CALL_BUDGET_SIDECAR_DIRECTORY / "run-cleanup-race"
+    )
+    assert any(path.read_bytes() == replacement for path in run_directory.iterdir())
+
+
+def test_call_budget_operator_diagnostic_rejects_final_identity_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import api.operator_diagnostics as module
+
+    monkeypatch.setenv(
+        "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS",
+        "true",
+    )
+    writer = module.call_budget_diagnostic_writer_from_environment(
+        output_root=tmp_path
+    )
+    assert writer is not None
+    replacement = module._canonical_sidecar_bytes(_diagnostic())
+    final_stat_calls = 0
+    original_identity: tuple[int, int] | None = None
+    race_fired = False
+    real_stat = module.os.stat
+    real_unlink = module.os.unlink
+
+    def replace_before_final_validation(
+        name: object,
+        *args: object,
+        **kwargs: object,
+    ):
+        nonlocal final_stat_calls, original_identity, race_fired
+        if name == module.CALL_BUDGET_SIDECAR_FILENAME:
+            final_stat_calls += 1
+            if final_stat_calls == 2:
+                directory = kwargs.get("dir_fd")
+                assert isinstance(directory, int)
+                real_unlink(name, dir_fd=directory)
+                descriptor = module.os.open(
+                    name,
+                    module.os.O_WRONLY | module.os.O_CREAT | module.os.O_EXCL,
+                    0o600,
+                    dir_fd=directory,
+                )
+                try:
+                    assert module.os.write(descriptor, replacement) == len(replacement)
+                finally:
+                    module.os.close(descriptor)
+                race_fired = True
+        observed = real_stat(name, *args, **kwargs)
+        if name == module.CALL_BUDGET_SIDECAR_FILENAME and final_stat_calls == 1:
+            original_identity = (observed.st_dev, observed.st_ino)
+        return observed
+
+    monkeypatch.setattr(module.os, "stat", replace_before_final_validation)
+
+    with pytest.raises(
+        module.OperatorDiagnosticWriteError,
+        match="operator_diagnostic_write_invalid",
+    ):
+        writer("run-final-race", _diagnostic())
+
+    assert race_fired
+    assert original_identity is not None
+    final = (
+        tmp_path
+        / module.CALL_BUDGET_SIDECAR_DIRECTORY
+        / "run-final-race"
+        / module.CALL_BUDGET_SIDECAR_FILENAME
+    )
+    assert final.read_bytes() == replacement
+    assert (final.stat().st_dev, final.stat().st_ino) != original_identity
+
+
 @pytest.mark.parametrize("failure", ["write", "link", "fsync"])
 def test_call_budget_operator_diagnostic_maps_publication_failure_to_stable_error(
     tmp_path: Path,

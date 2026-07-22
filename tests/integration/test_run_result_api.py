@@ -1,6 +1,8 @@
 import os
 import hashlib
 import json
+from dataclasses import dataclass
+from pathlib import Path
 from pathlib import PurePosixPath
 
 from fastapi.testclient import TestClient
@@ -13,6 +15,13 @@ from api.server import app
 
 AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
 pytestmark = pytest.mark.usefixtures("authenticated_runtime_access")
+
+
+@dataclass(frozen=True)
+class SeededRun:
+    db_path: Path
+    run_id: str
+    segment_id: str
 
 
 def _client(tmp_path, monkeypatch):
@@ -35,6 +44,194 @@ def _artifact(
         "content": content,
         "content_hash": content_hash,
     }
+
+
+def _seed_ready_generic(
+    tmp_path,
+    *,
+    kind="research_report_markdown",
+    content="# Report",
+):
+    from api.run_repository import create_run, finalize_run_transaction
+
+    db_path = tmp_path / "tasks.db"
+    created = create_run(
+        db_path=str(db_path),
+        thread_id="thread-1",
+        query="query",
+    )
+    assert finalize_run_transaction(
+        db_path=str(db_path),
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="completed",
+        delivery_status="ready",
+        evidence_entries=[],
+        artifacts=[_artifact(kind=kind, content=content)],
+    )
+    return SeededRun(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+    )
+
+
+def test_run_delivery_snapshot_contains_only_resolver_inputs(tmp_path):
+    from api.run_repository import get_run_delivery_snapshot
+
+    seeded = _seed_ready_generic(tmp_path, content="# Decision Brief")
+    snapshot = get_run_delivery_snapshot(
+        db_path=str(seeded.db_path),
+        run_id=seeded.run_id,
+    )
+
+    assert set(snapshot) == {
+        "run_id",
+        "profile_id",
+        "execution_status",
+        "delivery_status",
+        "current_artifact_ids",
+        "artifacts",
+    }
+    assert snapshot["current_artifact_ids"] == ()
+    assert snapshot["artifacts"][0]["content"] == "# Decision Brief"
+
+
+def test_run_delivery_snapshot_preserves_talent_artifact_rows(tmp_path):
+    from api.run_repository import (
+        create_run,
+        finalize_run_transaction,
+        get_run_delivery_snapshot,
+    )
+
+    db_path = tmp_path / "tasks.db"
+    created = create_run(
+        db_path=str(db_path),
+        thread_id="thread-talent",
+        query="query",
+        profile_id="talent-hiring-signal",
+    )
+    assert finalize_run_transaction(
+        db_path=str(db_path),
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="completed",
+        delivery_status="ready",
+        evidence_entries=[],
+        artifacts=[
+            _artifact(
+                artifact_id="decision-brief.md",
+                kind="decision_brief_markdown",
+                content="# Decision Brief",
+            )
+        ],
+    )
+
+    snapshot = get_run_delivery_snapshot(
+        db_path=str(db_path),
+        run_id=created["run_id"],
+    )
+
+    assert snapshot["profile_id"] == "talent-hiring-signal"
+    assert snapshot["current_artifact_ids"] == ()
+    assert snapshot["artifacts"][0]["artifact_id"] == "decision-brief.md"
+    assert snapshot["artifacts"][0]["content"] == "# Decision Brief"
+
+
+def test_run_delivery_snapshot_unknown_run_returns_none(tmp_path):
+    from api.run_repository import get_run_delivery_snapshot
+
+    assert get_run_delivery_snapshot(
+        db_path=str(tmp_path / "tasks.db"),
+        run_id="run_missing",
+    ) is None
+
+
+def test_run_delivery_snapshot_uses_one_sqlite_read_snapshot(
+    tmp_path,
+    monkeypatch,
+):
+    import api.run_repository as repository
+
+    seeded = _seed_ready_generic(tmp_path, content="# Original")
+    real_connect = repository._connect
+    interleaved = False
+
+    class InterleavingConnection:
+        def __init__(self, connection):
+            self._connection = connection
+
+        def execute(self, statement, parameters=()):
+            nonlocal interleaved
+            if "FROM run_artifacts_v2" in statement and not interleaved:
+                interleaved = True
+                writer = real_connect(str(seeded.db_path))
+                try:
+                    with writer:
+                        writer.execute(
+                            """
+                            UPDATE research_runs_v2
+                            SET delivery_status = 'blocked', state_version = state_version + 1
+                            WHERE run_id = ?
+                            """,
+                            (seeded.run_id,),
+                        )
+                        writer.execute(
+                            """
+                            UPDATE run_artifacts_v2
+                            SET content = ?, content_hash = ?
+                            WHERE run_id = ? AND artifact_id = ?
+                            """,
+                            (
+                                "# Replacement",
+                                hashlib.sha256(b"# Replacement").hexdigest(),
+                                seeded.run_id,
+                                "research-report.md",
+                            ),
+                        )
+                finally:
+                    writer.close()
+            return self._connection.execute(statement, parameters)
+
+        def __enter__(self):
+            self._connection.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return self._connection.__exit__(exc_type, exc_value, traceback)
+
+        def commit(self):
+            return self._connection.commit()
+
+        def rollback(self):
+            return self._connection.rollback()
+
+        def close(self):
+            return self._connection.close()
+
+    monkeypatch.setattr(
+        repository,
+        "_connect",
+        lambda db_path=None: InterleavingConnection(real_connect(db_path)),
+    )
+    first = repository.get_run_delivery_snapshot(
+        db_path=str(seeded.db_path),
+        run_id=seeded.run_id,
+    )
+    monkeypatch.setattr(repository, "_connect", real_connect)
+    second = repository.get_run_delivery_snapshot(
+        db_path=str(seeded.db_path),
+        run_id=seeded.run_id,
+    )
+
+    assert first["delivery_status"] == "ready"
+    assert first["artifacts"][0]["content"] == "# Original"
+    assert second["delivery_status"] == "blocked"
+    assert second["artifacts"][0]["content"] == "# Replacement"
 
 
 def _outcome(**kwargs):

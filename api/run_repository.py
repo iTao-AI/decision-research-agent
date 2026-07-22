@@ -114,6 +114,10 @@ class RunCreationConflict(RuntimeError):
         super().__init__(code)
 
 
+class RunDeliverySnapshotConflict(RuntimeError):
+    """The persisted delivery projection cannot be read safely."""
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -1098,6 +1102,82 @@ def get_run(*, run_id: str, db_path: str | None = None) -> dict[str, Any] | None
         result["review_decision"] = review_projection["decision"]
         result["review_resolution"] = review_projection["resolution"]
         return result
+    finally:
+        conn.close()
+
+
+def get_run_delivery_snapshot(
+    *,
+    run_id: str,
+    db_path: str | None = None,
+) -> dict[str, Any] | None:
+    """Read all canonical delivery inputs from one SQLite snapshot."""
+    init_run_schema(db_path)
+    conn = _connect(db_path)
+    try:
+        conn.execute("BEGIN")
+        run = conn.execute(
+            """
+            SELECT run_id, profile_id, execution_status, delivery_status
+            FROM research_runs_v2
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        if run is None:
+            conn.commit()
+            return None
+
+        publication_table_exists = conn.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'run_publications_v2'
+            """
+        ).fetchone() is not None
+        publication = (
+            conn.execute(
+                """
+                SELECT artifact_ids_json
+                FROM run_publications_v2
+                WHERE run_id = ? AND is_current = 1
+                """,
+                (run_id,),
+            ).fetchone()
+            if publication_table_exists
+            else None
+        )
+        current_ids: tuple[str, ...] = ()
+        if publication is not None:
+            parsed = json.loads(publication["artifact_ids_json"])
+            if (
+                type(parsed) is not list
+                or any(type(value) is not str or not value for value in parsed)
+                or len(set(parsed)) != len(parsed)
+            ):
+                raise ValueError("run_delivery_snapshot_corrupt")
+            current_ids = tuple(parsed)
+
+        rows = conn.execute(
+            """
+            SELECT artifact_id, kind, media_type, content, content_hash, created_at
+            FROM run_artifacts_v2
+            WHERE run_id = ?
+            ORDER BY artifact_id
+            """,
+            (run_id,),
+        ).fetchall()
+        snapshot = {
+            **dict(run),
+            "current_artifact_ids": current_ids,
+            "artifacts": tuple(dict(row) for row in rows),
+        }
+        conn.commit()
+        return snapshot
+    except (json.JSONDecodeError, sqlite3.Error, TypeError, ValueError) as exc:
+        conn.rollback()
+        raise RunDeliverySnapshotConflict(
+            "run_delivery_snapshot_corrupt"
+        ) from exc
     finally:
         conn.close()
 

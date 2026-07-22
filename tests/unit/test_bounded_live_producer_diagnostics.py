@@ -329,19 +329,28 @@ def test_owned_unlink_preserves_identity_mismatch_observed_after_quarantine_rena
 
     output = _safe_dir(tmp_path)
     descriptor = os.open(output, os.O_RDONLY | os.O_DIRECTORY)
+    owned_descriptor: int | None = None
     name = "task-owned.tmp"
     target = output / name
-    target.write_bytes(b"task")
-    observed = target.stat()
-    target.unlink()
-    target.write_bytes(b"operator replacement")
     try:
+        target.write_bytes(b"task")
+        owned_descriptor = os.open(name, os.O_RDONLY, dir_fd=descriptor)
+        observed = os.fstat(owned_descriptor)
+        target.unlink()
+        target.write_bytes(b"operator replacement")
+        replacement = target.stat()
+        assert (replacement.st_dev, replacement.st_ino) != (
+            observed.st_dev,
+            observed.st_ino,
+        )
         removed = module._unlink_if_owned(
             descriptor,
             name,
             expected_identity=(observed.st_dev, observed.st_ino),
         )
     finally:
+        if owned_descriptor is not None:
+            os.close(owned_descriptor)
         os.close(descriptor)
 
     assert not removed

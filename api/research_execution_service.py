@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from agent.harness_contracts import (
     AgentHarness,
+    CallBudgetDiagnostic,
     ExecutionObserver,
     HarnessRequest,
     HarnessExecutionError,
@@ -167,10 +168,14 @@ class ResearchExecutionService:
         harness: AgentHarness,
         project_root: Path,
         clear_run_cache: Callable[[str], None] = clear_search_cache,
+        call_budget_diagnostic_writer: (
+            Callable[[str, CallBudgetDiagnostic], None] | None
+        ) = None,
     ):
         self.harness = harness
         self.project_root = project_root
         self.clear_run_cache = clear_run_cache
+        self.call_budget_diagnostic_writer = call_budget_diagnostic_writer
 
     async def _preload_declared_aggregate_evidence(
         self,
@@ -371,6 +376,20 @@ class ResearchExecutionService:
             return self._freeze_outcome(observer, outcome_box)
         except HarnessExecutionError as exc:
             observer.on_error(exc)
+            if (
+                exc.failure_kind == "call_budget_exceeded"
+                and type(exc.call_budget_diagnostic) is CallBudgetDiagnostic
+                and self.call_budget_diagnostic_writer is not None
+            ):
+                try:
+                    self.call_budget_diagnostic_writer(
+                        execution_id,
+                        exc.call_budget_diagnostic,
+                    )
+                except Exception:
+                    accumulator.diagnostics.append(
+                        "call_budget_diagnostic_write_failed"
+                    )
             return self._freeze_outcome(
                 observer,
                 outcome_box,

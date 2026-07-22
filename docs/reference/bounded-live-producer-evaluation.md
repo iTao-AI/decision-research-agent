@@ -101,6 +101,9 @@ UTF-8 JSON is bounded to 4 KiB and the resulting regular file is mode `0600`.
 The directory must be absolute, owner-only, repo-external, owned by the current
 user, free of symlink traversal, and identity-stable for the command lifetime.
 Publication is non-overwriting and uses the fixed basename only.
+The invoking UID may modify the operator-owned file during or after publication,
+so this sink does not claim same-UID pathname immutability. Every consumer must
+strictly validate the receipt before use; the receipt remains non-authoritative.
 
 The bounded classification records one of these stages without retaining the
 response or exception text:

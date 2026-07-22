@@ -322,8 +322,8 @@ def test_linked_final_rejects_same_inode_content_mutation(
     assert (output / DIAGNOSTIC_FILENAME).read_bytes().startswith(b"x")
 
 
-def test_owned_unlink_does_not_delete_replacement_after_identity_observation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_owned_unlink_preserves_identity_mismatch_observed_after_quarantine_rename(
+    tmp_path: Path,
 ) -> None:
     import scripts.bounded_live_producer_diagnostics as module
 
@@ -333,19 +333,8 @@ def test_owned_unlink_does_not_delete_replacement_after_identity_observation(
     target = output / name
     target.write_bytes(b"task")
     observed = target.stat()
-    real_stat = module.os.stat
-    replacement_created = False
-
-    def replace_after_stat(*args: object, **kwargs: object) -> os.stat_result:
-        nonlocal replacement_created
-        result = real_stat(*args, **kwargs)
-        if target.exists():
-            target.unlink()
-            target.write_bytes(b"operator replacement")
-            replacement_created = True
-        return result
-
-    monkeypatch.setattr(module.os, "stat", replace_after_stat)
+    target.unlink()
+    target.write_bytes(b"operator replacement")
     try:
         removed = module._unlink_if_owned(
             descriptor,
@@ -355,12 +344,10 @@ def test_owned_unlink_does_not_delete_replacement_after_identity_observation(
     finally:
         os.close(descriptor)
 
-    if replacement_created:
-        assert not removed
-        assert target.read_bytes() == b"operator replacement"
-    else:
-        assert removed
-        assert not target.exists()
+    assert not removed
+    quarantined = list(output.iterdir())
+    assert len(quarantined) == 1
+    assert quarantined[0].read_bytes() == b"operator replacement"
 
 
 def test_failure_cleanup_never_removes_replaced_final(

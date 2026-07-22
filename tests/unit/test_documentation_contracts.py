@@ -1549,6 +1549,9 @@ def test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable() -> None:
         "after cleanup",
         "4 KiB",
         "owner-only repo-external directory",
+        "invoking UID may modify the operator-owned file during or after publication",
+        "Every consumer must strictly validate the receipt before use",
+        "does not claim same-UID pathname immutability",
     ):
         assert phrase in reference
     for stage in (
@@ -1606,12 +1609,18 @@ def test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable() -> None:
             "| `response_json` | `response_utf8_invalid`, `response_json_invalid`, `response_not_object` |",
             "| `response_json` | invalid JSON |",
         ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "does not claim same-UID pathname immutability",
+            "prevents same-UID concurrent replacement",
+        ),
     ),
     ids=(
         "missing-amendment",
         "arbitrary-filename-option",
         "scope-expanded",
         "reason-registry-collapsed",
+        "same-uid-boundary-overclaimed",
     ),
 )
 def test_bounded_result_diagnostic_receipt_rejects_documentation_mutation(

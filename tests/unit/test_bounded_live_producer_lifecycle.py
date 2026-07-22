@@ -1763,6 +1763,11 @@ def test_sidecar_extraction_rejects_container_or_mount_authority_drift(
     tmp_path: Path,
     mutation: str,
 ) -> None:
+    from scripts.bounded_live_producer_runtime_diagnostics import (
+        parse_call_budget_sidecar,
+        serialize_call_budget_sidecar,
+    )
+
     root = tmp_path / "snapshot"
     root.mkdir()
     compose = root / "docker-compose.yml"
@@ -1772,6 +1777,22 @@ def test_sidecar_extraction_rejects_container_or_mount_authority_drift(
     project_name = "dra-proof-13131313131313131313131313131313"
     container_id = "a" * 64
     volume_name = f"{project_name}_backend_output"
+    canonical_sidecar = serialize_call_budget_sidecar(
+        parse_call_budget_sidecar(
+            {
+                "schema_version": "dra.call-budget-origin-sidecar.v1",
+                "limiter": {
+                    "limiter_kind": "model",
+                    "tool_scope": "not_applicable",
+                    "run_count": 40,
+                    "run_limit": 40,
+                    "thread_count": 40,
+                    "thread_limit": None,
+                    "agent_role": "not_observed",
+                },
+            }
+        )
+    ).decode()
     ps_calls = 0
 
     def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
@@ -1792,6 +1813,8 @@ def test_sidecar_extraction_rejects_container_or_mount_authority_drift(
             mounts = [mount, dict(mount)] if mutation == "duplicate_mount" else [mount]
             return subprocess.CompletedProcess(args, 0, json.dumps(mounts) + "\n", "")
         if args[:2] == ("docker", "exec"):
+            if mutation in {"container_drift", "volume_drift"}:
+                return subprocess.CompletedProcess(args, 0, canonical_sidecar, "")
             return subprocess.CompletedProcess(args, 1, "", "invalid")
         raise AssertionError(args)
 
@@ -1813,6 +1836,8 @@ def test_sidecar_extraction_rejects_container_or_mount_authority_drift(
         "run-1",
         ActiveDeadline(5, code=FailureCode.RUN_FAILED, phase=FailurePhase.OBSERVE),
     ) is None
+    if mutation in {"container_drift", "volume_drift"}:
+        assert ps_calls == 2
 
 
 def test_build_success_registers_image_tag_before_later_inspection_failure(

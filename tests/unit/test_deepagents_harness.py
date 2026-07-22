@@ -488,7 +488,6 @@ async def test_installed_native_limit_signals_reach_bounded_harness_mapping(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("origin", ["coordinator", "subagent"])
 @pytest.mark.parametrize(
     ("native_exception", "expected_kind"),
     [
@@ -518,7 +517,6 @@ async def test_installed_native_limit_signals_reach_bounded_harness_mapping(
 async def test_native_call_limit_projection_never_infers_agent_role(
     native_exception,
     expected_kind,
-    origin,
 ):
     from agent.deepagents_harness import DeepAgentsHarness
     from agent.harness_contracts import HarnessExecutionError, HarnessRequest
@@ -527,7 +525,6 @@ async def test_native_call_limit_projection_never_infers_agent_role(
     class PropagatingGraph:
         async def astream(self, _input, *, config, context):
             del config, context
-            assert origin in {"coordinator", "subagent"}
             if False:
                 yield {}
             raise native_exception

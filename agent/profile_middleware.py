@@ -102,7 +102,7 @@ def build_profile_middleware(
     }:
         return [
             ModelCallLimitMiddleware(run_limit=20, exit_behavior="error"),
-            ToolCallLimitMiddleware(run_limit=12, exit_behavior="error"),
+            ToolCallLimitMiddleware(run_limit=16, exit_behavior="error"),
         ]
     if profile_id == "talent-hiring-signal" and role == "researcher":
         return [

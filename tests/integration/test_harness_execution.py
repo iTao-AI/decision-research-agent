@@ -12,6 +12,7 @@ from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededErr
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.tools import StructuredTool
 from pydantic import Field
 
 from agent.deepagents_harness import (
@@ -164,6 +165,36 @@ class ScriptedTaskDelegationModel(ScriptedCanonicalWriteModel):
         )
 
 
+class ScriptedParallelToolModel(ScriptedCanonicalWriteModel):
+    tool_rounds: int
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        self.call_count += 1
+        if self.call_count <= self.tool_rounds:
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "counted_tool",
+                        "args": {"value": self.call_count * 2 + offset},
+                        "id": f"call-{self.call_count}-{offset}",
+                        "type": "tool_call",
+                    }
+                    for offset in range(2)
+                ],
+            )
+        else:
+            message = AIMessage(content="Finished.")
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
 class RecordingHarness:
     def __init__(self):
         self.request = None
@@ -241,6 +272,58 @@ def _real_deepagents_harness(
         skills=(),
         profile_graphs={"generic": graph},
     )
+
+
+def _generic_researcher_limit_graph(
+    model: BaseChatModel,
+    executed_calls: list[int],
+):
+    def counted_tool(value: int) -> str:
+        executed_calls.append(value)
+        return str(value)
+
+    tool = StructuredTool.from_function(
+        counted_tool,
+        name="counted_tool",
+        description="Record one deterministic provider-free tool call.",
+    )
+    return create_agent(
+        model=model,
+        tools=[tool],
+        middleware=build_profile_middleware(
+            "generic",
+            role="network_search",
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_generic_researcher_locked_graph_allows_calls_13_and_14():
+    model = ScriptedParallelToolModel(tool_rounds=7)
+    executed_calls: list[int] = []
+    graph = _generic_researcher_limit_graph(model, executed_calls)
+
+    await graph.ainvoke({"messages": [{"role": "user", "content": "run"}]})
+
+    assert model.call_count == 8
+    assert len(executed_calls) == 14
+
+
+@pytest.mark.asyncio
+async def test_generic_researcher_locked_graph_blocks_calls_17_and_18():
+    model = ScriptedParallelToolModel(tool_rounds=9)
+    executed_calls: list[int] = []
+    graph = _generic_researcher_limit_graph(model, executed_calls)
+
+    with pytest.raises(ToolCallLimitExceededError) as raised:
+        await graph.ainvoke({"messages": [{"role": "user", "content": "run"}]})
+
+    assert len(executed_calls) == 16
+    assert raised.value.tool_name is None
+    assert raised.value.run_limit == 16
+    assert raised.value.run_count == 18
+    assert raised.value.thread_limit is None
+    assert raised.value.thread_count == 18
 
 
 @pytest.mark.asyncio

@@ -45,6 +45,9 @@ from scripts.bounded_live_producer_contracts import (
     LiveReportModel,
     ObservedUsage,
     ReplayReceipt,
+    ResultBoundaryDiagnostic,
+    ResultDiagnosticReason,
+    ResultDiagnosticStage,
     RestartReceipt,
     ResultReceipt,
     RunReceipt,
@@ -54,6 +57,12 @@ from scripts.bounded_live_producer_contracts import (
     serialize_error,
     serialize_manifest,
     serialize_report,
+)
+from scripts.bounded_live_producer_diagnostics import (
+    DiagnosticOutputError,
+    DiagnosticSink,
+    preflight_diagnostic_dir,
+    publish_result_diagnostic,
 )
 from scripts.bounded_live_producer_http import CreateAmbiguous, ProofHttpClient
 from scripts.downstream_consumer_contract import (
@@ -88,8 +97,26 @@ _DOCKER_ID_RE = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
 _DOCKER_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z", re.ASCII)
 
 
-def _error(code: FailureCode | str, phase: FailurePhase | str) -> EvaluationError:
-    return EvaluationError(code, phase, False)
+def _error(
+    code: FailureCode | str,
+    phase: FailurePhase | str,
+    *,
+    diagnostic: ResultBoundaryDiagnostic | None = None,
+) -> EvaluationError:
+    return EvaluationError(code, phase, False, diagnostic=diagnostic)
+
+
+def _consumer_diagnostic(
+    reason: ResultDiagnosticReason,
+    *,
+    response_bytes: int,
+) -> ResultBoundaryDiagnostic:
+    return ResultBoundaryDiagnostic(
+        stage=ResultDiagnosticStage.CONSUMER_CONTRACT,
+        reason=reason,
+        http_status=200,
+        response_bytes=response_bytes,
+    )
 
 
 def _identifier(value: object) -> bool:
@@ -243,6 +270,7 @@ def project_live_observation(
     *,
     status_payload: dict[str, Any],
     result_payload: dict[str, Any],
+    result_response_bytes: int,
     expected_run_id: str,
     expected_thread_id: str,
     expected_segment_id: str,
@@ -308,6 +336,24 @@ def project_live_observation(
             raise _error(FailureCode.ARTIFACT_INVALID, FailurePhase.RESULT) from exc
         if exc.code == "contract_state_invalid":
             raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE) from exc
+        if exc.code == "contract_result_invalid":
+            raise _error(
+                FailureCode.CONSUMER_PROJECTION_INVALID,
+                FailurePhase.RESULT,
+                diagnostic=_consumer_diagnostic(
+                    ResultDiagnosticReason.CONTRACT_RESULT_INVALID,
+                    response_bytes=result_response_bytes,
+                ),
+            ) from exc
+        if exc.code == "contract_schema_invalid":
+            raise _error(
+                FailureCode.CONSUMER_PROJECTION_INVALID,
+                FailurePhase.RESULT,
+                diagnostic=_consumer_diagnostic(
+                    ResultDiagnosticReason.CONTRACT_SCHEMA_INVALID,
+                    response_bytes=result_response_bytes,
+                ),
+            ) from exc
         raise _error(
             FailureCode.CONSUMER_PROJECTION_INVALID,
             FailurePhase.RESULT,
@@ -316,7 +362,16 @@ def project_live_observation(
     if expected == {"support": "partial", "disposition": "block_fallback"}:
         raise _error(FailureCode.RUN_FALLBACK_REJECTED, FailurePhase.RESULT)
     if expected != {"support": "supported", "disposition": "accept_draft"}:
-        raise _error(FailureCode.CONSUMER_PROJECTION_INVALID, FailurePhase.RESULT)
+        raise _error(
+            FailureCode.CONSUMER_PROJECTION_INVALID,
+            FailurePhase.RESULT,
+            diagnostic=ResultBoundaryDiagnostic(
+                stage=ResultDiagnosticStage.PROJECTION_DISPOSITION,
+                reason=ResultDiagnosticReason.PROJECTION_DISPOSITION_INVALID,
+                http_status=200,
+                response_bytes=result_response_bytes,
+            ),
+        )
     try:
         evidence = tuple(
             EvidenceReceipt.model_validate(row, strict=True)
@@ -526,6 +581,7 @@ def run_cleanup_guarded(
                 primary_error.phase,
                 primary_error.retryable,
                 CleanupStatus.SUCCEEDED,
+                diagnostic=primary_error.diagnostic,
             ) from primary_error
         raise EvaluationError(
             FailureCode.EVALUATION_INTERNAL_ERROR,
@@ -784,10 +840,15 @@ def observe_terminal(
             delay = remaining_seconds(1.0)
             sleep(delay)
             continue
-        result = client.result(run_id=run_id, timeout_seconds=30.0)
+        result_observation = client.result_observation(
+            run_id=run_id,
+            timeout_seconds=30.0,
+        )
+        result = result_observation.body
         projected = project_live_observation(
             status_payload=status,
             result_payload=result,
+            result_response_bytes=result_observation.response_bytes,
             expected_run_id=run_id,
             expected_thread_id=thread_id,
             expected_segment_id=segment_id,
@@ -1035,6 +1096,24 @@ def _milliseconds(started: float, ended: float, maximum: int) -> int:
     return value
 
 
+def _publish_diagnostic_best_effort(
+    sink: DiagnosticSink | None,
+    error: EvaluationError,
+    *,
+    remaining_seconds: Callable[[float], float],
+) -> None:
+    if sink is None or error.diagnostic is None:
+        return
+    try:
+        publish_result_diagnostic(
+            sink,
+            error,
+            remaining_seconds=remaining_seconds,
+        )
+    except Exception:
+        return
+
+
 def observe_live(
     *,
     env_file: Path,
@@ -1045,6 +1124,7 @@ def observe_live(
     pricing_basis: str | None = None,
     currency: str | None = None,
     retain_task_images: bool = False,
+    diagnostic_dir: Path | None = None,
     repository_root: Path = PROJECT_ROOT,
 ) -> LiveReportModel:
     """Execute one managed live observation.
@@ -1078,6 +1158,17 @@ def observe_live(
         phase=FailurePhase.INTERNAL,
     )
     _preflight_output_paths(repository_root)
+    try:
+        diagnostic_sink = (
+            preflight_diagnostic_dir(
+                diagnostic_dir,
+                repository_root=repository_root,
+            )
+            if diagnostic_dir is not None
+            else None
+        )
+    except DiagnosticOutputError as exc:
+        raise _error(FailureCode.OUTPUT_INVALID, FailurePhase.INPUT) from exc
     non_cleanup_deadline.remaining(1.0)
     manifest = load_manifest(
         repository_root
@@ -1157,6 +1248,7 @@ def observe_live(
             "benchmarks/bounded-live-producer-v1/manifest.json",
             "scripts/secure_local_runtime_proof.py",
             "scripts/bounded_live_producer_contracts.py",
+            "scripts/bounded_live_producer_diagnostics.py",
             "scripts/bounded_live_producer_http.py",
             "scripts/bounded_live_producer_lifecycle.py",
             "scripts/bounded_live_producer_proof.py",
@@ -1414,8 +1506,7 @@ def observe_live(
     try:
         facts, cleanup_model = run_cleanup_guarded(primary, cleanup)
     except EvaluationError as exc:
-        live_configuration.close()
-        raise EvaluationError(
+        final_error = EvaluationError(
             exc.code,
             exc.phase,
             exc.retryable,
@@ -1425,7 +1516,24 @@ def observe_live(
                 or exc.cleanup_status is CleanupStatus.FAILED
                 else CleanupStatus.SUCCEEDED
             ),
-        ) from exc
+            diagnostic=exc.diagnostic,
+        )
+        live_configuration.close()
+        _publish_diagnostic_best_effort(
+            diagnostic_sink,
+            final_error,
+            remaining_seconds=total_deadline.remaining,
+        )
+        raise final_error from exc
+    except BaseExceptionGroup as exc:
+        final_error = _group_error(exc)
+        live_configuration.close()
+        _publish_diagnostic_best_effort(
+            diagnostic_sink,
+            final_error,
+            remaining_seconds=total_deadline.remaining,
+        )
+        raise final_error from exc
     except BaseException:
         live_configuration.close()
         raise
@@ -1506,6 +1614,7 @@ def observe_live(
             exc.phase,
             exc.retryable,
             CleanupStatus.SUCCEEDED,
+            diagnostic=exc.diagnostic,
         ) from exc
     except ValidationError as exc:
         raise EvaluationError(
@@ -1557,6 +1666,7 @@ def _parser() -> argparse.ArgumentParser:
     live.add_argument("--pricing-basis")
     live.add_argument("--currency")
     live.add_argument("--retain-task-images", action="store_true")
+    live.add_argument("--diagnostic-dir", type=Path)
     return parser
 
 
@@ -1618,6 +1728,7 @@ def _group_error(group: BaseExceptionGroup) -> EvaluationError:
         primary.phase,
         primary.retryable,
         CleanupStatus.FAILED if cleanup_failed else primary.cleanup_status,
+        diagnostic=primary.diagnostic,
     )
 
 
@@ -1641,6 +1752,7 @@ def main(argv: list[str] | None = None) -> int:
                 pricing_basis=arguments.pricing_basis,
                 currency=arguments.currency,
                 retain_task_images=arguments.retain_task_images,
+                diagnostic_dir=arguments.diagnostic_dir,
             )
             result = {
                 "mode": "live",

@@ -23,8 +23,12 @@ from scripts.bounded_live_producer_contracts import (
     CleanupStatus,
     EvaluationError,
     LiveReportModel,
+    ResultBoundaryDiagnostic,
+    ResultDiagnosticReason,
+    ResultDiagnosticStage,
 )
-from scripts.bounded_live_producer_http import CreateAmbiguous
+from scripts.bounded_live_producer_diagnostics import DIAGNOSTIC_FILENAME
+from scripts.bounded_live_producer_http import CreateAmbiguous, HttpObservation
 from scripts.bounded_live_producer_proof import (
     TerminalSnapshot,
     compare_restart,
@@ -74,6 +78,9 @@ def _install_provider_free_live_boundaries(
     pre_guard_failure: str | None = None,
     fail_pre_guard_cleanup: bool = False,
     secure_check_error: BaseException | None = None,
+    terminal_error: EvaluationError | None = None,
+    diagnostic_dir: Path | None = None,
+    diagnostic_publication_error: BaseException | None = None,
 ):
     module = importlib.import_module("scripts.bounded_live_producer_proof")
     lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
@@ -136,6 +143,7 @@ def _install_provider_free_live_boundaries(
         events.append("snapshot")
         assert checkout_root == repository
         assert _kwargs["verify_secure_runtime"] is False
+        holder["required_paths"] = tuple(_kwargs["required_paths"])
         task_temp_parent.mkdir()
         holder["task_temp"] = task_temp_parent
         if clock is not None:
@@ -243,6 +251,8 @@ def _install_provider_free_live_boundaries(
 
     def terminal(*_args, **_kwargs):
         events.append("terminal")
+        if terminal_error is not None:
+            raise terminal_error
         return _snapshot(), _status(), _result()
 
     def restart(*_args, **_kwargs):
@@ -277,6 +287,15 @@ def _install_provider_free_live_boundaries(
     monkeypatch.setattr(module, "reconcile_create", reconcile)
     monkeypatch.setattr(module, "observe_terminal", terminal)
     monkeypatch.setattr(module, "restart_backend_transport", restart)
+    real_diagnostic_publish = module.publish_result_diagnostic
+
+    def diagnostic_publish(*args, **kwargs):
+        events.append("diagnostic_publish")
+        if diagnostic_publication_error is not None:
+            raise diagnostic_publication_error
+        return real_diagnostic_publish(*args, **kwargs)
+
+    monkeypatch.setattr(module, "publish_result_diagnostic", diagnostic_publish)
     if publication_error is not None:
         def fail_publication(*_args, **_kwargs):
             raise publication_error
@@ -299,6 +318,7 @@ def _install_provider_free_live_boundaries(
             provider_base_url="https://provider.example/v1",
             primary_model_id="approved-model",
             fallback_model_id="approved-model",
+            diagnostic_dir=diagnostic_dir,
             repository_root=repository,
         )
 
@@ -455,10 +475,29 @@ def _snapshot(
     return project_live_observation(
         status_payload=status or _status(),
         result_payload=result or _result(),
+        result_response_bytes=len(
+            json.dumps(result or _result(), sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ),
         expected_run_id="run-proof-1",
         expected_thread_id="thread-proof-1",
         expected_segment_id="segment-proof-1",
         required_cited_domains=("docs.python.org", "peps.python.org"),
+    )
+
+
+def _result_diagnostic_error() -> EvaluationError:
+    return EvaluationError(
+        "consumer_projection_invalid",
+        "result",
+        False,
+        diagnostic=ResultBoundaryDiagnostic(
+            stage=ResultDiagnosticStage.CONSUMER_CONTRACT,
+            reason=ResultDiagnosticReason.CONTRACT_RESULT_INVALID,
+            http_status=200,
+            response_bytes=512,
+        ),
     )
 
 
@@ -594,7 +633,15 @@ def test_cli_check_has_exact_stdout_and_help_is_non_mutating(capsys: pytest.Capt
         assert captured.err == ""
 
 
-@pytest.mark.parametrize("arguments", [[], ["unknown"], ["check", "--extra"]])
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        [],
+        ["unknown"],
+        ["check", "--extra"],
+        ["check", "--diagnostic-dir", "diagnostic"],
+    ],
+)
 def test_cli_invalid_arguments_emit_one_canonical_error_line(
     arguments: list[str],
     capsys: pytest.CaptureFixture[str],
@@ -786,10 +833,21 @@ def test_observe_terminal_uses_one_remaining_deadline_and_never_cancels() -> Non
             self.status_calls.append(run_id)
             return self.statuses.pop(0)
 
-        def result(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+        def result_observation(
+            self, *, run_id: str, timeout_seconds: float
+        ) -> HttpObservation:
             assert timeout_seconds == 30.0
             self.result_calls.append(run_id)
-            return _result()
+            result = _result()
+            return HttpObservation(
+                status_code=200,
+                body=result,
+                response_bytes=len(
+                    json.dumps(result, sort_keys=True, separators=(",", ":")).encode(
+                        "utf-8"
+                    )
+                ),
+            )
 
     client = Client()
     remaining_calls: list[float] = []
@@ -946,6 +1004,11 @@ def test_project_live_observation_rejects_terminal_consumer_and_identity_mutatio
         project_live_observation(
             status_payload=status,
             result_payload=result,
+            result_response_bytes=len(
+                json.dumps(result, sort_keys=True, separators=(",", ":")).encode(
+                    "utf-8"
+                )
+            ),
             expected_run_id="run-proof-1",
             expected_thread_id="thread-proof-1",
             expected_segment_id="segment-proof-1",
@@ -956,12 +1019,23 @@ def test_project_live_observation_rejects_terminal_consumer_and_identity_mutatio
 
 
 @pytest.mark.parametrize(
-    ("contract_code", "expected_code", "expected_phase"),
+    ("contract_code", "expected_code", "expected_phase", "expected_reason"),
     [
-        ("contract_artifact_invalid", "artifact_invalid", "result"),
-        ("contract_state_invalid", "run_state_invalid", "observe"),
-        ("contract_evidence_invalid", "evidence_invalid", "evidence"),
-        ("contract_result_invalid", "consumer_projection_invalid", "result"),
+        ("contract_artifact_invalid", "artifact_invalid", "result", None),
+        ("contract_state_invalid", "run_state_invalid", "observe", None),
+        ("contract_evidence_invalid", "evidence_invalid", "evidence", None),
+        (
+            "contract_result_invalid",
+            "consumer_projection_invalid",
+            "result",
+            "contract_result_invalid",
+        ),
+        (
+            "contract_schema_invalid",
+            "consumer_projection_invalid",
+            "result",
+            "contract_schema_invalid",
+        ),
     ],
 )
 def test_project_live_observation_preserves_precise_consumer_failure_class(
@@ -969,6 +1043,7 @@ def test_project_live_observation_preserves_precise_consumer_failure_class(
     contract_code: str,
     expected_code: str,
     expected_phase: str,
+    expected_reason: str | None,
 ) -> None:
     module = importlib.import_module("scripts.bounded_live_producer_proof")
 
@@ -982,6 +1057,39 @@ def test_project_live_observation_preserves_precise_consumer_failure_class(
 
     assert caught.value.code.value == expected_code
     assert caught.value.phase.value == expected_phase
+    if expected_reason is None:
+        assert caught.value.diagnostic is None
+    else:
+        assert caught.value.diagnostic is not None
+        assert caught.value.diagnostic.stage.value == "consumer_contract"
+        assert caught.value.diagnostic.reason.value == expected_reason
+
+
+def test_project_live_observation_classifies_unexpected_projection_disposition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    monkeypatch.setattr(
+        module,
+        "project_consumer_case",
+        lambda **_kwargs: {
+            "expected": {"support": "unexpected", "disposition": "unexpected"}
+        },
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot()
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.diagnostic is not None
+    assert caught.value.diagnostic.model_dump(mode="json") == {
+        "stage": "projection_disposition",
+        "reason": "projection_disposition_invalid",
+        "http_status": 200,
+        "response_bytes": len(
+            json.dumps(_result(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ),
+    }
 
 
 @pytest.mark.parametrize(
@@ -1396,6 +1504,23 @@ def test_run_cleanup_guarded_preserves_primary_and_cleanup_causes() -> None:
     assert caught.value.exceptions == (primary, cleanup)
 
 
+def test_group_error_preserves_result_diagnostic_and_cleanup_failure() -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    primary = _result_diagnostic_error()
+    cleanup = EvaluationError(
+        "cleanup_failed",
+        "cleanup",
+        False,
+        CleanupStatus.FAILED,
+    )
+
+    projected = module._group_error(ExceptionGroup("local-only", [primary, cleanup]))
+
+    assert projected.code.value == "consumer_projection_invalid"
+    assert projected.cleanup_status is CleanupStatus.FAILED
+    assert projected.diagnostic == primary.diagnostic
+
+
 def test_run_cleanup_guarded_returns_cleanup_receipt_after_success() -> None:
     receipt = CleanupReceipt(
         attempted=True,
@@ -1593,6 +1718,168 @@ def test_observe_live_runs_real_orchestrator_through_provider_free_fake_boundari
     public_bytes = json_path.read_bytes() + markdown_path.read_bytes()
     for forbidden in (b"must-not-be-published", b"fixture-only", b"snippet"):
         assert forbidden not in public_bytes
+
+
+def test_observe_live_publishes_diagnostic_only_after_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=_result_diagnostic_error(),
+        diagnostic_dir=diagnostic_dir,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.cleanup_status is CleanupStatus.SUCCEEDED
+    receipt = diagnostic_dir / DIAGNOSTIC_FILENAME
+    assert json.loads(receipt.read_text(encoding="utf-8")) == {
+        "schema_version": "dra.bounded-live-producer-result-diagnostic.v1",
+        "primary": {
+            "code": "consumer_projection_invalid",
+            "phase": "result",
+            "retryable": False,
+            "cleanup_status": "succeeded",
+        },
+        "result_boundary": {
+            "stage": "consumer_contract",
+            "reason": "contract_result_invalid",
+            "http_status": 200,
+            "response_bytes": 512,
+        },
+    }
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not holder["task_temp"].exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
+def test_observe_live_rejects_invalid_diagnostic_dir_before_live_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository_diagnostic = tmp_path / "repository" / "diagnostic"
+    repository_diagnostic.mkdir(parents=True, mode=0o700)
+    repository_diagnostic.chmod(0o700)
+    invoke, repository, events, _holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        diagnostic_dir=repository_diagnostic,
+    )
+    events.clear()
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "output_invalid"
+    assert caught.value.phase.value == "input"
+    assert events == []
+    assert not (repository_diagnostic / DIAGNOSTIC_FILENAME).exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+
+
+def test_observe_live_success_or_precise_failure_produces_no_generic_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, _repository, _events, _holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        diagnostic_dir=diagnostic_dir,
+    )
+    assert invoke().status == "valid"
+    assert not (diagnostic_dir / DIAGNOSTIC_FILENAME).exists()
+
+    second_root = tmp_path / "second"
+    second_root.mkdir()
+    second_diagnostic = second_root / "diagnostic"
+    second_diagnostic.mkdir(mode=0o700)
+    second_diagnostic.chmod(0o700)
+    invoke, _repository, _events, _holder = _install_provider_free_live_boundaries(
+        second_root,
+        monkeypatch,
+        diagnostic_dir=second_diagnostic,
+        terminal_error=EvaluationError("artifact_invalid", "result", False),
+    )
+    with pytest.raises(EvaluationError, match="artifact_invalid"):
+        invoke()
+    assert not (second_diagnostic / DIAGNOSTIC_FILENAME).exists()
+
+
+def test_diagnostic_publication_failure_preserves_primary_and_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        diagnostic_dir=diagnostic_dir,
+        terminal_error=_result_diagnostic_error(),
+        diagnostic_publication_error=RuntimeError("private publication detail"),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.cleanup_status is CleanupStatus.SUCCEEDED
+    assert caught.value.diagnostic is not None
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not holder["task_temp"].exists()
+    assert not (diagnostic_dir / DIAGNOSTIC_FILENAME).exists()
+
+
+def test_primary_plus_cleanup_failure_publishes_failed_cleanup_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        diagnostic_dir=diagnostic_dir,
+        terminal_error=_result_diagnostic_error(),
+        fail_cleanup_refresh=True,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.cleanup_status is CleanupStatus.FAILED
+    receipt = json.loads(
+        (diagnostic_dir / DIAGNOSTIC_FILENAME).read_text(encoding="utf-8")
+    )
+    assert receipt["primary"]["cleanup_status"] == "failed"
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not holder["task_temp"].exists()
+
+
+def test_live_snapshot_includes_diagnostic_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke, _repository, _events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+    )
+    invoke()
+    assert "scripts/bounded_live_producer_diagnostics.py" in holder["required_paths"]
 
 
 def test_observe_live_locked_image_secure_failure_stops_before_services_and_cleans(
@@ -1874,6 +2161,7 @@ def test_live_cli_accepts_only_public_declarations_and_fixed_output_paths(
 
     monkeypatch.setattr(module, "observe_live", fake_observe_live)
     env_file = tmp_path / "live.env"
+    diagnostic_dir = tmp_path / "diagnostic"
     arguments = [
         "observe-live",
         "--env-file",
@@ -1886,6 +2174,8 @@ def test_live_cli_accepts_only_public_declarations_and_fixed_output_paths(
         "approved-model",
         "--fallback-model-id",
         "approved-model",
+        "--diagnostic-dir",
+        str(diagnostic_dir),
         "--pricing-basis",
         "operator-v1",
         "--currency",
@@ -1906,6 +2196,7 @@ def test_live_cli_accepts_only_public_declarations_and_fixed_output_paths(
         "provider_base_url": "https://provider.example/v1",
         "primary_model_id": "approved-model",
         "fallback_model_id": "approved-model",
+        "diagnostic_dir": diagnostic_dir,
         "pricing_basis": "operator-v1",
         "currency": "USD",
         "retain_task_images": True,
@@ -2024,6 +2315,9 @@ def test_container_fixture_uses_production_dispatch_fence_and_finalization(
     projected = project_live_observation(
         status_payload=status,
         result_payload=result,
+        result_response_bytes=len(
+            json.dumps(result, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ),
         expected_run_id=accepted.run_id,
         expected_thread_id=accepted.thread_id,
         expected_segment_id=accepted.segment_id,

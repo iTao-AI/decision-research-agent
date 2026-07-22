@@ -1519,6 +1519,124 @@ def test_bounded_live_producer_design_rejects_precheck_order_mutation(
     )
 
 
+def test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable() -> None:
+    reference_path = (
+        PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md"
+    )
+    design_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+    )
+    plan_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md"
+    )
+    reference = " ".join(reference_path.read_text(encoding="utf-8").split())
+    design = " ".join(design_path.read_text(encoding="utf-8").split())
+    plan = " ".join(plan_path.read_text(encoding="utf-8").split())
+    for text in (design, plan):
+        assert "### Post-Observation Result Diagnostic Amendment" in text
+        assert "the only exception to Change 1's prohibition on output-path options" in text
+        assert "does not permit an arbitrary filename or general output root" in text
+    for phrase in (
+        "dra.bounded-live-producer-result-diagnostic.v1",
+        "--diagnostic-dir",
+        "bounded-live-producer-result-diagnostic-v1.json",
+        "existing public error envelope remains unchanged",
+        "not live evidence",
+        "does not authorize a retry",
+        "fixed basename",
+        "after cleanup",
+        "4 KiB",
+        "owner-only repo-external directory",
+        "invoking UID may modify the operator-owned file during or after publication",
+        "Every consumer must strictly validate the receipt before use",
+        "does not claim same-UID pathname immutability",
+    ):
+        assert phrase in reference
+    for stage in (
+        "connection",
+        "response_status",
+        "response_body",
+        "response_json",
+        "response_identity",
+        "consumer_contract",
+        "projection_disposition",
+    ):
+        assert f"`{stage}`" in reference
+    for exact_row in (
+        "| `connection` | `connection_failed` |",
+        "| `response_status` | `response_status_invalid` |",
+        "| `response_body` | `response_read_failed`, `response_size_exceeded` |",
+        "| `response_json` | `response_utf8_invalid`, `response_json_invalid`, `response_not_object` |",
+        "| `response_identity` | `run_identity_mismatch` |",
+        "| `consumer_contract` | `contract_result_invalid`, `contract_schema_invalid` |",
+        "| `projection_disposition` | `projection_disposition_invalid` |",
+    ):
+        assert exact_row in reference
+    for forbidden in (
+        "raw response is retained",
+        "automatic retry",
+        "new REST error contract",
+        "diagnostic receipt is canonical",
+        "permits an arbitrary filename",
+    ):
+        assert forbidden not in " ".join((reference, design, plan))
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new"),
+    (
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md",
+            "### Post-Observation Result Diagnostic Amendment",
+            "### Removed Result Diagnostic Amendment",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "--diagnostic-dir",
+            "--diagnostic-file",
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md",
+            "does not permit an arbitrary filename or general output root",
+            "permits an arbitrary filename",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "| `response_json` | `response_utf8_invalid`, `response_json_invalid`, `response_not_object` |",
+            "| `response_json` | invalid JSON |",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "does not claim same-UID pathname immutability",
+            "prevents same-UID concurrent replacement",
+        ),
+    ),
+    ids=(
+        "missing-amendment",
+        "arbitrary-filename-option",
+        "scope-expanded",
+        "reason-registry-collapsed",
+        "same-uid-boundary-overclaimed",
+    ),
+)
+def test_bounded_result_diagnostic_receipt_rejects_documentation_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    old: str,
+    new: str,
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=path,
+        replacements=((old, new),),
+        contract=test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable,
+    )
+
+
 def test_canonical_report_completion_and_fallback_failure_contracts_are_current() -> None:
     state_machines = (PROJECT_ROOT / "docs/reference/state-machines.md").read_text(
         encoding="utf-8"

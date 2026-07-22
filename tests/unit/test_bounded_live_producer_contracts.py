@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 from pydantic import ValidationError
@@ -9,6 +12,7 @@ from pydantic import ValidationError
 from scripts.bounded_live_producer_contracts import (
     BOUNDARIES,
     LIMITS,
+    MAX_DIAGNOSTIC_BYTES,
     CleanupStatus,
     ErrorEnvelope,
     EvaluationError,
@@ -18,11 +22,16 @@ from scripts.bounded_live_producer_contracts import (
     LiveReportModel,
     ManifestModel,
     ObservedUsage,
+    ResultBoundaryDiagnostic,
+    ResultDiagnosticReason,
+    ResultDiagnosticReceipt,
+    ResultDiagnosticStage,
     load_manifest,
     render_markdown,
     serialize_error,
     serialize_manifest,
     serialize_report,
+    serialize_result_diagnostic,
     validate_live_report,
 )
 
@@ -345,6 +354,192 @@ def test_error_serialization_is_exact_and_safe() -> None:
         "cleanup_status": "not_started",
     }
     assert b"Traceback" not in raw
+
+
+VALID_DIAGNOSTIC_PAIRS = {
+    "connection": {"connection_failed"},
+    "response_status": {"response_status_invalid"},
+    "response_body": {"response_read_failed", "response_size_exceeded"},
+    "response_json": {
+        "response_utf8_invalid",
+        "response_json_invalid",
+        "response_not_object",
+    },
+    "response_identity": {"run_identity_mismatch"},
+    "consumer_contract": {"contract_result_invalid", "contract_schema_invalid"},
+    "projection_disposition": {"projection_disposition_invalid"},
+}
+
+
+def _diagnostic() -> ResultBoundaryDiagnostic:
+    return ResultBoundaryDiagnostic(
+        stage=ResultDiagnosticStage.CONSUMER_CONTRACT,
+        reason=ResultDiagnosticReason.CONTRACT_RESULT_INVALID,
+        http_status=200,
+        response_bytes=1234,
+    )
+
+
+def test_result_diagnostic_receipt_is_strict_exact_and_bounded() -> None:
+    error = EvaluationError(
+        "consumer_projection_invalid",
+        "result",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_diagnostic(),
+    )
+
+    raw = serialize_result_diagnostic(error)
+    receipt = ResultDiagnosticReceipt.model_validate_json(raw, strict=True)
+
+    assert len(raw) <= MAX_DIAGNOSTIC_BYTES
+    assert receipt.model_dump(mode="json") == {
+        "schema_version": "dra.bounded-live-producer-result-diagnostic.v1",
+        "primary": {
+            "code": "consumer_projection_invalid",
+            "phase": "result",
+            "retryable": False,
+            "cleanup_status": "succeeded",
+        },
+        "result_boundary": {
+            "stage": "consumer_contract",
+            "reason": "contract_result_invalid",
+            "http_status": 200,
+            "response_bytes": 1234,
+        },
+    }
+
+
+def test_default_public_error_bytes_ignore_internal_diagnostic() -> None:
+    baseline = EvaluationError(
+        "consumer_projection_invalid", "result", False, CleanupStatus.SUCCEEDED
+    )
+    enriched = EvaluationError(
+        "consumer_projection_invalid",
+        "result",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_diagnostic(),
+    )
+
+    assert serialize_error(enriched) == serialize_error(baseline)
+
+
+@pytest.mark.parametrize(
+    ("stage", "reason"),
+    [
+        (stage, reason)
+        for stage, reasons in VALID_DIAGNOSTIC_PAIRS.items()
+        for reason in reasons
+    ],
+)
+def test_result_diagnostic_accepts_only_registered_pairs(stage: str, reason: str) -> None:
+    diagnostic = ResultBoundaryDiagnostic(
+        stage=ResultDiagnosticStage(stage),
+        reason=ResultDiagnosticReason(reason),
+        http_status=None,
+        response_bytes=None,
+    )
+
+    assert diagnostic.stage.value == stage
+    assert diagnostic.reason.value == reason
+
+
+@pytest.mark.parametrize(
+    ("stage", "reason"),
+    [
+        ("connection", "response_status_invalid"),
+        ("response_status", "connection_failed"),
+        ("response_body", "response_json_invalid"),
+        ("consumer_contract", "projection_disposition_invalid"),
+    ],
+)
+def test_result_diagnostic_rejects_cross_stage_pairs(stage: str, reason: str) -> None:
+    with pytest.raises(ValidationError):
+        ResultBoundaryDiagnostic(
+            stage=ResultDiagnosticStage(stage),
+            reason=ResultDiagnosticReason(reason),
+            http_status=None,
+            response_bytes=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("http_status", True),
+        ("http_status", 99),
+        ("http_status", 600),
+        ("response_bytes", True),
+        ("response_bytes", -1),
+        ("response_bytes", 2_097_153),
+    ],
+)
+def test_result_diagnostic_rejects_invalid_integer_bounds(
+    field: str, value: object
+) -> None:
+    payload = {
+        "stage": "connection",
+        "reason": "connection_failed",
+        "http_status": None,
+        "response_bytes": None,
+    }
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        ResultBoundaryDiagnostic.model_validate(payload, strict=True)
+
+
+def test_result_diagnostic_models_are_frozen_and_forbid_extra_or_raw_fields() -> None:
+    diagnostic = _diagnostic()
+    with pytest.raises(ValidationError):
+        diagnostic.reason = ResultDiagnosticReason.CONTRACT_SCHEMA_INVALID  # type: ignore[misc]
+
+    payload = diagnostic.model_dump(mode="python")
+    payload["raw_response"] = "private payload"
+    with pytest.raises(ValidationError):
+        ResultBoundaryDiagnostic.model_validate(payload, strict=True)
+
+
+@pytest.mark.parametrize(
+    ("code", "phase"),
+    [
+        ("artifact_invalid", "result"),
+        ("consumer_projection_invalid", "observe"),
+    ],
+)
+def test_result_diagnostic_rejects_ineligible_primary(code: str, phase: str) -> None:
+    with pytest.raises(ValueError, match="evaluation_error_invalid"):
+        EvaluationError(code, phase, False, diagnostic=_diagnostic())
+
+
+def test_result_diagnostic_rejects_non_contract_metadata_and_missing_metadata() -> None:
+    with pytest.raises(ValueError, match="evaluation_error_invalid"):
+        EvaluationError(
+            "consumer_projection_invalid",
+            "result",
+            False,
+            diagnostic={"raw": "payload"},  # type: ignore[arg-type]
+        )
+    with pytest.raises(EvaluationValidationError, match="diagnostic_invalid"):
+        serialize_result_diagnostic(
+            EvaluationError("consumer_projection_invalid", "result", False)
+        )
+
+
+def test_result_diagnostic_contract_import_is_silent() -> None:
+    completed = subprocess.run(
+        [sys.executable, "-c", "import scripts.bounded_live_producer_contracts"],
+        cwd=PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHON_DOTENV_DISABLED": "1"},
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert completed.stderr == ""
 
 
 def test_report_size_bound_is_enforced() -> None:

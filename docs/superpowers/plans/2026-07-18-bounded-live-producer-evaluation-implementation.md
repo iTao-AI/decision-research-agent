@@ -1343,6 +1343,21 @@ This amendment does not change REST/OpenAPI, database, canonical result or Evide
 provider contract, VERSION, dependencies, CI, or release metadata. No live-success claim is made
 and no live evidence is published.
 
+### Post-Observation Result Diagnostic Amendment
+
+A later bounded observation showed that `consumer_projection_invalid` still collapsed multiple
+result-boundary stages after existing artifact, state, Evidence, fallback, and hash
+classifications. The separately approved Bounded Result Diagnostic Receipt v1 adds one optional
+`--diagnostic-dir` with a fixed basename and owner-only repo-external directory. This is the only
+exception to Change 1's prohibition on output-path options;
+it does not permit an arbitrary filename or general output root.
+
+The existing public error envelope remains unchanged. The JSON-only receipt is written after
+cleanup, is not live evidence or application authority, contains no raw response or provider
+material, and does not authorize a retry. REST, OpenAPI, database, Agent/framework authority,
+canonical result, Evidence, downstream consumer acceptance, dependencies, CI provider policy,
+VERSION, and release metadata remain unchanged.
+
 ### Change 3 — `v0.1.6` Release Preparation
 
 Only after reviewed live evidence merges may a pure metadata branch evaluate `v0.1.6`. Release

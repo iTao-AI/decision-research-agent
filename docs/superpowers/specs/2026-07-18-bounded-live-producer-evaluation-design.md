@@ -940,3 +940,18 @@ Proceed with Bounded Live Producer Evaluation v1 as the next DRA stage. Land thi
 mechanically, review its actual public diff, then write the implementation plan. Do not start Real
 Agent Evaluation v2, durable usage, structured outcome, multi-instance work, or a consumer-specific
 integration until this producer proof either succeeds or exposes a concrete contract blocker.
+
+### Post-Observation Result Diagnostic Amendment
+
+A later bounded observation showed that `consumer_projection_invalid` still collapsed multiple
+result-boundary stages after existing artifact, state, Evidence, fallback, and hash
+classifications. The separately approved Bounded Result Diagnostic Receipt v1 adds one optional
+`--diagnostic-dir` with a fixed basename and owner-only repo-external directory. This is the only
+exception to Change 1's prohibition on output-path options; it does not permit an arbitrary
+filename or general output root.
+
+The existing public error envelope remains unchanged. The JSON-only receipt is written after
+cleanup, is not live evidence or application authority, contains no raw response or provider
+material, and does not authorize a retry. REST, OpenAPI, database, Agent/framework authority,
+canonical result, Evidence, downstream consumer acceptance, dependencies, CI provider policy,
+VERSION, and release metadata remain unchanged.

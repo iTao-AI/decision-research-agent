@@ -98,6 +98,25 @@ def _client(
     )
 
 
+def _assert_result_diagnostic(
+    error: EvaluationError,
+    *,
+    stage: str,
+    reason: str,
+    http_status: int | None,
+    response_bytes: int | None,
+) -> None:
+    assert error.code.value == "consumer_projection_invalid"
+    assert error.phase.value == "result"
+    assert error.diagnostic is not None
+    assert error.diagnostic.model_dump(mode="json") == {
+        "stage": stage,
+        "reason": reason,
+        "http_status": http_status,
+        "response_bytes": response_bytes,
+    }
+
+
 @pytest.mark.parametrize("port", [True, False, 0, -1, 65536, 1.0, "8000", None])
 def test_constructor_rejects_every_non_positive_integer_port(port):
     with pytest.raises(EvaluationError, match="service_identity_invalid") as exc_info:
@@ -398,6 +417,213 @@ def test_result_maps_only_exact_matching_unavailable_envelope_to_artifact_invali
 
     assert caught.value.code.value == "artifact_invalid"
     assert caught.value.phase.value == "result"
+    assert caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize("failure", [OSError("private"), TimeoutError("private")])
+def test_result_classifies_connection_failure_without_private_detail(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: BaseException,
+) -> None:
+    def fail_connection(*_args: Any, **_kwargs: Any) -> None:
+        raise failure
+
+    monkeypatch.setattr(http.client, "HTTPConnection", fail_connection)
+    client = ProofHttpClient(
+        port=49152,
+        api_key=API_KEY,
+        remaining_seconds=lambda requested: requested,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="connection",
+        reason="connection_failed",
+        http_status=None,
+        response_bytes=None,
+    )
+    assert "private" not in repr(caught.value)
+
+
+def test_result_classifies_getresponse_failure_as_connection_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, connection, _ = _client(monkeypatch, FakeResponse())
+
+    def fail_getresponse() -> FakeResponse:
+        raise OSError("private")
+
+    monkeypatch.setattr(connection, "getresponse", fail_getresponse)
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="connection",
+        reason="connection_failed",
+        http_status=None,
+        response_bytes=None,
+    )
+
+
+@pytest.mark.parametrize("status", [True, 99, 600, "200"])
+def test_result_classifies_invalid_response_status(
+    monkeypatch: pytest.MonkeyPatch,
+    status: object,
+) -> None:
+    client, _, _ = _client(
+        monkeypatch,
+        FakeResponse(status=status),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="response_status",
+        reason="response_status_invalid",
+        http_status=None,
+        response_bytes=None,
+    )
+
+
+@pytest.mark.parametrize("declared", ["not-a-number", "-1"])
+def test_result_classifies_invalid_declared_length_as_read_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    declared: str,
+) -> None:
+    client, _, _ = _client(
+        monkeypatch,
+        FakeResponse(content_length=declared),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="response_body",
+        reason="response_read_failed",
+        http_status=200,
+        response_bytes=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        FakeResponse(content_length=str(2 * 1024 * 1024 + 1)),
+        FakeResponse(body=b"{" + b" " * (2 * 1024 * 1024) + b"}"),
+    ],
+)
+def test_result_classifies_declared_or_streamed_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+    response: FakeResponse,
+) -> None:
+    client, _, _ = _client(monkeypatch, response)
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="response_body",
+        reason="response_size_exceeded",
+        http_status=200,
+        response_bytes=None,
+    )
+
+
+def test_result_classifies_bounded_read_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _, _ = _client(
+        monkeypatch,
+        FakeResponse(read_error=OSError("private")),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="response_body",
+        reason="response_read_failed",
+        http_status=200,
+        response_bytes=None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
+        (b"\xff", "response_utf8_invalid"),
+        (b"not-json", "response_json_invalid"),
+        (b"[]", "response_not_object"),
+    ],
+)
+def test_result_classifies_json_boundary_without_retaining_body(
+    monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
+    reason: str,
+) -> None:
+    client, _, _ = _client(monkeypatch, FakeResponse(body=body))
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="response_json",
+        reason=reason,
+        http_status=200,
+        response_bytes=len(body),
+    )
+    decoded = body.decode("utf-8", errors="ignore")
+    if decoded:
+        assert decoded not in repr(caught.value)
+
+
+@pytest.mark.parametrize("status", [404, 409, 500])
+def test_result_classifies_unexpected_complete_status(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+) -> None:
+    body = _json_body({"code": "other"})
+    client, _, _ = _client(monkeypatch, FakeResponse(status=status, body=body))
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="response_status",
+        reason="response_status_invalid",
+        http_status=status,
+        response_bytes=len(body),
+    )
+
+
+def test_result_classifies_requested_run_identity_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = _json_body({"run_id": "run-2"})
+    client, _, _ = _client(monkeypatch, FakeResponse(body=body))
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="response_identity",
+        reason="run_identity_mismatch",
+        http_status=200,
+        response_bytes=len(body),
+    )
 
 
 @pytest.mark.parametrize(
@@ -613,10 +839,15 @@ def test_invalid_remaining_timeout_fails_before_connection(
     assert connection.calls == []
 
 
-def test_http_observation_is_frozen_and_has_only_status_and_body():
-    observation = HttpObservation(status_code=200, body={"status": "ok"})
+def test_http_observation_is_frozen_and_has_only_structural_fields():
+    observation = HttpObservation(
+        status_code=200,
+        body={"status": "ok"},
+        response_bytes=15,
+    )
 
     assert observation.status_code == 200
     assert observation.body == {"status": "ok"}
+    assert observation.response_bytes == 15
     with pytest.raises((AttributeError, TypeError)):
         observation.status_code = 201

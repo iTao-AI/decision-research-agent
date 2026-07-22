@@ -8,10 +8,15 @@ import math
 import re
 from typing import Any, Callable
 
-from scripts.bounded_live_producer_contracts import EvaluationError
+from scripts.bounded_live_producer_contracts import (
+    MAX_HTTP_RESPONSE_BYTES,
+    EvaluationError,
+    ResultBoundaryDiagnostic,
+    ResultDiagnosticReason,
+    ResultDiagnosticStage,
+)
 
 
-MAX_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 30.0
 _READ_CHUNK_BYTES = 64 * 1024
 _RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z", re.ASCII)
@@ -27,6 +32,7 @@ class HttpObservation:
 
     status_code: int
     body: dict[str, Any]
+    response_bytes: int
 
 
 class CreateAmbiguous(Exception):
@@ -37,11 +43,28 @@ class CreateAmbiguous(Exception):
 
 
 class _BodyReadFailure(Exception):
-    pass
+    def __init__(self, reason: ResultDiagnosticReason) -> None:
+        super().__init__(reason.value)
+        self.reason = reason
 
 
 def _evaluation_error(code: str, phase: str) -> EvaluationError:
     return EvaluationError(code, phase, False)
+
+
+def _result_diagnostic(
+    stage: ResultDiagnosticStage,
+    reason: ResultDiagnosticReason,
+    *,
+    status: int | None = None,
+    response_bytes: int | None = None,
+) -> ResultBoundaryDiagnostic:
+    return ResultBoundaryDiagnostic(
+        stage=stage,
+        reason=reason,
+        http_status=status,
+        response_bytes=response_bytes,
+    )
 
 
 def _require_identifier(value: object, *, code: str, phase: str) -> str:
@@ -50,16 +73,57 @@ def _require_identifier(value: object, *, code: str, phase: str) -> str:
     return value
 
 
-def _load_object_json(raw: bytes, *, code: str, phase: str) -> dict[str, Any]:
+def _load_object_json(
+    raw: bytes,
+    *,
+    code: str,
+    phase: str,
+    result_diagnostic: bool = False,
+    response_status: int | None = None,
+) -> dict[str, Any]:
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        diagnostic = (
+            _result_diagnostic(
+                ResultDiagnosticStage.RESPONSE_JSON,
+                ResultDiagnosticReason.RESPONSE_UTF8_INVALID,
+                status=response_status,
+                response_bytes=len(raw),
+            )
+            if result_diagnostic
+            else None
+        )
+        raise EvaluationError(code, phase, False, diagnostic=diagnostic) from None
     try:
         parsed = json.loads(
-            raw.decode("utf-8"),
+            decoded,
             parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
         )
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        raise _evaluation_error(code, phase) from None
+    except (json.JSONDecodeError, ValueError):
+        diagnostic = (
+            _result_diagnostic(
+                ResultDiagnosticStage.RESPONSE_JSON,
+                ResultDiagnosticReason.RESPONSE_JSON_INVALID,
+                status=response_status,
+                response_bytes=len(raw),
+            )
+            if result_diagnostic
+            else None
+        )
+        raise EvaluationError(code, phase, False, diagnostic=diagnostic) from None
     if type(parsed) is not dict:
-        raise _evaluation_error(code, phase)
+        diagnostic = (
+            _result_diagnostic(
+                ResultDiagnosticStage.RESPONSE_JSON,
+                ResultDiagnosticReason.RESPONSE_NOT_OBJECT,
+                status=response_status,
+                response_bytes=len(raw),
+            )
+            if result_diagnostic
+            else None
+        )
+        raise EvaluationError(code, phase, False, diagnostic=diagnostic)
     return parsed
 
 
@@ -116,9 +180,13 @@ class ProofHttpClient:
             try:
                 declared_size = int(declared, 10)
             except (TypeError, ValueError):
-                raise _BodyReadFailure from None
-            if declared_size < 0 or declared_size > MAX_HTTP_RESPONSE_BYTES:
-                raise _BodyReadFailure
+                raise _BodyReadFailure(
+                    ResultDiagnosticReason.RESPONSE_READ_FAILED
+                ) from None
+            if declared_size < 0:
+                raise _BodyReadFailure(ResultDiagnosticReason.RESPONSE_READ_FAILED)
+            if declared_size > MAX_HTTP_RESPONSE_BYTES:
+                raise _BodyReadFailure(ResultDiagnosticReason.RESPONSE_SIZE_EXCEEDED)
 
         retained = bytearray()
         try:
@@ -128,14 +196,14 @@ class ProofHttpClient:
                 if not chunk:
                     break
                 if type(chunk) is not bytes:
-                    raise _BodyReadFailure
+                    raise _BodyReadFailure(ResultDiagnosticReason.RESPONSE_READ_FAILED)
                 retained.extend(chunk)
                 if len(retained) > MAX_HTTP_RESPONSE_BYTES:
-                    raise _BodyReadFailure
+                    raise _BodyReadFailure(ResultDiagnosticReason.RESPONSE_SIZE_EXCEEDED)
         except _BodyReadFailure:
             raise
         except Exception:
-            raise _BodyReadFailure from None
+            raise _BodyReadFailure(ResultDiagnosticReason.RESPONSE_READ_FAILED) from None
         return bytes(retained)
 
     def _request_json(
@@ -151,6 +219,7 @@ class ProofHttpClient:
         idempotency_key: str | None = None,
         ambiguous_create: bool = False,
         retained_error_status: int | None = None,
+        result_diagnostic: bool = False,
     ) -> HttpObservation:
         connection: http.client.HTTPConnection | None = None
         response_status: int | None = None
@@ -178,18 +247,43 @@ class ProofHttpClient:
             response = connection.getresponse()
             response_status = response.status
             if type(response_status) is not int or not 100 <= response_status <= 599:
-                raise _evaluation_error(code, phase)
+                diagnostic = (
+                    _result_diagnostic(
+                        ResultDiagnosticStage.RESPONSE_STATUS,
+                        ResultDiagnosticReason.RESPONSE_STATUS_INVALID,
+                    )
+                    if result_diagnostic
+                    else None
+                )
+                raise EvaluationError(code, phase, False, diagnostic=diagnostic)
             raw = self._read_bounded(response)
         except EvaluationError:
             raise
-        except _BodyReadFailure:
+        except _BodyReadFailure as exc:
             if ambiguous_create and response_status == 200:
                 raise CreateAmbiguous from None
-            raise _evaluation_error(code, phase) from None
+            diagnostic = (
+                _result_diagnostic(
+                    ResultDiagnosticStage.RESPONSE_BODY,
+                    exc.reason,
+                    status=response_status,
+                )
+                if result_diagnostic
+                else None
+            )
+            raise EvaluationError(code, phase, False, diagnostic=diagnostic) from None
         except Exception:
             if ambiguous_create:
                 raise CreateAmbiguous from None
-            raise _evaluation_error(code, phase) from None
+            diagnostic = (
+                _result_diagnostic(
+                    ResultDiagnosticStage.CONNECTION,
+                    ResultDiagnosticReason.CONNECTION_FAILED,
+                )
+                if result_diagnostic
+                else None
+            )
+            raise EvaluationError(code, phase, False, diagnostic=diagnostic) from None
         finally:
             if connection is not None:
                 try:
@@ -197,11 +291,29 @@ class ProofHttpClient:
                 except Exception:
                     pass
 
+        body = _load_object_json(
+            raw,
+            code=response_code or code,
+            phase=phase,
+            result_diagnostic=result_diagnostic,
+            response_status=response_status,
+        )
         if response_status != 200 and response_status != retained_error_status:
-            raise _evaluation_error(code, phase)
+            diagnostic = (
+                _result_diagnostic(
+                    ResultDiagnosticStage.RESPONSE_STATUS,
+                    ResultDiagnosticReason.RESPONSE_STATUS_INVALID,
+                    status=response_status,
+                    response_bytes=len(raw),
+                )
+                if result_diagnostic
+                else None
+            )
+            raise EvaluationError(code, phase, False, diagnostic=diagnostic)
         return HttpObservation(
             status_code=response_status,
-            body=_load_object_json(raw, code=response_code or code, phase=phase),
+            body=body,
+            response_bytes=len(raw),
         )
 
     def health(self, *, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
@@ -302,12 +414,12 @@ class ProofHttpClient:
             raise _evaluation_error("run_state_invalid", "observe")
         return observation.body
 
-    def result(
+    def result_observation(
         self,
         *,
         run_id: str,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-    ) -> dict[str, Any]:
+    ) -> HttpObservation:
         validated_run_id = _require_identifier(
             run_id,
             code="consumer_projection_invalid",
@@ -320,6 +432,7 @@ class ProofHttpClient:
             phase="result",
             timeout_seconds=timeout_seconds,
             retained_error_status=409,
+            result_diagnostic=True,
         )
         if observation.status_code == 409:
             body = observation.body
@@ -334,10 +447,41 @@ class ProofHttpClient:
                 and body.get("run_id") == validated_run_id
             ):
                 raise _evaluation_error("artifact_invalid", "result")
-            raise _evaluation_error("consumer_projection_invalid", "result")
+            raise EvaluationError(
+                "consumer_projection_invalid",
+                "result",
+                False,
+                diagnostic=_result_diagnostic(
+                    ResultDiagnosticStage.RESPONSE_STATUS,
+                    ResultDiagnosticReason.RESPONSE_STATUS_INVALID,
+                    status=observation.status_code,
+                    response_bytes=observation.response_bytes,
+                ),
+            )
         if observation.body.get("run_id") != validated_run_id:
-            raise _evaluation_error("consumer_projection_invalid", "result")
-        return observation.body
+            raise EvaluationError(
+                "consumer_projection_invalid",
+                "result",
+                False,
+                diagnostic=_result_diagnostic(
+                    ResultDiagnosticStage.RESPONSE_IDENTITY,
+                    ResultDiagnosticReason.RUN_IDENTITY_MISMATCH,
+                    status=observation.status_code,
+                    response_bytes=observation.response_bytes,
+                ),
+            )
+        return observation
+
+    def result(
+        self,
+        *,
+        run_id: str,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> dict[str, Any]:
+        return self.result_observation(
+            run_id=run_id,
+            timeout_seconds=timeout_seconds,
+        ).body
 
     def usage(
         self,

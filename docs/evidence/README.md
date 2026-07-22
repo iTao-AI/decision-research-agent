@@ -1,17 +1,17 @@
 # Release Evidence
 
-This directory retains only bounded evidence used by current release gates.
-Each artifact states its own scope and limits; presence in this directory does
-not grant independent verification authority.
+This directory contains several evidence lifecycles. A tracked file is not
+automatically a current release gate, an independent verification, or a live
+observation; the section and the artifact's own limits define its role.
+Directory presence does not confer verification or current release authority.
+
+## Required Deterministic CI/Release Baseline
 
 | Artifact | Boundary |
 |---|---|
 | [agent-evaluation-regression-v1.json](agent-evaluation-regression-v1.json) | Canonical deterministic Agent evaluation report for eight fixed cases and six evaluators; not runtime output or truth verification. |
 | [agent-evaluation-regression-v1.md](agent-evaluation-regression-v1.md) | Human-readable rendering derived only from the validated JSON report. |
 | [downstream-consumer-contract-v1.json](downstream-consumer-contract-v1.json) | Deterministic synthetic compatibility fixture for the versioned downstream status/result/Evidence boundary; it is not runtime output or independent verification. |
-| [durable-hitl-gate-report.json](durable-hitl-gate-report.json) | Machine-readable result for the 13 controlled single-node SQLite durability and safety gates. |
-| [real-source-proof.json](real-source-proof.json) | Machine-readable bounded real-source workflow proof and report hashes. |
-| [real-source-proof.md](real-source-proof.md) | Human-readable proof procedure, verification/publication outcome, and explicit limitations. |
 | [run-failure-cause-v1.json](run-failure-cause-v1.json) | Machine-readable deterministic durable run failure-cause proof. |
 | [run-failure-cause-v1.md](run-failure-cause-v1.md) | Human-readable rendering derived from the validated failure-cause report. |
 | [run-creation-idempotency-v1.json](run-creation-idempotency-v1.json) | Deterministic machine-readable lost-response identity reconciliation proof. |
@@ -20,6 +20,25 @@ not grant independent verification authority.
 | [run-dispatch-reconciliation-v1.md](run-dispatch-reconciliation-v1.md) | Human-readable cases and limits, including `commit_before_execution_start_recovery: proven` and `crash_before_schedule_recovery: proven`. |
 | [secure-local-runtime-v1.json](secure-local-runtime-v1.json) | Canonical deterministic 16-case secure local runtime contract report; not a Docker runtime observation or deployment certification. |
 | [secure-local-runtime-v1.md](secure-local-runtime-v1.md) | Human-readable rendering of the validated secure local runtime report, ordered boundaries, and explicit limits. |
+
+## Optional Operator/Workflow Proof
+
+| Artifact | Boundary |
+|---|---|
+| [durable-hitl-gate-report.json](durable-hitl-gate-report.json) | Machine-readable result for the 13 controlled single-node SQLite durability and safety gates; the capability remains disabled by default. |
+
+## Historical Reviewed Record
+
+| Artifact | Boundary |
+|---|---|
+| [real-source-proof.json](real-source-proof.json) | Machine-readable bounded real-source workflow proof and report hashes. |
+| [real-source-proof.md](real-source-proof.md) | Human-readable proof procedure, verification/publication outcome, and explicit limitations. |
+
+This bounded observation remains a valid historical reviewed record. It is
+not a current deterministic release gate and is
+not comprehensive truth verification.
+
+## Absent Future Evidence
 
 The [Bounded Live Producer Evaluation](../reference/bounded-live-producer-evaluation.md)
 documents a deterministic provider-free contract check and a separately

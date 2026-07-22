@@ -20,7 +20,10 @@ Current verified slices include:
 - A stable terminal failure-cause contract for machine-readable failure phase
   and cause reporting.
 - A restricted `talent-hiring-signal` profile with deterministic artifacts.
-- A fixed-sample Talent benchmark whose value gate passed.
+- A fixed-sample Talent benchmark that can become
+  ready for separate human value review when structural checks pass.
+- The benchmark producer keeps `value_gate.passed=false`; the repository
+  does not record a passed human value gate.
 - A default-disabled single-node SQLite durable HITL feasibility path whose
   13 durability and safety gates passed.
 - An Agent Research Operations Console with deterministic Static Demo and

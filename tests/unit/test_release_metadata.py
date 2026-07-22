@@ -176,6 +176,10 @@ def test_changelog_preserves_published_release_boundary() -> None:
 - Moved the secure-runtime precheck from the host production dependency graph
   into the exact locked backend image before service or provider startup while
   retaining the existing network, privilege, mount, and cleanup boundaries.
+- Adjusted the generic named researcher tool-call run limit from 12 to 16;
+  LangChain's native limiter remains fail closed with `exit_behavior="error"`.
+- This tuning does not claim research quality, provider cost, business
+  acceptance, or a successful live proof.
 - No live provider observation or JSON/Markdown evidence report is committed;
   `VERSION` and the v0.1.5 release record remain unchanged."""
     assert unreleased.strip() == bounded_producer_subsection

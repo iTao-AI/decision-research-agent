@@ -255,7 +255,8 @@ boundary unless a later rollout expands the deployment model.
 ## Verification
 
 Current release work keeps verification evidence in PRs and operator reports.
-Useful local checks:
+The commands below are a
+selected local verification subset, not the full required CI proof inventory:
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
@@ -266,6 +267,20 @@ python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
 ```
+
+### Required CI proof inventory
+
+- Agent evaluation regression gate: `python scripts/agent_evaluation_gate.py check`
+- Run creation idempotency proof: `python scripts/run_creation_idempotency_proof.py check`
+- Run dispatch reconciliation proof: `python scripts/run_dispatch_reconciliation_proof.py check`
+- Run failure cause proof: `python scripts/run_failure_cause_proof.py check`
+- Secure local runtime proof: `python scripts/secure_local_runtime_proof.py check`
+- Bounded live producer contract check: `python scripts/bounded_live_producer_proof.py check`
+
+Required pytest covers downstream fixture/CLI behavior;
+it is not an independent top-level workflow step. The current required-gate
+authority is
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 The bounded live producer `check` is provider-free and Docker-free. Its
 separately authorized `observe-live` command is documented without being run by

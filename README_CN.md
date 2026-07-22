@@ -231,7 +231,7 @@ DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false
 
 ## 验证
 
-常用本地检查：
+以下命令仅为选定的本地验证子集，并非完整的 required CI proof 清单：
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
@@ -242,6 +242,19 @@ python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
 ```
+
+### Required CI proof 清单
+
+- Agent evaluation regression gate：`python scripts/agent_evaluation_gate.py check`
+- Run creation idempotency proof：`python scripts/run_creation_idempotency_proof.py check`
+- Run dispatch reconciliation proof：`python scripts/run_dispatch_reconciliation_proof.py check`
+- Run failure cause proof：`python scripts/run_failure_cause_proof.py check`
+- Secure local runtime proof：`python scripts/secure_local_runtime_proof.py check`
+- Bounded live producer contract check：`python scripts/bounded_live_producer_proof.py check`
+
+required pytest 覆盖 downstream fixture/CLI behavior；该行为没有独立的
+top-level workflow step。当前 required-gate authority 是
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
 
 Bounded live producer 的 `check` 不使用 provider，也不启动 Docker。其需要
 单独授权的 `observe-live` 命令只在文档中说明，不会被 tests 或 CI 调用；本次

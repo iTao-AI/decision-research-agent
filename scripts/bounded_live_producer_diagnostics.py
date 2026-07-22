@@ -9,9 +9,11 @@ import stat
 from typing import Callable
 
 from scripts.bounded_live_producer_contracts import (
+    CallBudgetLimiter,
     EvaluationError,
     MAX_DIAGNOSTIC_BYTES,
     serialize_result_diagnostic,
+    serialize_call_budget_diagnostic,
     serialize_run_failure_diagnostic,
 )
 
@@ -20,12 +22,16 @@ RESULT_DIAGNOSTIC_FILENAME = "bounded-live-producer-result-diagnostic-v1.json"
 RUN_FAILURE_DIAGNOSTIC_FILENAME = (
     "bounded-live-producer-run-failure-diagnostic-v1.json"
 )
+CALL_BUDGET_DIAGNOSTIC_FILENAME = (
+    "bounded-live-producer-call-budget-diagnostic-v1.json"
+)
 DIAGNOSTIC_FILENAME = RESULT_DIAGNOSTIC_FILENAME
-_DIAGNOSTIC_SERIALIZERS: dict[str, Callable[[EvaluationError], bytes]] = {
+_DIAGNOSTIC_SERIALIZERS: dict[str, Callable[..., bytes]] = {
     RESULT_DIAGNOSTIC_FILENAME: lambda error: serialize_result_diagnostic(error),
     RUN_FAILURE_DIAGNOSTIC_FILENAME: lambda error: serialize_run_failure_diagnostic(
         error
     ),
+    CALL_BUDGET_DIAGNOSTIC_FILENAME: serialize_call_budget_diagnostic,
 }
 
 
@@ -171,11 +177,12 @@ def _publish_diagnostic(
     *,
     filename: str,
     remaining_seconds: Callable[[float], float],
+    limiter: CallBudgetLimiter | None = None,
 ) -> Path:
     serializer = _DIAGNOSTIC_SERIALIZERS.get(filename)
     if serializer is None:
         raise DiagnosticOutputError
-    raw = serializer(error)
+    raw = serializer(error, limiter) if limiter is not None else serializer(error)
     if len(raw) > MAX_DIAGNOSTIC_BYTES:
         raise DiagnosticOutputError
     remaining_seconds(1.0)
@@ -309,6 +316,27 @@ def publish_run_failure_diagnostic(
             error,
             filename=RUN_FAILURE_DIAGNOSTIC_FILENAME,
             remaining_seconds=remaining_seconds,
+        )
+    except DiagnosticOutputError:
+        raise
+    except Exception as exc:
+        raise DiagnosticOutputError from exc
+
+
+def publish_call_budget_diagnostic(
+    sink: DiagnosticSink,
+    error: EvaluationError,
+    limiter: CallBudgetLimiter,
+    *,
+    remaining_seconds: Callable[[float], float],
+) -> Path:
+    try:
+        return _publish_diagnostic(
+            sink,
+            error,
+            filename=CALL_BUDGET_DIAGNOSTIC_FILENAME,
+            remaining_seconds=remaining_seconds,
+            limiter=limiter,
         )
     except DiagnosticOutputError:
         raise

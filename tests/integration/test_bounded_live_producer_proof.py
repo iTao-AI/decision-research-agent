@@ -31,6 +31,7 @@ from scripts.bounded_live_producer_contracts import (
 )
 from scripts.bounded_live_producer_diagnostics import DIAGNOSTIC_FILENAME
 from scripts.bounded_live_producer_diagnostics import (
+    CALL_BUDGET_DIAGNOSTIC_FILENAME,
     RUN_FAILURE_DIAGNOSTIC_FILENAME,
 )
 from scripts.bounded_live_producer_http import CreateAmbiguous, HttpObservation
@@ -311,6 +312,7 @@ def _install_provider_free_live_boundaries(
     monkeypatch.setattr(module, "restart_backend_transport", restart)
     real_result_diagnostic_publish = module.publish_result_diagnostic
     real_run_failure_diagnostic_publish = module.publish_run_failure_diagnostic
+    real_call_budget_diagnostic_publish = module.publish_call_budget_diagnostic
 
     def result_diagnostic_publish(*args, **kwargs):
         events.append("diagnostic_publish")
@@ -326,6 +328,13 @@ def _install_provider_free_live_boundaries(
             raise diagnostic_publication_error
         return real_run_failure_diagnostic_publish(*args, **kwargs)
 
+    def call_budget_diagnostic_publish(*args, **kwargs):
+        events.append("diagnostic_publish")
+        holder["diagnostic_publications"].append("call_budget")
+        if diagnostic_publication_error is not None:
+            raise diagnostic_publication_error
+        return real_call_budget_diagnostic_publish(*args, **kwargs)
+
     monkeypatch.setattr(
         module, "publish_result_diagnostic", result_diagnostic_publish
     )
@@ -333,6 +342,11 @@ def _install_provider_free_live_boundaries(
         module,
         "publish_run_failure_diagnostic",
         run_failure_diagnostic_publish,
+    )
+    monkeypatch.setattr(
+        module,
+        "publish_call_budget_diagnostic",
+        call_budget_diagnostic_publish,
     )
     if publication_error is not None:
         def fail_publication(*_args, **_kwargs):
@@ -2152,12 +2166,15 @@ def test_sidecar_extraction_occurs_only_for_exact_opted_in_budget_failure_before
             },
         }
     )
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
     invoke, _repository, events, holder = _install_provider_free_live_boundaries(
         tmp_path,
         monkeypatch,
         terminal_error=_call_budget_diagnostic_error(),
         limiter_diagnostics=True,
         extracted_sidecar=sidecar if extracted else None,
+        diagnostic_dir=diagnostic_dir,
     )
 
     with pytest.raises(EvaluationError) as caught:
@@ -2168,6 +2185,15 @@ def test_sidecar_extraction_occurs_only_for_exact_opted_in_budget_failure_before
     assert events.count("sidecar_extraction") == 1
     assert events.index("terminal") < events.index("sidecar_extraction")
     assert events.index("sidecar_extraction") < events.index("cleanup_receipt")
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    expected_publication = "call_budget" if extracted else "run_failure"
+    assert holder["diagnostic_publications"] == [expected_publication]
+    expected_name = (
+        CALL_BUDGET_DIAGNOSTIC_FILENAME
+        if extracted
+        else RUN_FAILURE_DIAGNOSTIC_FILENAME
+    )
+    assert (diagnostic_dir / expected_name).is_file()
     assert holder["task_temp"].exists() is False
 
 
@@ -2195,6 +2221,56 @@ def test_sidecar_extraction_is_not_attempted_outside_exact_selection(
         invoke()
 
     assert "sidecar_extraction" not in events
+
+
+def test_call_budget_diagnostic_selection_records_final_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.bounded_live_producer_runtime_diagnostics import (
+        parse_call_budget_sidecar,
+    )
+
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    sidecar = parse_call_budget_sidecar(
+        {
+            "schema_version": "dra.call-budget-origin-sidecar.v1",
+            "limiter": {
+                "limiter_kind": "tool",
+                "tool_scope": "all_tools",
+                "run_count": 3,
+                "run_limit": 3,
+                "thread_count": 4,
+                "thread_limit": None,
+                "agent_role": "not_observed",
+            },
+        }
+    )
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=_call_budget_diagnostic_error(),
+        limiter_diagnostics=True,
+        extracted_sidecar=sidecar,
+        diagnostic_dir=diagnostic_dir,
+        fail_cleanup_refresh=True,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.cleanup_status is CleanupStatus.FAILED
+    payload = json.loads(
+        (diagnostic_dir / CALL_BUDGET_DIAGNOSTIC_FILENAME).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["primary"]["cleanup_status"] == "failed"
+    assert payload["run_failure"]["code"] == "call_budget_exceeded"
+    assert payload["limiter"]["tool_scope"] == "all_tools"
+    assert holder["diagnostic_publications"] == ["call_budget"]
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
 
 
 def test_run_failure_diagnostic_publication_failure_preserves_primary(

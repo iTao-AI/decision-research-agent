@@ -67,9 +67,11 @@ from scripts.bounded_live_producer_diagnostics import (
     DiagnosticOutputError,
     DiagnosticSink,
     preflight_diagnostic_dir,
+    publish_call_budget_diagnostic,
     publish_result_diagnostic,
     publish_run_failure_diagnostic,
 )
+from scripts.bounded_live_producer_runtime_diagnostics import CallBudgetOriginSidecar
 from scripts.bounded_live_producer_http import CreateAmbiguous, ProofHttpClient
 from scripts.downstream_consumer_contract import (
     ContractValidationError,
@@ -1154,28 +1156,39 @@ def _publish_diagnostic_best_effort(
     error: EvaluationError,
     *,
     remaining_seconds: Callable[[float], float],
+    call_budget_sidecar: CallBudgetOriginSidecar | None = None,
 ) -> None:
     if sink is None:
         return
-    publisher: Callable[..., Path]
     if (
         type(error.diagnostic) is ResultBoundaryDiagnostic
         and error.code is FailureCode.CONSUMER_PROJECTION_INVALID
         and error.phase is FailurePhase.RESULT
     ):
-        publisher = publish_result_diagnostic
+        publisher: Callable[..., Path] = publish_result_diagnostic
+        arguments: tuple[object, ...] = (sink, error)
+    elif (
+        type(error.diagnostic) is RunFailureDiagnostic
+        and error.code is FailureCode.RUN_FAILED
+        and error.phase is FailurePhase.OBSERVE
+        and error.diagnostic.phase == "execution"
+        and error.diagnostic.code == "call_budget_exceeded"
+        and type(call_budget_sidecar) is CallBudgetOriginSidecar
+    ):
+        publisher = publish_call_budget_diagnostic
+        arguments = (sink, error, call_budget_sidecar.limiter)
     elif (
         type(error.diagnostic) is RunFailureDiagnostic
         and error.code is FailureCode.RUN_FAILED
         and error.phase is FailurePhase.OBSERVE
     ):
         publisher = publish_run_failure_diagnostic
+        arguments = (sink, error)
     else:
         return
     try:
         publisher(
-            sink,
-            error,
+            *arguments,
             remaining_seconds=remaining_seconds,
         )
     except Exception:
@@ -1396,7 +1409,7 @@ def observe_live(
             live_configuration.close()
 
     cleanup_started = 0.0
-    call_budget_sidecar: object | None = None
+    call_budget_sidecar: CallBudgetOriginSidecar | None = None
 
     def primary() -> dict[str, Any]:
         nonlocal call_budget_sidecar
@@ -1639,6 +1652,7 @@ def observe_live(
             diagnostic_sink,
             final_error,
             remaining_seconds=total_deadline.remaining,
+            call_budget_sidecar=call_budget_sidecar,
         )
         raise final_error from cause
     except BaseExceptionGroup as exc:
@@ -1654,6 +1668,7 @@ def observe_live(
             diagnostic_sink,
             final_error,
             remaining_seconds=total_deadline.remaining,
+            call_budget_sidecar=call_budget_sidecar,
         )
         raise final_error from cause
     except BaseException as exc:

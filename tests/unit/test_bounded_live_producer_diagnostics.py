@@ -16,16 +16,20 @@ from scripts.bounded_live_producer_contracts import (
     ResultDiagnosticStage,
     RunFailureDiagnostic,
     RunFailureDiagnosticReceipt,
+    CallBudgetDiagnosticReceipt,
 )
 from scripts.bounded_live_producer_diagnostics import (
     DIAGNOSTIC_FILENAME,
     RESULT_DIAGNOSTIC_FILENAME,
     RUN_FAILURE_DIAGNOSTIC_FILENAME,
+    CALL_BUDGET_DIAGNOSTIC_FILENAME,
     DiagnosticOutputError,
     preflight_diagnostic_dir,
     publish_result_diagnostic,
     publish_run_failure_diagnostic,
+    publish_call_budget_diagnostic,
 )
+from scripts.bounded_live_producer_runtime_diagnostics import parse_call_budget_sidecar
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -110,8 +114,51 @@ def test_publishes_run_failure_diagnostic_to_fixed_non_overwriting_file(
     assert path.is_file()
 
 
+def test_publishes_call_budget_receipt_to_third_fixed_file(tmp_path: Path) -> None:
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+    error = EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=RunFailureDiagnostic(
+            cause_schema_version="dra.run-failure-cause.v1",
+            observation_status="observed",
+            phase="execution",
+            code="call_budget_exceeded",
+        ),
+    )
+    limiter = parse_call_budget_sidecar(
+        {
+            "schema_version": "dra.call-budget-origin-sidecar.v1",
+            "limiter": {
+                "limiter_kind": "tool",
+                "tool_scope": "task",
+                "run_count": 1,
+                "run_limit": 1,
+                "thread_count": 2,
+                "thread_limit": 2,
+                "agent_role": "not_observed",
+            },
+        }
+    ).limiter
+
+    path = publish_call_budget_diagnostic(
+        sink,
+        error,
+        limiter,
+        remaining_seconds=lambda requested: requested,
+    )
+
+    assert path == output / CALL_BUDGET_DIAGNOSTIC_FILENAME
+    receipt = CallBudgetDiagnosticReceipt.model_validate_json(path.read_bytes(), strict=True)
+    assert receipt.limiter == limiter
+
+
 @pytest.mark.parametrize(
-    "filename", [RESULT_DIAGNOSTIC_FILENAME, RUN_FAILURE_DIAGNOSTIC_FILENAME]
+    "filename", [RESULT_DIAGNOSTIC_FILENAME, RUN_FAILURE_DIAGNOSTIC_FILENAME, CALL_BUDGET_DIAGNOSTIC_FILENAME]
 )
 def test_preflight_rejects_both_fixed_names_without_modifying_them(
     tmp_path: Path, filename: str

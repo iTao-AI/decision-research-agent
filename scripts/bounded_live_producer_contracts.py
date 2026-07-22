@@ -338,9 +338,7 @@ class ResultDiagnosticReceipt(StrictModel):
 
 
 class RunFailureDiagnostic(StrictModel):
-    cause_schema_version: Literal["dra.run-failure-cause.v1"] = (
-        RUN_FAILURE_CAUSE_SCHEMA_VERSION
-    )
+    cause_schema_version: Literal[RUN_FAILURE_CAUSE_SCHEMA_VERSION]
     observation_status: Literal["observed"]
     phase: RunFailurePhase
     code: str

@@ -534,6 +534,17 @@ def test_run_failure_diagnostic_is_strict_frozen_and_forbids_extra_fields() -> N
         RunFailureDiagnostic.model_validate(payload, strict=True)
 
 
+@pytest.mark.parametrize(
+    "field", ["cause_schema_version", "observation_status", "phase", "code"]
+)
+def test_run_failure_diagnostic_requires_every_exact_field(field: str) -> None:
+    payload = _run_failure_diagnostic().model_dump(mode="python")
+    payload.pop(field)
+
+    with pytest.raises(ValidationError):
+        RunFailureDiagnostic.model_validate(payload, strict=True)
+
+
 def test_run_failure_diagnostic_rejects_cross_phase_pair_and_unsafe_code() -> None:
     for code in ("run_finalization_failed", "execution_error\nraw"):
         with pytest.raises(ValidationError):

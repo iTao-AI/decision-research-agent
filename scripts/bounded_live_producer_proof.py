@@ -271,8 +271,18 @@ def _run_failure_diagnostic(value: object) -> RunFailureDiagnostic:
     )
 
 
-def _terminal_error(status: Mapping[str, Any]) -> EvaluationError | None:
+def _validated_execution_status(status: Mapping[str, Any]) -> str:
     execution = status.get("execution_status")
+    review = status.get("review_status")
+    if type(execution) is not str or type(review) is not str:
+        raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
+    if review != "not_required":
+        raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
+    return execution
+
+
+def _terminal_error(status: Mapping[str, Any]) -> EvaluationError | None:
+    execution = _validated_execution_status(status)
     delivery = status.get("delivery_status")
     if execution == "failed":
         return _error(
@@ -875,8 +885,8 @@ def observe_terminal(
             or status.get("profile_id") != "generic"
         ):
             raise _error(FailureCode.RUN_STATE_INVALID, FailurePhase.OBSERVE)
-        execution = status.get("execution_status")
-        if execution in {"pending", "running"}:
+        execution = _validated_execution_status(status)
+        if execution in ("pending", "running"):
             delay = remaining_seconds(1.0)
             sleep(delay)
             continue

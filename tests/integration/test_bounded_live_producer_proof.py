@@ -925,6 +925,56 @@ def test_observe_terminal_uses_one_remaining_deadline_and_never_cancels() -> Non
     assert not hasattr(client, "cancel")
 
 
+def test_observe_terminal_rejects_noncanonical_completed_review_before_result() -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(review_status="required")
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("noncanonical terminal review must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.phase.value == "observe"
+    assert client.result_calls == 0
+
+
+def test_observe_terminal_rejects_non_string_execution_before_result() -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(execution_status=[])
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("invalid terminal execution must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.phase.value == "observe"
+    assert client.result_calls == 0
+
+
 @pytest.mark.parametrize(
     ("phase", "code"),
     [

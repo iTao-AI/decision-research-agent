@@ -357,8 +357,12 @@ def test_invalid_artifact_generic_content_fails_closed(
         ("", "a" * 64),
         ("x" * (1024 * 1024 + 1), "a" * 64),
         ("# Decision Brief", "not-a-valid-hash"),
+        (
+            "host=/Users/private/tasks.db",
+            hashlib.sha256(b"host=/Users/private/tasks.db").hexdigest(),
+        ),
     ],
-    ids=("empty", "oversized", "malformed-hash"),
+    ids=("empty", "oversized", "malformed-hash", "unsafe"),
 )
 def test_invalid_artifact_talent_content_fails_closed(
     tmp_path,
@@ -397,6 +401,24 @@ def test_invalid_artifact_talent_content_fails_closed(
 
     with pytest.raises(RunResultUnavailable) as raised:
         resolve_run_result(db_path=str(db_path), run_id=created["run_id"])
+
+    assert raised.value.code == "run_result_unavailable"
+
+
+def test_invalid_artifact_generic_canonical_kind_fails_closed(tmp_path):
+    from api.run_result_service import RunResultUnavailable, resolve_run_result
+
+    seeded = _seed_ready_generic(
+        tmp_path,
+        kind="markdown",
+        content="# Mutated Kind",
+    )
+
+    with pytest.raises(RunResultUnavailable) as raised:
+        resolve_run_result(
+            db_path=str(seeded.db_path),
+            run_id=seeded.run_id,
+        )
 
     assert raised.value.code == "run_result_unavailable"
 
@@ -823,48 +845,237 @@ def test_result_ready_talent_without_publication_returns_decision_brief_markdown
     tmp_path,
     monkeypatch,
 ):
-    from api.run_repository import create_run, finalize_run_transaction
-
     client = _client(tmp_path, monkeypatch)
-    created = create_run(
-        thread_id="thread-1",
-        query="query",
-        profile_id="talent-hiring-signal",
-    )
-    finalize_run_transaction(
-        run_id=created["run_id"],
-        segment_id=created["segment_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
-        execution_status="completed",
-        review_status="not_required",
-        delivery_status="ready",
-        evidence_entries=[],
-        artifacts=[
-            _artifact(
-                artifact_id="decision-brief.json",
-                kind="decision_brief_json",
-                content="{}",
-            ),
-            _artifact(
-                artifact_id="decision-brief.md",
-                kind="decision_brief_markdown",
-                content="# Decision Brief",
-            ),
-        ],
-    )
+    seeded = _seed_ready_production_talent(tmp_path)
 
     response = client.get(
-        f"/api/runs/{created['run_id']}/result",
+        f"/api/runs/{seeded.run_id}/result",
         headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 200
     assert response.json()["artifact"]["artifact_id"] == "decision-brief.md"
-    assert response.json()["artifact"]["content"] == "# Decision Brief"
+    assert response.json()["artifact"]["kind"] == "decision_brief_markdown"
 
 
-def test_result_ready_talent_accepts_decision_brief_hash_contract(
+def _seed_ready_production_talent(tmp_path):
+    from tests.unit.test_publication_repository import _seed_talent_run
+
+    seeded = _seed_talent_run(tmp_path, migrate=False)
+    connection = sqlite3.connect(seeded.db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET review_status = 'not_required', delivery_status = 'ready'
+                WHERE run_id = ?
+                """,
+                (seeded.run_id,),
+            )
+    finally:
+        connection.close()
+    return seeded
+
+
+def test_result_accepts_production_initial_talent_artifact_pair(tmp_path):
+    from api.run_result_service import resolve_run_result
+
+    seeded = _seed_ready_production_talent(tmp_path)
+
+    result = resolve_run_result(db_path=seeded.db_path, run_id=seeded.run_id)
+
+    assert result.artifact["artifact_id"] == "decision-brief.md"
+    assert result.artifact["kind"] == "decision_brief_markdown"
+
+
+def test_result_rejects_production_talent_markdown_tamper(tmp_path):
+    from api.run_result_service import RunResultUnavailable, resolve_run_result
+
+    seeded = _seed_ready_production_talent(tmp_path)
+    connection = sqlite3.connect(seeded.db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                UPDATE run_artifacts_v2 SET content = '# Tampered'
+                WHERE run_id = ? AND artifact_id = 'decision-brief.md'
+                """,
+                (seeded.run_id,),
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(RunResultUnavailable) as raised:
+        resolve_run_result(db_path=seeded.db_path, run_id=seeded.run_id)
+
+    assert raised.value.code == "run_result_unavailable"
+
+
+def test_result_rejects_production_talent_stored_hash_tamper(tmp_path):
+    from api.run_result_service import RunResultUnavailable, resolve_run_result
+
+    seeded = _seed_ready_production_talent(tmp_path)
+    connection = sqlite3.connect(seeded.db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                UPDATE run_artifacts_v2 SET content_hash = ?
+                WHERE run_id = ? AND artifact_id = 'decision-brief.md'
+                """,
+                ("a" * 64, seeded.run_id),
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(RunResultUnavailable) as raised:
+        resolve_run_result(db_path=seeded.db_path, run_id=seeded.run_id)
+
+    assert raised.value.code == "run_result_unavailable"
+
+
+def test_result_rejects_canonical_talent_pair_with_unsafe_markdown(tmp_path):
+    from agent.talent_contracts import DecisionBrief
+    from api.decision_brief import render_markdown, with_content_hash
+    from api.run_result_service import RunResultUnavailable, resolve_run_result
+
+    seeded = _seed_ready_production_talent(tmp_path)
+    connection = sqlite3.connect(seeded.db_path)
+    try:
+        original_json = connection.execute(
+            """
+            SELECT content FROM run_artifacts_v2
+            WHERE run_id = ? AND artifact_id = 'decision-brief.json'
+            """,
+            (seeded.run_id,),
+        ).fetchone()[0]
+        brief = DecisionBrief.model_validate_json(original_json, strict=True)
+        unsafe_brief = with_content_hash(
+            brief.model_copy(
+                update={"limitations": ["host=/Users/private/tasks.db"]}
+            )
+        )
+        unsafe_json = json.dumps(
+            unsafe_brief.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        unsafe_markdown = render_markdown(unsafe_brief)
+        with connection:
+            connection.execute(
+                """
+                UPDATE run_artifacts_v2
+                SET content = ?, content_hash = ?
+                WHERE run_id = ? AND artifact_id = 'decision-brief.json'
+                """,
+                (unsafe_json, unsafe_brief.content_hash, seeded.run_id),
+            )
+            connection.execute(
+                """
+                UPDATE run_artifacts_v2
+                SET content = ?, content_hash = ?
+                WHERE run_id = ? AND artifact_id = 'decision-brief.md'
+                """,
+                (unsafe_markdown, unsafe_brief.content_hash, seeded.run_id),
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(RunResultUnavailable) as raised:
+        resolve_run_result(db_path=seeded.db_path, run_id=seeded.run_id)
+
+    assert raised.value.code == "run_result_unavailable"
+
+
+def test_result_accepts_production_revisioned_reviewed_talent_pair(tmp_path):
+    from datetime import datetime, timezone
+
+    from api.review_artifacts import build_reviewed_artifacts
+    from api.review_models import ReviewDecisionRecord
+    from api.run_result_service import resolve_run_result
+    from tests.unit.test_publication_repository import _seed_talent_run
+
+    seeded = _seed_talent_run(tmp_path, migrate=True)
+    connection = sqlite3.connect(seeded.db_path)
+    try:
+        original = connection.execute(
+            """
+            SELECT content FROM run_artifacts_v2
+            WHERE run_id = ? AND artifact_id = 'decision-brief.json'
+            """,
+            (seeded.run_id,),
+        ).fetchone()[0]
+        reviewed = build_reviewed_artifacts(
+            original_brief_json=original,
+            decision=ReviewDecisionRecord(
+                decision_id="decision-approved",
+                run_id=seeded.run_id,
+                review_id=seeded.review_id,
+                review_revision=2,
+                action="approve",
+                reason=None,
+                actor_fingerprint="actor",
+                request_hash="request",
+                accepted_state_version=2,
+                created_at=datetime(2026, 7, 22, tzinfo=timezone.utc),
+            ),
+            revision=2,
+        )
+        with connection:
+            connection.executemany(
+                """
+                INSERT INTO run_artifacts_v2(
+                    artifact_id, run_id, kind, media_type,
+                    content, content_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        artifact["artifact_id"],
+                        seeded.run_id,
+                        artifact["kind"],
+                        artifact["media_type"],
+                        artifact["content"],
+                        artifact["content_hash"],
+                        "2026-07-22T00:00:00+00:00",
+                    )
+                    for artifact in reviewed.artifacts
+                ],
+            )
+            connection.execute(
+                """
+                UPDATE run_publications_v2
+                SET artifact_ids_json = ?, status = 'ready'
+                WHERE run_id = ? AND is_current = 1
+                """,
+                (
+                    json.dumps(
+                        [artifact["artifact_id"] for artifact in reviewed.artifacts]
+                    ),
+                    seeded.run_id,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET review_status = 'resolved', delivery_status = 'ready'
+                WHERE run_id = ?
+                """,
+                (seeded.run_id,),
+            )
+    finally:
+        connection.close()
+
+    result = resolve_run_result(db_path=seeded.db_path, run_id=seeded.run_id)
+
+    assert result.artifact["artifact_id"] == "decision-brief.r2.reviewed.md"
+    assert result.artifact["kind"] == "decision_brief_reviewed_markdown"
+    assert result.artifact["content_hash"] == reviewed.brief.content_hash
+
+
+def test_result_ready_talent_rejects_decision_brief_hash_mismatch(
     tmp_path,
     monkeypatch,
 ):
@@ -901,5 +1112,5 @@ def test_result_ready_talent_accepts_decision_brief_hash_contract(
         headers=AUTH_HEADERS,
     )
 
-    assert response.status_code == 200
-    assert response.json()["artifact"]["content_hash"] == "a" * 64
+    assert response.status_code == 409
+    assert response.json()["code"] == "run_result_unavailable"

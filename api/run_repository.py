@@ -1134,18 +1134,22 @@ def get_run_delivery_snapshot(
             WHERE type = 'table' AND name = 'run_publications_v2'
             """
         ).fetchone() is not None
-        publication = (
+        publications = (
             conn.execute(
                 """
                 SELECT artifact_ids_json
                 FROM run_publications_v2
                 WHERE run_id = ? AND is_current = 1
+                LIMIT 2
                 """,
                 (run_id,),
-            ).fetchone()
+            ).fetchall()
             if publication_table_exists
-            else None
+            else []
         )
+        if len(publications) > 1:
+            raise ValueError("run_delivery_snapshot_corrupt")
+        publication = publications[0] if publications else None
         current_ids: tuple[str, ...] = ()
         if publication is not None:
             parsed = json.loads(publication["artifact_ids_json"])

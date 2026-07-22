@@ -91,6 +91,48 @@ def test_run_delivery_snapshot_rejects_malformed_current_artifact_ids(tmp_path):
         get_run_delivery_snapshot(db_path=db_path, run_id=created["run_id"])
 
 
+def test_run_delivery_snapshot_rejects_multiple_current_publications(tmp_path):
+    from api.run_repository import (
+        RunDeliverySnapshotConflict,
+        create_run,
+        get_run_delivery_snapshot,
+    )
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="query")
+    connection = sqlite3.connect(db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                CREATE TABLE run_publications_v2 (
+                    run_id TEXT NOT NULL,
+                    is_current INTEGER NOT NULL,
+                    artifact_ids_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.executemany(
+                """
+                INSERT INTO run_publications_v2(
+                    run_id, is_current, artifact_ids_json
+                ) VALUES (?, 1, ?)
+                """,
+                [
+                    (created["run_id"], '["decision-brief.md"]'),
+                    (created["run_id"], '["research-report.md"]'),
+                ],
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(
+        RunDeliverySnapshotConflict,
+        match="run_delivery_snapshot_corrupt",
+    ):
+        get_run_delivery_snapshot(db_path=db_path, run_id=created["run_id"])
+
+
 def _assert_corrupt_in_init_and_joined_projection(
     *,
     db_path,

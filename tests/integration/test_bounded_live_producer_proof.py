@@ -87,6 +87,8 @@ def _install_provider_free_live_boundaries(
     diagnostic_dir: Path | None = None,
     diagnostic_publication_error: BaseException | None = None,
     configuration_close_error: BaseException | None = None,
+    limiter_diagnostics: bool = False,
+    extracted_sidecar: object | None = None,
 ):
     module = importlib.import_module("scripts.bounded_live_producer_proof")
     lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
@@ -135,7 +137,13 @@ def _install_provider_free_live_boundaries(
         assert declaration.provider_id == "approved-provider"
         assert process_api_key == ""
         assert repository_root == repository
-        return FakeConfiguration()
+        return FakeConfiguration(
+            {
+                "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS": "true"
+            }
+            if limiter_diagnostics
+            else {}
+        )
 
     def run_subprocess(arguments, **_kwargs):
         events.append("probe:" + " ".join(arguments[1:3]))
@@ -217,6 +225,11 @@ def _install_provider_free_live_boundaries(
 
         def start_backend(self, _deadline: Any) -> None:
             events.append("start_backend")
+
+        def read_call_budget_sidecar(self, run_id: str, _deadline: Any) -> object | None:
+            events.append("sidecar_extraction")
+            assert run_id == "run-proof-1"
+            return extracted_sidecar
 
     resource_refreshes = 0
 
@@ -548,6 +561,20 @@ def _run_failure_diagnostic_error() -> EvaluationError:
             observation_status="observed",
             phase="execution",
             code="execution_error",
+        ),
+    )
+
+
+def _call_budget_diagnostic_error() -> EvaluationError:
+    return EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        diagnostic=RunFailureDiagnostic(
+            cause_schema_version="dra.run-failure-cause.v1",
+            observation_status="observed",
+            phase="execution",
+            code="call_budget_exceeded",
         ),
     )
 
@@ -2099,6 +2126,75 @@ def test_observe_live_selects_run_failure_diagnostic_after_final_cleanup(
     assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
     assert not holder["task_temp"].exists()
     assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+
+
+@pytest.mark.parametrize("extracted", [True, False])
+def test_sidecar_extraction_occurs_only_for_exact_opted_in_budget_failure_before_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    extracted: bool,
+) -> None:
+    from scripts.bounded_live_producer_runtime_diagnostics import (
+        parse_call_budget_sidecar,
+    )
+
+    sidecar = parse_call_budget_sidecar(
+        {
+            "schema_version": "dra.call-budget-origin-sidecar.v1",
+            "limiter": {
+                "limiter_kind": "model",
+                "tool_scope": "not_applicable",
+                "run_count": 40,
+                "run_limit": 40,
+                "thread_count": 40,
+                "thread_limit": None,
+                "agent_role": "not_observed",
+            },
+        }
+    )
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=_call_budget_diagnostic_error(),
+        limiter_diagnostics=True,
+        extracted_sidecar=sidecar if extracted else None,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "run_failed"
+    assert caught.value.diagnostic.code == "call_budget_exceeded"
+    assert events.count("sidecar_extraction") == 1
+    assert events.index("terminal") < events.index("sidecar_extraction")
+    assert events.index("sidecar_extraction") < events.index("cleanup_receipt")
+    assert holder["task_temp"].exists() is False
+
+
+@pytest.mark.parametrize(
+    ("diagnostics_enabled", "terminal_error"),
+    [
+        (False, _call_budget_diagnostic_error()),
+        (True, _run_failure_diagnostic_error()),
+    ],
+)
+def test_sidecar_extraction_is_not_attempted_outside_exact_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    diagnostics_enabled: bool,
+    terminal_error: EvaluationError,
+) -> None:
+    invoke, _repository, events, _holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=terminal_error,
+        limiter_diagnostics=diagnostics_enabled,
+    )
+
+    with pytest.raises(EvaluationError):
+        invoke()
+
+    assert "sidecar_extraction" not in events
 
 
 def test_run_failure_diagnostic_publication_failure_preserves_primary(

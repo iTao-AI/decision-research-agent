@@ -1673,6 +1673,148 @@ def test_managed_compose_project_preflight_includes_stopped_containers(tmp_path:
     assert "-a" in container_command
 
 
+def test_sidecar_extraction_uses_exact_owned_container_volume_and_fixed_exec(
+    tmp_path: Path,
+) -> None:
+    from scripts.bounded_live_producer_runtime_diagnostics import (
+        parse_call_budget_sidecar,
+        serialize_call_budget_sidecar,
+    )
+
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+    project_name = "dra-proof-12121212121212121212121212121212"
+    container_id = "a" * 64
+    volume_name = f"{project_name}_backend_output"
+    raw = serialize_call_budget_sidecar(
+        parse_call_budget_sidecar(
+            {
+                "schema_version": "dra.call-budget-origin-sidecar.v1",
+                "limiter": {
+                    "limiter_kind": "model",
+                    "tool_scope": "not_applicable",
+                    "run_count": 40,
+                    "run_limit": 40,
+                    "thread_count": 40,
+                    "thread_limit": None,
+                    "agent_role": "not_observed",
+                },
+            }
+        )
+    ).decode()
+    commands: list[tuple[str, ...]] = []
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        if args[-3:] == ("ps", "-q", "backend"):
+            return subprocess.CompletedProcess(args, 0, container_id + "\n", "")
+        if args[:4] == ("docker", "volume", "ls", "-q"):
+            return subprocess.CompletedProcess(args, 0, volume_name + "\n", "")
+        if args[:4] == ("docker", "inspect", "--format", "{{json .Mounts}}"):
+            mounts = [{"Type": "volume", "Name": volume_name, "Destination": "/app/output"}]
+            return subprocess.CompletedProcess(args, 0, json.dumps(mounts) + "\n", "")
+        if args[:3] == ("docker", "exec", container_id):
+            return subprocess.CompletedProcess(args, 0, raw, "")
+        raise AssertionError(args)
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name=project_name,
+        environment={},
+        runner=runner,
+    )
+    project.merge_resource_ownership(
+        container_ids=(container_id,),
+        volume_ids=(volume_name,),
+        network_ids=(),
+    )
+
+    observed = project.read_call_budget_sidecar(
+        "run-1",
+        ActiveDeadline(5, code=FailureCode.RUN_FAILED, phase=FailurePhase.OBSERVE),
+    )
+
+    assert observed is not None
+    exec_commands = [command for command in commands if command[:2] == ("docker", "exec")]
+    assert exec_commands == [
+        (
+            "docker",
+            "exec",
+            container_id,
+            "python",
+            "/app/scripts/bounded_live_producer_runtime_diagnostics.py",
+            "read",
+            "--run-id",
+            "run-1",
+        )
+    ]
+    assert sum(command[-3:] == ("ps", "-q", "backend") for command in commands) == 2
+    assert not any("sh" in command or "cp" in command for command in commands)
+
+
+@pytest.mark.parametrize("mutation", ["short_id", "container_drift", "volume_drift", "bind_mount", "wrong_destination", "duplicate_mount"])
+def test_sidecar_extraction_rejects_container_or_mount_authority_drift(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+    project_name = "dra-proof-13131313131313131313131313131313"
+    container_id = "a" * 64
+    volume_name = f"{project_name}_backend_output"
+    ps_calls = 0
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        nonlocal ps_calls
+        if args[-3:] == ("ps", "-q", "backend"):
+            ps_calls += 1
+            value = "a" * 12 if mutation == "short_id" else "b" * 64 if mutation == "container_drift" and ps_calls == 2 else container_id
+            return subprocess.CompletedProcess(args, 0, value + "\n", "")
+        if args[:4] == ("docker", "volume", "ls", "-q"):
+            value = "" if mutation == "volume_drift" and ps_calls >= 2 else volume_name + "\n"
+            return subprocess.CompletedProcess(args, 0, value, "")
+        if args[:4] == ("docker", "inspect", "--format", "{{json .Mounts}}"):
+            mount = {
+                "Type": "bind" if mutation == "bind_mount" else "volume",
+                "Name": volume_name,
+                "Destination": "/wrong" if mutation == "wrong_destination" else "/app/output",
+            }
+            mounts = [mount, dict(mount)] if mutation == "duplicate_mount" else [mount]
+            return subprocess.CompletedProcess(args, 0, json.dumps(mounts) + "\n", "")
+        if args[:2] == ("docker", "exec"):
+            return subprocess.CompletedProcess(args, 1, "", "invalid")
+        raise AssertionError(args)
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name=project_name,
+        environment={},
+        runner=runner,
+    )
+    project.merge_resource_ownership(
+        container_ids=(container_id,),
+        volume_ids=(volume_name,),
+        network_ids=(),
+    )
+
+    assert project.read_call_budget_sidecar(
+        "run-1",
+        ActiveDeadline(5, code=FailureCode.RUN_FAILED, phase=FailurePhase.OBSERVE),
+    ) is None
+
+
 def test_build_success_registers_image_tag_before_later_inspection_failure(
     tmp_path: Path,
 ) -> None:

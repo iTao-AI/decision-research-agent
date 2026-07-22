@@ -150,6 +150,7 @@ class ProofHttpClient:
         request_bytes: bytes | None = None,
         idempotency_key: str | None = None,
         ambiguous_create: bool = False,
+        retained_error_status: int | None = None,
     ) -> HttpObservation:
         connection: http.client.HTTPConnection | None = None
         response_status: int | None = None
@@ -196,7 +197,7 @@ class ProofHttpClient:
                 except Exception:
                     pass
 
-        if response_status != 200:
+        if response_status != 200 and response_status != retained_error_status:
             raise _evaluation_error(code, phase)
         return HttpObservation(
             status_code=response_status,
@@ -318,7 +319,22 @@ class ProofHttpClient:
             code="consumer_projection_invalid",
             phase="result",
             timeout_seconds=timeout_seconds,
+            retained_error_status=409,
         )
+        if observation.status_code == 409:
+            body = observation.body
+            if (
+                set(body) == {"code", "problem", "fix", "retryable", "run_id"}
+                and body.get("code") == "run_result_unavailable"
+                and type(body.get("problem")) is str
+                and bool(body["problem"])
+                and type(body.get("fix")) is str
+                and bool(body["fix"])
+                and body.get("retryable") is True
+                and body.get("run_id") == validated_run_id
+            ):
+                raise _evaluation_error("artifact_invalid", "result")
+            raise _evaluation_error("consumer_projection_invalid", "result")
         if observation.body.get("run_id") != validated_run_id:
             raise _evaluation_error("consumer_projection_invalid", "result")
         return observation.body

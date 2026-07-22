@@ -215,7 +215,13 @@ and only stable schema, code, phase, retryability, and cleanup status fields.
 A structurally valid fallback result maps to `run_fallback_rejected` in the
 `result` phase. Malformed result or consumer projection data remains
 `consumer_projection_invalid`; terminal-state fallback remains
-`run_fallback_rejected` in the `observe` phase.
+`run_fallback_rejected` in the `observe` phase. Only an exact canonical `409`
+`run_result_unavailable` envelope with bounded keys and types,
+`retryable=true`, and the requested `run_id` maps to `artifact_invalid`.
+Other transport, HTTP, JSON, envelope, and result-contract failures remain
+`consumer_projection_invalid`. `contract_artifact_invalid` maps to
+`artifact_invalid` in the `result` phase, while defensive
+`contract_state_invalid` maps to `run_state_invalid` in the `observe` phase.
 
 Unknown exceptions map to `evaluation_internal_error`; raw exceptions and
 tracebacks never enter public output. A primary plus cleanup failure preserves

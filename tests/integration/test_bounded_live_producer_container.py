@@ -101,6 +101,7 @@ def _write_fixture_env(path: Path) -> str:
         "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES": "false",
         "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL": "false",
         "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION": "false",
+        "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS": "true",
         "LANGSMITH_TRACING": "false",
         "LANGSMITH_API_KEY": "",
         "LANGSMITH_HIDE_INPUTS": "true",
@@ -256,6 +257,7 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
             "scripts/bounded_live_producer_http.py",
             "scripts/bounded_live_producer_lifecycle.py",
             "scripts/bounded_live_producer_proof.py",
+            "scripts/bounded_live_producer_runtime_diagnostics.py",
             "tests/fixtures/bounded-live-producer-v1/docker-compose.fixture.yml",
         ),
         verify_secure_runtime=False,
@@ -362,6 +364,7 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
         assert backend_env.get("MYSQL_ROOT_PASSWORD", "") == ""
         assert backend_env["OPENAI_API_KEY"] == "provider-disabled-container-only"
         assert backend_env["TAVILY_API_KEY"] == "search-disabled-container-only"
+        assert project.read_call_budget_sidecar("missing-run", active) is None
     except BaseException as exc:
         primary_error = exc
     cleanup_deadline = ActiveDeadline(

@@ -15,6 +15,7 @@ from scripts.bounded_live_producer_contracts import (
     LIMITS,
     MAX_DIAGNOSTIC_BYTES,
     CleanupStatus,
+    CallBudgetDiagnosticReceipt,
     ErrorEnvelope,
     EvaluationError,
     EvaluationValidationError,
@@ -32,12 +33,14 @@ from scripts.bounded_live_producer_contracts import (
     load_manifest,
     render_markdown,
     serialize_error,
+    serialize_call_budget_diagnostic,
     serialize_manifest,
     serialize_report,
     serialize_result_diagnostic,
     serialize_run_failure_diagnostic,
     validate_live_report,
 )
+from scripts.bounded_live_producer_runtime_diagnostics import parse_call_budget_sidecar
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -485,6 +488,43 @@ def test_run_failure_diagnostic_has_exact_canonical_bytes() -> None:
         b'"dra.bounded-live-producer-run-failure-diagnostic.v1"}\n'
     )
 
+
+def test_call_budget_receipt_has_exact_canonical_bytes_and_old_receipts_are_unchanged() -> None:
+    error = EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_run_failure_diagnostic(code="call_budget_exceeded"),
+    )
+    limiter = parse_call_budget_sidecar(
+        {
+            "schema_version": "dra.call-budget-origin-sidecar.v1",
+            "limiter": {
+                "limiter_kind": "model",
+                "tool_scope": "not_applicable",
+                "run_count": 40,
+                "run_limit": 40,
+                "thread_count": 40,
+                "thread_limit": None,
+                "agent_role": "not_observed",
+            },
+        }
+    ).limiter
+
+    raw = serialize_call_budget_diagnostic(error, limiter)
+    receipt = CallBudgetDiagnosticReceipt.model_validate_json(raw, strict=True)
+
+    assert receipt.limiter == limiter
+    assert raw == (
+        b'{"limiter":{"agent_role":"not_observed","limiter_kind":"model",'
+        b'"run_count":40,"run_limit":40,"thread_count":40,"thread_limit":null,'
+        b'"tool_scope":"not_applicable"},"primary":{"cleanup_status":"succeeded",'
+        b'"code":"run_failed","phase":"observe","retryable":false},"run_failure":'
+        b'{"cause_schema_version":"dra.run-failure-cause.v1","code":'
+        b'"call_budget_exceeded","observation_status":"observed","phase":"execution"},'
+        b'"schema_version":"dra.bounded-live-producer-call-budget-diagnostic.v1"}\n'
+    )
 
 @pytest.mark.parametrize(
     "cleanup_status", [CleanupStatus.SUCCEEDED, CleanupStatus.FAILED]

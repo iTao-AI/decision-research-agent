@@ -26,6 +26,7 @@ from api.run_failure_cause_models import (
     RUN_FAILURE_CAUSE_SCHEMA_VERSION,
     RunFailurePhase,
 )
+from scripts.bounded_live_producer_runtime_diagnostics import CallBudgetLimiter
 
 
 MANIFEST_SCHEMA_VERSION = "dra.bounded-live-producer-manifest.v1"
@@ -34,6 +35,9 @@ ERROR_SCHEMA_VERSION = "dra.bounded-live-producer-evaluation-error.v1"
 RESULT_DIAGNOSTIC_SCHEMA_VERSION = "dra.bounded-live-producer-result-diagnostic.v1"
 RUN_FAILURE_DIAGNOSTIC_SCHEMA_VERSION = (
     "dra.bounded-live-producer-run-failure-diagnostic.v1"
+)
+CALL_BUDGET_DIAGNOSTIC_SCHEMA_VERSION = (
+    "dra.bounded-live-producer-call-budget-diagnostic.v1"
 )
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_PUBLIC_BYTES = 1024 * 1024
@@ -363,6 +367,24 @@ class RunFailureDiagnosticReceipt(StrictModel):
     ]
     primary: RunFailureDiagnosticPrimary
     run_failure: RunFailureDiagnostic
+
+
+class CallBudgetDiagnosticReceipt(StrictModel):
+    schema_version: Literal[
+        "dra.bounded-live-producer-call-budget-diagnostic.v1"
+    ]
+    primary: RunFailureDiagnosticPrimary
+    run_failure: RunFailureDiagnostic
+    limiter: CallBudgetLimiter
+
+    @model_validator(mode="after")
+    def require_call_budget_cause(self) -> "CallBudgetDiagnosticReceipt":
+        if (
+            self.run_failure.phase != "execution"
+            or self.run_failure.code != "call_budget_exceeded"
+        ):
+            raise ValueError("diagnostic_invalid")
+        return self
 
 
 class EvaluationError(Exception):
@@ -1171,6 +1193,45 @@ def serialize_run_failure_diagnostic(error: EvaluationError) -> bytes:
             cleanup_status=error.cleanup_status,
         ),
         run_failure=error.diagnostic,
+    )
+    payload = receipt.model_dump(mode="json")
+    _assert_public_safe(payload)
+    raw = (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if len(raw) > MAX_DIAGNOSTIC_BYTES:
+        _validation_fail("diagnostic_invalid")
+    return raw
+
+
+def serialize_call_budget_diagnostic(
+    error: EvaluationError,
+    limiter: CallBudgetLimiter,
+) -> bytes:
+    if (
+        type(error.diagnostic) is not RunFailureDiagnostic
+        or error.diagnostic.phase != "execution"
+        or error.diagnostic.code != "call_budget_exceeded"
+        or type(limiter) is not CallBudgetLimiter
+    ):
+        _validation_fail("diagnostic_invalid")
+    receipt = CallBudgetDiagnosticReceipt(
+        schema_version=CALL_BUDGET_DIAGNOSTIC_SCHEMA_VERSION,
+        primary=RunFailureDiagnosticPrimary(
+            code=error.code,
+            phase=error.phase,
+            retryable=error.retryable,
+            cleanup_status=error.cleanup_status,
+        ),
+        run_failure=error.diagnostic,
+        limiter=limiter,
     )
     payload = receipt.model_dump(mode="json")
     _assert_public_safe(payload)

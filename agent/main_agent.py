@@ -18,6 +18,9 @@ from api.research_execution_service import (
     AccumulatorExecutionObserver,
     ResearchExecutionService,
 )
+from api.operator_diagnostics import (
+    call_budget_diagnostic_writer_from_environment,
+)
 
 project_root = Path(__file__).parents[1].resolve()
 
@@ -47,6 +50,11 @@ def _execution_service(profile_id: str) -> ResearchExecutionService:
     return ResearchExecutionService(
         harness=_selected_harness(profile_id),
         project_root=project_root,
+        call_budget_diagnostic_writer=(
+            call_budget_diagnostic_writer_from_environment(
+                output_root=project_root / "output"
+            )
+        ),
     )
 
 

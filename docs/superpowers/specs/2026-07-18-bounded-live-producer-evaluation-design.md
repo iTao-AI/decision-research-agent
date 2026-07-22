@@ -973,3 +973,15 @@ material. This amendment has no API, database, Agent runtime, canonical result,
 Evidence, dependency, CI, VERSION, or release effect and makes
 no live-success claim or evidence publication. Any later live use remains
 separately authorized.
+
+### Post-Observation Limiter Diagnostic Amendment
+
+The earlier middleware and runtime prohibitions remain historical Change 1 boundaries.
+A separately approved, default-disabled addition now permits only structured native-exception projection and operator-only transport for exact call-budget failures. It uses the closed
+`DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS=true` mode, one fixed internal
+sidecar path, an ownership-proven fixed container reader, and at most one post-cleanup receipt.
+
+This amendment makes no budget or no model adjustment, no API, database, canonical result, or Evidence change,
+no role inference, and no LangSmith authority. It makes no live-success claim or
+successful live-provider evidence claim. Sidecar absence remains `not_observed`, publication is
+best effort, and neither the sidecar nor the receipt authorizes automatic retry.

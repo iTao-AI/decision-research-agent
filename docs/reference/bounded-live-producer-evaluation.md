@@ -330,3 +330,54 @@ a release/deployment certification. In particular, it is not exactly-once
 execution and does not make Tool Client, REST/OpenAPI, database schema, Agent
 runtime, LangGraph, LangSmith, or the frontend a new business authority.
 It is not a hosted deployment and provides no multi-tenant or SLA guarantee.
+
+## Opt-In Limiter Diagnostic Sidecar
+
+The bounded producer alone may enable
+`DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS=true`. The mode is
+default-disabled; absence writes nothing, and any present value other than exact lowercase
+`true` fails during configuration validation. It does not change base Compose or ordinary runtime
+configuration.
+
+When native framework call-limit exceptions reach the existing outer harness boundary, the
+application may project only these seven closed limiter fields: `limiter_kind`, `tool_scope`,
+`run_count`, `run_limit`, `thread_count`, `thread_limit`, and `agent_role`. Model limits use
+`tool_scope=not_applicable`; tool limits use only `all_tools` or `task`. Unknown tool names produce
+no diagnostic. `agent_role` remains `not_observed`; there is no role inference.
+
+The internal `dra.call-budget-origin-sidecar.v1` object is written only to:
+
+```text
+/app/output/operator-diagnostics/<run_id>/call-budget-v1.json
+```
+
+It is canonical JSON, at most 4096 bytes, in a mode-`0600` owner-owned regular file. It contains no
+prompt, query, scope, provider/model identity, arbitrary tool name, tool input/output, Evidence,
+artifact content, credential, URL, exception text, traceback, or caller-selected path. Writer
+failure never replaces the application terminal cause.
+
+After exact application cause `execution/call_budget_exceeded`, the evaluator proves the one full
+backend container ID and its task-owned `<project>_backend_output` named volume before and after
+the fixed direct invocation:
+
+```text
+python /app/scripts/bounded_live_producer_runtime_diagnostics.py read --run-id <run_id>
+```
+
+The reader uses descriptor-relative `O_NOFOLLOW`, verifies owner, mode, link count, size and open
+file identity, and emits only strict canonical bytes. The host validates those bytes again and
+keeps only the typed value in memory. Missing, invalid, ambiguous, or drifted state means
+`not_observed`; it does not change the primary failure. No shell, `docker compose cp`, arbitrary
+path, host copy, retained failed container, or retained output volume is permitted.
+
+A valid value selects `dra.bounded-live-producer-call-budget-diagnostic.v1` at the fixed operator
+filename `bounded-live-producer-call-budget-diagnostic-v1.json`. It contains the existing
+`run_failed/observe` primary, exact application run-failure cause, and the seven limiter fields.
+Exactly one of result-boundary, generic run-failure, or call-budget receipt can be published, and
+publication occurs after final cleanup. The owner-only sink remains non-overwriting, inode-bound,
+bounded and best effort.
+
+This is operator-only diagnostic transport: there is no API, database, or public failure contract change;
+no model or budget change; no role inference; no LangSmith authority; and no successful live-provider evidence claim.
+The receipt is not Evidence, application authority, billing data, or
+proof of research quality. It does not authorize an automatic retry or any budget/model adjustment.

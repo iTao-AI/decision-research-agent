@@ -67,9 +67,11 @@ from scripts.bounded_live_producer_diagnostics import (
     DiagnosticOutputError,
     DiagnosticSink,
     preflight_diagnostic_dir,
+    publish_call_budget_diagnostic,
     publish_result_diagnostic,
     publish_run_failure_diagnostic,
 )
+from scripts.bounded_live_producer_runtime_diagnostics import CallBudgetOriginSidecar
 from scripts.bounded_live_producer_http import CreateAmbiguous, ProofHttpClient
 from scripts.downstream_consumer_contract import (
     ContractValidationError,
@@ -1154,28 +1156,39 @@ def _publish_diagnostic_best_effort(
     error: EvaluationError,
     *,
     remaining_seconds: Callable[[float], float],
+    call_budget_sidecar: CallBudgetOriginSidecar | None = None,
 ) -> None:
     if sink is None:
         return
-    publisher: Callable[..., Path]
     if (
         type(error.diagnostic) is ResultBoundaryDiagnostic
         and error.code is FailureCode.CONSUMER_PROJECTION_INVALID
         and error.phase is FailurePhase.RESULT
     ):
-        publisher = publish_result_diagnostic
+        publisher: Callable[..., Path] = publish_result_diagnostic
+        arguments: tuple[object, ...] = (sink, error)
+    elif (
+        type(error.diagnostic) is RunFailureDiagnostic
+        and error.code is FailureCode.RUN_FAILED
+        and error.phase is FailurePhase.OBSERVE
+        and error.diagnostic.phase == "execution"
+        and error.diagnostic.code == "call_budget_exceeded"
+        and type(call_budget_sidecar) is CallBudgetOriginSidecar
+    ):
+        publisher = publish_call_budget_diagnostic
+        arguments = (sink, error, call_budget_sidecar.limiter)
     elif (
         type(error.diagnostic) is RunFailureDiagnostic
         and error.code is FailureCode.RUN_FAILED
         and error.phase is FailurePhase.OBSERVE
     ):
         publisher = publish_run_failure_diagnostic
+        arguments = (sink, error)
     else:
         return
     try:
         publisher(
-            sink,
-            error,
+            *arguments,
             remaining_seconds=remaining_seconds,
         )
     except Exception:
@@ -1220,6 +1233,7 @@ def observe_live(
         LIVE_BUDGET,
         ActiveDeadline,
         CredentialDeclaration,
+        LIMITER_DIAGNOSTICS_ENV,
         ManagedComposeProject,
         cleanup_receipt,
         load_live_configuration,
@@ -1335,6 +1349,7 @@ def observe_live(
             "scripts/bounded_live_producer_http.py",
             "scripts/bounded_live_producer_lifecycle.py",
             "scripts/bounded_live_producer_proof.py",
+            "scripts/bounded_live_producer_runtime_diagnostics.py",
         )
         active_started = clock()
         active_deadline = non_cleanup_deadline.child(
@@ -1394,8 +1409,10 @@ def observe_live(
             live_configuration.close()
 
     cleanup_started = 0.0
+    call_budget_sidecar: CallBudgetOriginSidecar | None = None
 
     def primary() -> dict[str, Any]:
+        nonlocal call_budget_sidecar
         project.assert_unclaimed(active_deadline)
         build_started = clock()
         build_deadline = active_deadline.child(
@@ -1477,12 +1494,28 @@ def observe_live(
         )
         if accepted["thread_id"] != thread_id:
             raise _error(FailureCode.CREATE_IDENTITY_MISMATCH, FailurePhase.CREATE)
-        before, _status, _result = observe_terminal(
-            research_client,
-            accepted=accepted,
-            required_cited_domains=manifest.required_cited_domains,
-            remaining_seconds=research_deadline.remaining,
-        )
+        try:
+            before, _status, _result = observe_terminal(
+                research_client,
+                accepted=accepted,
+                required_cited_domains=manifest.required_cited_domains,
+                remaining_seconds=research_deadline.remaining,
+            )
+        except EvaluationError as exc:
+            diagnostic = exc.diagnostic
+            if (
+                live_configuration.get(LIMITER_DIAGNOSTICS_ENV) == "true"
+                and exc.code is FailureCode.RUN_FAILED
+                and exc.phase is FailurePhase.OBSERVE
+                and type(diagnostic) is RunFailureDiagnostic
+                and diagnostic.phase == "execution"
+                and diagnostic.code == "call_budget_exceeded"
+            ):
+                call_budget_sidecar = project.read_call_budget_sidecar(
+                    accepted["run_id"],
+                    research_deadline,
+                )
+            raise
         usage = observe_usage(
             research_client.usage(
                 run_id=accepted["run_id"],
@@ -1619,6 +1652,7 @@ def observe_live(
             diagnostic_sink,
             final_error,
             remaining_seconds=total_deadline.remaining,
+            call_budget_sidecar=call_budget_sidecar,
         )
         raise final_error from cause
     except BaseExceptionGroup as exc:
@@ -1634,6 +1668,7 @@ def observe_live(
             diagnostic_sink,
             final_error,
             remaining_seconds=total_deadline.remaining,
+            call_budget_sidecar=call_budget_sidecar,
         )
         raise final_error from cause
     except BaseException as exc:

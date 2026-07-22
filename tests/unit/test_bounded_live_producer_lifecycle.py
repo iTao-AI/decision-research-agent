@@ -431,6 +431,97 @@ def test_load_live_configuration_accepts_owner_only_file_and_matching_declaratio
         getattr(loaded, "close", lambda: None)()
 
 
+def test_limiter_diagnostics_mode_is_absent_or_exact_true_in_materialized_snapshot(
+    tmp_path: Path,
+) -> None:
+    key = "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS"
+    for value in (None, "true"):
+        path = tmp_path / f"live-{value or 'absent'}.env"
+        values = _valid_env()
+        if value is not None:
+            values[key] = value
+        _write_env(path, values)
+        loaded = load_live_configuration(
+            path,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
+        try:
+            with loaded.materialized() as materialized:
+                captured = materialized.read_bytes()
+                assignments = [
+                    line for line in captured.splitlines() if line.startswith(key.encode() + b"=")
+                ]
+                assert assignments == ([] if value is None else [f"{key}=true".encode()])
+        finally:
+            loaded.close()
+
+
+@pytest.mark.parametrize("value", ["", "false", "TRUE", "1", " true", "true "])
+def test_limiter_diagnostics_mode_rejects_non_exact_values_before_materialization(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    path = tmp_path / "live.env"
+    values = _valid_env()
+    values[
+        "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS"
+    ] = value
+    _write_env(path, values)
+
+    with pytest.raises(EvaluationError) as raised:
+        load_live_configuration(
+            path,
+            _declaration(),
+            process_api_key="service-secret",
+            repository_root=tmp_path / "repository",
+        )
+
+    assert raised.value.code is FailureCode.CREDENTIAL_SOURCE_INVALID
+    assert not any(
+        candidate.name.startswith("dra-bounded-credential-")
+        for candidate in tmp_path.iterdir()
+    )
+
+
+@pytest.mark.parametrize("primary_failure", [False, True])
+def test_limiter_diagnostics_configuration_close_zeroes_raw_and_removes_snapshot(
+    tmp_path: Path,
+    primary_failure: bool,
+) -> None:
+    path = tmp_path / "live.env"
+    values = _valid_env()
+    values[
+        "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS"
+    ] = "true"
+    _write_env(path, values)
+    loaded = load_live_configuration(
+        path,
+        _declaration(),
+        process_api_key="service-secret",
+        repository_root=tmp_path / "repository",
+    )
+    raw_reference = loaded._raw
+    materialized_directory: Path | None = None
+
+    if primary_failure:
+        with pytest.raises(RuntimeError, match="primary"):
+            with loaded.materialized() as materialized:
+                materialized_directory = materialized.parent
+                raise RuntimeError("primary")
+    else:
+        with loaded.materialized() as materialized:
+            materialized_directory = materialized.parent
+
+    assert materialized_directory is not None
+    assert not materialized_directory.exists()
+    loaded.close()
+    assert raw_reference
+    assert set(raw_reference) == {0}
+    assert len(loaded) == 0
+
+
 @pytest.mark.parametrize("mode", [0o004, 0o040, 0o200, 0o500, 0o700])
 def test_load_live_configuration_rejects_unsafe_permissions(
     tmp_path: Path, mode: int
@@ -1580,6 +1671,173 @@ def test_managed_compose_project_preflight_includes_stopped_containers(tmp_path:
     )
     container_command = next(command for command in commands if command[1] == "container")
     assert "-a" in container_command
+
+
+def test_sidecar_extraction_uses_exact_owned_container_volume_and_fixed_exec(
+    tmp_path: Path,
+) -> None:
+    from scripts.bounded_live_producer_runtime_diagnostics import (
+        parse_call_budget_sidecar,
+        serialize_call_budget_sidecar,
+    )
+
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+    project_name = "dra-proof-12121212121212121212121212121212"
+    container_id = "a" * 64
+    volume_name = f"{project_name}_backend_output"
+    raw = serialize_call_budget_sidecar(
+        parse_call_budget_sidecar(
+            {
+                "schema_version": "dra.call-budget-origin-sidecar.v1",
+                "limiter": {
+                    "limiter_kind": "model",
+                    "tool_scope": "not_applicable",
+                    "run_count": 40,
+                    "run_limit": 40,
+                    "thread_count": 40,
+                    "thread_limit": None,
+                    "agent_role": "not_observed",
+                },
+            }
+        )
+    ).decode()
+    commands: list[tuple[str, ...]] = []
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        if args[-3:] == ("ps", "-q", "backend"):
+            return subprocess.CompletedProcess(args, 0, container_id + "\n", "")
+        if args[:4] == ("docker", "volume", "ls", "-q"):
+            return subprocess.CompletedProcess(args, 0, volume_name + "\n", "")
+        if args[:4] == ("docker", "inspect", "--format", "{{json .Mounts}}"):
+            mounts = [{"Type": "volume", "Name": volume_name, "Destination": "/app/output"}]
+            return subprocess.CompletedProcess(args, 0, json.dumps(mounts) + "\n", "")
+        if args[:3] == ("docker", "exec", container_id):
+            return subprocess.CompletedProcess(args, 0, raw, "")
+        raise AssertionError(args)
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name=project_name,
+        environment={},
+        runner=runner,
+    )
+    project.merge_resource_ownership(
+        container_ids=(container_id,),
+        volume_ids=(volume_name,),
+        network_ids=(),
+    )
+
+    observed = project.read_call_budget_sidecar(
+        "run-1",
+        ActiveDeadline(5, code=FailureCode.RUN_FAILED, phase=FailurePhase.OBSERVE),
+    )
+
+    assert observed is not None
+    exec_commands = [command for command in commands if command[:2] == ("docker", "exec")]
+    assert exec_commands == [
+        (
+            "docker",
+            "exec",
+            container_id,
+            "python",
+            "/app/scripts/bounded_live_producer_runtime_diagnostics.py",
+            "read",
+            "--run-id",
+            "run-1",
+        )
+    ]
+    assert sum(command[-3:] == ("ps", "-q", "backend") for command in commands) == 2
+    assert not any("sh" in command or "cp" in command for command in commands)
+
+
+@pytest.mark.parametrize("mutation", ["short_id", "container_drift", "volume_drift", "bind_mount", "wrong_destination", "duplicate_mount"])
+def test_sidecar_extraction_rejects_container_or_mount_authority_drift(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    from scripts.bounded_live_producer_runtime_diagnostics import (
+        parse_call_budget_sidecar,
+        serialize_call_budget_sidecar,
+    )
+
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    compose = root / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / "live.env"
+    env_file.write_text("", encoding="utf-8")
+    project_name = "dra-proof-13131313131313131313131313131313"
+    container_id = "a" * 64
+    volume_name = f"{project_name}_backend_output"
+    canonical_sidecar = serialize_call_budget_sidecar(
+        parse_call_budget_sidecar(
+            {
+                "schema_version": "dra.call-budget-origin-sidecar.v1",
+                "limiter": {
+                    "limiter_kind": "model",
+                    "tool_scope": "not_applicable",
+                    "run_count": 40,
+                    "run_limit": 40,
+                    "thread_count": 40,
+                    "thread_limit": None,
+                    "agent_role": "not_observed",
+                },
+            }
+        )
+    ).decode()
+    ps_calls = 0
+
+    def runner(args: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        nonlocal ps_calls
+        if args[-3:] == ("ps", "-q", "backend"):
+            ps_calls += 1
+            value = "a" * 12 if mutation == "short_id" else "b" * 64 if mutation == "container_drift" and ps_calls == 2 else container_id
+            return subprocess.CompletedProcess(args, 0, value + "\n", "")
+        if args[:4] == ("docker", "volume", "ls", "-q"):
+            value = "" if mutation == "volume_drift" and ps_calls >= 2 else volume_name + "\n"
+            return subprocess.CompletedProcess(args, 0, value, "")
+        if args[:4] == ("docker", "inspect", "--format", "{{json .Mounts}}"):
+            mount = {
+                "Type": "bind" if mutation == "bind_mount" else "volume",
+                "Name": volume_name,
+                "Destination": "/wrong" if mutation == "wrong_destination" else "/app/output",
+            }
+            mounts = [mount, dict(mount)] if mutation == "duplicate_mount" else [mount]
+            return subprocess.CompletedProcess(args, 0, json.dumps(mounts) + "\n", "")
+        if args[:2] == ("docker", "exec"):
+            if mutation in {"container_drift", "volume_drift"}:
+                return subprocess.CompletedProcess(args, 0, canonical_sidecar, "")
+            return subprocess.CompletedProcess(args, 1, "", "invalid")
+        raise AssertionError(args)
+
+    project = ManagedComposeProject(
+        root=root,
+        compose_paths=(compose,),
+        env_file=env_file,
+        project_name=project_name,
+        environment={},
+        runner=runner,
+    )
+    project.merge_resource_ownership(
+        container_ids=(container_id,),
+        volume_ids=(volume_name,),
+        network_ids=(),
+    )
+
+    assert project.read_call_budget_sidecar(
+        "run-1",
+        ActiveDeadline(5, code=FailureCode.RUN_FAILED, phase=FailurePhase.OBSERVE),
+    ) is None
+    if mutation in {"container_drift", "volume_drift"}:
+        assert ps_calls == 2
 
 
 def test_build_success_registers_image_tag_before_later_inspection_failure(

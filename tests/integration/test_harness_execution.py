@@ -5,7 +5,10 @@ from typing import Any, Sequence
 import pytest
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
+from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
+from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -15,7 +18,12 @@ from agent.deepagents_harness import (
     DeepAgentsHarness,
     build_filesystem_permissions,
 )
-from agent.harness_contracts import HarnessExecutionError, ReportCandidate
+from agent.harness_contracts import (
+    CallBudgetDiagnostic,
+    HarnessExecutionError,
+    HarnessRequest,
+    ReportCandidate,
+)
 from agent.profile_middleware import build_profile_middleware
 from agent.run_result import OutcomeBox
 from agent.runtime_context import ResearchRuntimeContext
@@ -124,6 +132,38 @@ class ScriptedNeverWriteModel(ScriptedCanonicalWriteModel):
         )
 
 
+class ScriptedTaskDelegationModel(ScriptedCanonicalWriteModel):
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        self.call_count += 1
+        return ChatResult(
+            generations=[
+                ChatGeneration(
+                    message=AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "task",
+                                "args": {
+                                    "description": "Run the bounded researcher.",
+                                    "subagent_type": "bounded-researcher",
+                                },
+                                "id": "call-bounded-researcher",
+                                "type": "tool_call",
+                            }
+                        ],
+                    )
+                )
+            ]
+        )
+
+
 class RecordingHarness:
     def __init__(self):
         self.request = None
@@ -201,6 +241,149 @@ def _real_deepagents_harness(
         skills=(),
         profile_graphs={"generic": graph},
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("native_exception", "expected_diagnostic"),
+    [
+        pytest.param(
+            ModelCallLimitExceededError(
+                thread_count=7,
+                run_count=7,
+                thread_limit=None,
+                run_limit=7,
+            ),
+            CallBudgetDiagnostic(
+                limiter_kind="model",
+                tool_scope="not_applicable",
+                run_count=7,
+                run_limit=7,
+                thread_count=7,
+                thread_limit=None,
+                agent_role="not_observed",
+            ),
+            id="model",
+        ),
+        pytest.param(
+            ToolCallLimitExceededError(
+                thread_count=5,
+                run_count=5,
+                thread_limit=None,
+                run_limit=5,
+                tool_name=None,
+            ),
+            CallBudgetDiagnostic(
+                limiter_kind="tool",
+                tool_scope="all_tools",
+                run_count=5,
+                run_limit=5,
+                thread_count=5,
+                thread_limit=None,
+                agent_role="not_observed",
+            ),
+            id="tool",
+        ),
+    ],
+)
+async def test_locked_deepagents_subagent_limit_reaches_outer_harness(
+    native_exception,
+    expected_diagnostic,
+):
+    subagent_calls = 0
+
+    class RaisingSubagentModel(BaseChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "raising-subagent-model"
+
+        def bind_tools(self, tools: Sequence, **kwargs: Any):
+            del tools, kwargs
+            return self
+
+        def _generate(
+            self,
+            messages: list[BaseMessage],
+            stop: list[str] | None = None,
+            run_manager=None,
+            **kwargs: Any,
+        ) -> ChatResult:
+            nonlocal subagent_calls
+            del messages, stop, run_manager, kwargs
+            subagent_calls += 1
+            raise native_exception
+
+    subagent_graph = create_agent(
+        model=RaisingSubagentModel(),
+        tools=[],
+        name="bounded-researcher",
+    )
+    coordinator = ScriptedTaskDelegationModel()
+    backend = CompositeBackend(default=StateBackend(), routes={})
+    permissions = tuple(build_filesystem_permissions())
+    graph = create_deep_agent(
+        model=coordinator,
+        tools=[],
+        system_prompt="Delegate exactly one bounded task.",
+        middleware=[],
+        subagents=[
+            {
+                "name": "bounded-researcher",
+                "description": "Run one deterministic bounded task.",
+                "runnable": subagent_graph,
+            }
+        ],
+        permissions=list(permissions),
+        backend=backend,
+        context_schema=ResearchRuntimeContext,
+        name="subagent-limit-integration",
+    )
+    harness = DeepAgentsHarness(
+        graph=graph,
+        backend=backend,
+        permissions=permissions,
+        skills=(),
+        profile_graphs={"generic": graph},
+    )
+
+    class Observer:
+        def callbacks(self):
+            return []
+
+        def on_stream_chunk(self, _chunk):
+            return None
+
+        def snapshot_outcome(self):
+            raise AssertionError("native subagent failure must not produce success")
+
+    context = ResearchRuntimeContext(
+        thread_id="thread-subagent-limit-1",
+        run_id="run-subagent-limit-1",
+        segment_id="segment-subagent-limit-1",
+        profile_id="generic",
+    )
+
+    with pytest.raises(HarnessExecutionError) as raised:
+        await harness.execute(
+            HarnessRequest(
+                query="Delegate the bounded task.",
+                thread_id=context.thread_id,
+                run_id=context.run_id,
+                segment_id=context.segment_id,
+                profile_id=context.profile_id,
+                scope={},
+                trace_metadata={},
+            ),
+            runtime_context=context,
+            observer=Observer(),
+        )
+
+    assert "task" in coordinator.bound_tool_names
+    assert coordinator.call_count == 1
+    assert subagent_calls == 1
+    assert raised.value.failure_kind == "call_budget_exceeded"
+    assert raised.value.call_budget_diagnostic == expected_diagnostic
+    assert raised.value.__cause__ is native_exception
 
 
 @pytest.mark.asyncio

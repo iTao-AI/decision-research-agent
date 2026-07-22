@@ -50,6 +50,9 @@ _DEFAULT_ARCHIVE_BYTES_MAX = 64 * 1024 * 1024
 _DEFAULT_ARCHIVE_MEMBERS_MAX = 4096
 _DEFAULT_ARCHIVE_MEMBER_BYTES_MAX = 16 * 1024 * 1024
 _DEFAULT_STREAM_BYTES_MAX = 1024 * 1024
+LIMITER_DIAGNOSTICS_ENV = (
+    "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS"
+)
 
 _LIVE_ENV_NAMES = frozenset(
     {
@@ -66,6 +69,7 @@ _LIVE_ENV_NAMES = frozenset(
         "DECISION_RESEARCH_AGENT_ENABLE_BENCHMARK_FIXTURES",
         "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL",
         "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION",
+        LIMITER_DIAGNOSTICS_ENV,
         "LANGSMITH_TRACING",
         "LANGSMITH_API_KEY",
         "LANGSMITH_HIDE_INPUTS",
@@ -1070,6 +1074,11 @@ def load_live_configuration(
             raise ValueError
         if any(values.get(key) != "" for key in _EMPTY_ENV):
             raise ValueError
+        if (
+            LIMITER_DIAGNOSTICS_ENV in values
+            and values[LIMITER_DIAGNOSTICS_ENV] != "true"
+        ):
+            raise ValueError
         if not process_api_key or values["API_SECRET"] != process_api_key:
             raise ValueError
         if (
@@ -1587,6 +1596,7 @@ class ManagedComposeProject:
         *,
         compose: bool = False,
         allow_failure: bool = False,
+        stream_bytes_max: int = _DEFAULT_STREAM_BYTES_MAX,
     ) -> subprocess.CompletedProcess[str]:
         if self.root.is_dir():
             invocation_root = self.root
@@ -1615,7 +1625,7 @@ class ManagedComposeProject:
                 env=environment,
                 deadline=deadline,
                 allowed_environment=_DOCKER_ENV_ALLOWLIST,
-                stream_bytes_max=_DEFAULT_STREAM_BYTES_MAX,
+                stream_bytes_max=stream_bytes_max,
                 allow_nonzero=allow_failure,
             )
 
@@ -1632,6 +1642,126 @@ class ManagedComposeProject:
         if result.returncode != 0 and not allow_failure:
             raise EvaluationError(deadline.code, deadline.phase, False)
         return result
+
+    def _call_budget_sidecar_authority(
+        self,
+        deadline: ActiveDeadline,
+    ) -> tuple[str, str] | None:
+        container_result = self._invoke(
+            ("ps", "-q", "backend"),
+            deadline,
+            compose=True,
+            allow_failure=True,
+            stream_bytes_max=4096,
+        )
+        container_ids = tuple(container_result.stdout.splitlines())
+        if (
+            container_result.returncode != 0
+            or len(container_ids) != 1
+            or _DOCKER_FULL_ID_RE.fullmatch(container_ids[0]) is None
+            or container_ids[0] not in self._containers
+        ):
+            return None
+        container_id = container_ids[0]
+        volume_name = f"{self.project_name}_backend_output"
+        if volume_name not in self._volumes:
+            return None
+        volume_result = self._invoke(
+            (
+                "docker",
+                "volume",
+                "ls",
+                "-q",
+                "--filter",
+                f"label=com.docker.compose.project={self.project_name}",
+            ),
+            deadline,
+            allow_failure=True,
+            stream_bytes_max=4096,
+        )
+        if (
+            volume_result.returncode != 0
+            or volume_name not in volume_result.stdout.splitlines()
+        ):
+            return None
+        mount_result = self._invoke(
+            (
+                "docker",
+                "inspect",
+                "--format",
+                "{{json .Mounts}}",
+                container_id,
+            ),
+            deadline,
+            allow_failure=True,
+            stream_bytes_max=4096,
+        )
+        try:
+            mounts = json.loads(mount_result.stdout)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        output_mounts = [
+            mount
+            for mount in mounts
+            if isinstance(mount, dict) and mount.get("Destination") == "/app/output"
+        ] if isinstance(mounts, list) else []
+        if (
+            mount_result.returncode != 0
+            or len(output_mounts) != 1
+            or output_mounts[0].get("Type") != "volume"
+            or output_mounts[0].get("Name") != volume_name
+        ):
+            return None
+        return container_id, volume_name
+
+    def read_call_budget_sidecar(
+        self,
+        run_id: str,
+        deadline: ActiveDeadline,
+    ) -> object | None:
+        from scripts.bounded_live_producer_runtime_diagnostics import (
+            CallBudgetOriginSidecar,
+            parse_call_budget_sidecar,
+            serialize_call_budget_sidecar,
+        )
+
+        try:
+            if (
+                type(run_id) is not str
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", run_id) is None
+            ):
+                return None
+            before = self._call_budget_sidecar_authority(deadline)
+            if before is None:
+                return None
+            result = self._invoke(
+                (
+                    "docker",
+                    "exec",
+                    before[0],
+                    "python",
+                    "/app/scripts/bounded_live_producer_runtime_diagnostics.py",
+                    "read",
+                    "--run-id",
+                    run_id,
+                ),
+                deadline,
+                allow_failure=True,
+                stream_bytes_max=4096,
+            )
+            if result.returncode != 0 or result.stderr:
+                return None
+            parsed: CallBudgetOriginSidecar = parse_call_budget_sidecar(
+                result.stdout.encode("utf-8")
+            )
+            if serialize_call_budget_sidecar(parsed) != result.stdout.encode("utf-8"):
+                return None
+            after = self._call_budget_sidecar_authority(deadline)
+            if after != before:
+                return None
+            return parsed
+        except Exception:
+            return None
 
     def assert_unclaimed(self, deadline: ActiveDeadline) -> None:
         if self._project_claimed:

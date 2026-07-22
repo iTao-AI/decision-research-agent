@@ -23,7 +23,7 @@ from deepagents.backends import CompositeBackend, FilesystemBackend, StateBacken
 from deepagents.middleware.filesystem import FilesystemPermission
 from langgraph.errors import GraphRecursionError
 
-from agent.harness_contracts import HarnessExecutionError
+from agent.harness_contracts import CallBudgetDiagnostic, HarnessExecutionError
 from agent.profile_middleware import build_profile_middleware
 from agent.profile_registry import profile_registry
 from agent.research_agents import compile_generic_researchers
@@ -133,6 +133,7 @@ class DeepAgentsHarness:
             raise HarnessExecutionError(
                 failure_kind="call_budget_exceeded",
                 message=str(exc),
+                call_budget_diagnostic=_call_budget_diagnostic(exc),
             ) from exc
         except GraphRecursionError as exc:
             raise HarnessExecutionError(
@@ -140,6 +141,34 @@ class DeepAgentsHarness:
                 message=str(exc),
             ) from exc
         return observer.snapshot_outcome()
+
+
+def _call_budget_diagnostic(
+    exc: ModelCallLimitExceededError | ToolCallLimitExceededError,
+) -> CallBudgetDiagnostic | None:
+    try:
+        if isinstance(exc, ModelCallLimitExceededError):
+            limiter_kind = "model"
+            tool_scope = "not_applicable"
+        elif isinstance(exc, ToolCallLimitExceededError):
+            limiter_kind = "tool"
+            if exc.tool_name is None:
+                tool_scope = "all_tools"
+            elif exc.tool_name == "task":
+                tool_scope = "task"
+            else:
+                return None
+        return CallBudgetDiagnostic(
+            limiter_kind=limiter_kind,
+            tool_scope=tool_scope,
+            run_count=exc.run_count,
+            run_limit=exc.run_limit,
+            thread_count=exc.thread_count,
+            thread_limit=exc.thread_limit,
+            agent_role="not_observed",
+        )
+    except (AttributeError, TypeError, ValueError):
+        return None
 
 
 def _matches_permission_path(path: str, pattern: str) -> bool:

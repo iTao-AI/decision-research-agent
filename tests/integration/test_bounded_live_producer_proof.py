@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 import pytest
 import yaml
 
+from api.run_failure_cause_models import RUN_FAILURE_CAUSE_CODES
 from scripts.bounded_live_producer_contracts import (
     BOUNDARIES,
     LIMITS,
@@ -26,6 +27,7 @@ from scripts.bounded_live_producer_contracts import (
     ResultBoundaryDiagnostic,
     ResultDiagnosticReason,
     ResultDiagnosticStage,
+    RunFailureDiagnostic,
 )
 from scripts.bounded_live_producer_diagnostics import DIAGNOSTIC_FILENAME
 from scripts.bounded_live_producer_http import CreateAmbiguous, HttpObservation
@@ -453,6 +455,18 @@ def _status(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _observed_failure_cause(
+    *, phase: str = "execution", code: str = "execution_error"
+) -> dict[str, Any]:
+    return {
+        "schema_version": "dra.run-failure-cause.v1",
+        "observation_status": "observed",
+        "phase": phase,
+        "code": code,
+        "recorded_at": "2026-07-22T00:00:00Z",
+    }
+
+
 def _result(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "run_id": "run-proof-1",
@@ -877,6 +891,187 @@ def test_observe_terminal_uses_one_remaining_deadline_and_never_cancels() -> Non
     assert not hasattr(client, "cancel")
 
 
+@pytest.mark.parametrize(
+    ("phase", "code"),
+    [
+        (phase, code)
+        for phase, codes in RUN_FAILURE_CAUSE_CODES.items()
+        for code in sorted(codes)
+    ],
+)
+def test_observe_terminal_failure_reuses_exact_application_cause_without_result(
+    phase: str, code: str
+) -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(
+                execution_status="failed",
+                delivery_status="blocked",
+                failure_cause=_observed_failure_cause(phase=phase, code=code),
+            )
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("failed terminal state must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_failed"
+    assert raised.value.phase.value == "observe"
+    assert isinstance(raised.value.diagnostic, RunFailureDiagnostic)
+    assert raised.value.diagnostic.phase == phase
+    assert raised.value.diagnostic.code == code
+    assert client.result_calls == 0
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        None,
+        {
+            "schema_version": "dra.run-failure-cause.v1",
+            "observation_status": "not_observed",
+        },
+        {**_observed_failure_cause(), "recorded_at": "not-a-timestamp"},
+        {
+            **_observed_failure_cause(),
+            "phase": "execution",
+            "code": "run_finalization_failed",
+        },
+        {**_observed_failure_cause(), "phase": 1},
+        {**_observed_failure_cause(), "unexpected": True},
+        {
+            key: value
+            for key, value in _observed_failure_cause().items()
+            if key != "recorded_at"
+        },
+    ],
+)
+def test_observe_terminal_failure_rejects_invalid_cause_without_result(
+    cause: object,
+) -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(
+                execution_status="failed",
+                delivery_status="blocked",
+                failure_cause=cause,
+            )
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("invalid failed state must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.phase.value == "observe"
+    assert raised.value.diagnostic is None
+    assert client.result_calls == 0
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        _status(execution_status="completed_with_fallback", delivery_status="blocked"),
+        _status(execution_status="completed", delivery_status="blocked"),
+        _status(execution_status="unknown", delivery_status="blocked"),
+    ],
+)
+def test_observe_terminal_fallback_delivery_and_unknown_skip_result(
+    status: dict[str, Any],
+) -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return status
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("ineligible terminal state must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError):
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert client.result_calls == 0
+
+
+def test_observe_terminal_failure_identity_precedes_cause_classification() -> None:
+    class Client:
+        result_calls = 0
+
+        def status(self, *, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+            return _status(
+                thread_id="other-thread",
+                execution_status="failed",
+                delivery_status="blocked",
+                failure_cause=_observed_failure_cause(),
+            )
+
+        def result_observation(self, **_kwargs: Any) -> HttpObservation:
+            self.result_calls += 1
+            raise AssertionError("identity failure must not request result")
+
+    client = Client()
+    with pytest.raises(EvaluationError) as raised:
+        observe_terminal(
+            client,  # type: ignore[arg-type]
+            accepted=_create_ack(replay=False),
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.diagnostic is None
+    assert client.result_calls == 0
+
+
+def test_project_live_observation_failure_identity_precedes_cause_classification() -> None:
+    with pytest.raises(EvaluationError) as raised:
+        project_live_observation(
+            status_payload=_status(
+                thread_id="other-thread",
+                execution_status="failed",
+                delivery_status="blocked",
+                failure_cause=_observed_failure_cause(),
+            ),
+            result_payload=_result(),
+            result_response_bytes=1,
+            expected_run_id="run-proof-1",
+            expected_thread_id="thread-proof-1",
+            expected_segment_id="segment-proof-1",
+            required_cited_domains=("docs.python.org", "peps.python.org"),
+        )
+
+    assert raised.value.code.value == "run_state_invalid"
+    assert raised.value.diagnostic is None
+
+
 def test_restart_backend_transport_reinspects_loopback_binding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -939,7 +1134,15 @@ def test_restart_backend_transport_reinspects_loopback_binding(
 @pytest.mark.parametrize(
     ("status", "result", "expected_code", "expected_phase"),
     [
-        (_status(execution_status="failed"), _result(), "run_failed", "observe"),
+        (
+            _status(
+                execution_status="failed",
+                failure_cause=_observed_failure_cause(),
+            ),
+            _result(),
+            "run_failed",
+            "observe",
+        ),
         (
             _status(execution_status="completed_with_fallback"),
             _result(),

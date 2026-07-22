@@ -192,9 +192,11 @@ def test_call_budget_operator_diagnostic_concurrent_publication_has_one_winner(
     assert sidecar.is_file()
 
 
-def test_call_budget_operator_diagnostic_maps_fsync_failure_to_stable_error(
+@pytest.mark.parametrize("failure", ["write", "link", "fsync"])
+def test_call_budget_operator_diagnostic_maps_publication_failure_to_stable_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    failure: str,
 ) -> None:
     import api.operator_diagnostics as module
 
@@ -206,10 +208,42 @@ def test_call_budget_operator_diagnostic_maps_fsync_failure_to_stable_error(
         output_root=tmp_path
     )
     assert writer is not None
-    monkeypatch.setattr(module.os, "fsync", lambda _fd: (_ for _ in ()).throw(OSError()))
+    marker = tmp_path / "pre-existing"
+    marker.write_bytes(b"operator-owned")
+    if failure == "write":
+        monkeypatch.setattr(
+            module.os,
+            "write",
+            lambda _fd, _raw: (_ for _ in ()).throw(OSError()),
+        )
+    elif failure == "link":
+        monkeypatch.setattr(
+            module.os,
+            "link",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError()),
+        )
+    else:
+        real_fsync = module.os.fsync
+
+        def fail_file_fsync(descriptor: int) -> None:
+            if stat.S_ISREG(module.os.fstat(descriptor).st_mode):
+                raise OSError
+            real_fsync(descriptor)
+
+        monkeypatch.setattr(module.os, "fsync", fail_file_fsync)
 
     with pytest.raises(
         module.OperatorDiagnosticWriteError,
         match="operator_diagnostic_write_invalid",
     ):
-        writer("run-fsync", _diagnostic())
+        writer(f"run-{failure}", _diagnostic())
+
+    final = (
+        tmp_path
+        / module.CALL_BUDGET_SIDECAR_DIRECTORY
+        / f"run-{failure}"
+        / module.CALL_BUDGET_SIDECAR_FILENAME
+    )
+    assert not final.exists()
+    assert list(tmp_path.rglob("*.tmp")) == []
+    assert marker.read_bytes() == b"operator-owned"

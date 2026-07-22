@@ -1928,7 +1928,9 @@ def test_bounded_live_targeted_runtime_repair_amendment_rejects_mutation(
         replacements=((old, new),),
         contract=test_bounded_live_targeted_runtime_repair_amendment_is_scoped,
     )
-def test_limiter_diagnostic_sidecar_contract_is_closed_and_non_authoritative() -> None:
+
+
+def _assert_limiter_diagnostic_sidecar_contract() -> None:
     reference = (
         PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md"
     ).read_text(encoding="utf-8")
@@ -1962,6 +1964,16 @@ def test_limiter_diagnostic_sidecar_contract_is_closed_and_non_authoritative() -
         "does not authorize an automatic retry",
     )
     assert all(value in reference for value in required_reference)
+    collapsed_reference = _collapsed(reference)
+    assert (
+        "these seven closed limiter fields: `limiter_kind`, `tool_scope`, "
+        "`run_count`, `run_limit`, `thread_count`, `thread_limit`, and "
+        "`agent_role`."
+    ) in collapsed_reference
+    assert (
+        "tool limits use only `all_tools` or `task`. Unknown tool names "
+        "produce no diagnostic."
+    ) in collapsed_reference
     amendment = "### Post-Observation Limiter Diagnostic Amendment"
     for historical in (design, plan):
         assert amendment in historical
@@ -1977,3 +1989,56 @@ def test_limiter_diagnostic_sidecar_contract_is_closed_and_non_authoritative() -
             "no live-success claim",
         ):
             assert value in section
+    assert "neither the sidecar nor the receipt authorizes automatic retry" in design
+    assert "does not authorize automatic retry" in plan
+
+
+def test_limiter_diagnostic_sidecar_contract_is_closed_and_non_authoritative() -> None:
+    _assert_limiter_diagnostic_sidecar_contract()
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new"),
+    (
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "`run_count`, `run_limit`, `thread_count`, `thread_limit`, and `agent_role`.",
+            "`run_count`, `run_limit`, `thread_count`, and `agent_role`.",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "`all_tools` or `task`. Unknown tool names produce\nno diagnostic.",
+            "`all_tools`, `task`, or an arbitrary tool name.",
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md",
+            "operator-only transport",
+            "application-authoritative transport",
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md",
+            "does not authorize automatic retry",
+            "authorizes automatic retry",
+        ),
+    ),
+    ids=(
+        "closed-field-removed",
+        "arbitrary-tool-name",
+        "authority-claim",
+        "automatic-retry",
+    ),
+)
+def test_limiter_diagnostic_sidecar_contract_rejects_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    old: str,
+    new: str,
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=path,
+        replacements=((old, new),),
+        contract=_assert_limiter_diagnostic_sidecar_contract,
+    )

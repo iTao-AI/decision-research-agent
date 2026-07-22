@@ -156,3 +156,28 @@ def test_runtime_diagnostic_reader_rejects_open_file_identity_drift(
     monkeypatch.setattr(module.os, "fstat", drift)
     with pytest.raises(module.RuntimeDiagnosticReadError):
         module.read_call_budget_sidecar("run-1", output_root=tmp_path)
+
+
+def test_runtime_diagnostic_reader_rejects_wrong_open_file_uid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import scripts.bounded_live_producer_runtime_diagnostics as module
+
+    raw = module.serialize_call_budget_sidecar(
+        module.parse_call_budget_sidecar(_payload())
+    )
+    _write_sidecar(tmp_path, raw)
+    real_fstat = module.os.fstat
+
+    def wrong_uid(descriptor: int):
+        observed = real_fstat(descriptor)
+        if stat.S_ISREG(observed.st_mode):
+            values = list(observed)
+            values[4] = observed.st_uid + 1
+            return os.stat_result(values)
+        return observed
+
+    monkeypatch.setattr(module.os, "fstat", wrong_uid)
+    with pytest.raises(module.RuntimeDiagnosticReadError):
+        module.read_call_budget_sidecar("run-1", output_root=tmp_path)

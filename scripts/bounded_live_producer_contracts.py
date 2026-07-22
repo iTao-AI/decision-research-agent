@@ -25,8 +25,11 @@ from pydantic import (
 MANIFEST_SCHEMA_VERSION = "dra.bounded-live-producer-manifest.v1"
 REPORT_SCHEMA_VERSION = "dra.bounded-live-producer-evaluation.v1"
 ERROR_SCHEMA_VERSION = "dra.bounded-live-producer-evaluation-error.v1"
+RESULT_DIAGNOSTIC_SCHEMA_VERSION = "dra.bounded-live-producer-result-diagnostic.v1"
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_PUBLIC_BYTES = 1024 * 1024
+MAX_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_DIAGNOSTIC_BYTES = 4 * 1024
 
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z", re.ASCII)
 _DOMAIN_RE = re.compile(
@@ -230,10 +233,105 @@ FAILURE_REGISTRY: dict[FailurePhase, frozenset[FailureCode]] = {
 }
 
 
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class ResultDiagnosticStage(str, Enum):
+    CONNECTION = "connection"
+    RESPONSE_STATUS = "response_status"
+    RESPONSE_BODY = "response_body"
+    RESPONSE_JSON = "response_json"
+    RESPONSE_IDENTITY = "response_identity"
+    CONSUMER_CONTRACT = "consumer_contract"
+    PROJECTION_DISPOSITION = "projection_disposition"
+
+
+class ResultDiagnosticReason(str, Enum):
+    CONNECTION_FAILED = "connection_failed"
+    RESPONSE_STATUS_INVALID = "response_status_invalid"
+    RESPONSE_READ_FAILED = "response_read_failed"
+    RESPONSE_SIZE_EXCEEDED = "response_size_exceeded"
+    RESPONSE_UTF8_INVALID = "response_utf8_invalid"
+    RESPONSE_JSON_INVALID = "response_json_invalid"
+    RESPONSE_NOT_OBJECT = "response_not_object"
+    RUN_IDENTITY_MISMATCH = "run_identity_mismatch"
+    CONTRACT_RESULT_INVALID = "contract_result_invalid"
+    CONTRACT_SCHEMA_INVALID = "contract_schema_invalid"
+    PROJECTION_DISPOSITION_INVALID = "projection_disposition_invalid"
+
+
+_RESULT_DIAGNOSTIC_PAIRS = {
+    ResultDiagnosticStage.CONNECTION: frozenset(
+        {ResultDiagnosticReason.CONNECTION_FAILED}
+    ),
+    ResultDiagnosticStage.RESPONSE_STATUS: frozenset(
+        {ResultDiagnosticReason.RESPONSE_STATUS_INVALID}
+    ),
+    ResultDiagnosticStage.RESPONSE_BODY: frozenset(
+        {
+            ResultDiagnosticReason.RESPONSE_READ_FAILED,
+            ResultDiagnosticReason.RESPONSE_SIZE_EXCEEDED,
+        }
+    ),
+    ResultDiagnosticStage.RESPONSE_JSON: frozenset(
+        {
+            ResultDiagnosticReason.RESPONSE_UTF8_INVALID,
+            ResultDiagnosticReason.RESPONSE_JSON_INVALID,
+            ResultDiagnosticReason.RESPONSE_NOT_OBJECT,
+        }
+    ),
+    ResultDiagnosticStage.RESPONSE_IDENTITY: frozenset(
+        {ResultDiagnosticReason.RUN_IDENTITY_MISMATCH}
+    ),
+    ResultDiagnosticStage.CONSUMER_CONTRACT: frozenset(
+        {
+            ResultDiagnosticReason.CONTRACT_RESULT_INVALID,
+            ResultDiagnosticReason.CONTRACT_SCHEMA_INVALID,
+        }
+    ),
+    ResultDiagnosticStage.PROJECTION_DISPOSITION: frozenset(
+        {ResultDiagnosticReason.PROJECTION_DISPOSITION_INVALID}
+    ),
+}
+
+
+class ResultBoundaryDiagnostic(StrictModel):
+    stage: ResultDiagnosticStage
+    reason: ResultDiagnosticReason
+    http_status: int | None
+    response_bytes: int | None
+
+    @model_validator(mode="after")
+    def validate_pair_and_bounds(self) -> "ResultBoundaryDiagnostic":
+        if self.reason not in _RESULT_DIAGNOSTIC_PAIRS[self.stage]:
+            raise ValueError("result_diagnostic_pair_invalid")
+        if self.http_status is not None and not 100 <= self.http_status <= 599:
+            raise ValueError("result_diagnostic_status_invalid")
+        if self.response_bytes is not None and not (
+            0 <= self.response_bytes <= MAX_HTTP_RESPONSE_BYTES
+        ):
+            raise ValueError("result_diagnostic_size_invalid")
+        return self
+
+
+class ResultDiagnosticPrimary(StrictModel):
+    code: Literal[FailureCode.CONSUMER_PROJECTION_INVALID]
+    phase: Literal[FailurePhase.RESULT]
+    retryable: Literal[False]
+    cleanup_status: CleanupStatus
+
+
+class ResultDiagnosticReceipt(StrictModel):
+    schema_version: Literal["dra.bounded-live-producer-result-diagnostic.v1"]
+    primary: ResultDiagnosticPrimary
+    result_boundary: ResultBoundaryDiagnostic
+
+
 class EvaluationError(Exception):
     """Typed operational failure with a validated public projection."""
 
-    __slots__ = ("code", "phase", "retryable", "cleanup_status")
+    __slots__ = ("code", "phase", "retryable", "cleanup_status", "diagnostic")
 
     def __init__(
         self,
@@ -241,6 +339,8 @@ class EvaluationError(Exception):
         phase: FailurePhase | str,
         retryable: bool,
         cleanup_status: CleanupStatus | str = CleanupStatus.NOT_STARTED,
+        *,
+        diagnostic: ResultBoundaryDiagnostic | None = None,
     ) -> None:
         try:
             validated_code = FailureCode(code)
@@ -248,19 +348,23 @@ class EvaluationError(Exception):
             validated_cleanup = CleanupStatus(cleanup_status)
         except ValueError as exc:
             raise ValueError("evaluation_error_invalid") from exc
-        if type(retryable) is not bool or validated_code not in FAILURE_REGISTRY[
-            validated_phase
-        ]:
+        if (
+            type(retryable) is not bool
+            or validated_code not in FAILURE_REGISTRY[validated_phase]
+            or diagnostic is not None
+            and (
+                type(diagnostic) is not ResultBoundaryDiagnostic
+                or validated_code is not FailureCode.CONSUMER_PROJECTION_INVALID
+                or validated_phase is not FailurePhase.RESULT
+            )
+        ):
             raise ValueError("evaluation_error_invalid")
         super().__init__(validated_code.value)
         self.code = validated_code
         self.phase = validated_phase
         self.retryable = retryable
         self.cleanup_status = validated_cleanup
-
-
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+        self.diagnostic = diagnostic
 
 
 _EXPECTED_BOUNDS = {
@@ -980,3 +1084,33 @@ def serialize_error(error: EvaluationError) -> bytes:
         )
         + "\n"
     ).encode("utf-8")
+
+
+def serialize_result_diagnostic(error: EvaluationError) -> bytes:
+    if error.diagnostic is None:
+        _validation_fail("diagnostic_invalid")
+    receipt = ResultDiagnosticReceipt(
+        schema_version=RESULT_DIAGNOSTIC_SCHEMA_VERSION,
+        primary=ResultDiagnosticPrimary(
+            code=error.code,
+            phase=error.phase,
+            retryable=error.retryable,
+            cleanup_status=error.cleanup_status,
+        ),
+        result_boundary=error.diagnostic,
+    )
+    payload = receipt.model_dump(mode="json")
+    _assert_public_safe(payload)
+    raw = (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if len(raw) > MAX_DIAGNOSTIC_BYTES:
+        _validation_fail("diagnostic_invalid")
+    return raw

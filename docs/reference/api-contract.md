@@ -147,13 +147,22 @@ These result endpoint error codes are stable public contract values.
 
 ### GET /api/runs/{run_id}/artifacts/{artifact_id}
 
-Return one persisted artifact by the exact run and artifact IDs. A successful
-response uses the stored media type and returns the content as the response
-body. This endpoint does not select the current deliverable; use the result
-endpoint for delivery policy.
+Return the bytes and stored media type of the current canonical deliverable
+selected by the result resolver. The run terminal and delivery state, current
+publication selection, and selected artifact content and metadata all come
+from the same SQLite request snapshot. A state change committed after that
+snapshot applies to the next request; the endpoint does not claim continuous
+revocation after a response has begun.
 
-An unknown run/artifact pair returns `404` with
-`{"detail":"Artifact 不存在"}`. Path separators are not valid inside the
+A ready fallback artifact selected by the resolver is a legal deliverable and
+retains its original bytes and media type. The endpoint does not expose historical artifact content;
+it also does not expose pre-delivery content or a second storage inspection surface.
+
+The route preserves the resolver's stable errors: `404 run_not_found`, plus
+`409 run_not_terminal`, `409 run_failed`, `409 run_review_required`,
+`409 run_delivery_blocked`, and `409 run_result_unavailable`. If the requested
+`artifact_id` is not the resolver-selected artifact, the response is
+`404 {"detail":"Artifact 不存在"}`. Path separators are not valid inside the
 artifact path parameter.
 
 ### GET /api/profiles/{profile_id}

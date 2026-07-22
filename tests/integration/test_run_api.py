@@ -1948,9 +1948,11 @@ async def test_mark_run_timeout_finalizes_nonterminal_run_with_frozen_evidence(
 @pytest.mark.asyncio
 async def test_tracked_run_timeout_reaches_persisted_failed_state(tmp_path, monkeypatch):
     import api.server as server
+    import api.task_tracker as task_tracker
     from agent.research import EvidenceEntry
     from agent.run_result import AgentRunResult
     from api.run_repository import create_run, get_run
+    from api.task_tracker import get_active_task
 
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
     created = create_run(thread_id="timeout-thread", query="query")
@@ -1966,6 +1968,9 @@ async def test_tracked_run_timeout_reaches_persisted_failed_state(tmp_path, monk
         evidence_fingerprint="partial-timeout-evidence",
     )
 
+    evidence_published = asyncio.Event()
+    deadline_release = asyncio.Event()
+
     async def hangs(*args, **kwargs):
         kwargs["outcome_box"].publish(
             AgentRunResult(
@@ -1977,24 +1982,49 @@ async def test_tracked_run_timeout_reaches_persisted_failed_state(tmp_path, monk
                 evidence_entries=[evidence],
             )
         )
+        evidence_published.set()
         await asyncio.Event().wait()
 
+    async def controlled_deadline(delay):
+        if delay == 0:
+            return
+        await deadline_release.wait()
+
     monkeypatch.setattr(server, "run_deep_agent", hangs)
+    monkeypatch.setattr(task_tracker.asyncio, "sleep", controlled_deadline)
     outcome_box = server.OutcomeBox()
-    await _run_v2_with_dispatch(server,
-        query="query",
-        thread_id="timeout-thread",
-        run_id=created["run_id"],
-        segment_id=created["segment_id"],
-        outcome_box=outcome_box,
-        timeout_seconds=0.01,
-        on_timeout=lambda run_id, timeout_seconds: server._mark_run_timeout(
-            created["run_id"],
-            timeout_seconds,
+    task = None
+    try:
+        task, _, _, _ = await _start_run_v2_with_dispatch(
+            server,
+            query="query",
+            thread_id="timeout-thread",
+            run_id=created["run_id"],
             segment_id=created["segment_id"],
             outcome_box=outcome_box,
-        ),
-    )
+            timeout_seconds=30,
+            on_timeout=lambda run_id, timeout_seconds: server._mark_run_timeout(
+                created["run_id"],
+                timeout_seconds,
+                segment_id=created["segment_id"],
+                outcome_box=outcome_box,
+            ),
+        )
+        await evidence_published.wait()
+        published = outcome_box.latest()
+        assert published is not None
+        assert [item.evidence_fingerprint for item in published.evidence_entries] == [
+            "partial-timeout-evidence"
+        ]
+        deadline_release.set()
+        assert await task is None
+    finally:
+        deadline_release.set()
+        if task is not None and not task.done():
+            await task
+
+    await asyncio.sleep(0)
+    assert get_active_task(f"{created['run_id']}:test:1") is None
 
     run = get_run(run_id=created["run_id"])
     assert run["execution_status"] == "failed"

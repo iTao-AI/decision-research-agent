@@ -51,7 +51,6 @@ from api.run_repository import (
     create_or_replay_run,
     create_run,
     finalize_run_transaction,
-    get_artifact,
     get_run,
 )
 from api.run_failure_cause_models import (
@@ -1083,11 +1082,19 @@ async def get_research_run_result(run_id: str):
 
 @app.get("/api/runs/{run_id}/artifacts/{artifact_id}")
 async def get_run_artifact(run_id: str, artifact_id: str):
-    artifact = await asyncio.to_thread(
-        get_artifact, run_id=run_id, artifact_id=artifact_id
-    )
-    if artifact is None:
-        return JSONResponse(status_code=404, content={"detail": "Artifact 不存在"})
+    try:
+        result = await asyncio.to_thread(resolve_run_result, run_id=run_id)
+    except RunResultUnavailable as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=exc.payload(run_id=run_id),
+        )
+    artifact = result.artifact
+    if artifact_id != artifact["artifact_id"]:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Artifact 不存在"},
+        )
     return Response(content=artifact["content"], media_type=artifact["media_type"])
 
 

@@ -401,6 +401,125 @@ def test_invalid_artifact_talent_content_fails_closed(
     assert raised.value.code == "run_result_unavailable"
 
 
+def test_artifact_route_returns_only_resolved_bytes(tmp_path, monkeypatch):
+    import api.server as server
+    from api.run_result_service import ResolvedRunResult
+
+    client = _client(tmp_path, monkeypatch)
+    calls = []
+
+    def resolve(*, run_id):
+        calls.append(run_id)
+        return ResolvedRunResult(
+            run_id=run_id,
+            execution_status="completed",
+            delivery_status="ready",
+            artifact={
+                "artifact_id": "research-report.md",
+                "kind": "research_report_fallback_markdown",
+                "media_type": "text/markdown",
+                "content": "# Fallback Report",
+                "content_hash": hashlib.sha256(
+                    b"# Fallback Report"
+                ).hexdigest(),
+            },
+        )
+
+    def reject_raw_read(**kwargs):
+        raise AssertionError(f"unexpected raw artifact read: {kwargs}")
+
+    monkeypatch.setattr(server, "resolve_run_result", resolve)
+    monkeypatch.setattr(server, "get_artifact", reject_raw_read, raising=False)
+
+    response = client.get(
+        "/api/runs/run_1/artifacts/research-report.md",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"# Fallback Report"
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert calls == ["run_1"]
+
+
+@pytest.mark.parametrize(
+    ("status_code", "code"),
+    [
+        (404, "run_not_found"),
+        (409, "run_not_terminal"),
+        (409, "run_failed"),
+        (409, "run_review_required"),
+        (409, "run_delivery_blocked"),
+        (409, "run_result_unavailable"),
+    ],
+)
+def test_artifact_route_preserves_resolver_error_envelopes(
+    tmp_path,
+    monkeypatch,
+    status_code,
+    code,
+):
+    import api.server as server
+    from api.run_result_service import RunResultUnavailable
+
+    client = _client(tmp_path, monkeypatch)
+
+    def unavailable(*, run_id):
+        raise RunResultUnavailable(
+            status_code=status_code,
+            code=code,
+            problem="problem",
+            fix="fix",
+        )
+
+    monkeypatch.setattr(server, "resolve_run_result", unavailable)
+
+    response = client.get(
+        "/api/runs/run_1/artifacts/research-report.md",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == status_code
+    assert response.json() == {
+        "code": code,
+        "problem": "problem",
+        "fix": "fix",
+        "retryable": status_code == 409,
+        "run_id": "run_1",
+    }
+
+
+def test_artifact_route_rejects_non_selected_id(tmp_path, monkeypatch):
+    import api.server as server
+    from api.run_result_service import ResolvedRunResult
+
+    client = _client(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        server,
+        "resolve_run_result",
+        lambda *, run_id: ResolvedRunResult(
+            run_id=run_id,
+            execution_status="completed",
+            delivery_status="ready",
+            artifact={
+                "artifact_id": "research-report.md",
+                "kind": "research_report_markdown",
+                "media_type": "text/markdown",
+                "content": "# Current",
+                "content_hash": hashlib.sha256(b"# Current").hexdigest(),
+            },
+        ),
+    )
+
+    response = client.get(
+        "/api/runs/run_1/artifacts/historical-report.md",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Artifact 不存在"}
+
+
 def _outcome(**kwargs):
     values = {
         "thread_id": "thread-1",

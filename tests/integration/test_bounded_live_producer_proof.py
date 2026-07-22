@@ -81,6 +81,7 @@ def _install_provider_free_live_boundaries(
     terminal_error: EvaluationError | None = None,
     diagnostic_dir: Path | None = None,
     diagnostic_publication_error: BaseException | None = None,
+    configuration_close_error: BaseException | None = None,
 ):
     module = importlib.import_module("scripts.bounded_live_producer_proof")
     lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
@@ -112,6 +113,8 @@ def _install_provider_free_live_boundaries(
     class FakeConfiguration(dict):
         def close(self) -> None:
             events.append("configuration_close")
+            if configuration_close_error is not None:
+                raise configuration_close_error
 
     def load_configuration(
         _env_file: Path,
@@ -1867,6 +1870,45 @@ def test_primary_plus_cleanup_failure_publishes_failed_cleanup_status(
     )
     assert receipt["primary"]["cleanup_status"] == "failed"
     assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not holder["task_temp"].exists()
+
+
+@pytest.mark.parametrize("project_cleanup_fails", [False, True])
+def test_configuration_close_failure_preserves_result_diagnostic_and_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    project_cleanup_fails: bool,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        diagnostic_dir=diagnostic_dir,
+        terminal_error=_result_diagnostic_error(),
+        fail_cleanup_refresh=project_cleanup_fails,
+        configuration_close_error=EvaluationError(
+            "credential_source_invalid",
+            "input",
+            False,
+        ),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "consumer_projection_invalid"
+    assert caught.value.phase.value == "result"
+    assert caught.value.cleanup_status is CleanupStatus.FAILED
+    assert caught.value.diagnostic == _result_diagnostic_error().diagnostic
+    receipt = json.loads(
+        (diagnostic_dir / DIAGNOSTIC_FILENAME).read_text(encoding="utf-8")
+    )
+    assert receipt["primary"]["code"] == "consumer_projection_invalid"
+    assert receipt["primary"]["cleanup_status"] == "failed"
+    assert events.index("cleanup_receipt") < events.index("configuration_close")
+    assert events.index("configuration_close") < events.index("diagnostic_publish")
     assert not holder["task_temp"].exists()
 
 

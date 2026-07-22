@@ -1114,6 +1114,21 @@ def _publish_diagnostic_best_effort(
         return
 
 
+def _close_live_configuration(configuration: Any) -> EvaluationError | None:
+    try:
+        configuration.close()
+    except BaseException as exc:
+        failure = EvaluationError(
+            FailureCode.CLEANUP_FAILED,
+            FailurePhase.CLEANUP,
+            False,
+            CleanupStatus.FAILED,
+        )
+        failure.__cause__ = exc
+        return failure
+    return None
+
+
 def observe_live(
     *,
     env_file: Path,
@@ -1518,24 +1533,48 @@ def observe_live(
             ),
             diagnostic=exc.diagnostic,
         )
-        live_configuration.close()
+        close_failure = _close_live_configuration(live_configuration)
+        cause: BaseException = exc
+        if close_failure is not None:
+            final_error = EvaluationError(
+                final_error.code,
+                final_error.phase,
+                final_error.retryable,
+                CleanupStatus.FAILED,
+                diagnostic=final_error.diagnostic,
+            )
+            cause = BaseExceptionGroup(
+                "bounded primary and configuration cleanup failures",
+                [exc, close_failure],
+            )
         _publish_diagnostic_best_effort(
             diagnostic_sink,
             final_error,
             remaining_seconds=total_deadline.remaining,
         )
-        raise final_error from exc
+        raise final_error from cause
     except BaseExceptionGroup as exc:
-        final_error = _group_error(exc)
-        live_configuration.close()
+        cause = exc
+        close_failure = _close_live_configuration(live_configuration)
+        if close_failure is not None:
+            cause = BaseExceptionGroup(
+                "bounded grouped and configuration cleanup failures",
+                [exc, close_failure],
+            )
+        final_error = _group_error(cause)
         _publish_diagnostic_best_effort(
             diagnostic_sink,
             final_error,
             remaining_seconds=total_deadline.remaining,
         )
-        raise final_error from exc
-    except BaseException:
-        live_configuration.close()
+        raise final_error from cause
+    except BaseException as exc:
+        close_failure = _close_live_configuration(live_configuration)
+        if close_failure is not None:
+            raise BaseExceptionGroup(
+                "bounded unknown and configuration cleanup failures",
+                [exc, close_failure],
+            ) from exc
         raise
     try:
         cleanup_ms = _milliseconds(cleanup_started, clock(), 120_000)

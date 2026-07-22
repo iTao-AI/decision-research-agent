@@ -27,15 +27,19 @@ class FakeResponse:
         body: bytes = b"{}",
         content_length: str | None = None,
         read_error: BaseException | None = None,
+        header_error: BaseException | None = None,
     ) -> None:
         self.status = status
         self._body = body
         self._offset = 0
         self._content_length = content_length
         self._read_error = read_error
+        self._header_error = header_error
 
     def getheader(self, name: str) -> str | None:
         assert name == "Content-Length"
+        if self._header_error is not None:
+            raise self._header_error
         return self._content_length
 
     def read(self, amount: int) -> bytes:
@@ -544,6 +548,26 @@ def test_result_classifies_bounded_read_failure(
     client, _, _ = _client(
         monkeypatch,
         FakeResponse(read_error=OSError("private")),
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        client.result(run_id="run-1")
+
+    _assert_result_diagnostic(
+        caught.value,
+        stage="response_body",
+        reason="response_read_failed",
+        http_status=200,
+        response_bytes=None,
+    )
+
+
+def test_result_classifies_header_read_failure_after_valid_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _, _ = _client(
+        monkeypatch,
+        FakeResponse(header_error=OSError("private")),
     )
 
     with pytest.raises(EvaluationError) as caught:

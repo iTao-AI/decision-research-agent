@@ -127,14 +127,30 @@ def _unlink_if_owned(
     *,
     expected_identity: tuple[int, int],
 ) -> bool:
+    quarantine = f".{DIAGNOSTIC_FILENAME}.{secrets.token_hex(16)}.cleanup"
     try:
-        observed = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        os.rename(
+            name,
+            quarantine,
+            src_dir_fd=descriptor,
+            dst_dir_fd=descriptor,
+        )
     except FileNotFoundError:
         return False
-    if (observed.st_dev, observed.st_ino) != expected_identity:
-        return False
-    os.unlink(name, dir_fd=descriptor)
-    return True
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    cleanup_descriptor = os.open(quarantine, flags, dir_fd=descriptor)
+    try:
+        observed = os.fstat(cleanup_descriptor)
+        if (observed.st_dev, observed.st_ino) != expected_identity:
+            return False
+        os.unlink(quarantine, dir_fd=descriptor)
+        return True
+    finally:
+        os.close(cleanup_descriptor)
 
 
 def _publish_result_diagnostic(
@@ -163,7 +179,7 @@ def _publish_result_diagnostic(
             raise DiagnosticOutputError
 
         flags = (
-            os.O_WRONLY
+            os.O_RDWR
             | os.O_CREAT
             | os.O_EXCL
             | getattr(os, "O_NOFOLLOW", 0)
@@ -190,30 +206,49 @@ def _publish_result_diagnostic(
                 view = view[written:]
             remaining_seconds(1.0)
             os.fsync(file_descriptor)
+            remaining_seconds(1.0)
+            os.link(
+                temporary,
+                DIAGNOSTIC_FILENAME,
+                src_dir_fd=descriptor,
+                dst_dir_fd=descriptor,
+                follow_symlinks=False,
+            )
+            linked = os.stat(
+                DIAGNOSTIC_FILENAME,
+                dir_fd=descriptor,
+                follow_symlinks=False,
+            )
+            opened = os.fstat(file_descriptor)
+            remaining_seconds(1.0)
+            observed_raw = os.pread(file_descriptor, len(raw) + 1, 0)
+            if (
+                temporary_identity is None
+                or (linked.st_dev, linked.st_ino) != temporary_identity
+                or (opened.st_dev, opened.st_ino) != temporary_identity
+                or not stat.S_ISREG(linked.st_mode)
+                or stat.S_IMODE(linked.st_mode) != 0o600
+                or linked.st_size != len(raw)
+                or opened.st_size != len(raw)
+                or observed_raw != raw
+            ):
+                raise DiagnosticOutputError
+            remaining_seconds(1.0)
+            os.fsync(descriptor)
+            remaining_seconds(1.0)
+            removed = _unlink_if_owned(
+                descriptor,
+                temporary,
+                expected_identity=temporary_identity,
+            )
+            temporary_created = False
+            if not removed:
+                raise DiagnosticOutputError
+            remaining_seconds(1.0)
+            os.fsync(descriptor)
+            return sink.path / DIAGNOSTIC_FILENAME
         finally:
             os.close(file_descriptor)
-
-        remaining_seconds(1.0)
-        os.link(
-            temporary,
-            DIAGNOSTIC_FILENAME,
-            src_dir_fd=descriptor,
-            dst_dir_fd=descriptor,
-            follow_symlinks=False,
-        )
-        remaining_seconds(1.0)
-        os.fsync(descriptor)
-        remaining_seconds(1.0)
-        assert temporary_identity is not None
-        _unlink_if_owned(
-            descriptor,
-            temporary,
-            expected_identity=temporary_identity,
-        )
-        temporary_created = False
-        remaining_seconds(1.0)
-        os.fsync(descriptor)
-        return sink.path / DIAGNOSTIC_FILENAME
     finally:
         if temporary_created and temporary_identity is not None:
             try:

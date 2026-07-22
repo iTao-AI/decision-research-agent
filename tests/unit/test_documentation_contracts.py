@@ -1561,6 +1561,16 @@ def test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable() -> None:
         "projection_disposition",
     ):
         assert f"`{stage}`" in reference
+    for exact_row in (
+        "| `connection` | `connection_failed` |",
+        "| `response_status` | `response_status_invalid` |",
+        "| `response_body` | `response_read_failed`, `response_size_exceeded` |",
+        "| `response_json` | `response_utf8_invalid`, `response_json_invalid`, `response_not_object` |",
+        "| `response_identity` | `run_identity_mismatch` |",
+        "| `consumer_contract` | `contract_result_invalid`, `contract_schema_invalid` |",
+        "| `projection_disposition` | `projection_disposition_invalid` |",
+    ):
+        assert exact_row in reference
     for forbidden in (
         "raw response is retained",
         "automatic retry",
@@ -1591,8 +1601,18 @@ def test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable() -> None:
             "does not permit an arbitrary filename or general output root",
             "permits an arbitrary filename",
         ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "| `response_json` | `response_utf8_invalid`, `response_json_invalid`, `response_not_object` |",
+            "| `response_json` | invalid JSON |",
+        ),
     ),
-    ids=("missing-amendment", "arbitrary-filename-option", "scope-expanded"),
+    ids=(
+        "missing-amendment",
+        "arbitrary-filename-option",
+        "scope-expanded",
+        "reason-registry-collapsed",
+    ),
 )
 def test_bounded_result_diagnostic_receipt_rejects_documentation_mutation(
     monkeypatch: pytest.MonkeyPatch,

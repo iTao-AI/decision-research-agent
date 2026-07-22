@@ -262,6 +262,107 @@ def test_failure_cleanup_never_removes_replaced_temporary(
     assert replacements[0].read_bytes() == b"operator replacement"
 
 
+def test_linked_final_rejects_replaced_temporary_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import scripts.bounded_live_producer_diagnostics as module
+
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+    real_link = module.os.link
+
+    def replace_temporary_then_link(
+        source: str, destination: str, **kwargs: object
+    ) -> None:
+        temporary = output / source
+        temporary.unlink()
+        temporary.write_bytes(b"operator replacement")
+        real_link(source, destination, **kwargs)
+
+    monkeypatch.setattr(module.os, "link", replace_temporary_then_link)
+    with pytest.raises(DiagnosticOutputError, match="diagnostic_output_invalid"):
+        publish_result_diagnostic(
+            sink,
+            _error(),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    final = output / DIAGNOSTIC_FILENAME
+    assert final.read_bytes() == b"operator replacement"
+    temporary = next(path for path in output.iterdir() if path != final)
+    assert temporary.read_bytes() == b"operator replacement"
+
+
+def test_linked_final_rejects_same_inode_content_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import scripts.bounded_live_producer_diagnostics as module
+
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+    real_link = module.os.link
+
+    def mutate_temporary_then_link(
+        source: str, destination: str, **kwargs: object
+    ) -> None:
+        temporary = output / source
+        temporary.write_bytes(b"x" * temporary.stat().st_size)
+        real_link(source, destination, **kwargs)
+
+    monkeypatch.setattr(module.os, "link", mutate_temporary_then_link)
+    with pytest.raises(DiagnosticOutputError, match="diagnostic_output_invalid"):
+        publish_result_diagnostic(
+            sink,
+            _error(),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert (output / DIAGNOSTIC_FILENAME).read_bytes().startswith(b"x")
+
+
+def test_owned_unlink_does_not_delete_replacement_after_identity_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import scripts.bounded_live_producer_diagnostics as module
+
+    output = _safe_dir(tmp_path)
+    descriptor = os.open(output, os.O_RDONLY | os.O_DIRECTORY)
+    name = "task-owned.tmp"
+    target = output / name
+    target.write_bytes(b"task")
+    observed = target.stat()
+    real_stat = module.os.stat
+    replacement_created = False
+
+    def replace_after_stat(*args: object, **kwargs: object) -> os.stat_result:
+        nonlocal replacement_created
+        result = real_stat(*args, **kwargs)
+        if target.exists():
+            target.unlink()
+            target.write_bytes(b"operator replacement")
+            replacement_created = True
+        return result
+
+    monkeypatch.setattr(module.os, "stat", replace_after_stat)
+    try:
+        removed = module._unlink_if_owned(
+            descriptor,
+            name,
+            expected_identity=(observed.st_dev, observed.st_ino),
+        )
+    finally:
+        os.close(descriptor)
+
+    if replacement_created:
+        assert not removed
+        assert target.read_bytes() == b"operator replacement"
+    else:
+        assert removed
+        assert not target.exists()
+
+
 def test_failure_cleanup_never_removes_replaced_final(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

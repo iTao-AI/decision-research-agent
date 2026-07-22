@@ -105,15 +105,15 @@ Publication is non-overwriting and uses the fixed basename only.
 The bounded classification records one of these stages without retaining the
 response or exception text:
 
-| Stage | Bounded reason |
+| Stage | Exact reasons |
 |---|---|
-| `connection` | connection, read, or timeout failure |
-| `response_status` | rejected HTTP status or invalid bounded error envelope |
-| `response_body` | response exceeds the bounded read limit |
-| `response_json` | response is not valid JSON |
-| `response_identity` | result or run identity does not match the request |
-| `consumer_contract` | the downstream consumer contract rejects the projection |
-| `projection_disposition` | the projection returns an unsupported disposition |
+| `connection` | `connection_failed` |
+| `response_status` | `response_status_invalid` |
+| `response_body` | `response_read_failed`, `response_size_exceeded` |
+| `response_json` | `response_utf8_invalid`, `response_json_invalid`, `response_not_object` |
+| `response_identity` | `run_identity_mismatch` |
+| `consumer_contract` | `contract_result_invalid`, `contract_schema_invalid` |
+| `projection_disposition` | `projection_disposition_invalid` |
 
 Raw response bodies, artifact content, Evidence content, URLs, paths,
 credentials, provider payloads, and exception text are excluded. A successful

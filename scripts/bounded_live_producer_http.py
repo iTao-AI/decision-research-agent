@@ -175,21 +175,16 @@ class ProofHttpClient:
 
     @staticmethod
     def _read_bounded(response: http.client.HTTPResponse) -> bytes:
-        declared = response.getheader("Content-Length")
-        if declared is not None:
-            try:
-                declared_size = int(declared, 10)
-            except (TypeError, ValueError):
-                raise _BodyReadFailure(
-                    ResultDiagnosticReason.RESPONSE_READ_FAILED
-                ) from None
-            if declared_size < 0:
-                raise _BodyReadFailure(ResultDiagnosticReason.RESPONSE_READ_FAILED)
-            if declared_size > MAX_HTTP_RESPONSE_BYTES:
-                raise _BodyReadFailure(ResultDiagnosticReason.RESPONSE_SIZE_EXCEEDED)
-
-        retained = bytearray()
         try:
+            declared = response.getheader("Content-Length")
+            if declared is not None:
+                declared_size = int(declared, 10)
+                if declared_size < 0:
+                    raise _BodyReadFailure(ResultDiagnosticReason.RESPONSE_READ_FAILED)
+                if declared_size > MAX_HTTP_RESPONSE_BYTES:
+                    raise _BodyReadFailure(ResultDiagnosticReason.RESPONSE_SIZE_EXCEEDED)
+
+            retained = bytearray()
             while True:
                 remaining = MAX_HTTP_RESPONSE_BYTES - len(retained)
                 chunk = response.read(min(_READ_CHUNK_BYTES, remaining + 1))

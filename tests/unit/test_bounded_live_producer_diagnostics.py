@@ -232,6 +232,68 @@ def test_link_failure_cleans_temporary_without_touching_unrelated(
     assert sorted(path.name for path in output.iterdir()) == ["keep"]
 
 
+def test_failure_cleanup_never_removes_replaced_temporary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import scripts.bounded_live_producer_diagnostics as module
+
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+
+    def replace_temporary_then_fail(
+        source: str, _destination: str, **_kwargs
+    ) -> None:
+        temporary = output / source
+        temporary.unlink()
+        temporary.write_bytes(b"operator replacement")
+        raise OSError("private")
+
+    monkeypatch.setattr(module.os, "link", replace_temporary_then_fail)
+    with pytest.raises(DiagnosticOutputError):
+        publish_result_diagnostic(
+            sink,
+            _error(),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    replacements = list(output.iterdir())
+    assert len(replacements) == 1
+    assert replacements[0].read_bytes() == b"operator replacement"
+
+
+def test_failure_cleanup_never_removes_replaced_final(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import scripts.bounded_live_producer_diagnostics as module
+
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+    real_fsync = module.os.fsync
+    calls = 0
+
+    def replace_final_then_fail(descriptor: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            final = output / DIAGNOSTIC_FILENAME
+            final.unlink()
+            final.write_bytes(b"operator replacement")
+            raise OSError("private")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(module.os, "fsync", replace_final_then_fail)
+    with pytest.raises(DiagnosticOutputError):
+        publish_result_diagnostic(
+            sink,
+            _error(),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert (output / DIAGNOSTIC_FILENAME).read_bytes() == b"operator replacement"
+
+
 @pytest.mark.parametrize("failure_call", [1, 2])
 def test_file_or_directory_fsync_failure_is_stable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_call: int
@@ -259,8 +321,12 @@ def test_file_or_directory_fsync_failure_is_stable(
             remaining_seconds=lambda requested: requested,
         )
 
-    assert not (output / DIAGNOSTIC_FILENAME).exists()
-    assert list(output.iterdir()) == []
+    if failure_call == 1:
+        assert not (output / DIAGNOSTIC_FILENAME).exists()
+        assert list(output.iterdir()) == []
+    else:
+        assert (output / DIAGNOSTIC_FILENAME).is_file()
+        assert not any(path.name.endswith(".tmp") for path in output.iterdir())
 
 
 def test_serializer_overflow_fails_before_filesystem_mutation(

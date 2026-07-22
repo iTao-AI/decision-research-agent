@@ -121,6 +121,22 @@ def _identity_matches(sink: DiagnosticSink, observed: os.stat_result) -> bool:
     )
 
 
+def _unlink_if_owned(
+    descriptor: int,
+    name: str,
+    *,
+    expected_identity: tuple[int, int],
+) -> bool:
+    try:
+        observed = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    if (observed.st_dev, observed.st_ino) != expected_identity:
+        return False
+    os.unlink(name, dir_fd=descriptor)
+    return True
+
+
 def _publish_result_diagnostic(
     sink: DiagnosticSink,
     error: EvaluationError,
@@ -134,7 +150,7 @@ def _publish_result_diagnostic(
     descriptor = _open_directory_no_symlinks(sink.path)
     temporary = f".{DIAGNOSTIC_FILENAME}.{secrets.token_hex(16)}.tmp"
     temporary_created = False
-    final_created = False
+    temporary_identity: tuple[int, int] | None = None
     try:
         observed = os.fstat(descriptor)
         if not _identity_matches(sink, observed):
@@ -158,6 +174,7 @@ def _publish_result_diagnostic(
         try:
             os.fchmod(file_descriptor, 0o600)
             opened = os.fstat(file_descriptor)
+            temporary_identity = (opened.st_dev, opened.st_ino)
             if (
                 not stat.S_ISREG(opened.st_mode)
                 or opened.st_nlink != 1
@@ -184,26 +201,27 @@ def _publish_result_diagnostic(
             dst_dir_fd=descriptor,
             follow_symlinks=False,
         )
-        final_created = True
         remaining_seconds(1.0)
         os.fsync(descriptor)
         remaining_seconds(1.0)
-        os.unlink(temporary, dir_fd=descriptor)
+        assert temporary_identity is not None
+        _unlink_if_owned(
+            descriptor,
+            temporary,
+            expected_identity=temporary_identity,
+        )
         temporary_created = False
         remaining_seconds(1.0)
         os.fsync(descriptor)
-        final_created = False
         return sink.path / DIAGNOSTIC_FILENAME
     finally:
-        if final_created:
+        if temporary_created and temporary_identity is not None:
             try:
-                os.unlink(DIAGNOSTIC_FILENAME, dir_fd=descriptor)
-                os.fsync(descriptor)
-            except OSError:
-                pass
-        if temporary_created:
-            try:
-                os.unlink(temporary, dir_fd=descriptor)
+                _unlink_if_owned(
+                    descriptor,
+                    temporary,
+                    expected_identity=temporary_identity,
+                )
             except OSError:
                 pass
         os.close(descriptor)

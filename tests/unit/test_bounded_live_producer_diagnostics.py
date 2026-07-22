@@ -14,12 +14,17 @@ from scripts.bounded_live_producer_contracts import (
     ResultBoundaryDiagnostic,
     ResultDiagnosticReason,
     ResultDiagnosticStage,
+    RunFailureDiagnostic,
+    RunFailureDiagnosticReceipt,
 )
 from scripts.bounded_live_producer_diagnostics import (
     DIAGNOSTIC_FILENAME,
+    RESULT_DIAGNOSTIC_FILENAME,
+    RUN_FAILURE_DIAGNOSTIC_FILENAME,
     DiagnosticOutputError,
     preflight_diagnostic_dir,
     publish_result_diagnostic,
+    publish_run_failure_diagnostic,
 )
 
 
@@ -53,6 +58,73 @@ def _error() -> EvaluationError:
             response_bytes=8,
         ),
     )
+
+
+def _run_failure_error() -> EvaluationError:
+    return EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=RunFailureDiagnostic(
+            cause_schema_version="dra.run-failure-cause.v1",
+            observation_status="observed",
+            phase="execution",
+            code="execution_error",
+        ),
+    )
+
+
+def test_result_compatibility_diagnostic_filename_alias_is_unchanged() -> None:
+    assert DIAGNOSTIC_FILENAME == RESULT_DIAGNOSTIC_FILENAME
+    assert RESULT_DIAGNOSTIC_FILENAME == (
+        "bounded-live-producer-result-diagnostic-v1.json"
+    )
+
+
+def test_publishes_run_failure_diagnostic_to_fixed_non_overwriting_file(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+
+    path = publish_run_failure_diagnostic(
+        sink,
+        _run_failure_error(),
+        remaining_seconds=lambda requested: requested,
+    )
+
+    assert path == output / RUN_FAILURE_DIAGNOSTIC_FILENAME
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    receipt = RunFailureDiagnosticReceipt.model_validate_json(
+        path.read_bytes(), strict=True
+    )
+    assert receipt.run_failure.code == "execution_error"
+    with pytest.raises(DiagnosticOutputError):
+        publish_run_failure_diagnostic(
+            sink,
+            _run_failure_error(),
+            remaining_seconds=lambda requested: requested,
+        )
+    assert path.is_file()
+
+
+@pytest.mark.parametrize(
+    "filename", [RESULT_DIAGNOSTIC_FILENAME, RUN_FAILURE_DIAGNOSTIC_FILENAME]
+)
+def test_preflight_rejects_both_fixed_names_without_modifying_them(
+    tmp_path: Path, filename: str
+) -> None:
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    existing = output / filename
+    existing.write_bytes(b"existing")
+
+    with pytest.raises(DiagnosticOutputError):
+        preflight_diagnostic_dir(output, repository_root=repository)
+
+    assert existing.read_bytes() == b"existing"
 
 
 def test_publishes_fixed_non_overwriting_mode_0600_file(tmp_path: Path) -> None:

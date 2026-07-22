@@ -1,6 +1,7 @@
 import os
 import hashlib
 import json
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -232,6 +233,172 @@ def test_run_delivery_snapshot_uses_one_sqlite_read_snapshot(
     assert first["artifacts"][0]["content"] == "# Original"
     assert second["delivery_status"] == "blocked"
     assert second["artifacts"][0]["content"] == "# Replacement"
+
+
+def test_resolver_uses_snapshot_artifact_without_a_second_read(
+    tmp_path,
+    monkeypatch,
+):
+    import api.run_result_service as service
+
+    seeded = _seed_ready_generic(tmp_path, content="# Snapshot Result")
+
+    def reject_raw_read(**kwargs):
+        raise AssertionError(f"unexpected raw artifact read: {kwargs}")
+
+    monkeypatch.setattr(service, "get_artifact", reject_raw_read, raising=False)
+
+    result = service.resolve_run_result(
+        db_path=str(seeded.db_path),
+        run_id=seeded.run_id,
+    )
+
+    assert result.artifact["content"] == "# Snapshot Result"
+
+
+def test_ready_fallback_is_a_legal_canonical_result(tmp_path):
+    from api.run_result_service import resolve_run_result
+
+    seeded = _seed_ready_generic(
+        tmp_path,
+        kind="research_report_fallback_markdown",
+        content="# Fallback Report\n\nBounded result.",
+    )
+
+    result = resolve_run_result(
+        db_path=str(seeded.db_path),
+        run_id=seeded.run_id,
+    )
+
+    assert result.artifact["kind"] == "research_report_fallback_markdown"
+    assert result.artifact["content"] == "# Fallback Report\n\nBounded result."
+
+
+def test_resolver_fails_closed_on_corrupt_delivery_snapshot(tmp_path):
+    from api.run_result_service import RunResultUnavailable, resolve_run_result
+
+    seeded = _seed_ready_generic(tmp_path)
+    connection = sqlite3.connect(seeded.db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                CREATE TABLE run_publications_v2 (
+                    run_id TEXT NOT NULL,
+                    is_current INTEGER NOT NULL,
+                    artifact_ids_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO run_publications_v2(
+                    run_id, is_current, artifact_ids_json
+                ) VALUES (?, 1, ?)
+                """,
+                (seeded.run_id, "not-json"),
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(RunResultUnavailable) as raised:
+        resolve_run_result(
+            db_path=str(seeded.db_path),
+            run_id=seeded.run_id,
+        )
+
+    assert raised.value.code == "run_result_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("content", "content_hash"),
+    [
+        ("", hashlib.sha256(b"").hexdigest()),
+        ("x" * (1024 * 1024 + 1), hashlib.sha256(b"oversized").hexdigest()),
+        ("host=/Users/private/tasks.db", hashlib.sha256(b"unsafe").hexdigest()),
+        ("# Tampered", hashlib.sha256(b"# Original").hexdigest()),
+    ],
+    ids=("empty", "oversized", "unsafe", "hash-mismatch"),
+)
+def test_invalid_artifact_generic_content_fails_closed(
+    tmp_path,
+    content,
+    content_hash,
+):
+    from api.run_result_service import RunResultUnavailable, resolve_run_result
+
+    seeded = _seed_ready_generic(tmp_path)
+    connection = sqlite3.connect(seeded.db_path)
+    try:
+        with connection:
+            connection.execute(
+                """
+                UPDATE run_artifacts_v2
+                SET content = ?, content_hash = ?
+                WHERE run_id = ? AND artifact_id = 'research-report.md'
+                """,
+                (content, content_hash, seeded.run_id),
+            )
+    finally:
+        connection.close()
+
+    with pytest.raises(RunResultUnavailable) as raised:
+        resolve_run_result(
+            db_path=str(seeded.db_path),
+            run_id=seeded.run_id,
+        )
+
+    assert raised.value.code == "run_result_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("content", "content_hash"),
+    [
+        ("", "a" * 64),
+        ("x" * (1024 * 1024 + 1), "a" * 64),
+        ("# Decision Brief", "not-a-valid-hash"),
+    ],
+    ids=("empty", "oversized", "malformed-hash"),
+)
+def test_invalid_artifact_talent_content_fails_closed(
+    tmp_path,
+    content,
+    content_hash,
+):
+    from api.run_repository import create_run, finalize_run_transaction
+    from api.run_result_service import RunResultUnavailable, resolve_run_result
+
+    db_path = tmp_path / "tasks.db"
+    created = create_run(
+        db_path=str(db_path),
+        thread_id="thread-talent",
+        query="query",
+        profile_id="talent-hiring-signal",
+    )
+    assert finalize_run_transaction(
+        db_path=str(db_path),
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="completed",
+        delivery_status="ready",
+        evidence_entries=[],
+        artifacts=[
+            {
+                "artifact_id": "decision-brief.md",
+                "kind": "decision_brief_markdown",
+                "media_type": "text/markdown",
+                "content": content,
+                "content_hash": content_hash,
+            }
+        ],
+    )
+
+    with pytest.raises(RunResultUnavailable) as raised:
+        resolve_run_result(db_path=str(db_path), run_id=created["run_id"])
+
+    assert raised.value.code == "run_result_unavailable"
 
 
 def _outcome(**kwargs):

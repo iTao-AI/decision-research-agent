@@ -14,7 +14,10 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from agent.run_result import ExecutionOutcome
-from api.run_repository import get_artifact, get_run
+from api.run_repository import (
+    RunDeliverySnapshotConflict,
+    get_run_delivery_snapshot,
+)
 
 
 CANONICAL_RESULT_ARTIFACT_ID = "research-report.md"
@@ -166,7 +169,10 @@ def resolve_run_result(
     db_path: str | None = None,
 ) -> ResolvedRunResult:
     """Resolve the current deliverable result for a persisted run."""
-    run = get_run(run_id=run_id, db_path=db_path)
+    try:
+        run = get_run_delivery_snapshot(run_id=run_id, db_path=db_path)
+    except RunDeliverySnapshotConflict as exc:
+        raise _unavailable() from exc
     if run is None:
         raise RunResultUnavailable(
             status_code=404,
@@ -214,13 +220,8 @@ def resolve_run_result(
         )
 
     artifact_id = _select_artifact_id(run)
-    if artifact_id is None:
-        raise _unavailable()
-    artifact = get_artifact(
-        run_id=run_id,
-        artifact_id=artifact_id,
-        db_path=db_path,
-    )
+    by_id = {row["artifact_id"]: row for row in run["artifacts"]}
+    artifact = by_id.get(artifact_id) if artifact_id is not None else None
     if not _valid_artifact(artifact):
         raise _unavailable()
 
@@ -242,18 +243,18 @@ def _select_artifact_id(run: dict[str, Any]) -> str | None:
     if run.get("profile_id") == "generic":
         return CANONICAL_RESULT_ARTIFACT_ID
 
-    current_ids = [
-        item["artifact_id"]
-        for item in run.get("current_artifacts", [])
-        if item.get("media_type") == "text/markdown"
-    ]
-    if current_ids:
-        return current_ids[0]
-
     artifact_ids = {
         item["artifact_id"]: item
         for item in run.get("artifacts", [])
     }
+    current_ids = run.get("current_artifact_ids", ())
+    if current_ids:
+        for artifact_id in current_ids:
+            artifact = artifact_ids.get(artifact_id)
+            if artifact is not None and artifact.get("media_type") == "text/markdown":
+                return artifact_id
+        return None
+
     if "decision-brief.md" in artifact_ids:
         return "decision-brief.md"
     if CANONICAL_RESULT_ARTIFACT_ID in artifact_ids:

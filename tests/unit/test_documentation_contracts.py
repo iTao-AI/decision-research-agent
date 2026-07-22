@@ -1607,7 +1607,7 @@ def test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable() -> None:
         assert exact_row in reference
     for forbidden in (
         "raw response is retained",
-        "automatic retry",
+        "automatically retries",
         "new REST error contract",
         "diagnostic receipt is canonical",
         "permits an arbitrary filename",
@@ -1928,3 +1928,52 @@ def test_bounded_live_targeted_runtime_repair_amendment_rejects_mutation(
         replacements=((old, new),),
         contract=test_bounded_live_targeted_runtime_repair_amendment_is_scoped,
     )
+def test_limiter_diagnostic_sidecar_contract_is_closed_and_non_authoritative() -> None:
+    reference = (
+        PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md"
+    ).read_text(encoding="utf-8")
+    design = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+    ).read_text(encoding="utf-8")
+    plan = (
+        PROJECT_ROOT
+        / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md"
+    ).read_text(encoding="utf-8")
+    required_reference = (
+        "DECISION_RESEARCH_AGENT_BOUNDED_PRODUCER_LIMITER_DIAGNOSTICS=true",
+        "dra.call-budget-origin-sidecar.v1",
+        "dra.bounded-live-producer-call-budget-diagnostic.v1",
+        "/app/output/operator-diagnostics/<run_id>/call-budget-v1.json",
+        "python /app/scripts/bounded_live_producer_runtime_diagnostics.py read --run-id <run_id>",
+        "limiter_kind",
+        "tool_scope",
+        "run_count",
+        "run_limit",
+        "thread_count",
+        "thread_limit",
+        "agent_role",
+        "after final cleanup",
+        "no API, database, or public failure contract change",
+        "no model or budget change",
+        "no role inference",
+        "no LangSmith authority",
+        "no successful live-provider evidence claim",
+        "does not authorize an automatic retry",
+    )
+    assert all(value in reference for value in required_reference)
+    amendment = "### Post-Observation Limiter Diagnostic Amendment"
+    for historical in (design, plan):
+        assert amendment in historical
+        section = historical.split(amendment, 1)[1]
+        for value in (
+            "historical Change 1 boundaries",
+            "structured native-exception projection",
+            "operator-only transport",
+            "default-disabled",
+            "no budget",
+            "no model",
+            "no API, database, canonical result, or Evidence change",
+            "no live-success claim",
+        ):
+            assert value in section

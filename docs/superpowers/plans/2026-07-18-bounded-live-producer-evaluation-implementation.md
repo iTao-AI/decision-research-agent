@@ -1358,6 +1358,19 @@ material, and does not authorize a retry. REST, OpenAPI, database, Agent/framewo
 canonical result, Evidence, downstream consumer acceptance, dependencies, CI provider policy,
 VERSION, and release metadata remain unchanged.
 
+### Post-Observation Limiter Diagnostic Amendment
+
+The earlier middleware and runtime prohibitions remain historical Change 1 boundaries.
+This separately approved, default-disabled amendment adds only structured native-exception projection and operator-only transport for exact call-budget failures. The bounded evaluator enables one
+closed environment key, extracts one fixed sidecar through a directly invoked reader only after
+proving task-owned container and volume identity, cleans up, and then selects at most one strict
+operator receipt.
+
+This amendment makes no budget or no model adjustment, no API, database, canonical result, or Evidence change,
+no role inference, and no LangSmith authority. It makes no live-success claim or
+successful live-provider evidence claim. Missing or invalid diagnostic state stays
+`not_observed`; the receipt is best effort and does not authorize automatic retry.
+
 ### Change 3 — `v0.1.6` Release Preparation
 
 Only after reviewed live evidence merges may a pure metadata branch evaluate `v0.1.6`. Release

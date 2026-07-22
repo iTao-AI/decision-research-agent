@@ -156,4 +156,3 @@ def test_runtime_diagnostic_reader_rejects_open_file_identity_drift(
     monkeypatch.setattr(module.os, "fstat", drift)
     with pytest.raises(module.RuntimeDiagnosticReadError):
         module.read_call_budget_sidecar("run-1", output_root=tmp_path)
-

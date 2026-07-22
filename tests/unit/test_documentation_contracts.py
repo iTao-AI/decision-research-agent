@@ -8,6 +8,8 @@ import subprocess
 
 import pytest
 
+from api.run_failure_cause_models import RUN_FAILURE_CAUSE_CODES
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -1634,6 +1636,124 @@ def test_bounded_result_diagnostic_receipt_rejects_documentation_mutation(
         path=path,
         replacements=((old, new),),
         contract=test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable,
+    )
+
+
+def test_bounded_run_failure_diagnostic_receipt_is_scoped_and_discoverable() -> None:
+    reference_path = (
+        PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md"
+    )
+    design_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+    )
+    reference = " ".join(reference_path.read_text(encoding="utf-8").split())
+    design = " ".join(design_path.read_text(encoding="utf-8").split())
+
+    for phrase in (
+        "dra.bounded-live-producer-run-failure-diagnostic.v1",
+        "bounded-live-producer-run-failure-diagnostic-v1.json",
+        "status-before-result",
+        "No failed, fallback, delivery-blocked, or malformed terminal state requests `/result`",
+        "`cleanup_status` is exactly `succeeded` or `failed`",
+        "preflight rejects the directory if either fixed filename already exists",
+        "at most one receipt",
+        "Result Diagnostic Receipt v1 remains byte- and behavior-compatible",
+        "application-owned `RUN_FAILURE_CAUSE_CODES` matrix",
+        "non-authoritative operator diagnostic",
+        "strictly validate",
+        "separately authorized one-shot live observation",
+        "no API, database, Agent runtime, canonical result, Evidence, dependency, VERSION, or release change",
+    ):
+        assert phrase in reference
+
+    for phase, codes in RUN_FAILURE_CAUSE_CODES.items():
+        rendered_codes = ", ".join(f"`{code}`" for code in sorted(codes))
+        assert f"| `{phase}` | {rendered_codes} |" in reference
+
+    for exact_row in (
+        "| `consumer_projection_invalid / result` | Result Diagnostic Receipt v1 | `bounded-live-producer-result-diagnostic-v1.json` |",
+        "| `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-run-failure-diagnostic-v1.json` |",
+    ):
+        assert exact_row in reference
+
+    for omitted in (
+        "raw body or content",
+        "run, thread, or segment identity",
+        "timestamp",
+        "HTTP status or byte count",
+        "provider or model identity",
+        "path, log, trace, or credential material",
+    ):
+        assert omitted in reference
+
+    assert "### Post-Observation Run Failure Diagnostic Amendment" in design
+    assert "status-before-result" in design
+    assert "sibling run-failure receipt" in design
+    assert "no live-success claim or evidence publication" in design
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new"),
+    (
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "`run_dispatch_lease_expired`",
+            "`run_dispatch_unknown`",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "| `finalization` | `cancelled`, `run_finalization_failed`, `run_timeout` |",
+            "| `execution` | `cancelled`, `run_finalization_failed`, `run_timeout` |",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "| `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-run-failure-diagnostic-v1.json` |",
+            "| `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-result-diagnostic-v1.json` |",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "`cleanup_status` is exactly `succeeded` or `failed`",
+            "`cleanup_status` may also be `not_started`",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "bounded-live-producer-result-diagnostic-v1.json",
+            "bounded-live-producer-result-receipt-v1.json",
+        ),
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+            "at most one receipt",
+            "both receipts",
+        ),
+        (
+            PROJECT_ROOT
+            / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md",
+            "no live-success claim or evidence publication",
+            "records a successful live observation",
+        ),
+    ),
+    ids=(
+        "missing-failure-code",
+        "cross-phase-code",
+        "swapped-filename",
+        "widened-cleanup-status",
+        "changed-result-filename",
+        "both-receipts-claim",
+        "live-success-overclaim",
+    ),
+)
+def test_bounded_run_failure_diagnostic_rejects_documentation_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    old: str,
+    new: str,
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=path,
+        replacements=((old, new),),
+        contract=test_bounded_run_failure_diagnostic_receipt_is_scoped_and_discoverable,
     )
 
 

@@ -955,3 +955,21 @@ cleanup, is not live evidence or application authority, contains no raw response
 material, and does not authorize a retry. REST, OpenAPI, database, Agent/framework authority,
 canonical result, Evidence, downstream consumer acceptance, dependencies, CI provider policy,
 VERSION, and release metadata remain unchanged.
+
+### Post-Observation Run Failure Diagnostic Amendment
+
+A separately approved targeted addition makes terminal observation
+status-before-result: the harness validates requested identity and classifies
+failed, fallback, delivery-blocked, or malformed terminal status before any
+`/result` request. An exact application-owned observed failure cause may produce
+the sibling run-failure receipt after final cleanup; all other existing failure
+classifications remain fail closed.
+
+The sibling run-failure receipt reuses the application phase/code matrix and the
+existing owner-only, non-overwriting diagnostic sink. It changes neither the
+public error envelope nor Result Diagnostic Receipt v1, and it carries no raw
+content, identity, timestamp, HTTP, provider, path, log, trace, or credential
+material. This amendment has no API, database, Agent runtime, canonical result,
+Evidence, dependency, CI, VERSION, or release effect and makes
+no live-success claim or evidence publication. Any later live use remains
+separately authorized.

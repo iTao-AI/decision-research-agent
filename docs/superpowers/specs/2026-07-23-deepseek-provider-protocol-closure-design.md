@@ -27,7 +27,9 @@ The selected change is therefore:
 4. preserve the existing capability wrapper, primary/fallback behavior,
    budgets, prompts, tools, Agent harness, and application authority; and
 5. verify the real `model -> tool -> model -> canonical finish` path without a
-   live provider call.
+   live provider call; and
+6. add privacy-safe local protocol telemetry plus LangSmith-ready tags and
+   metadata without enabling remote tracing in the bounded-live lifecycle.
 
 This is a provider protocol correction, not a model-quality claim. It does not
 prove that prior live failures had one exclusive cause, and it does not
@@ -53,7 +55,13 @@ This design was finalized against:
   from `OPENAI_API_KEY` and `OPENAI_BASE_URL`;
 - the existing `CapabilityAwareChatModel` preserving thinking for automatic
   tool selection and disabling thinking on an independent model copy when a
-  forced tool choice is incompatible; and
+  forced tool choice is incompatible;
+- the real DeepAgents graph already forwarding callbacks and bounded
+  `research_run_id`, `thread_id`, and `profile_id` metadata through LangChain;
+- `.env.example` already defaulting LangSmith to disabled with inputs and
+  outputs hidden;
+- no closed local event registry for DeepSeek provider selection, reasoning
+  protocol validation, or fallback activation; and
 - no committed bounded-live provider evidence.
 
 The existing application authority remains coherent:
@@ -139,7 +147,11 @@ The implementation must:
     integration behavior;
 11. keep credentials and endpoint aliases backward compatible; and
 12. make the provider choice and protocol behavior executable through
-    provider-free tests.
+    provider-free tests;
+13. emit only allowlisted local telemetry for provider selection, protocol
+    validation or rejection, and fallback activation; and
+14. attach privacy-safe provider tags and metadata to LangChain model runs so
+    an operator may later enable LangSmith without changing correctness code.
 
 ## Non-Goals
 
@@ -156,6 +168,10 @@ This change does not:
 - change the application failure taxonomy or operator diagnostic receipt
   schemas;
 - make LangSmith an authority or require LangSmith for correctness;
+- enable LangSmith tracing, read a LangSmith key, query remote traces, or
+  upload a trace during this change;
+- relax the bounded-live requirement that LangSmith tracing is disabled, its
+  API key is empty, and inputs and outputs are hidden;
 - remove the existing `OPENAI_API_KEY` or `OPENAI_BASE_URL` aliases;
 - migrate secrets automatically;
 - change `VERSION`, release metadata, or release claims;
@@ -378,7 +394,62 @@ failure boundary.
 
 ## Observability And Privacy
 
-Permitted logs and trace metadata are limited to bounded facts such as:
+Observability has two explicit tiers.
+
+### Tier 1 — local privacy-safe telemetry
+
+The runtime emits a closed set of structured local events:
+
+| Event | Required bounded fields |
+|---|---|
+| `deepseek_provider_selected` | `provider_family=deepseek`, `model_role`, `thinking_mode`, `provider_protocol=deepseek-reasoning-content-v1` |
+| `deepseek_reasoning_protocol_validated` | provider family, model role, protocol version, `historical_tool_call_messages`, `validated_messages`, `outcome=valid` |
+| `deepseek_reasoning_protocol_rejected` | provider family, model role, protocol version, bounded protocol `reason`, counts observed before rejection, `outcome=rejected` |
+| `model_fallback_activated` | primary and fallback provider families, `error_type`, `binding=direct|tools` |
+
+Allowed values are closed and validated before logging. Counts are
+non-negative bounded integers derived from message structure, not message
+content. `error_type` is the Python exception class name only; the exception
+string and traceback are not logged. The existing fallback log path must stop
+using raw `exc_info=True` because provider exception payloads are not a safe
+local telemetry contract.
+
+The telemetry is diagnostic only. Emission failure cannot change provider
+routing, validation, fallback, application state, or terminal outcome.
+
+### Tier 2 — optional LangSmith tracing
+
+DeepSeek leaf and capability-wrapper runs receive the following safe
+LangChain tags:
+
+- `provider:deepseek`;
+- `model-role:primary|fallback|single`; and
+- `protocol:deepseek-reasoning-content-v1`.
+
+Their LangChain metadata is limited to:
+
+- `provider_family=deepseek`;
+- `model_role=primary|fallback|single`;
+- `provider_protocol=deepseek-reasoning-content-v1`; and
+- `thinking_mode=enabled|disabled`.
+
+These fields compose with the existing bounded request metadata
+`research_run_id`, `thread_id`, and `profile_id`. LangChain and DeepAgents
+already support automatic LangSmith tracing when an operator enables it, so
+this change must not add a parallel trace transport or a correctness
+dependency on LangSmith.
+
+Remote tracing remains opt-in and off for required verification. The checked-in
+configuration keeps `LANGSMITH_TRACING=false`,
+`LANGSMITH_HIDE_INPUTS=true`, and `LANGSMITH_HIDE_OUTPUTS=true`, and does not
+contain a key. The bounded-live lifecycle continues to require tracing false,
+input/output hiding true, and an empty LangSmith key. A later privacy-first
+LangSmith smoke requires separate operator authorization because metadata,
+trace topology, timings, and errors leave the local process even when inputs
+and outputs are hidden.
+
+Permitted logs and trace metadata are therefore limited to bounded facts such
+as:
 
 - provider family;
 - model role;
@@ -509,20 +580,30 @@ streaming path. It must not use a live provider or credential.
 
 #### Privacy
 
+- local telemetry uses only the four approved event names and their closed
+  fields;
+- valid and rejected protocol turns expose only bounded counts and codes;
+- fallback activation records an exception class, not exception text or a
+  traceback;
+- DeepSeek model runs expose only the approved tags and metadata;
 - log capture contains no reasoning text;
 - log capture contains no tool argument or result payload;
 - exception text contains no serialized request or secret; and
-- provider-free tests do not read a production credential source.
+- provider-free tests do not read a production credential source;
+- required tests pass with `LANGSMITH_TRACING=false` and no LangSmith key; and
+- no test sends or queries a remote LangSmith trace.
 
 ## Expected Implementation Surface
 
 Expected files include:
 
 - `agent/deepseek_chat_model.py`;
+- `agent/provider_observability.py`;
 - `agent/llm.py`;
 - `requirements.txt`;
 - `constraints.txt`;
 - `tests/unit/test_deepseek_chat_model.py`;
+- `tests/unit/test_provider_observability.py`;
 - `tests/unit/test_llm_config.py`;
 - one existing DeepAgents/harness integration test module;
 - `.env.example`;
@@ -550,10 +631,12 @@ Implementation verification must include:
    changes;
 7. current deterministic Agent evaluation, downstream consumer, canonical
    identity, presentation, and provider-free proof gates;
-8. `git diff --check`;
-9. private-marker, credential-value, raw-reasoning, and unfinished-marker
+8. local telemetry event, tag/metadata, fallback-redaction, and
+   LangSmith-disabled regressions;
+9. `git diff --check`;
+10. private-marker, credential-value, raw-reasoning, and unfinished-marker
    scans; and
-10. a prohibited-diff audit for API, database, Evidence, delivery, migrations,
+11. a prohibited-diff audit for API, database, Evidence, delivery, migrations,
     frontend, CI, `VERSION`, release metadata, and live evidence.
 
 Frontend tests are required only if an existing shared contract forces a
@@ -572,6 +655,7 @@ Implement this design as one reviewable provider-boundary change:
 - explicit provider selection;
 - credential/base-URL precedence;
 - narrow reasoning round-trip subclass;
+- local privacy-safe provider telemetry and LangSmith-ready tags/metadata;
 - wrapper and DeepAgents compatibility tests;
 - public-neutral provider documentation; and
 - full provider-free and Docker verification.
@@ -641,6 +725,8 @@ After implementation, the repository may state that:
 - DeepSeek model identifiers use the official LangChain DeepSeek integration;
 - DRA preserves DeepSeek thinking-mode reasoning state across tool-call turns
   through a bounded compatibility adapter;
+- DRA emits bounded local provider-protocol telemetry and is ready for
+  optional privacy-first LangSmith tracing without making traces authoritative;
 - the behavior is covered by provider-free framework composition tests; and
 - application authority remains outside provider and framework message state.
 
@@ -653,6 +739,7 @@ It must not state that:
 - the change alone resolved every prior live failure;
 - the project is production deployed;
 - reasoning content is Evidence or an application fact; or
+- remote LangSmith tracing ran as part of this provider-free change; or
 - a version containing this change has been released before the corresponding
   tag and public Release exist.
 
@@ -671,3 +758,7 @@ It must not state that:
   <https://github.com/langchain-ai/langchain/pull/34438>
   <https://github.com/langchain-ai/langchain/pull/34516>
   <https://github.com/langchain-ai/langchain/pull/35094>
+- LangSmith tracing with LangChain:
+  <https://github.com/langchain-ai/langsmith-docs/blob/main/docs/observability/how_to_guides/trace_with_langchain.mdx>
+- LangSmith input/output masking:
+  <https://github.com/langchain-ai/langsmith-docs/blob/main/docs/observability/how_to_guides/mask_inputs_outputs.mdx>

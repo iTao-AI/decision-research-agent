@@ -22,9 +22,13 @@ provider SLA。
 - Non-DeepSeek identifiers retain the OpenAI-compatible provider path.
 - `LLM_QWEN_MAX` 仅在 `LLM_MODEL` 未设置时作为兼容配置读取。
 - `LLM_THINKING_MODE` 的 effective value 只允许 `enabled` or `disabled`。
-  未设置时默认为 `enabled`；既有 `off`、`none`、`false` aliases 归一化为
-  `disabled`；其他值在 model construction 前 fail closed。每个 DeepSeek
-  request 都显式携带 canonical `thinking.type`，不依赖 provider 默认值。
+  `deepseek-v4-pro` 与 `deepseek-v4-flash` 是 dual-mode，未设置时默认为
+  `enabled`；既有 `off`、`none`、`false` aliases 归一化为 `disabled`。
+  `deepseek-chat` 和 `deepseek-reasoner` 在 2026-07-24 15:59 UTC 退役前分别
+  保留 `deepseek-v4-flash` 的 fixed non-thinking 与 thinking compatibility
+  identity；显式冲突 mode 在 model construction 前 fail closed。其他非法值
+  同样 fail closed。每个 DeepSeek request 都显式携带 canonical
+  `thinking.type`，不依赖 provider 默认值。
 - Official primary/fallback leaf models 对 sync 与 async client 均显式设置
   `timeout=120`；tool-binding copies 保留该值。这是 client request timeout，
   不是 provider SLA。Fallback model 是 provider/model fallback，不代表对所有
@@ -35,8 +39,9 @@ provider SLA。
   publication, or delivery authority.
 - Thinking enabled 时，`None`、`False` 与 `auto` automatic selection 均通过
   省略 `tool_choice` 表达。`none` 或 forced/specific selection 需要显式
-  `tool_choice` 时，运行时只对该次 tool binding 使用关闭 thinking 的模型副本；
-  原模型保持配置的 thinking mode。
+  `tool_choice` 时，dual-mode V4 运行时只对该次 tool binding 使用关闭
+  thinking 的模型副本；fixed-thinking `deepseek-reasoner` 则在 transport 前
+  fail closed。原模型保持配置的 thinking mode。
 - Provider-free tests cover the protocol adapter and real DeepAgents
   composition. This does not prove a live provider result, research quality,
   cost, or production readiness.

@@ -81,6 +81,11 @@ def test_deepseek_provider_protocol_documentation_matches_runtime():
     assert "`enabled` or `disabled`" in reference
     assert "省略 `tool_choice`" in reference
     assert "`timeout=120`" in reference
+    assert "# LLM_QWEN_MAX=deepseek-v4-pro" in env_example
+    assert "# LLM_QWEN_MAX=deepseek-chat" not in env_example
+    assert "`deepseek-chat`" in reference
+    assert "`deepseek-reasoner`" in reference
+    assert "2026-07-24 15:59 UTC" in reference
 
 
 V015_RELEASE_H2_ORDER = (

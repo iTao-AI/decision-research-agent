@@ -18,6 +18,10 @@ _THINKING_MODE_INVALID = "deepseek_thinking_mode_invalid"
 _THINKING_DISABLED_ALIASES = frozenset(
     {"disabled", "off", "none", "false"}
 )
+_FIXED_THINKING_MODES = {
+    "deepseek-chat": "disabled",
+    "deepseek-reasoner": "enabled",
+}
 
 DeepSeekThinkingMode = Literal["enabled", "disabled"]
 
@@ -42,7 +46,29 @@ def normalize_deepseek_thinking_mode(
     raise DeepSeekThinkingConfigurationError
 
 
-def canonical_deepseek_extra_body(extra_body: object) -> dict[str, Any]:
+def resolve_deepseek_thinking_mode(
+    model_name: object,
+    configured_mode: object | None,
+) -> DeepSeekThinkingMode:
+    """Resolve one model-aware effective mode without alias drift."""
+
+    fixed_mode = _FIXED_THINKING_MODES.get(
+        str(model_name or "").lower()
+    )
+    if configured_mode is None:
+        return fixed_mode or "enabled"
+
+    normalized = normalize_deepseek_thinking_mode(configured_mode)
+    if fixed_mode is not None and normalized != fixed_mode:
+        raise DeepSeekThinkingConfigurationError
+    return normalized
+
+
+def canonical_deepseek_extra_body(
+    extra_body: object,
+    *,
+    model_name: object = None,
+) -> dict[str, Any]:
     """Preserve provider options while making thinking explicit and canonical."""
 
     if extra_body is None:
@@ -61,15 +87,25 @@ def canonical_deepseek_extra_body(extra_body: object) -> dict[str, Any]:
         raise DeepSeekThinkingConfigurationError
 
     normalized["thinking"] = {
-        "type": normalize_deepseek_thinking_mode(configured_mode)
+        "type": resolve_deepseek_thinking_mode(
+            model_name,
+            configured_mode,
+        )
     }
     return normalized
 
 
-def deepseek_thinking_mode(extra_body: object) -> DeepSeekThinkingMode:
+def deepseek_thinking_mode(
+    extra_body: object,
+    *,
+    model_name: object = None,
+) -> DeepSeekThinkingMode:
     """Read effective thinking state through the shared canonical parser."""
 
-    return canonical_deepseek_extra_body(extra_body)["thinking"]["type"]
+    return canonical_deepseek_extra_body(
+        extra_body,
+        model_name=model_name,
+    )["thinking"]["type"]
 
 
 class DeepSeekReasoningProtocolError(ValueError):
@@ -119,7 +155,11 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
             return data
         normalized = dict(data)
         normalized["extra_body"] = canonical_deepseek_extra_body(
-            normalized.get("extra_body")
+            normalized.get("extra_body"),
+            model_name=(
+                normalized.get("model")
+                or normalized.get("model_name")
+            ),
         )
         return normalized
 

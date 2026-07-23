@@ -14,6 +14,9 @@ All notable changes to this project are documented in this file.
 - Canonicalized every DeepSeek request to an explicit `enabled` or `disabled`
   thinking mode, omitted automatic `tool_choice` in thinking mode, and bound
   the documented 120-second client request timeout on primary and fallback.
+- Preserved the temporary `deepseek-chat` non-thinking and
+  `deepseek-reasoner` thinking alias identities, while rejecting conflicting
+  mode or semantic tool-choice configuration before provider transport.
 - Preserved the OpenAI-compatible path for non-DeepSeek models, existing
   credential aliases, forced-tool-choice compatibility, call budgets, and
   application-owned Evidence and delivery authority.

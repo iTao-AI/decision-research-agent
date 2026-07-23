@@ -38,8 +38,10 @@ LangGraph 1.2.6, Pydantic 2.13.4, pytest 9.0.3, Docker.
 - Preserve default model identifiers `deepseek-v4-pro` and
   `deepseek-v4-flash`.
 - Preserve automatic tool selection with thinking enabled by omitting the
-  provider `tool_choice` parameter, and preserve explicit `none` or forced
-  selection by disabling thinking on an independent model copy.
+  provider `tool_choice` parameter. Preserve explicit `none` or forced
+  selection on dual-mode V4 by disabling thinking on an independent model
+  copy; fixed-thinking legacy aliases fail before transport instead of
+  contradicting their model identity.
 - Preserve every historical assistant tool-call message's exact non-empty
   `reasoning_content`; missing, invalid, or unalignable protocol state fails
   before transport.
@@ -2312,7 +2314,7 @@ LLM_FALLBACK_MODEL=deepseek-v4-flash
 LLM_REASONING_EFFORT=max
 LLM_THINKING_MODE=enabled
 # Legacy compatibility: used only when LLM_MODEL is not set
-# LLM_QWEN_MAX=deepseek-chat
+# LLM_QWEN_MAX=deepseek-v4-pro
 ```
 
 Do not insert a real credential.
@@ -2340,9 +2342,10 @@ following:
   `reasoning_content` as provider protocol state for the next request.
 - Provider protocol state is not Evidence, application state, review,
   publication, or delivery authority.
-- Explicit `none` and forced tool selection still use the existing
-  thinking-disabled model copy; automatic tool selection keeps thinking
-  enabled by omitting the provider `tool_choice` parameter.
+- Explicit `none` and forced tool selection use the existing
+  thinking-disabled model copy for dual-mode V4; fixed-thinking legacy aliases
+  fail before transport. Automatic tool selection keeps thinking enabled by
+  omitting the provider `tool_choice` parameter.
 - Provider-free tests cover the protocol adapter and real DeepAgents
   composition. This does not prove a live provider result, research quality,
   cost, or production readiness.
@@ -2352,6 +2355,12 @@ Bind the approved 120-second client request timeout explicitly on official
 primary and fallback leaf models, including sync/async clients and
 tool-binding copies. Retain the existing provider/model fallback non-claim;
 the timeout is not a provider SLA.
+
+Retain `deepseek-chat` as the fixed non-thinking alias and
+`deepseek-reasoner` as the fixed thinking alias of `deepseek-v4-flash` only
+through their documented 2026-07-24 15:59 UTC retirement boundary. Reject
+explicit mode conflicts before construction and do not recommend either
+deprecated identifier in `.env.example`.
 
 Add:
 

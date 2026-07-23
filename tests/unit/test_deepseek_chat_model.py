@@ -67,6 +67,65 @@ def test_invalid_thinking_mode_fails_closed_before_transport(configured):
         _model(thinking=configured)
 
 
+@pytest.mark.parametrize(
+    ("model_name", "configured", "expected"),
+    [
+        ("deepseek-v4-pro", None, "enabled"),
+        ("deepseek-v4-flash", "disabled", "disabled"),
+        ("deepseek-chat", None, "disabled"),
+        ("deepseek-chat", "disabled", "disabled"),
+        ("deepseek-reasoner", None, "enabled"),
+        ("deepseek-reasoner", "enabled", "enabled"),
+    ],
+)
+def test_model_identity_determines_effective_thinking_mode(
+    model_name,
+    configured,
+    expected,
+):
+    kwargs = {
+        "model": model_name,
+        "api_key": "provider-test-key",
+        "base_url": "https://api.deepseek.com",
+        "max_retries": 0,
+    }
+    if configured is not None:
+        kwargs["extra_body"] = {"thinking": {"type": configured}}
+
+    model = DeepSeekThinkingChatModel(**kwargs)
+    payload = model._get_request_payload(
+        [HumanMessage(content="research")]
+    )
+
+    assert model.extra_body == {"thinking": {"type": expected}}
+    assert payload["extra_body"] == {"thinking": {"type": expected}}
+
+
+@pytest.mark.parametrize(
+    ("model_name", "configured"),
+    [
+        ("deepseek-chat", "enabled"),
+        ("deepseek-reasoner", "disabled"),
+        ("deepseek-reasoner", "off"),
+    ],
+)
+def test_fixed_mode_alias_rejects_conflicting_thinking_configuration(
+    model_name,
+    configured,
+):
+    with pytest.raises(
+        ValueError,
+        match="deepseek_thinking_mode_invalid",
+    ):
+        DeepSeekThinkingChatModel(
+            model=model_name,
+            api_key="provider-test-key",
+            base_url="https://api.deepseek.com",
+            max_retries=0,
+            extra_body={"thinking": {"type": configured}},
+        )
+
+
 def test_injects_reasoning_content_for_every_historical_tool_call(caplog):
     model = _model()
     messages = [

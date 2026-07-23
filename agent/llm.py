@@ -16,7 +16,7 @@ from agent.deepseek_chat_model import (
     DeepSeekThinkingChatModel,
     canonical_deepseek_extra_body,
     deepseek_thinking_mode,
-    normalize_deepseek_thinking_mode,
+    resolve_deepseek_thinking_mode,
 )
 from agent.provider_observability import (
     PROVIDER_PROTOCOL,
@@ -68,7 +68,8 @@ def _tool_choice_kind(tool_choice: dict | str | bool | None) -> str | None:
 
 def _has_enabled_thinking(model: BaseChatModel) -> bool:
     return deepseek_thinking_mode(
-        getattr(model, "extra_body", None)
+        getattr(model, "extra_body", None),
+        model_name=_model_name(model),
     ) == "enabled"
 
 
@@ -78,7 +79,7 @@ def _needs_tool_choice_compatibility(
 ) -> bool:
     return (
         _tool_choice_kind(tool_choice) not in {None, "automatic"}
-        and _is_deepseek_v4_model(_model_name(model))
+        and _is_deepseek_model(_model_name(model))
         and _has_enabled_thinking(model)
     )
 
@@ -92,10 +93,17 @@ def _tool_choice_compatible_model(model: BaseChatModel) -> BaseChatModel:
     if not isinstance(extra_body, dict):
         raise TypeError("Cannot build compatible model without dict extra_body")
 
+    model_name = _model_name(model)
     compatible_extra_body = canonical_deepseek_extra_body(
-        copy.deepcopy(extra_body)
+        copy.deepcopy(extra_body),
+        model_name=model_name,
     )
-    compatible_extra_body["thinking"] = {"type": "disabled"}
+    compatible_extra_body["thinking"] = {
+        "type": resolve_deepseek_thinking_mode(
+            model_name,
+            "disabled",
+        )
+    }
 
     model_copy = getattr(model, "model_copy", None)
     if not callable(model_copy):
@@ -187,7 +195,7 @@ class CapabilityAwareChatModel(BaseChatModel):
         bind_kwargs = dict(kwargs)
         omit_automatic_deepseek_choice = (
             tool_choice_kind == "automatic"
-            and _is_deepseek_v4_model(_model_name(bind_target))
+            and _is_deepseek_model(_model_name(bind_target))
             and _has_enabled_thinking(bind_target)
         )
         if (
@@ -369,8 +377,9 @@ def _thinking_mode(model_name: str) -> str | None:
 
 def _configured_thinking_mode(model_name: str) -> str:
     if _is_deepseek_model(model_name):
-        return normalize_deepseek_thinking_mode(
-            _env_value("LLM_THINKING_MODE")
+        return resolve_deepseek_thinking_mode(
+            model_name,
+            _env_value("LLM_THINKING_MODE"),
         )
     value = _thinking_mode(model_name)
     return "enabled" if value is not None else "disabled"

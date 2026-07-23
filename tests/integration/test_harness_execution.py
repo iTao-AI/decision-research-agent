@@ -592,6 +592,7 @@ async def test_deepseek_tool_turn_round_trips_reasoning_to_canonical_report(
         api_key="provider-test-key",
         base_url="https://api.deepseek.com",
         max_retries=0,
+        timeout=120.0,
         extra_body={"thinking": {"type": "enabled"}},
     )
     service = ResearchExecutionService(
@@ -625,6 +626,11 @@ async def test_deepseek_tool_turn_round_trips_reasoning_to_canonical_report(
         assistant_messages[0]["reasoning_content"]
         == "bounded-tool-reasoning"
     )
+    assert all(
+        "tool_choice" not in payload
+        for payload in model.request_payloads
+    )
+    assert model.request_timeout == 120.0
 
 
 def test_deepseek_sync_graph_round_trips_reasoning():
@@ -633,6 +639,7 @@ def test_deepseek_sync_graph_round_trips_reasoning():
         api_key="provider-test-key",
         base_url="https://api.deepseek.com",
         max_retries=0,
+        timeout=120.0,
         extra_body={"thinking": {"type": "enabled"}},
     )
     backend = CompositeBackend(default=StateBackend(), routes={})
@@ -680,6 +687,11 @@ def test_deepseek_sync_graph_round_trips_reasoning():
         assistant_messages[0]["reasoning_content"]
         == "bounded-tool-reasoning"
     )
+    assert all(
+        "tool_choice" not in payload
+        for payload in model.request_payloads
+    )
+    assert model.request_timeout == 120.0
 
 
 @pytest.mark.asyncio

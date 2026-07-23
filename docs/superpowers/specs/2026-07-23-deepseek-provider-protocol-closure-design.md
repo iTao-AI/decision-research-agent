@@ -291,6 +291,20 @@ This precedence allows existing local installations to continue working while
 making the provider-specific contract explicit. Removing the compatibility
 aliases requires a later migration with its own release decision.
 
+DeepSeek thinking and timeout configuration are also explicit runtime
+contracts:
+
+- effective thinking mode is exactly `enabled` or `disabled`;
+- an unset mode defaults to `enabled`, while the existing `off`, `none`, and
+  `false` aliases normalize to `disabled`;
+- any other value, including case variants, fails before model transport;
+- every DeepSeek request explicitly carries the canonical `thinking.type`
+  instead of depending on the provider default; and
+- both primary and fallback official leaf models set a 120-second client
+  request timeout for sync and async clients, retained by tool-binding copies.
+
+The timeout is a client boundary, not a provider SLA or availability claim.
+
 ## DeepSeek Thinking Adapter
 
 ### Ownership
@@ -357,10 +371,10 @@ require or inject `reasoning_content`.
 
 This preserves the current `CapabilityAwareChatModel` behavior:
 
-- `tool_choice=None`, `auto`, or equivalent automatic selection keeps thinking
-  enabled;
-- forced tool selection creates an independent model copy with thinking
-  disabled; and
+- `tool_choice=None`, `False`, or `auto` keeps thinking enabled and is
+  represented by omitting the provider `tool_choice` parameter;
+- semantic `none` and forced/specific tool selection create an independent
+  model copy with thinking disabled before sending `tool_choice`; and
 - the original model configuration remains unchanged for concurrent or later
   calls.
 
@@ -479,7 +493,7 @@ publication, or delivery.
 - callbacks remain attached to both leaf models and wrappers;
 - `model_role` remains available;
 - structured output remains framework-native;
-- automatic tool selection retains thinking mode;
+- automatic tool selection retains thinking mode by omitting `tool_choice`;
 - forced tool selection retains the existing thinking-disabled copy;
 - non-DeepSeek model overrides retain the OpenAI-compatible path;
 - existing OpenAI-compatible credential names remain accepted for DeepSeek;
@@ -555,7 +569,7 @@ The completed change must cover:
 
 #### Tool binding and wrappers
 
-- automatic tool choice preserves thinking;
+- automatic tool choice preserves thinking and omits `tool_choice`;
 - forced tool choice disables thinking only on an independent copy;
 - the original model remains thinking-enabled;
 - callbacks, model role, profile metadata, and structured output remain

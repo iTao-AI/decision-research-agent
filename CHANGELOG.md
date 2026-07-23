@@ -11,6 +11,9 @@ All notable changes to this project are documented in this file.
 - Added a narrow provider adapter that preserves exact non-empty
   `reasoning_content` across thinking-mode tool-call turns and fails before
   transport when required protocol state is missing or unalignable.
+- Canonicalized every DeepSeek request to an explicit `enabled` or `disabled`
+  thinking mode, omitted automatic `tool_choice` in thinking mode, and bound
+  the documented 120-second client request timeout on primary and fallback.
 - Preserved the OpenAI-compatible path for non-DeepSeek models, existing
   credential aliases, forced-tool-choice compatibility, call budgets, and
   application-owned Evidence and delivery authority.

@@ -12,7 +12,12 @@ from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatResult
 from langchain_core.runnables import Runnable
 
-from agent.deepseek_chat_model import DeepSeekThinkingChatModel
+from agent.deepseek_chat_model import (
+    DeepSeekThinkingChatModel,
+    canonical_deepseek_extra_body,
+    deepseek_thinking_mode,
+    normalize_deepseek_thinking_mode,
+)
 from agent.provider_observability import (
     PROVIDER_PROTOCOL,
     emit_fallback_activated,
@@ -27,6 +32,7 @@ DEFAULT_LLM_MODEL = "deepseek-v4-pro"
 DEFAULT_LLM_FALLBACK_MODEL = "deepseek-v4-flash"
 DEFAULT_REASONING_EFFORT = "max"
 DEFAULT_THINKING_MODE = "enabled"
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 120.0
 
 _DEEPSEEK_V4_PREFIX = "deepseek-v4-"
 _DEEPSEEK_V4_FAMILY = "deepseek-v4"
@@ -43,8 +49,10 @@ def _tool_choice_kind(tool_choice: dict | str | bool | None) -> str | None:
         return None
     if isinstance(tool_choice, str):
         normalized = tool_choice.lower()
-        if normalized in {"none", "auto"}:
-            return None
+        if normalized == "auto":
+            return "automatic"
+        if normalized == "none":
+            return "none"
         if normalized in {"any", "required"}:
             return "required"
         return "tool_name"
@@ -59,13 +67,9 @@ def _tool_choice_kind(tool_choice: dict | str | bool | None) -> str | None:
 
 
 def _has_enabled_thinking(model: BaseChatModel) -> bool:
-    extra_body = getattr(model, "extra_body", None)
-    if not isinstance(extra_body, dict):
-        return False
-    thinking = extra_body.get("thinking")
-    if not isinstance(thinking, dict):
-        return False
-    return str(thinking.get("type", "")).lower() == "enabled"
+    return deepseek_thinking_mode(
+        getattr(model, "extra_body", None)
+    ) == "enabled"
 
 
 def _needs_tool_choice_compatibility(
@@ -73,7 +77,7 @@ def _needs_tool_choice_compatibility(
     tool_choice: dict | str | bool | None,
 ) -> bool:
     return (
-        _tool_choice_kind(tool_choice) is not None
+        _tool_choice_kind(tool_choice) not in {None, "automatic"}
         and _is_deepseek_v4_model(_model_name(model))
         and _has_enabled_thinking(model)
     )
@@ -88,12 +92,10 @@ def _tool_choice_compatible_model(model: BaseChatModel) -> BaseChatModel:
     if not isinstance(extra_body, dict):
         raise TypeError("Cannot build compatible model without dict extra_body")
 
-    compatible_extra_body = copy.deepcopy(extra_body)
-    thinking = compatible_extra_body.get("thinking")
-    if not isinstance(thinking, dict):
-        thinking = {}
-        compatible_extra_body["thinking"] = thinking
-    thinking["type"] = "disabled"
+    compatible_extra_body = canonical_deepseek_extra_body(
+        copy.deepcopy(extra_body)
+    )
+    compatible_extra_body["thinking"] = {"type": "disabled"}
 
     model_copy = getattr(model, "model_copy", None)
     if not callable(model_copy):
@@ -183,7 +185,16 @@ class CapabilityAwareChatModel(BaseChatModel):
 
         self.last_bound_model = bind_target
         bind_kwargs = dict(kwargs)
-        if tool_choice is not None:
+        omit_automatic_deepseek_choice = (
+            tool_choice_kind == "automatic"
+            and _is_deepseek_v4_model(_model_name(bind_target))
+            and _has_enabled_thinking(bind_target)
+        )
+        if (
+            tool_choice is not None
+            and tool_choice is not False
+            and not omit_automatic_deepseek_choice
+        ):
             bind_kwargs["tool_choice"] = tool_choice
         return bind_target.bind_tools(tools, **bind_kwargs)
 
@@ -289,7 +300,7 @@ class FallbackChatModel(BaseChatModel):
         **kwargs: Any,
     ):
         bind_kwargs = dict(kwargs)
-        if tool_choice is not None:
+        if tool_choice is not None and tool_choice is not False:
             bind_kwargs["tool_choice"] = tool_choice
         primary = self.primary.bind_tools(tools, **bind_kwargs)
         fallback = self.fallback.bind_tools(tools, **bind_kwargs)
@@ -357,13 +368,12 @@ def _thinking_mode(model_name: str) -> str | None:
 
 
 def _configured_thinking_mode(model_name: str) -> str:
+    if _is_deepseek_model(model_name):
+        return normalize_deepseek_thinking_mode(
+            _env_value("LLM_THINKING_MODE")
+        )
     value = _thinking_mode(model_name)
-    return (
-        "enabled"
-        if value is not None
-        and value.lower() not in {"none", "off", "disabled", "false"}
-        else "disabled"
-    )
+    return "enabled" if value is not None else "disabled"
 
 
 def _deepseek_observability(
@@ -396,6 +406,11 @@ def _model_kwargs(
     }
 
     if _is_deepseek_model(model_name):
+        thinking_mode = _configured_thinking_mode(model_name)
+        kwargs["timeout"] = DEFAULT_REQUEST_TIMEOUT_SECONDS
+        kwargs["extra_body"] = {
+            "thinking": {"type": thinking_mode}
+        }
         base_url = (
             _env_value("DEEPSEEK_API_BASE")
             or _env_value("OPENAI_BASE_URL")
@@ -423,13 +438,16 @@ def _model_kwargs(
     ):
         kwargs["reasoning_effort"] = reasoning_effort
 
-    thinking_mode = _thinking_mode(model_name)
-    if (
-        thinking_mode
-        and thinking_mode.lower()
-        not in {"none", "off", "disabled", "false"}
-    ):
-        kwargs["extra_body"] = {"thinking": {"type": thinking_mode}}
+    if not _is_deepseek_model(model_name):
+        thinking_mode = _thinking_mode(model_name)
+        if (
+            thinking_mode
+            and thinking_mode.lower()
+            not in {"none", "off", "disabled", "false"}
+        ):
+            kwargs["extra_body"] = {
+                "thinking": {"type": thinking_mode}
+            }
 
     return kwargs
 

@@ -4,7 +4,7 @@
 
 | 服务 | 用途 | 超时 | 重试与降级 |
 |---|---|---|---|
-| Official DeepSeek provider integration | LLM 推理 | 120s | 可配置 fallback model；provider 错误继续按调用方契约处理 |
+| Official DeepSeek provider integration | LLM 推理 | client `timeout=120` | 可配置 fallback model；provider 错误继续按调用方契约处理 |
 | Tavily Search | 公共网络搜索 | 单次 15s，并设置有界总超时 | 3 total attempts；成功结果进入短期 cache；无备用搜索引擎 |
 | RAGFlow | 可选知识库检索 | 单次 60s | 非 timeout 异常最多 3 total attempts；terminal on timeout；失败返回有界错误文本 |
 | MySQL | 通用 profile 的只读数据查询 | 连接 10s，读取/查询 30s | 连接池管理；无透明写入或跨服务 fallback |
@@ -21,15 +21,22 @@ provider SLA。
   compatibility aliases.
 - Non-DeepSeek identifiers retain the OpenAI-compatible provider path.
 - `LLM_QWEN_MAX` 仅在 `LLM_MODEL` 未设置时作为兼容配置读取。
-- 默认请求超时为 120s。Fallback model 是 provider/model fallback，不代表
-  对所有错误自动成功或具备可用性承诺。
+- `LLM_THINKING_MODE` 的 effective value 只允许 `enabled` or `disabled`。
+  未设置时默认为 `enabled`；既有 `off`、`none`、`false` aliases 归一化为
+  `disabled`；其他值在 model construction 前 fail closed。每个 DeepSeek
+  request 都显式携带 canonical `thinking.type`，不依赖 provider 默认值。
+- Official primary/fallback leaf models 对 sync 与 async client 均显式设置
+  `timeout=120`；tool-binding copies 保留该值。这是 client request timeout，
+  不是 provider SLA。Fallback model 是 provider/model fallback，不代表对所有
+  错误自动成功或具备可用性承诺。
 - Thinking-mode assistant tool calls preserve the exact
   `reasoning_content` as provider protocol state for the next request.
 - Provider protocol state is not Evidence, application state, review,
   publication, or delivery authority.
-- 当强制 tool selection 与 provider thinking mode 不兼容时，运行时只对该次
-  tool binding 使用关闭 thinking 的模型副本；普通调用保留配置的 thinking
-  mode。
+- Thinking enabled 时，`None`、`False` 与 `auto` automatic selection 均通过
+  省略 `tool_choice` 表达。`none` 或 forced/specific selection 需要显式
+  `tool_choice` 时，运行时只对该次 tool binding 使用关闭 thinking 的模型副本；
+  原模型保持配置的 thinking mode。
 - Provider-free tests cover the protocol adapter and real DeepAgents
   composition. This does not prove a live provider result, research quality,
   cost, or production readiness.

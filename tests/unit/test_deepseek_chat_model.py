@@ -27,14 +27,44 @@ def _tool_call(call_id: str, query: str) -> dict:
     }
 
 
-def _model(*, thinking: str = "enabled") -> DeepSeekThinkingChatModel:
+def _model(*, thinking: str | None = "enabled") -> DeepSeekThinkingChatModel:
+    kwargs = {
+        "model": "deepseek-v4-pro",
+        "api_key": "provider-test-key",
+        "base_url": "https://api.deepseek.com",
+        "max_retries": 0,
+    }
+    if thinking is not None:
+        kwargs["extra_body"] = {"thinking": {"type": thinking}}
     return DeepSeekThinkingChatModel(
-        model="deepseek-v4-pro",
-        api_key="provider-test-key",
-        base_url="https://api.deepseek.com",
-        max_retries=0,
-        extra_body={"thinking": {"type": thinking}},
+        **kwargs,
     )
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        (None, "enabled"),
+        ("enabled", "enabled"),
+        ("disabled", "disabled"),
+        ("off", "disabled"),
+        ("none", "disabled"),
+        ("false", "disabled"),
+    ],
+)
+def test_thinking_mode_is_canonical_and_explicit(configured, expected):
+    model = _model(thinking=configured)
+
+    payload = model._get_request_payload([HumanMessage(content="research")])
+
+    assert model.extra_body == {"thinking": {"type": expected}}
+    assert payload["extra_body"] == {"thinking": {"type": expected}}
+
+
+@pytest.mark.parametrize("configured", ["typo", "TRUE", "Enabled"])
+def test_invalid_thinking_mode_fails_closed_before_transport(configured):
+    with pytest.raises(ValueError, match="deepseek_thinking_mode_invalid"):
+        _model(thinking=configured)
 
 
 def test_injects_reasoning_content_for_every_historical_tool_call(caplog):
@@ -130,6 +160,36 @@ def test_thinking_disabled_does_not_require_or_inject_reasoning():
     assistant = payload["messages"][1]
     assert assistant["tool_calls"]
     assert "reasoning_content" not in assistant
+
+
+def test_default_thinking_requires_reasoning_for_historical_tool_calls():
+    model = _model(thinking=None)
+    message = AIMessage(
+        content="",
+        tool_calls=[_tool_call("call-1", "query")],
+    )
+
+    with pytest.raises(DeepSeekReasoningProtocolError) as raised:
+        model._get_request_payload(
+            [HumanMessage(content="research"), message]
+        )
+
+    assert raised.value.code == "deepseek_reasoning_content_missing"
+
+
+def test_explicit_timeout_configures_sync_and_async_official_clients():
+    model = DeepSeekThinkingChatModel(
+        model="deepseek-v4-pro",
+        api_key="provider-test-key",
+        base_url="https://api.deepseek.com",
+        max_retries=0,
+        timeout=120.0,
+        extra_body={"thinking": {"type": "enabled"}},
+    )
+
+    assert model.request_timeout == 120.0
+    assert model.root_client.timeout == 120.0
+    assert model.root_async_client.timeout == 120.0
 
 
 def test_assistant_without_tool_calls_is_not_modified():

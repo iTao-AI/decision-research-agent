@@ -132,6 +132,7 @@ def test_default_models_use_official_deepseek_provider(monkeypatch):
         assert "model_provider" not in call
         assert call["api_key"] == "legacy-test-key"
         assert call["base_url"] == "https://api.deepseek.com"
+        assert call["timeout"] == 120.0
         assert call["reasoning_effort"] == "max"
         assert call["extra_body"] == {"thinking": {"type": "enabled"}}
     assert deepseek_calls[0]["tags"] == [
@@ -256,6 +257,7 @@ def test_primary_and_fallback_receive_the_same_provider_policy(monkeypatch):
             call["api_key"],
             call["base_url"],
             call["extra_body"]["thinking"]["type"],
+            call["timeout"],
         )
         for call in deepseek_calls
     } == {
@@ -263,8 +265,46 @@ def test_primary_and_fallback_receive_the_same_provider_policy(monkeypatch):
             "deepseek-test-key",
             "https://deepseek.example/v1",
             "enabled",
+            120.0,
         )
     }
+
+
+@pytest.mark.parametrize("configured", ["disabled", "off", "none", "false"])
+def test_thinking_disabled_aliases_are_normalized_for_request_and_observability(
+    monkeypatch,
+    configured,
+):
+    _, deepseek_calls, _ = _reload_llm(
+        monkeypatch,
+        {
+            "OPENAI_API_KEY": "test-key",
+            "LLM_THINKING_MODE": configured,
+        },
+    )
+
+    assert len(deepseek_calls) == 2
+    for call in deepseek_calls:
+        assert call["extra_body"] == {"thinking": {"type": "disabled"}}
+        assert call["metadata"]["thinking_mode"] == "disabled"
+
+
+@pytest.mark.parametrize("configured", ["typo", "TRUE", "Enabled"])
+def test_invalid_thinking_mode_fails_before_leaf_construction(
+    monkeypatch,
+    configured,
+):
+    llm, deepseek_calls, _ = _reload_llm(
+        monkeypatch,
+        {"OPENAI_API_KEY": "test-key"},
+    )
+    deepseek_calls.clear()
+    monkeypatch.setenv("LLM_THINKING_MODE", configured)
+
+    with pytest.raises(ValueError, match="deepseek_thinking_mode_invalid"):
+        llm._create_leaf_model("deepseek-v4-pro", "primary", [])
+
+    assert deepseek_calls == []
 
 
 def test_callbacks_are_attached_to_primary_and_fallback(monkeypatch):
@@ -311,7 +351,8 @@ def test_legacy_qwen_env_is_still_supported_when_llm_model_missing(monkeypatch):
 
     assert calls[0]["model"] == "deepseek-chat"
     assert "reasoning_effort" not in calls[0]
-    assert "extra_body" not in calls[0]
+    assert calls[0]["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert calls[0]["timeout"] == 120.0
     assert calls[1]["model"] == "deepseek-v4-flash"
     assert calls[1]["reasoning_effort"] == "max"
 
@@ -403,8 +444,11 @@ def test_forced_tool_choice_disables_thinking_on_independent_copy(monkeypatch, t
     }
 
 
-@pytest.mark.parametrize("tool_choice", [None, False, "none", "auto"])
-def test_non_forced_tool_choice_preserves_thinking_on_original_model(monkeypatch, tool_choice):
+@pytest.mark.parametrize("tool_choice", [None, False, "auto"])
+def test_automatic_tool_choice_is_omitted_and_preserves_thinking(
+    monkeypatch,
+    tool_choice,
+):
     llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     leaf = ToolBindingChatModel(
         model_name="deepseek-v4-pro",
@@ -418,8 +462,133 @@ def test_non_forced_tool_choice_preserves_thinking_on_original_model(monkeypatch
         model.bind_tools(["tool"], tool_choice=tool_choice)
 
     assert model.last_bound_model is leaf
-    assert leaf.bind_calls[-1]["tool_choice"] == tool_choice
+    assert leaf.bind_calls[-1]["tool_choice"] is None
     assert leaf.bind_calls[-1]["extra_body"] == {"thinking": {"type": "enabled"}}
+
+
+def test_none_tool_choice_uses_thinking_disabled_copy(monkeypatch):
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    leaf = ToolBindingChatModel(
+        model_name="deepseek-v4-pro",
+        extra_body={"thinking": {"type": "enabled"}},
+    )
+    model = llm.CapabilityAwareChatModel(wrapped=leaf, model_role="single")
+
+    model.bind_tools(["tool"], tool_choice="none")
+
+    assert model.last_bound_model is not leaf
+    assert model.last_bound_model.extra_body == {
+        "thinking": {"type": "disabled"}
+    }
+    assert model.last_bound_model.bind_calls[-1]["tool_choice"] == "none"
+    assert leaf.extra_body == {"thinking": {"type": "enabled"}}
+
+
+def _official_tool_schema() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": "submit_packet",
+            "description": "Submit a packet.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    }
+
+
+def _official_deepseek_leaf(model_name: str) -> DeepSeekThinkingChatModel:
+    return DeepSeekThinkingChatModel(
+        model=model_name,
+        api_key="provider-test-key",
+        base_url="https://api.deepseek.com",
+        max_retries=0,
+        timeout=120.0,
+        extra_body={"thinking": {"type": "enabled"}},
+    )
+
+
+@pytest.mark.parametrize("tool_choice", [None, False, "auto"])
+def test_official_automatic_tool_choice_is_absent_from_bound_payload(
+    monkeypatch,
+    tool_choice,
+):
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    leaf = _official_deepseek_leaf("deepseek-v4-pro")
+    model = llm.CapabilityAwareChatModel(wrapped=leaf, model_role="single")
+
+    if tool_choice is None:
+        bound = model.bind_tools([_official_tool_schema()])
+    else:
+        bound = model.bind_tools(
+            [_official_tool_schema()],
+            tool_choice=tool_choice,
+        )
+    payload = bound.bound._get_request_payload(
+        [HumanMessage(content="research")],
+        **bound.kwargs,
+    )
+
+    assert model.last_bound_model is leaf
+    assert "tool_choice" not in bound.kwargs
+    assert "tool_choice" not in payload
+    assert payload["extra_body"] == {"thinking": {"type": "enabled"}}
+
+
+def test_official_none_tool_choice_is_disabled_on_independent_copy(
+    monkeypatch,
+):
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    leaf = _official_deepseek_leaf("deepseek-v4-pro")
+    model = llm.CapabilityAwareChatModel(wrapped=leaf, model_role="single")
+
+    bound = model.bind_tools(
+        [_official_tool_schema()],
+        tool_choice="none",
+    )
+    payload = bound.bound._get_request_payload(
+        [HumanMessage(content="research")],
+        **bound.kwargs,
+    )
+
+    assert model.last_bound_model is not leaf
+    assert model.last_bound_model.request_timeout == 120.0
+    assert bound.kwargs["tool_choice"] == "none"
+    assert payload["tool_choice"] == "none"
+    assert payload["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert leaf.extra_body == {"thinking": {"type": "enabled"}}
+
+
+def test_fallback_automatic_tool_choice_is_omitted_for_both_provider_payloads(
+    monkeypatch,
+):
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    primary = llm.CapabilityAwareChatModel(
+        wrapped=_official_deepseek_leaf("deepseek-v4-pro"),
+        model_role="primary",
+    )
+    fallback = llm.CapabilityAwareChatModel(
+        wrapped=_official_deepseek_leaf("deepseek-v4-flash"),
+        model_role="fallback",
+    )
+    model = llm.FallbackChatModel(primary=primary, fallback=fallback)
+
+    bound = model.bind_tools(
+        [_official_tool_schema()],
+        tool_choice="auto",
+    )
+
+    for runnable in (bound.primary, bound.fallback):
+        payload = runnable.bound._get_request_payload(
+            [HumanMessage(content="research")],
+            **runnable.kwargs,
+        )
+        assert "tool_choice" not in runnable.kwargs
+        assert "tool_choice" not in payload
+        assert payload["extra_body"] == {
+            "thinking": {"type": "enabled"}
+        }
 
 
 def test_fallback_disabled_still_returns_capability_aware_model(monkeypatch):

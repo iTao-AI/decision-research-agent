@@ -37,9 +37,9 @@ LangGraph 1.2.6, Pydantic 2.13.4, pytest 9.0.3, Docker.
 - Non-DeepSeek model identifiers retain the current OpenAI-compatible path.
 - Preserve default model identifiers `deepseek-v4-pro` and
   `deepseek-v4-flash`.
-- Preserve automatic tool selection with thinking enabled and the existing
-  forced-tool-choice behavior that disables thinking on an independent model
-  copy.
+- Preserve automatic tool selection with thinking enabled by omitting the
+  provider `tool_choice` parameter, and preserve explicit `none` or forced
+  selection by disabling thinking on an independent model copy.
 - Preserve every historical assistant tool-call message's exact non-empty
   `reasoning_content`; missing, invalid, or unalignable protocol state fails
   before transport.
@@ -2340,15 +2340,18 @@ following:
   `reasoning_content` as provider protocol state for the next request.
 - Provider protocol state is not Evidence, application state, review,
   publication, or delivery authority.
-- Forced tool selection still uses the existing thinking-disabled model copy;
-  automatic tool selection keeps thinking enabled.
+- Explicit `none` and forced tool selection still use the existing
+  thinking-disabled model copy; automatic tool selection keeps thinking
+  enabled by omitting the provider `tool_choice` parameter.
 - Provider-free tests cover the protocol adapter and real DeepAgents
   composition. This does not prove a live provider result, research quality,
   cost, or production readiness.
 ```
 
-Retain the current 120-second timeout and the existing provider/model fallback
-non-claim unchanged.
+Bind the approved 120-second client request timeout explicitly on official
+primary and fallback leaf models, including sync/async clients and
+tool-binding copies. Retain the existing provider/model fallback non-claim;
+the timeout is not a provider SLA.
 
 Add:
 

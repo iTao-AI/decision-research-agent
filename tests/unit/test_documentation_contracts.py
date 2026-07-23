@@ -77,6 +77,10 @@ def test_deepseek_provider_protocol_documentation_matches_runtime():
     assert "LANGSMITH_HIDE_OUTPUTS=true" in reference
     assert "bounded-live" in reference
     assert "separate operator authorization" in reference
+    assert "`LLM_THINKING_MODE`" in reference
+    assert "`enabled` or `disabled`" in reference
+    assert "省略 `tool_choice`" in reference
+    assert "`timeout=120`" in reference
 
 
 V015_RELEASE_H2_ORDER = (

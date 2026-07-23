@@ -13,6 +13,11 @@ from langchain_core.outputs import ChatResult
 from langchain_core.runnables import Runnable
 
 from agent.deepseek_chat_model import DeepSeekThinkingChatModel
+from agent.provider_observability import (
+    PROVIDER_PROTOCOL,
+    emit_fallback_activated,
+    emit_provider_selected,
+)
 
 load_dotenv(find_dotenv())
 
@@ -184,25 +189,42 @@ class CapabilityAwareChatModel(BaseChatModel):
 
 
 class FallbackRunnable(Runnable):
-    """Runnable fallback wrapper that logs primary failures."""
+    """Runnable fallback wrapper with bounded failure observability."""
 
-    def __init__(self, primary: Runnable, fallback: Runnable, warning_message: str):
+    def __init__(
+        self,
+        primary: Runnable,
+        fallback: Runnable,
+        primary_provider_family: str,
+        fallback_provider_family: str,
+    ):
         self.primary = primary
         self.fallback = fallback
-        self.warning_message = warning_message
+        self.primary_provider_family = primary_provider_family
+        self.fallback_provider_family = fallback_provider_family
 
     def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
         try:
             return self.primary.invoke(input, config=config, **kwargs)
-        except Exception:
-            logger.warning(self.warning_message, exc_info=True)
+        except Exception as exc:
+            emit_fallback_activated(
+                primary_provider_family=self.primary_provider_family,
+                fallback_provider_family=self.fallback_provider_family,
+                error=exc,
+                binding="tools",
+            )
             return self.fallback.invoke(input, config=config, **kwargs)
 
     async def ainvoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
         try:
             return await self.primary.ainvoke(input, config=config, **kwargs)
-        except Exception:
-            logger.warning(self.warning_message, exc_info=True)
+        except Exception as exc:
+            emit_fallback_activated(
+                primary_provider_family=self.primary_provider_family,
+                fallback_provider_family=self.fallback_provider_family,
+                error=exc,
+                binding="tools",
+            )
             return await self.fallback.ainvoke(input, config=config, **kwargs)
 
 
@@ -232,8 +254,13 @@ class FallbackChatModel(BaseChatModel):
     ) -> ChatResult:
         try:
             return self.primary._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
-        except Exception:
-            logger.warning("Primary LLM failed; falling back to fallback model", exc_info=True)
+        except Exception as exc:
+            emit_fallback_activated(
+                primary_provider_family=_provider_family(self.primary),
+                fallback_provider_family=_provider_family(self.fallback),
+                error=exc,
+                binding="direct",
+            )
             return self.fallback._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
     async def _agenerate(
@@ -245,8 +272,13 @@ class FallbackChatModel(BaseChatModel):
     ) -> ChatResult:
         try:
             return await self.primary._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
-        except Exception:
-            logger.warning("Primary LLM failed; falling back to fallback model", exc_info=True)
+        except Exception as exc:
+            emit_fallback_activated(
+                primary_provider_family=_provider_family(self.primary),
+                fallback_provider_family=_provider_family(self.fallback),
+                error=exc,
+                binding="direct",
+            )
             return await self.fallback._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
     def bind_tools(
@@ -264,9 +296,8 @@ class FallbackChatModel(BaseChatModel):
         return FallbackRunnable(
             primary=primary,
             fallback=fallback,
-            warning_message=(
-                "Primary LLM failed after tool binding; falling back to fallback model"
-            ),
+            primary_provider_family=_provider_family(self.primary),
+            fallback_provider_family=_provider_family(self.fallback),
         )
 
 
@@ -299,6 +330,14 @@ def _is_deepseek_model(model_name: str) -> bool:
     return model_name.lower().startswith(_DEEPSEEK_PREFIX)
 
 
+def _provider_family(model: BaseChatModel) -> str:
+    return (
+        "deepseek"
+        if _is_deepseek_model(_model_name(model))
+        else "openai-compatible"
+    )
+
+
 def _reasoning_effort(model_name: str) -> str | None:
     configured = _env_value("LLM_REASONING_EFFORT")
     if configured is not None:
@@ -315,6 +354,36 @@ def _thinking_mode(model_name: str) -> str | None:
     if _is_deepseek_v4_model(model_name):
         return DEFAULT_THINKING_MODE
     return None
+
+
+def _configured_thinking_mode(model_name: str) -> str:
+    value = _thinking_mode(model_name)
+    return (
+        "enabled"
+        if value is not None
+        and value.lower() not in {"none", "off", "disabled", "false"}
+        else "disabled"
+    )
+
+
+def _deepseek_observability(
+    *,
+    model_role: str,
+    thinking_mode: str,
+) -> dict[str, object]:
+    return {
+        "tags": [
+            "provider:deepseek",
+            f"model-role:{model_role}",
+            f"protocol:{PROVIDER_PROTOCOL}",
+        ],
+        "metadata": {
+            "provider_family": "deepseek",
+            "model_role": model_role,
+            "provider_protocol": PROVIDER_PROTOCOL,
+            "thinking_mode": thinking_mode,
+        },
+    }
 
 
 def _model_kwargs(
@@ -372,6 +441,17 @@ def _create_leaf_model(
 ) -> BaseChatModel:
     kwargs = _model_kwargs(model_name, callbacks)
     if _is_deepseek_model(model_name):
+        thinking_mode = _configured_thinking_mode(model_name)
+        kwargs.update(
+            _deepseek_observability(
+                model_role=model_role,
+                thinking_mode=thinking_mode,
+            )
+        )
+        emit_provider_selected(
+            model_role=model_role,
+            thinking_mode=thinking_mode,
+        )
         return DeepSeekThinkingChatModel(
             **kwargs,
             model_role=model_role,
@@ -382,14 +462,36 @@ def _create_leaf_model(
 def create_llm_model(callbacks: list[BaseCallbackHandler] | None = None):
     """Create and return an LLM model with optional callbacks."""
     primary_model = _primary_model_name()
+    fallback_model = _fallback_model_name(primary_model)
+    primary_role = "primary" if fallback_model else "single"
+    primary_observability = (
+        _deepseek_observability(
+            model_role=primary_role,
+            thinking_mode=_configured_thinking_mode(primary_model),
+        )
+        if _is_deepseek_model(primary_model)
+        else {}
+    )
     model = CapabilityAwareChatModel(
-        wrapped=_create_leaf_model(primary_model, "primary", callbacks),
-        model_role="primary",
+        wrapped=_create_leaf_model(
+            primary_model,
+            primary_role,
+            callbacks,
+        ),
+        model_role=primary_role,
         callbacks=callbacks or [],
+        **primary_observability,
     )
 
-    fallback_model = _fallback_model_name(primary_model)
     if fallback_model and hasattr(model, "with_fallbacks"):
+        fallback_observability = (
+            _deepseek_observability(
+                model_role="fallback",
+                thinking_mode=_configured_thinking_mode(fallback_model),
+            )
+            if _is_deepseek_model(fallback_model)
+            else {}
+        )
         fallback = CapabilityAwareChatModel(
             wrapped=_create_leaf_model(
                 fallback_model,
@@ -398,10 +500,24 @@ def create_llm_model(callbacks: list[BaseCallbackHandler] | None = None):
             ),
             model_role="fallback",
             callbacks=callbacks or [],
+            **fallback_observability,
         )
-        return FallbackChatModel(primary=model, fallback=fallback, callbacks=callbacks or [])
+        fallback_wrapper_metadata = {
+            **dict(primary_observability.get("metadata", {})),
+            "fallback_configured": True,
+        }
+        fallback_wrapper_tags = [
+            *list(primary_observability.get("tags", [])),
+            "fallback:configured",
+        ]
+        return FallbackChatModel(
+            primary=model,
+            fallback=fallback,
+            callbacks=callbacks or [],
+            metadata=fallback_wrapper_metadata,
+            tags=fallback_wrapper_tags,
+        )
 
-    model.model_role = "single"
     return model
 
 

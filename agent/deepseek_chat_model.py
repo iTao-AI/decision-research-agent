@@ -6,6 +6,8 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage
 from langchain_deepseek import ChatDeepSeek
 
+from agent.provider_observability import emit_protocol_validation
+
 
 _ALIGNMENT_INVALID = "deepseek_reasoning_message_alignment_invalid"
 _REASONING_MISSING = "deepseek_reasoning_content_missing"
@@ -27,6 +29,10 @@ def _thinking_enabled(extra_body: object) -> bool:
         isinstance(thinking, dict)
         and str(thinking.get("type", "")).lower() == "enabled"
     )
+
+
+def _thinking_mode(extra_body: object) -> str:
+    return "enabled" if _thinking_enabled(extra_body) else "disabled"
 
 
 def _original_has_tool_calls(message: object) -> bool:
@@ -61,6 +67,12 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
         **kwargs: Any,
     ) -> dict:
         original_messages = self._convert_input(input_).to_messages()
+        historical_tool_call_messages = sum(
+            1
+            for message in original_messages
+            if _original_has_tool_calls(message)
+        )
+        validated_messages = 0
         payload = super()._get_request_payload(
             input_,
             stop=stop,
@@ -75,6 +87,14 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
             not isinstance(serialized_messages, list)
             or len(serialized_messages) != len(original_messages)
         ):
+            emit_protocol_validation(
+                model_role=self.model_role,
+                thinking_mode=_thinking_mode(self.extra_body),
+                outcome="rejected",
+                reason=_ALIGNMENT_INVALID,
+                historical_tool_call_messages=historical_tool_call_messages,
+                validated_messages=validated_messages,
+            )
             raise DeepSeekReasoningProtocolError(_ALIGNMENT_INVALID)
 
         for original, serialized in zip(
@@ -85,10 +105,30 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
             original_has_tools = _original_has_tool_calls(original)
             serialized_has_tools = _serialized_has_tool_calls(serialized)
             if original_has_tools != serialized_has_tools:
+                emit_protocol_validation(
+                    model_role=self.model_role,
+                    thinking_mode=_thinking_mode(self.extra_body),
+                    outcome="rejected",
+                    reason=_ALIGNMENT_INVALID,
+                    historical_tool_call_messages=(
+                        historical_tool_call_messages
+                    ),
+                    validated_messages=validated_messages,
+                )
                 raise DeepSeekReasoningProtocolError(_ALIGNMENT_INVALID)
             if not serialized_has_tools:
                 continue
             if not isinstance(original, AIMessage):
+                emit_protocol_validation(
+                    model_role=self.model_role,
+                    thinking_mode=_thinking_mode(self.extra_body),
+                    outcome="rejected",
+                    reason=_ALIGNMENT_INVALID,
+                    historical_tool_call_messages=(
+                        historical_tool_call_messages
+                    ),
+                    validated_messages=validated_messages,
+                )
                 raise DeepSeekReasoningProtocolError(_ALIGNMENT_INVALID)
 
             reasoning_content = original.additional_kwargs.get(
@@ -98,8 +138,28 @@ class DeepSeekThinkingChatModel(ChatDeepSeek):
                 not isinstance(reasoning_content, str)
                 or not reasoning_content.strip()
             ):
+                emit_protocol_validation(
+                    model_role=self.model_role,
+                    thinking_mode=_thinking_mode(self.extra_body),
+                    outcome="rejected",
+                    reason=_REASONING_MISSING,
+                    historical_tool_call_messages=(
+                        historical_tool_call_messages
+                    ),
+                    validated_messages=validated_messages,
+                )
                 raise DeepSeekReasoningProtocolError(_REASONING_MISSING)
 
             serialized["reasoning_content"] = reasoning_content
+            validated_messages += 1
+
+        if historical_tool_call_messages:
+            emit_protocol_validation(
+                model_role=self.model_role,
+                thinking_mode="enabled",
+                outcome="valid",
+                historical_tool_call_messages=historical_tool_call_messages,
+                validated_messages=validated_messages,
+            )
 
         return payload

@@ -11,6 +11,7 @@ from langchain_core.messages import (
 )
 from openai.types.chat import ChatCompletion
 
+from agent import provider_observability
 from agent.deepseek_chat_model import (
     DeepSeekReasoningProtocolError,
     DeepSeekThinkingChatModel,
@@ -36,7 +37,7 @@ def _model(*, thinking: str = "enabled") -> DeepSeekThinkingChatModel:
     )
 
 
-def test_injects_reasoning_content_for_every_historical_tool_call():
+def test_injects_reasoning_content_for_every_historical_tool_call(caplog):
     model = _model()
     messages = [
         HumanMessage(content="research"),
@@ -63,7 +64,8 @@ def test_injects_reasoning_content_for_every_historical_tool_call():
     ]
     original = deepcopy(messages)
 
-    payload = model._get_request_payload(messages)
+    with caplog.at_level("INFO"):
+        payload = model._get_request_payload(messages)
     assistants = [
         message
         for message in payload["messages"]
@@ -75,10 +77,18 @@ def test_injects_reasoning_content_for_every_historical_tool_call():
         "reasoning-two",
     ]
     assert messages == original
+    assert "event=deepseek_reasoning_protocol_validated" in caplog.text
+    assert "historical_tool_call_messages=2" in caplog.text
+    assert "validated_messages=2" in caplog.text
+    assert "reasoning-one" not in caplog.text
+    assert "first result" not in caplog.text
 
 
 @pytest.mark.parametrize("reasoning", [None, "", "   ", 7])
-def test_missing_or_invalid_reasoning_fails_before_transport(reasoning):
+def test_missing_or_invalid_reasoning_fails_before_transport(
+    reasoning,
+    caplog,
+):
     model = _model()
     additional_kwargs = (
         {} if reasoning is None else {"reasoning_content": reasoning}
@@ -89,11 +99,21 @@ def test_missing_or_invalid_reasoning_fails_before_transport(reasoning):
         additional_kwargs=additional_kwargs,
     )
 
-    with pytest.raises(DeepSeekReasoningProtocolError) as raised:
-        model._get_request_payload([HumanMessage(content="research"), message])
+    with (
+        caplog.at_level("WARNING"),
+        pytest.raises(DeepSeekReasoningProtocolError) as raised,
+    ):
+        model._get_request_payload(
+            [HumanMessage(content="sensitive-user-content"), message]
+        )
 
     assert raised.value.code == "deepseek_reasoning_content_missing"
     assert "query" not in str(raised.value)
+    assert "event=deepseek_reasoning_protocol_rejected" in caplog.text
+    assert "historical_tool_call_messages=1" in caplog.text
+    assert "validated_messages=0" in caplog.text
+    assert "sensitive-user-content" not in caplog.text
+    assert "query" not in caplog.text
 
 
 def test_thinking_disabled_does_not_require_or_inject_reasoning():
@@ -392,3 +412,34 @@ async def test_official_async_stream_preserves_reasoning_and_tool_calls():
         == "async-reasoning"
     )
     assert payload["messages"][1]["tool_calls"][0]["id"] == "call-1"
+
+
+def test_observability_failure_cannot_change_protocol_result(monkeypatch):
+    model = _model()
+    valid_message = AIMessage(
+        content="",
+        tool_calls=[_tool_call("call-1", "private-query")],
+        additional_kwargs={"reasoning_content": "private-reasoning"},
+    )
+
+    def fail_log(*args, **kwargs):
+        raise RuntimeError("logging unavailable")
+
+    monkeypatch.setattr(provider_observability.logger, "log", fail_log)
+
+    payload = model._get_request_payload(
+        [HumanMessage(content="private-user"), valid_message]
+    )
+
+    assert payload["messages"][1]["reasoning_content"] == "private-reasoning"
+
+    invalid_message = AIMessage(
+        content="",
+        tool_calls=[_tool_call("call-2", "private-query")],
+    )
+    with pytest.raises(DeepSeekReasoningProtocolError) as raised:
+        model._get_request_payload(
+            [HumanMessage(content="private-user"), invalid_message]
+        )
+
+    assert raised.value.code == "deepseek_reasoning_content_missing"

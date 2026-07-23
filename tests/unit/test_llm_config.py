@@ -34,7 +34,7 @@ class FakeChatModel(BaseChatModel):
 
 class FailingChatModel(FakeChatModel):
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        raise RuntimeError("primary failed")
+        raise RuntimeError("sensitive-provider-response")
 
 
 class ToolBindingChatModel(FakeChatModel):
@@ -53,7 +53,7 @@ class ToolBindingChatModel(FakeChatModel):
 
         def _run(_input):
             if self.fail_bound:
-                raise RuntimeError(f"{self.model_name} bound failed")
+                raise RuntimeError("sensitive-provider-response")
             return AIMessage(content=f"{self.model_name} bound")
 
         return RunnableLambda(_run)
@@ -134,10 +134,47 @@ def test_default_models_use_official_deepseek_provider(monkeypatch):
         assert call["base_url"] == "https://api.deepseek.com"
         assert call["reasoning_effort"] == "max"
         assert call["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert deepseek_calls[0]["tags"] == [
+        "provider:deepseek",
+        "model-role:primary",
+        "protocol:deepseek-reasoning-content-v1",
+    ]
+    assert deepseek_calls[0]["metadata"] == {
+        "provider_family": "deepseek",
+        "model_role": "primary",
+        "provider_protocol": "deepseek-reasoning-content-v1",
+        "thinking_mode": "enabled",
+    }
+    assert deepseek_calls[1]["tags"] == [
+        "provider:deepseek",
+        "model-role:fallback",
+        "protocol:deepseek-reasoning-content-v1",
+    ]
+    assert deepseek_calls[1]["metadata"]["model_role"] == "fallback"
 
     assert isinstance(llm.model, llm.FallbackChatModel)
     assert isinstance(llm.model.primary, llm.CapabilityAwareChatModel)
     assert isinstance(llm.model.fallback, llm.CapabilityAwareChatModel)
+    assert llm.model.tags == [
+        "provider:deepseek",
+        "model-role:primary",
+        "protocol:deepseek-reasoning-content-v1",
+        "fallback:configured",
+    ]
+    expected_metadata = {
+        "provider_family": "deepseek",
+        "model_role": "primary",
+        "provider_protocol": "deepseek-reasoning-content-v1",
+        "thinking_mode": "enabled",
+        "fallback_configured": True,
+    }
+    assert {
+        key: llm.model.metadata[key] for key in expected_metadata
+    } == expected_metadata
+    assert set(llm.model.metadata) <= {
+        *expected_metadata,
+        "lc_versions",
+    }
 
 
 def test_deepseek_specific_configuration_wins(monkeypatch):
@@ -302,7 +339,11 @@ def test_fallback_chat_model_logs_primary_failure(monkeypatch, caplog):
         response = model.invoke("hello")
 
     assert response.content == "fallback"
-    assert "Primary LLM failed; falling back to fallback model" in caplog.text
+    assert "event=model_fallback_activated" in caplog.text
+    assert "binding=direct" in caplog.text
+    assert "error_type=RuntimeError" in caplog.text
+    assert "sensitive-provider-response" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 def test_bind_tools_preserves_logged_fallback_path(monkeypatch, caplog):
@@ -318,7 +359,11 @@ def test_bind_tools_preserves_logged_fallback_path(monkeypatch, caplog):
         response = bound.invoke("hello")
 
     assert response.content == "fallback bound"
-    assert "Primary LLM failed after tool binding; falling back to fallback model" in caplog.text
+    assert "event=model_fallback_activated" in caplog.text
+    assert "binding=tools" in caplog.text
+    assert "error_type=RuntimeError" in caplog.text
+    assert "sensitive-provider-response" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 @pytest.mark.parametrize(

@@ -830,8 +830,17 @@ def test_new_request_uses_contract_hash_and_128_bit_thread_and_key_entropy(
     request = json.loads(request_bytes)
     assert thread_id == "proof-thread-" + "a" * 32
     assert key == "proof-key-" + "b" * 32
+    effective_query = (
+        manifest.query
+        + "\n\nEvaluation source requirement: For each exact domain in the ordered "
+        'list ["docs.python.org","peps.python.org"], retrieve and use at least one '
+        "public HTTPS source actually returned by `internet_search` that passes "
+        "the current source-admission contract, and cite at least one accepted "
+        "source from every listed domain in the final canonical report. All "
+        "listed domains are required; one domain cannot substitute for another."
+    )
     assert request == {
-        "query": manifest.query,
+        "query": effective_query,
         "thread_id": thread_id,
         "profile_id": "generic",
         "scope": {},
@@ -839,12 +848,51 @@ def test_new_request_uses_contract_hash_and_128_bit_thread_and_key_entropy(
     from api.run_creation_models import run_create_request_hash
 
     assert request_hash == run_create_request_hash(
-        query=manifest.query,
+        query=effective_query,
         thread_id=thread_id,
         profile_id="generic",
         scope={},
     )
     assert request_hash != hashlib.sha256(request_bytes).hexdigest()
+
+
+def test_effective_query_is_manifest_bound_ordered_deterministic_and_bounded() -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    manifest = module.load_manifest(MANIFEST_PATH)
+
+    first = module._effective_query(manifest)
+    second = module._effective_query(manifest)
+
+    assert first == second
+    assert first.startswith(manifest.query + "\n\nEvaluation source requirement:")
+    assert first.count(manifest.query) == 1
+    assert first.index("docs.python.org") < first.index("peps.python.org")
+    assert "For each exact domain" in first
+    assert "source from every listed domain" in first
+    assert "one domain cannot substitute for another" in first
+    assert len(first.encode("utf-8")) <= manifest.bounds.query_utf8_bytes_max
+
+
+def test_new_request_hashes_the_exact_effective_query_in_the_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    manifest = module.load_manifest(MANIFEST_PATH)
+    captured: dict[str, Any] = {}
+
+    def capture_request_hash(**values: Any) -> str:
+        captured.update(values)
+        return "f" * 64
+
+    monkeypatch.setattr(module, "run_create_request_hash", capture_request_hash)
+    monkeypatch.setattr(module.secrets, "token_hex", lambda _size: "a" * 32)
+
+    request_bytes, request_hash, _thread_id, _key = module._new_request(manifest)
+    payload = json.loads(request_bytes)
+
+    assert request_hash == "f" * 64
+    assert captured["query"] == payload["query"]
+    assert captured["query"] == module._effective_query(manifest)
 
 
 def test_reconcile_create_accepts_first_ack_and_preserves_object_identity() -> None:
@@ -2012,6 +2060,40 @@ def test_project_live_observation_rejects_evidence_mutations(mutator, expected_c
     with pytest.raises(EvaluationError) as caught:
         _snapshot(status=status)
     assert caught.value.code.value == expected_code
+
+
+@pytest.mark.parametrize(
+    ("uncited_index", "expected_code"),
+    (
+        (0, "required_cited_domain_missing"),
+        (1, "required_cited_domain_missing"),
+        (None, None),
+    ),
+    ids=("only-peps-cited", "only-docs-cited", "both-domains-cited"),
+)
+def test_required_cited_domains_are_all_of(
+    uncited_index: int | None,
+    expected_code: str | None,
+) -> None:
+    status = _status()
+    if uncited_index is not None:
+        status["evidence"][uncited_index] = {
+            **status["evidence"][uncited_index],
+            "citation_status": "uncited",
+        }
+
+    if expected_code is None:
+        projected = _snapshot(status=status)
+        assert [row.citation_status for row in projected.evidence] == [
+            "cited",
+            "cited",
+        ]
+        return
+
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot(status=status)
+    assert caught.value.code.value == expected_code
+    assert caught.value.phase.value == "evidence"
 
 
 @pytest.mark.parametrize(

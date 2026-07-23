@@ -753,6 +753,15 @@ Use fake lifecycle and real `ProofHttpClient` method doubles. Cover first accept
 acknowledgement replay, second ambiguity, complete HTTP error, conflict/unavailable ledger,
 malformed/identity-mismatched acknowledgement, and exact key/request object identity across calls.
 
+The manifest base `query` bytes remain unchanged. Compile one bounded effective query by appending
+a public-neutral instruction from the ordered `required_cited_domains`. The instruction requires at
+least one accepted cited public HTTPS source actually returned by `internet_search` from each exact
+required domain in the final canonical report. This is an all-of requirement, not one-of. Use that
+same effective query in both the create payload and `run_create_request_hash`, so
+`request_sha256` binds the effective query actually sent. Mutation-test a missing domain, one-of
+wording, domain-order drift, and payload/hash query drift. This evaluation-owned request visibility
+does not add a runtime source allowlist, force search routing, or change generic Agent authority.
+
 Poll with one research deadline. Cover every supported/rejected execution/review/delivery/failure
 tuple. Accept only `completed/not_required/ready`, null failure cause and generic profile. Deadline
 expiry stops client observation without calling cancellation.

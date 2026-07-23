@@ -61,6 +61,10 @@ All notable changes to this project are documented in this file.
   model, monitor, and Evidence observation. Only
   `network_search`/`internet_search` tool results own generic source Evidence;
   consumer and receipt validation remain independent fail-closed boundaries.
+- Derived the bounded live create query from the ordered required cited
+  domains while preserving the immutable manifest. The create payload and
+  request hash bind the same effective query, and acceptance still requires
+  cited admitted sources from every required domain.
 - No live provider observation or JSON/Markdown evidence report is committed;
   `VERSION` and the v0.1.5 release record remain unchanged.
 

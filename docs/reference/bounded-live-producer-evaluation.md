@@ -85,6 +85,17 @@ public report.
 The command accepts no query, scope, arbitrary output filename, general output
 root, project name, API key, retry, fixture, or Compose override option.
 
+The manifest base `query` bytes remain unchanged. For the live create request,
+the evaluation harness deterministically derives one bounded effective query by
+appending a public-neutral instruction from the ordered
+`required_cited_domains`. The instruction requires at least one accepted cited
+public HTTPS source actually returned by `internet_search` from each exact
+required domain in the final canonical report. This is an all-of requirement,
+not one-of. The create payload and `run_create_request_hash` consume the same
+effective query, so `request_sha256` binds the effective query actually sent.
+This evaluation-owned request visibility does not add a runtime source
+allowlist, force search routing, or change generic Agent authority.
+
 ## Opt-In Diagnostic Receipts
 
 The live command accepts one optional operator-only argument,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -177,6 +178,9 @@ def test_manifest_is_canonical_and_exact() -> None:
     raw = MANIFEST_PATH.read_bytes()
     manifest = load_manifest(MANIFEST_PATH)
 
+    assert hashlib.sha256(raw).hexdigest() == (
+        "3d4f9aeaea30607eb8b1107862f346be42ff73b77830ab087d8c4e70dcb5cfe7"
+    )
     assert isinstance(manifest, ManifestModel)
     assert manifest.schema_version == "dra.bounded-live-producer-manifest.v1"
     assert manifest.profile_id == "generic"
@@ -203,6 +207,12 @@ def test_manifest_is_frozen_and_strict() -> None:
     [
         ("query", ""),
         ("query", "line one\r\nline two"),
+        ("required_cited_domains", ["docs.python.org"]),
+        ("required_cited_domains", ["peps.python.org"]),
+        (
+            "required_cited_domains",
+            ["peps.python.org", "docs.python.org"],
+        ),
         ("required_cited_domains", ["Docs.Python.org"]),
         ("required_cited_domains", ["docs.python.org", "docs.python.org"]),
         ("required_cited_domains", ["127.0.0.1"]),

@@ -268,6 +268,17 @@ artifact content, private paths, credentials, logs, raw errors, and traces.
 Recorded or cited Evidence is candidate research Evidence, not independently
 verified truth and not authorization for a downstream business decision.
 
+Search-result admission is a strict producer subset of the downstream
+compatibility surface. The producer admits only bounded canonical ASCII HTTPS
+URLs with public DNS hostnames, no credentials, query, fragment, IP literal,
+unsafe local suffix, or non-443 port. It filters provider rows before model and
+monitor observation, and the Evidence extractor enforces the same predicate.
+The downstream validator remains independent; executable tests require every
+producer-admitted URL to pass both downstream projection and the bounded-live
+Evidence receipt. Rejected rows are dropped without rewriting their URL. An
+all-rejected search result does not add a new error and can still lead to the
+existing `evidence_missing` outcome.
+
 Usage is either `observed` or `not_observed`, and token totals may be observed.
 In Change 1, `cost_estimate` remains `not_observed` because the aggregate usage
 endpoint cannot bind tokens and cost to the exact per-call model and rate. A

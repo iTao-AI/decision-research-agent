@@ -9,19 +9,45 @@ def test_internet_search_returns_results(monkeypatch):
     from tools import tavily_tools
 
     monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    provider_payload = {
+        "answer": "Rejected source: http://localhost/private",
+        "images": ["http://localhost/private.png"],
+        "provider_debug": {"raw_url": "http://127.0.0.1/private"},
+        "future_field": {"raw_results": ["http://example.com/source"]},
+        "results": [
+            {
+                "title": "Test",
+                "url": "https://example.com/source",
+                "content": "accepted",
+                "score": 0.9,
+            },
+            {
+                "title": "Rejected",
+                "url": "http://example.com/source",
+                "content": "must not escape",
+            },
+        ],
+    }
     monkeypatch.setattr(
         tavily_tools,
         "_tavily_search",
-        AsyncMock(
-            return_value=[
-                {"title": "Test", "url": "https://example.com/source"}
-            ]
-        ),
+        AsyncMock(return_value=provider_payload),
+    )
+    report_end = MagicMock()
+    monkeypatch.setattr(tavily_tools.monitor, "report_end", report_end)
+    monkeypatch.setattr(tavily_tools.monitor, "report_tool", MagicMock())
+
+    result = tavily_tools.internet_search.invoke(
+        {"query": "source admission mixed boundary"}
     )
 
-    assert tavily_tools.internet_search.invoke({"query": "test"}) == [
-        {"title": "Test", "url": "https://example.com/source"}
-    ]
+    expected = {
+        "results": [provider_payload["results"][0]],
+    }
+    assert result == expected
+    assert result["results"][0] is not provider_payload["results"][0]
+    report_end.assert_called_once_with("网络搜索工具", expected)
+    assert "Rejected" not in repr(report_end.call_args)
 
 
 def test_search_timeout_and_domain_scope_passed_to_sdk(monkeypatch):
@@ -74,7 +100,14 @@ async def test_search_with_resilience_retries_transient_failures(monkeypatch):
         calls += 1
         if calls < 3:
             raise ConnectionError("transient")
-        return {"results": [{"title": "Found"}]}
+        return {
+            "results": [
+                {
+                    "title": "Found",
+                    "url": "https://example.com/found",
+                }
+            ]
+        }
 
     monkeypatch.setattr(tavily_tools, "_tavily_search", flaky)
 
@@ -86,4 +119,41 @@ async def test_search_with_resilience_retries_transient_failures(monkeypatch):
     )
 
     assert calls == 3
-    assert result == {"results": [{"title": "Found"}]}
+    assert result == {
+        "results": [
+            {
+                "title": "Found",
+                "url": "https://example.com/found",
+            }
+        ]
+    }
+
+
+@pytest.mark.asyncio
+async def test_search_boundary_returns_empty_results_when_all_provider_rows_invalid(
+    monkeypatch,
+):
+    from tools import tavily_tools
+
+    provider_payload = {
+        "answer": "Rejected source: http://localhost/private",
+        "images": ["http://localhost/private.png"],
+        "provider_debug": {"raw_url": "http://127.0.0.1/private"},
+        "future_field": {"raw_results": ["http://example.com/source"]},
+        "results": [
+            {"url": "http://example.com/source", "content": "http"},
+            {"url": "https://localhost/source", "content": "local"},
+        ],
+    }
+    search = AsyncMock(return_value=provider_payload)
+    monkeypatch.setattr(tavily_tools, "_tavily_search", search)
+
+    result = await tavily_tools._cached_search_with_resilience(
+        "source admission all invalid",
+        5,
+        "general",
+        False,
+    )
+
+    assert result == {"results": []}
+    search.assert_awaited_once()

@@ -6,6 +6,7 @@ from typing import Literal
 
 from langchain_core.tools import tool
 
+from agent.source_url_policy import filter_publishable_search_response
 from api.context import get_run_context, get_thread_context
 from api.monitor import monitor
 from tools.retry_utils import TIMEOUTS, retry_async
@@ -61,7 +62,7 @@ async def _cached_search_with_resilience(
     timeout = TIMEOUTS["tavily"]
     # Total timeout accounts for: 3 per-call timeouts + 2 backoff waits (2s + 4s = 6s)
     total_timeout = timeout * 3 + 15  # generous budget including backoff
-    return await asyncio.wait_for(
+    response = await asyncio.wait_for(
         retry_async(
             _tavily_search,
             query,
@@ -75,6 +76,7 @@ async def _cached_search_with_resilience(
         ),
         timeout=total_timeout,
     )
+    return filter_publishable_search_response(response)
 
 
 @tool

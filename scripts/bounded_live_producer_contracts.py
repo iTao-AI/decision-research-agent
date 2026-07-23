@@ -22,6 +22,7 @@ from pydantic import (
 )
 from pydantic_core import PydanticCustomError
 
+from agent.source_url_policy import is_publishable_source_url
 from api.run_failure_cause_models import (
     RUN_FAILURE_CAUSE_CODES,
     RUN_FAILURE_CAUSE_SCHEMA_VERSION,
@@ -903,41 +904,7 @@ class EvidenceReceipt(StrictModel):
     @field_validator("source_url")
     @classmethod
     def validate_source_url_policy(cls, value: str) -> str:
-        try:
-            parsed = urlsplit(value)
-            hostname = parsed.hostname
-            port = parsed.port
-        except (ValueError, UnicodeError):
-            raise PydanticCustomError(
-                "dra_evidence_source_url_policy_invalid",
-                "evidence_invalid",
-            ) from None
-        if (
-            parsed.scheme != "https"
-            or not hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.query
-            or parsed.fragment
-            or port not in {None, 443}
-        ):
-            raise PydanticCustomError(
-                "dra_evidence_source_url_policy_invalid",
-                "evidence_invalid",
-            )
-        lowered = hostname.lower().rstrip(".")
-        if lowered != hostname or lowered.endswith(
-            (".local", ".internal", ".localhost")
-        ):
-            raise PydanticCustomError(
-                "dra_evidence_source_url_policy_invalid",
-                "evidence_invalid",
-            )
-        try:
-            address = ipaddress.ip_address(lowered)
-        except ValueError:
-            address = None
-        if address is not None or not _DOMAIN_RE.fullmatch(lowered):
+        if not is_publishable_source_url(value):
             raise PydanticCustomError(
                 "dra_evidence_source_url_policy_invalid",
                 "evidence_invalid",

@@ -57,6 +57,10 @@ All notable changes to this project are documented in this file.
 - Added an opt-in, post-cleanup Evidence diagnostic receipt with closed
   structural stage/reason values; public errors, Evidence authority, raw
   content, and retry behavior remain unchanged.
+- Filtered search results to canonical publishable public HTTPS URLs before
+  model, monitor, and Evidence observation. Only
+  `network_search`/`internet_search` tool results own generic source Evidence;
+  consumer and receipt validation remain independent fail-closed boundaries.
 - No live provider observation or JSON/Markdown evidence report is committed;
   `VERSION` and the v0.1.5 release record remain unchanged.
 

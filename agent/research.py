@@ -14,6 +14,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from agent.source_url_policy import is_publishable_source_url
+
 
 _URL_RE = re.compile(r"https?://[^\s)>\]\"']+")
 _MAX_SNIPPET_LENGTH = 1000
@@ -91,7 +93,7 @@ def _loads_json_like(content: Any) -> Any:
 def _url_from_mapping(item: dict[str, Any]) -> str | None:
     for key in ("url", "source_url", "link", "href"):
         value = item.get(key)
-        if isinstance(value, str) and value.startswith(("http://", "https://")):
+        if is_publishable_source_url(value):
             return value
     return None
 
@@ -183,7 +185,7 @@ def extract_evidence_entries(
                 query_text=query_text,
                 subagent_name=subagent_name,
                 tool_name=tool_name,
-                source_url=_normalize_url(source_url),
+                source_url=source_url,
                 snippet=_snippet_from_mapping(item),
                 retrieved_at=retrieved_at,
             )
@@ -198,13 +200,15 @@ def extract_evidence_entries(
     urls = _URL_RE.findall(text)
     if urls:
         for url in urls[:_MAX_EVIDENCE_PER_TOOL_MESSAGE]:
+            if not is_publishable_source_url(url):
+                continue
             entries.append(
                 EvidenceEntry(
                     thread_id=thread_id,
                     query_text=query_text,
                     subagent_name=subagent_name,
                     tool_name=tool_name,
-                    source_url=_normalize_url(url),
+                    source_url=url,
                     snippet=text,
                     retrieved_at=retrieved_at,
                 )

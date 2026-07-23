@@ -755,6 +755,59 @@ def test_nested_evidence_capture_documentation_preserves_authority_boundary() ->
     assert "nested subgraph source-tool results" in _collapsed(changelog)
 
 
+def test_evidence_source_admission_closure_is_documented() -> None:
+    design_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-24-evidence-source-admission-closure-design.md"
+    )
+    plan_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/plans/2026-07-24-evidence-source-admission-closure-implementation.md"
+    )
+    state_machines = _collapsed(
+        (
+            PROJECT_ROOT / "docs/reference/state-machines.md"
+        ).read_text(encoding="utf-8")
+    )
+    bounded_live = _collapsed(
+        (
+            PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert design_path.exists()
+    assert plan_path.exists()
+    design = design_path.read_text(encoding="utf-8")
+    plan = plan_path.read_text(encoding="utf-8")
+    assert len(design.splitlines()) <= 250
+    assert len(plan.splitlines()) <= 350
+    collapsed_design = _collapsed(design)
+    for phrase in (
+        "producer-admitted URL implies downstream and Evidence receipt acceptance",
+        "drop the complete result row without rewriting its URL",
+        "`network_search` / `internet_search`",
+        "provided_aggregate",
+        "No new public error or diagnostic receipt",
+    ):
+        assert phrase in collapsed_design
+    for phrase in (
+        "RED",
+        "GREEN",
+        "provider-free",
+        "required Docker authority",
+        "No `observe-live`",
+    ):
+        assert phrase in plan
+    assert (
+        "Only the exact `network_search` / `internet_search` pair creates "
+        "generic source Evidence"
+    ) in state_machines
+    assert (
+        "Search-result admission is a strict producer subset of the "
+        "downstream compatibility surface"
+    ) in bounded_live
+
+
 def test_demo_console_docs_state_deterministic_video_boundary() -> None:
     guide = (PROJECT_ROOT / "docs" / "demo-console.md").read_text(encoding="utf-8")
 

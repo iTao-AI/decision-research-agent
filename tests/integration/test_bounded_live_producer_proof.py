@@ -1770,6 +1770,174 @@ def test_runtime_shaped_evidence_reaches_accepted_snapshot() -> None:
     assert {row.citation_status for row in snapshot.evidence} == {"cited"}
 
 
+def test_runtime_shaped_mixed_search_admission_reaches_accepted_snapshot(
+    tmp_path,
+) -> None:
+    from langchain_core.messages import ToolMessage
+
+    from agent.research import mark_cited_evidence
+    from agent.run_result import AgentRunAccumulator, process_stream_chunk
+    from agent.source_url_policy import filter_publishable_search_response
+
+    class NoopMonitor:
+        pass
+
+    sanitized = filter_publishable_search_response(
+        {
+            "results": [
+                {
+                    "url": "https://docs.python.org/3/howto/free-threading-python.html",
+                    "content": "Python documentation.",
+                },
+                {
+                    "url": "http://example.com/rejected",
+                    "content": "HTTP is outside the producer policy.",
+                },
+                {
+                    "url": "https://peps.python.org/pep-0703/",
+                    "content": "PEP 703.",
+                },
+                {
+                    "url": "https://example.com/rejected?query=1",
+                    "content": "Query URLs are outside the producer policy.",
+                },
+            ]
+        }
+    )
+    accumulator = AgentRunAccumulator(
+        thread_id="thread-proof-mixed",
+        query="query",
+        session_dir=tmp_path,
+    )
+    process_stream_chunk(
+        {
+            "network_search": {
+                "messages": [
+                    ToolMessage(
+                        content=sanitized,
+                        tool_call_id="call-search",
+                        name="internet_search",
+                    )
+                ]
+            }
+        },
+        accumulator,
+        NoopMonitor(),
+    )
+    process_stream_chunk(
+        {
+            "tools": {
+                "messages": [
+                    ToolMessage(
+                        content={
+                            "results": [
+                                {
+                                    "url": "https://example.com/task-summary",
+                                    "content": "Outer task summaries have no source authority.",
+                                }
+                            ]
+                        },
+                        tool_call_id="call-task",
+                        name="task",
+                    )
+                ]
+            }
+        },
+        accumulator,
+        NoopMonitor(),
+    )
+    report_content = (
+        "# Runtime-shaped report\n\n"
+        "https://docs.python.org/3/howto/free-threading-python.html\n"
+        "https://peps.python.org/pep-0703/\n"
+    )
+    cited_rows = mark_cited_evidence(
+        accumulator.evidence_entries,
+        report_content,
+    )
+    status = _status()
+    status["evidence"] = [
+        {
+            **entry.to_dict(),
+            "evidence_id": f"ev-runtime-mixed-{index}",
+            "run_id": "run-proof-1",
+            "segment_id": "segment-proof-1",
+        }
+        for index, entry in enumerate(cited_rows, start=1)
+    ]
+    result = _result()
+    result["artifact"]["content"] = report_content
+    result["artifact"]["content_hash"] = hashlib.sha256(
+        report_content.encode("utf-8")
+    ).hexdigest()
+
+    snapshot = _snapshot(status=status, result=result)
+
+    assert [row.source_url for row in snapshot.evidence] == [
+        "https://docs.python.org/3/howto/free-threading-python.html",
+        "https://peps.python.org/pep-0703/",
+    ]
+    assert {row.citation_status for row in snapshot.evidence} == {"cited"}
+
+
+def test_all_invalid_search_rows_retain_existing_evidence_missing_code(
+    tmp_path,
+) -> None:
+    from langchain_core.messages import ToolMessage
+
+    from agent.run_result import AgentRunAccumulator, process_stream_chunk
+    from agent.source_url_policy import filter_publishable_search_response
+
+    class NoopMonitor:
+        pass
+
+    accumulator = AgentRunAccumulator(
+        thread_id="thread-proof-all-invalid",
+        query="query",
+        session_dir=tmp_path,
+    )
+    process_stream_chunk(
+        {
+            "network_search": {
+                "messages": [
+                    ToolMessage(
+                        content=filter_publishable_search_response(
+                            {
+                                "results": [
+                                    {"url": "http://example.com/source"},
+                                    {"url": "https://localhost/source"},
+                                ]
+                            }
+                        ),
+                        tool_call_id="call-search",
+                        name="internet_search",
+                    )
+                ]
+            }
+        },
+        accumulator,
+        NoopMonitor(),
+    )
+    status = _status()
+    status["evidence"] = [
+        {
+            **entry.to_dict(),
+            "evidence_id": f"ev-invalid-{index}",
+            "run_id": "run-proof-1",
+            "segment_id": "segment-proof-1",
+        }
+        for index, entry in enumerate(accumulator.evidence_entries, start=1)
+    ]
+
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot(status=status)
+
+    assert accumulator.evidence_entries == []
+    assert caught.value.code.value == "evidence_missing"
+    assert caught.value.phase.value == "evidence"
+    assert caught.value.diagnostic is None
+
+
 @pytest.mark.parametrize(
     "case",
     [

@@ -1,5 +1,6 @@
 """Tests for agent run result accumulation."""
 from langchain_core.messages import AIMessage, ToolMessage
+import pytest
 
 
 class CapturingMonitor:
@@ -104,7 +105,9 @@ class TestAgentRunAccumulator:
         assert accumulator.tool_starts == 1
         assert accumulator.diagnostics == ["tool:tavily_search"]
 
-    def test_collects_evidence_entries_from_tool_messages(self, tmp_path):
+    def test_collects_evidence_only_from_network_search_internet_search(
+        self, tmp_path
+    ):
         from agent.run_result import AgentRunAccumulator, process_stream_chunk
 
         monitor = CapturingMonitor()
@@ -124,7 +127,7 @@ class TestAgentRunAccumulator:
                                 '"content": "Agent benchmark findings"}]'
                             ),
                             tool_call_id="call-1",
-                            name="tavily_search",
+                            name="internet_search",
                         )
                     ]
                 }
@@ -138,11 +141,66 @@ class TestAgentRunAccumulator:
         assert evidence.thread_id == "thread-evidence"
         assert evidence.query_text == "研究 AI 搜索趋势"
         assert evidence.subagent_name == "network_search"
-        assert evidence.tool_name == "tavily_search"
+        assert evidence.tool_name == "internet_search"
         assert evidence.source_url == "https://example.com/report"
         assert evidence.snippet == "Agent benchmark findings"
         assert evidence.citation_status == "uncited"
         assert evidence.verification_status == "unverified"
+
+    @pytest.mark.parametrize(
+        ("node_name", "tool_name", "source_url"),
+        [
+            ("tools", "task", "https://example.com/task-summary"),
+            ("tools", "task", "http://example.com/task-summary"),
+            ("tools", "write_file", "https://example.com/file"),
+            ("database_query", "database_query", "https://example.com/database"),
+            (
+                "knowledge_base",
+                "knowledge_base_search",
+                "https://example.com/knowledge",
+            ),
+            ("arbitrary_agent", "internet_search", "https://example.com/arbitrary"),
+            ("network_search", "write_file", "https://example.com/network-file"),
+        ],
+    )
+    def test_non_source_tool_messages_never_create_evidence(
+        self,
+        tmp_path,
+        node_name,
+        tool_name,
+        source_url,
+    ):
+        from agent.run_result import AgentRunAccumulator, process_stream_chunk
+
+        accumulator = AgentRunAccumulator(
+            thread_id="thread-no-authority",
+            query="研究问题",
+            session_dir=tmp_path,
+        )
+        process_stream_chunk(
+            {
+                node_name: {
+                    "messages": [
+                        ToolMessage(
+                            content={
+                                "results": [
+                                    {
+                                        "url": source_url,
+                                        "content": "not source-authoritative",
+                                    }
+                                ]
+                            },
+                            tool_call_id="call-no-authority",
+                            name=tool_name,
+                        )
+                    ]
+                }
+            },
+            accumulator,
+            CapturingMonitor(),
+        )
+
+        assert accumulator.evidence_entries == []
 
     def test_talent_task_message_collects_schema_valid_research_packet(self, tmp_path):
         import json

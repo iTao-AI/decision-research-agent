@@ -16,6 +16,10 @@ from scripts.bounded_live_producer_contracts import (
     MAX_DIAGNOSTIC_BYTES,
     CleanupStatus,
     CallBudgetDiagnosticReceipt,
+    EvidenceBoundaryDiagnostic,
+    EvidenceDiagnosticReason,
+    EvidenceDiagnosticReceipt,
+    EvidenceDiagnosticStage,
     ErrorEnvelope,
     EvaluationError,
     EvaluationValidationError,
@@ -34,6 +38,7 @@ from scripts.bounded_live_producer_contracts import (
     render_markdown,
     serialize_error,
     serialize_call_budget_diagnostic,
+    serialize_evidence_diagnostic,
     serialize_manifest,
     serialize_report,
     serialize_result_diagnostic,
@@ -376,6 +381,304 @@ VALID_DIAGNOSTIC_PAIRS = {
     "consumer_contract": {"contract_result_invalid", "contract_schema_invalid"},
     "projection_disposition": {"projection_disposition_invalid"},
 }
+
+EVIDENCE_DIAGNOSTIC_PAIRS = (
+    ("status_projection", "row_count_exceeded"),
+    ("status_projection", "row_shape_invalid"),
+    ("status_projection", "ownership_invalid"),
+    ("consumer_contract", "required_fields_invalid"),
+    ("consumer_contract", "evidence_id_invalid"),
+    ("consumer_contract", "evidence_id_duplicate"),
+    ("consumer_contract", "source_identity_invalid"),
+    ("consumer_contract", "source_url_invalid"),
+    ("consumer_contract", "retrieved_at_invalid"),
+    ("consumer_contract", "citation_status_invalid"),
+    ("consumer_contract", "verification_status_invalid"),
+    ("receipt_contract", "source_url_required"),
+    ("receipt_contract", "source_url_policy_invalid"),
+    ("receipt_contract", "source_identity_too_long"),
+    ("receipt_contract", "retrieved_at_too_long"),
+)
+
+_EVIDENCE_DIAGNOSTIC_REASON_STAGE = {
+    reason: stage for stage, reason in EVIDENCE_DIAGNOSTIC_PAIRS
+}
+
+
+def _evidence_diagnostic() -> EvidenceBoundaryDiagnostic:
+    return EvidenceBoundaryDiagnostic(
+        stage=EvidenceDiagnosticStage.RECEIPT_CONTRACT,
+        reason=EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID,
+    )
+
+
+@pytest.mark.parametrize(("stage", "reason"), EVIDENCE_DIAGNOSTIC_PAIRS)
+def test_evidence_diagnostic_accepts_only_registered_pairs(
+    stage: str, reason: str
+) -> None:
+    diagnostic = EvidenceBoundaryDiagnostic(
+        stage=EvidenceDiagnosticStage(stage),
+        reason=EvidenceDiagnosticReason(reason),
+    )
+
+    assert diagnostic.model_dump(mode="json") == {"stage": stage, "reason": reason}
+
+
+@pytest.mark.parametrize(
+    ("stage", "reason"),
+    [
+        (stage, reason)
+        for stage in ("status_projection", "consumer_contract", "receipt_contract")
+        for reason in _EVIDENCE_DIAGNOSTIC_REASON_STAGE
+        if _EVIDENCE_DIAGNOSTIC_REASON_STAGE[reason] != stage
+    ],
+)
+def test_evidence_diagnostic_rejects_every_cross_stage_pair(
+    stage: str, reason: str
+) -> None:
+    with pytest.raises(ValidationError, match="evidence_diagnostic_pair_invalid"):
+        EvidenceBoundaryDiagnostic(
+            stage=EvidenceDiagnosticStage(stage),
+            reason=EvidenceDiagnosticReason(reason),
+        )
+
+
+def test_evidence_diagnostic_receipt_has_exact_canonical_bytes() -> None:
+    error = EvaluationError(
+        "evidence_invalid",
+        "evidence",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_evidence_diagnostic(),
+    )
+
+    raw = serialize_evidence_diagnostic(error)
+
+    assert raw == (
+        b'{"evidence_boundary":{"reason":"source_url_policy_invalid",'
+        b'"stage":"receipt_contract"},"primary":{"cleanup_status":"succeeded",'
+        b'"code":"evidence_invalid","phase":"evidence","retryable":false},'
+        b'"schema_version":"dra.bounded-live-producer-evidence-diagnostic.v1"}\n'
+    )
+    assert len(raw) <= MAX_DIAGNOSTIC_BYTES
+    assert all(
+        marker not in raw
+        for marker in (
+            b'"query"',
+            b'"content"',
+            b'"raw_error"',
+            b'"traceback"',
+            b'"local_path"',
+            b'"api_key"',
+            b"/Users/",
+            b"/private/",
+            b"Traceback",
+            b"OPENAI_API_KEY",
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "cleanup_status", [CleanupStatus.SUCCEEDED, CleanupStatus.FAILED]
+)
+def test_evidence_diagnostic_accepts_only_final_cleanup_status(
+    cleanup_status: CleanupStatus,
+) -> None:
+    error = EvaluationError(
+        "evidence_invalid",
+        "evidence",
+        False,
+        cleanup_status,
+        diagnostic=_evidence_diagnostic(),
+    )
+
+    receipt = EvidenceDiagnosticReceipt.model_validate_json(
+        serialize_evidence_diagnostic(error), strict=True
+    )
+    assert receipt.primary.cleanup_status is cleanup_status
+
+
+def test_evidence_diagnostic_rejects_not_started_cleanup() -> None:
+    error = EvaluationError(
+        "evidence_invalid",
+        "evidence",
+        False,
+        diagnostic=_evidence_diagnostic(),
+    )
+
+    with pytest.raises(ValidationError):
+        serialize_evidence_diagnostic(error)
+
+
+@pytest.mark.parametrize("missing_field", ["stage", "reason"])
+def test_evidence_diagnostic_requires_every_boundary_field(
+    missing_field: str,
+) -> None:
+    payload = _evidence_diagnostic().model_dump(mode="python")
+    payload.pop(missing_field)
+
+    with pytest.raises(ValidationError):
+        EvidenceBoundaryDiagnostic.model_validate(payload, strict=True)
+
+
+@pytest.mark.parametrize(
+    "missing_field", ["schema_version", "primary", "evidence_boundary"]
+)
+def test_evidence_diagnostic_receipt_requires_every_top_level_field(
+    missing_field: str,
+) -> None:
+    payload = {
+        "schema_version": "dra.bounded-live-producer-evidence-diagnostic.v1",
+        "primary": {
+            "code": "evidence_invalid",
+            "phase": "evidence",
+            "retryable": False,
+            "cleanup_status": "succeeded",
+        },
+        "evidence_boundary": {
+            "stage": "receipt_contract",
+            "reason": "source_url_policy_invalid",
+        },
+    }
+    payload.pop(missing_field)
+
+    with pytest.raises(ValidationError):
+        EvidenceDiagnosticReceipt.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "missing_field", ["code", "phase", "retryable", "cleanup_status"]
+)
+def test_evidence_diagnostic_receipt_requires_every_primary_field(
+    missing_field: str,
+) -> None:
+    payload = {
+        "schema_version": "dra.bounded-live-producer-evidence-diagnostic.v1",
+        "primary": {
+            "code": "evidence_invalid",
+            "phase": "evidence",
+            "retryable": False,
+            "cleanup_status": "succeeded",
+        },
+        "evidence_boundary": {
+            "stage": "receipt_contract",
+            "reason": "source_url_policy_invalid",
+        },
+    }
+    payload["primary"].pop(missing_field)
+
+    with pytest.raises(ValidationError):
+        EvidenceDiagnosticReceipt.model_validate(payload)
+
+
+def test_evidence_diagnostic_is_strict_frozen_and_forbids_extra_fields() -> None:
+    diagnostic = _evidence_diagnostic()
+    with pytest.raises(ValidationError):
+        diagnostic.reason = EvidenceDiagnosticReason.SOURCE_URL_REQUIRED  # type: ignore[misc]
+
+    payload = diagnostic.model_dump(mode="python")
+    payload["raw_evidence"] = "private"
+    with pytest.raises(ValidationError):
+        EvidenceBoundaryDiagnostic.model_validate(payload, strict=True)
+
+    payload = diagnostic.model_dump(mode="python")
+    payload["stage"] = 1
+    with pytest.raises(ValidationError):
+        EvidenceBoundaryDiagnostic.model_validate(payload, strict=True)
+
+
+@pytest.mark.parametrize(
+    ("code", "phase"),
+    [
+        ("evidence_invalid", "result"),
+        ("consumer_projection_invalid", "evidence"),
+        ("run_failed", "observe"),
+    ],
+)
+def test_evidence_diagnostic_rejects_ineligible_primary(
+    code: str, phase: str
+) -> None:
+    with pytest.raises(ValueError, match="evaluation_error_invalid"):
+        EvaluationError(code, phase, False, diagnostic=_evidence_diagnostic())
+
+
+def test_default_public_error_bytes_ignore_evidence_diagnostic() -> None:
+    baseline = EvaluationError(
+        "evidence_invalid", "evidence", False, CleanupStatus.SUCCEEDED
+    )
+    enriched = EvaluationError(
+        "evidence_invalid",
+        "evidence",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_evidence_diagnostic(),
+    )
+
+    assert serialize_error(enriched) == serialize_error(baseline)
+
+
+def test_evidence_diagnostic_compatibility_preserves_existing_receipt_bytes() -> None:
+    result_error = EvaluationError(
+        "consumer_projection_invalid",
+        "result",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_diagnostic(),
+    )
+    run_error = EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        CleanupStatus.FAILED,
+        diagnostic=_run_failure_diagnostic(),
+    )
+    budget_error = EvaluationError(
+        "run_failed",
+        "observe",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=_run_failure_diagnostic(code="call_budget_exceeded"),
+    )
+    limiter = parse_call_budget_sidecar(
+        {
+            "schema_version": "dra.call-budget-origin-sidecar.v1",
+            "limiter": {
+                "limiter_kind": "model",
+                "tool_scope": "not_applicable",
+                "run_count": 40,
+                "run_limit": 40,
+                "thread_count": 40,
+                "thread_limit": None,
+                "agent_role": "not_observed",
+            },
+        }
+    ).limiter
+
+    assert serialize_result_diagnostic(result_error) == (
+        b'{"primary":{"cleanup_status":"succeeded","code":'
+        b'"consumer_projection_invalid","phase":"result","retryable":false},'
+        b'"result_boundary":{"http_status":200,"reason":'
+        b'"contract_result_invalid","response_bytes":1234,"stage":'
+        b'"consumer_contract"},"schema_version":'
+        b'"dra.bounded-live-producer-result-diagnostic.v1"}\n'
+    )
+    assert serialize_run_failure_diagnostic(run_error) == (
+        b'{"primary":{"cleanup_status":"failed","code":"run_failed",'
+        b'"phase":"observe","retryable":false},"run_failure":'
+        b'{"cause_schema_version":"dra.run-failure-cause.v1","code":'
+        b'"execution_error","observation_status":"observed","phase":'
+        b'"execution"},"schema_version":'
+        b'"dra.bounded-live-producer-run-failure-diagnostic.v1"}\n'
+    )
+    assert serialize_call_budget_diagnostic(budget_error, limiter) == (
+        b'{"limiter":{"agent_role":"not_observed","limiter_kind":"model",'
+        b'"run_count":40,"run_limit":40,"thread_count":40,"thread_limit":null,'
+        b'"tool_scope":"not_applicable"},"primary":{"cleanup_status":"succeeded",'
+        b'"code":"run_failed","phase":"observe","retryable":false},"run_failure":'
+        b'{"cause_schema_version":"dra.run-failure-cause.v1","code":'
+        b'"call_budget_exceeded","observation_status":"observed","phase":"execution"},'
+        b'"schema_version":"dra.bounded-live-producer-call-budget-diagnostic.v1"}\n'
+    )
 
 
 def _diagnostic() -> ResultBoundaryDiagnostic:

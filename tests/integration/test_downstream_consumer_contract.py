@@ -279,6 +279,22 @@ def test_projection_attaches_row_shape_evidence_reason() -> None:
     assert caught.value.evidence_reason.value == "required_fields_invalid"
 
 
+def test_projection_keeps_multiple_evidence_rejection_sources_unclassified() -> None:
+    from scripts.downstream_consumer_contract import ContractValidationError
+
+    status = _canonical_status()
+    status["evidence"].append(copy.deepcopy(status["evidence"][0]))
+    status["evidence"][1]["evidence_id"] = "ev_run_fixture_canonical_02"
+    status["evidence"][0]["source_identity"] = ""
+    status["evidence"][1]["citation_status"] = "unknown"
+
+    with pytest.raises(ContractValidationError) as caught:
+        _project(status=status)
+
+    assert caught.value.code == "contract_evidence_invalid"
+    assert caught.value.evidence_reason is None
+
+
 def test_evidence_reason_constructor_is_typed_and_code_scoped() -> None:
     from scripts.downstream_consumer_contract import (
         ContractValidationError,

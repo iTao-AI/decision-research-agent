@@ -479,12 +479,23 @@ def project_live_observation(
             ),
         )
     try:
-        evidence = tuple(
-            EvidenceReceipt.model_validate(row, strict=True)
-            for row in projection["evidence"]
+        projected_evidence = projection["evidence"]
+        evidence_rows: list[EvidenceReceipt] = []
+        evidence_rejections: list[EvidenceDiagnosticReason | None] = []
+        for row in projected_evidence:
+            try:
+                evidence_rows.append(EvidenceReceipt.model_validate(row, strict=True))
+            except ValidationError as exc:
+                evidence_rejections.append(evidence_receipt_diagnostic_reason(exc))
+    except (KeyError, TypeError) as exc:
+        raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE) from exc
+    if evidence_rejections:
+        reason = (
+            evidence_rejections[0]
+            if len(evidence_rejections) == 1
+            and type(evidence_rejections[0]) is EvidenceDiagnosticReason
+            else None
         )
-    except ValidationError as exc:
-        reason = evidence_receipt_diagnostic_reason(exc)
         diagnostic = (
             _evidence_diagnostic(
                 EvidenceDiagnosticStage.RECEIPT_CONTRACT,
@@ -497,9 +508,8 @@ def project_live_observation(
             FailureCode.EVIDENCE_INVALID,
             FailurePhase.EVIDENCE,
             diagnostic=diagnostic,
-        ) from exc
-    except (KeyError, TypeError) as exc:
-        raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE) from exc
+        )
+    evidence = tuple(evidence_rows)
     cited_hosts = {
         urlsplit(row.source_url).hostname
         for row in evidence

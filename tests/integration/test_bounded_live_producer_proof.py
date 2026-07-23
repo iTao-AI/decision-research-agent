@@ -1588,6 +1588,52 @@ def test_project_live_observation_keeps_unknown_or_multiple_receipt_errors_uncla
     assert caught.value.diagnostic is None
 
 
+@pytest.mark.parametrize("stage", ["consumer_contract", "receipt_contract"])
+def test_multiple_evidence_rejection_sources_do_not_publish_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+) -> None:
+    status = _status()
+    if stage == "consumer_contract":
+        status["evidence"][0]["source_identity"] = ""
+        status["evidence"][1]["citation_status"] = "unknown"
+    else:
+        status["evidence"][0]["source_url"] = None
+        status["evidence"][1]["source_url"] = (
+            "https://peps.python.org/pep-0703/?private=1"
+        )
+
+    with pytest.raises(EvaluationError) as projected:
+        _snapshot(status=status)
+
+    assert projected.value.code.value == "evidence_invalid"
+    assert projected.value.phase.value == "evidence"
+    assert projected.value.diagnostic is None
+
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=projected.value,
+        diagnostic_dir=diagnostic_dir,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "evidence_invalid"
+    assert caught.value.diagnostic is None
+    assert holder["diagnostic_publications"] == []
+    assert list(diagnostic_dir.iterdir()) == []
+    assert "cleanup_receipt" in events
+    assert "diagnostic_publish" not in events
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
 @pytest.mark.parametrize(
     "case",
     [

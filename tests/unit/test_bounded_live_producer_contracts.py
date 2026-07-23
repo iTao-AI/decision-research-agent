@@ -445,6 +445,30 @@ def test_evidence_diagnostic_rejects_every_cross_stage_pair(
         )
 
 
+def test_evidence_diagnostic_production_registry_is_exhaustive() -> None:
+    from scripts.downstream_consumer_contract import EvidenceContractReason
+
+    accepted = set()
+    for stage in EvidenceDiagnosticStage:
+        for reason in EvidenceDiagnosticReason:
+            try:
+                EvidenceBoundaryDiagnostic(stage=stage, reason=reason)
+            except ValidationError:
+                continue
+            accepted.add((stage.value, reason.value))
+
+    approved = set(EVIDENCE_DIAGNOSTIC_PAIRS)
+    assert len(EVIDENCE_DIAGNOSTIC_PAIRS) == len(approved) == 15
+    assert accepted == approved
+    consumer_reasons = {
+        reason
+        for stage, reason in approved
+        if stage == EvidenceDiagnosticStage.CONSUMER_CONTRACT.value
+    }
+    assert len(consumer_reasons) == 8
+    assert {reason.value for reason in EvidenceContractReason} == consumer_reasons
+
+
 def test_evidence_diagnostic_receipt_has_exact_canonical_bytes() -> None:
     error = EvaluationError(
         "evidence_invalid",

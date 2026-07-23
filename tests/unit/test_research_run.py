@@ -2,6 +2,39 @@
 
 
 class TestResearchEvidence:
+    def test_extracted_rows_share_timezone_aware_observation_time(self):
+        from datetime import datetime
+
+        from agent.research import extract_evidence_entries
+
+        entries = extract_evidence_entries(
+            thread_id="thread-001",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="internet_search",
+            content={
+                "results": [
+                    {
+                        "url": "https://docs.python.org/3/howto/free-threading-python.html",
+                        "content": "Python documentation.",
+                    },
+                    {
+                        "url": "https://peps.python.org/pep-0703/",
+                        "content": "PEP 703.",
+                    },
+                ]
+            },
+        )
+
+        assert len(entries) == 2
+        assert entries[0].retrieved_at is not None
+        assert {entry.retrieved_at for entry in entries} == {
+            entries[0].retrieved_at
+        }
+        observed_at = datetime.fromisoformat(entries[0].retrieved_at)
+        assert observed_at.tzinfo is not None
+        assert observed_at.utcoffset() is not None
+
     def test_stream_evidence_merges_by_content_fingerprint(self):
         from agent.research import (
             EvidenceEntry,

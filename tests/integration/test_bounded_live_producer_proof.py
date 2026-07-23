@@ -1635,6 +1635,142 @@ def test_multiple_evidence_rejection_sources_do_not_publish_diagnostic(
 
 
 @pytest.mark.parametrize(
+    ("stage", "expected_reason"),
+    [
+        ("consumer_contract", "retrieved_at_invalid"),
+        ("receipt_contract", "source_url_required"),
+    ],
+)
+def test_repeated_identical_evidence_reason_publishes_one_closed_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+    expected_reason: str,
+) -> None:
+    status = _status()
+    if stage == "consumer_contract":
+        for row in status["evidence"]:
+            row["retrieved_at"] = None
+    else:
+        module = importlib.import_module("scripts.bounded_live_producer_proof")
+        projected_rows = []
+        for row in status["evidence"]:
+            projected_rows.append(
+                {
+                    key: (None if key == "source_url" else value)
+                    for key, value in row.items()
+                    if key
+                    in {
+                        "evidence_id",
+                        "source_url",
+                        "source_identity",
+                        "retrieved_at",
+                        "citation_status",
+                        "verification_status",
+                    }
+                }
+            )
+        monkeypatch.setattr(
+            module,
+            "project_consumer_case",
+            lambda **_kwargs: {
+                "expected": {
+                    "support": "supported",
+                    "disposition": "accept_draft",
+                },
+                "evidence": projected_rows,
+            },
+        )
+
+    with pytest.raises(EvaluationError) as projected:
+        _snapshot(status=status)
+
+    assert projected.value.diagnostic is not None
+    assert projected.value.diagnostic.model_dump(mode="json") == {
+        "stage": stage,
+        "reason": expected_reason,
+    }
+
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=projected.value,
+        diagnostic_dir=diagnostic_dir,
+    )
+
+    with pytest.raises(EvaluationError):
+        invoke()
+
+    receipt = EvidenceDiagnosticReceipt.model_validate_json(
+        (diagnostic_dir / EVIDENCE_DIAGNOSTIC_FILENAME).read_bytes(),
+        strict=True,
+    )
+    assert receipt.evidence_boundary.model_dump(mode="json") == {
+        "stage": stage,
+        "reason": expected_reason,
+    }
+    assert holder["diagnostic_publications"] == ["evidence"]
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
+def test_runtime_shaped_evidence_reaches_accepted_snapshot() -> None:
+    from agent.research import extract_evidence_entries, mark_cited_evidence
+
+    source_rows = extract_evidence_entries(
+        thread_id="thread-proof-1",
+        query_text="query",
+        subagent_name="network_search",
+        tool_name="internet_search",
+        content={
+            "results": [
+                {
+                    "url": "https://docs.python.org/3/howto/free-threading-python.html",
+                    "content": "Python documentation.",
+                },
+                {
+                    "url": "https://peps.python.org/pep-0703/",
+                    "content": "PEP 703.",
+                },
+            ]
+        },
+    )
+    report_content = (
+        "# Runtime-shaped report\n\n"
+        "https://docs.python.org/3/howto/free-threading-python.html\n"
+        "https://peps.python.org/pep-0703/\n"
+    )
+    cited_rows = mark_cited_evidence(source_rows, report_content)
+    status = _status()
+    status["evidence"] = [
+        {
+            **entry.to_dict(),
+            "evidence_id": f"ev-runtime-{index}",
+            "run_id": "run-proof-1",
+            "segment_id": "segment-proof-1",
+        }
+        for index, entry in enumerate(cited_rows, start=1)
+    ]
+    result = _result()
+    result["artifact"]["content"] = report_content
+    result["artifact"]["content_hash"] = hashlib.sha256(
+        report_content.encode("utf-8")
+    ).hexdigest()
+
+    snapshot = _snapshot(status=status, result=result)
+
+    assert [row.source_url for row in snapshot.evidence] == [
+        "https://docs.python.org/3/howto/free-threading-python.html",
+        "https://peps.python.org/pep-0703/",
+    ]
+    assert {row.citation_status for row in snapshot.evidence} == {"cited"}
+
+
+@pytest.mark.parametrize(
     "case",
     [
         "required_cited_domain_missing",

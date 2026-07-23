@@ -158,6 +158,7 @@ def extract_evidence_entries(
     unverified/uncited until final report text is compared during finalization.
     """
     parsed = _loads_json_like(content)
+    retrieved_at = datetime.now(timezone.utc).isoformat()
     entries: list[EvidenceEntry] = []
 
     if isinstance(parsed, dict):
@@ -184,6 +185,7 @@ def extract_evidence_entries(
                 tool_name=tool_name,
                 source_url=_normalize_url(source_url),
                 snippet=_snippet_from_mapping(item),
+                retrieved_at=retrieved_at,
             )
         )
         if len(entries) >= _MAX_EVIDENCE_PER_TOOL_MESSAGE:
@@ -204,6 +206,7 @@ def extract_evidence_entries(
                     tool_name=tool_name,
                     source_url=_normalize_url(url),
                     snippet=text,
+                    retrieved_at=retrieved_at,
                 )
             )
         return entries

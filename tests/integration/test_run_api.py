@@ -1765,6 +1765,7 @@ async def test_talent_run_persists_review_and_canonical_artifacts(tmp_path, monk
 async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypatch):
     import api.server as server
     from agent.harness_contracts import ReportCandidate
+    from agent.research import EvidenceEntry
     from agent.run_result import AgentRunResult
     from api.run_repository import create_run, get_artifact, get_run
     from pathlib import PurePosixPath
@@ -1775,9 +1776,33 @@ async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypa
         query="query",
         profile_id="generic",
     )
+    cited_url = "https://docs.python.org/3/howto/free-threading-python.html"
+    uncited_url = "https://example.com/not-in-report"
+    evidence_entries = [
+        EvidenceEntry(
+            thread_id="generic-thread",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="internet_search",
+            source_url=cited_url,
+            snippet="Python documentation.",
+            retrieved_at="2026-07-23T00:00:00+00:00",
+        ),
+        EvidenceEntry(
+            thread_id="generic-thread",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="internet_search",
+            source_url=uncited_url,
+            snippet="Uncited source.",
+            retrieved_at="2026-07-23T00:00:00+00:00",
+        ),
+    ]
+    captured_result = None
 
     async def capture_agent(*args, **kwargs):
-        return AgentRunResult(
+        nonlocal captured_result
+        captured_result = AgentRunResult(
             thread_id="generic-thread",
             query="query",
             session_dir=tmp_path,
@@ -1786,9 +1811,11 @@ async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypa
             segment_id=created["segment_id"],
             report_candidate=ReportCandidate(
                 path=PurePosixPath("/workspace/research-report.md"),
-                content="# Generic Report",
+                content=f"# Generic Report\n\nSource: {cited_url}",
             ),
+            evidence_entries=evidence_entries,
         )
+        return captured_result
 
     monkeypatch.setattr(server, "run_deep_agent", capture_agent)
 
@@ -1815,7 +1842,17 @@ async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypa
     )
     assert artifact["kind"] == "research_report_markdown"
     assert artifact["media_type"] == "text/markdown"
-    assert artifact["content"] == "# Generic Report"
+    assert artifact["content"] == f"# Generic Report\n\nSource: {cited_url}"
+    assert {
+        item["source_url"]: item["citation_status"] for item in run["evidence"]
+    } == {
+        cited_url: "cited",
+        uncited_url: "uncited",
+    }
+    assert captured_result is not None
+    assert [
+        item.citation_status for item in captured_result.evidence_entries
+    ] == ["uncited", "uncited"]
 
 
 def test_run_projection_exposes_current_publication_and_artifacts(

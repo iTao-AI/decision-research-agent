@@ -131,6 +131,13 @@ coordinator can retain citations; this does not replace tool-result Evidence
 authority. Other nested tools and arbitrary subagent text do not create
 Evidence, and this capture path does not change delivery readiness.
 
+Successful generic finalization performs application-owned citation
+finalization against the canonical artifact content that will be persisted.
+Only an exact captured source URL present in that content changes the derived
+persisted row from `uncited` to `cited`; unmatched rows remain `uncited`. This
+does not mutate the frozen Execution Outcome, and failure, cancellation, and
+timeout paths retain their existing frozen-Evidence semantics.
+
 ## Talent Review And Publication
 
 ```mermaid

@@ -35,6 +35,12 @@ Outcome 不是业务权威。只有 fenced terminal transaction 写入
 `research_runs_v2`、`evidence_entries_v2`、artifact/review/publication tables
 之后，才成为可查询状态。
 
+Source-derived Evidence records one timezone-aware UTC `retrieved_at` at the
+completed source-tool response boundary; all Evidence rows extracted from that
+response share it. This field is observation time, not source publication or
+source-as-of time. Manually reconstructed and historical entries retain their
+explicit timestamp semantics rather than receiving a model-wide default.
+
 ## Run creation idempotency ledger
 
 `run_create_idempotency_v1` is application-database authority for optional

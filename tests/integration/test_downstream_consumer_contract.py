@@ -295,6 +295,23 @@ def test_projection_keeps_multiple_evidence_rejection_sources_unclassified() -> 
     assert caught.value.evidence_reason is None
 
 
+def test_projection_preserves_repeated_identical_evidence_reason() -> None:
+    from scripts.downstream_consumer_contract import ContractValidationError
+
+    status = _canonical_status()
+    status["evidence"].append(copy.deepcopy(status["evidence"][0]))
+    status["evidence"][1]["evidence_id"] = "ev_run_fixture_canonical_02"
+    for row in status["evidence"]:
+        row["retrieved_at"] = None
+
+    with pytest.raises(ContractValidationError) as caught:
+        _project(status=status)
+
+    assert caught.value.code == "contract_evidence_invalid"
+    assert caught.value.evidence_reason is not None
+    assert caught.value.evidence_reason.value == "retrieved_at_invalid"
+
+
 def test_evidence_reason_constructor_is_typed_and_code_scoped() -> None:
     from scripts.downstream_consumer_contract import (
         ContractValidationError,

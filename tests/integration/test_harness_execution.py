@@ -284,6 +284,106 @@ class ScriptedParallelToolModel(ScriptedCanonicalWriteModel):
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
+class ScriptedInternetSearchModel(ScriptedCanonicalWriteModel):
+    tool_batches: list[list[int]]
+    observed_limit_feedback: bool = False
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del stop, run_manager, kwargs
+        self.call_count += 1
+        self.observed_limit_feedback = any(
+            isinstance(message, ToolMessage)
+            and message.name == "internet_search"
+            and message.status == "error"
+            and message.content
+            == "Tool call limit exceeded. Do not call 'internet_search' again."
+            for message in messages
+        )
+        if self.observed_limit_feedback:
+            message = AIMessage(content="Finished with the available search results.")
+        elif self.call_count <= len(self.tool_batches):
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "internet_search",
+                        "args": {"value": value},
+                        "id": f"call-{self.call_count}-{value}",
+                        "type": "tool_call",
+                    }
+                    for value in self.tool_batches[self.call_count - 1]
+                ],
+            )
+        else:
+            message = AIMessage(content="Finished.")
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class UncooperativeInternetSearchModel(ScriptedCanonicalWriteModel):
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        self.call_count += 1
+        return ChatResult(
+            generations=[
+                ChatGeneration(
+                    message=AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "internet_search",
+                                "args": {"value": self.call_count},
+                                "id": f"call-uncooperative-{self.call_count}",
+                                "type": "tool_call",
+                            }
+                        ],
+                    )
+                )
+            ]
+        )
+
+
+class ScriptedSingleTaskThenFinishModel(ScriptedCanonicalWriteModel):
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        self.call_count += 1
+        if self.call_count == 1:
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "task",
+                        "args": {
+                            "description": "Run the bounded researcher.",
+                            "subagent_type": "network_search",
+                        },
+                        "id": "call-network-search",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        else:
+            message = AIMessage(content="Coordinator finished.")
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
 class RecordingHarness:
     def __init__(self):
         self.request = None
@@ -386,6 +486,30 @@ def _generic_researcher_limit_graph(
     )
 
 
+def _network_search_limit_graph(
+    model: BaseChatModel,
+    executed_calls: list[int],
+):
+    def internet_search(value: int) -> str:
+        executed_calls.append(value)
+        return str(value)
+
+    tool = StructuredTool.from_function(
+        internet_search,
+        name="internet_search",
+        description="Record one deterministic provider-free search call.",
+    )
+    return create_agent(
+        model=model,
+        tools=[tool],
+        middleware=build_profile_middleware(
+            "generic",
+            role="network_search",
+        ),
+        name="network-search-runtime-cap",
+    )
+
+
 @pytest.mark.asyncio
 async def test_generic_researcher_locked_graph_allows_calls_13_and_14():
     model = ScriptedParallelToolModel(tool_rounds=7)
@@ -413,6 +537,97 @@ async def test_generic_researcher_locked_graph_blocks_calls_17_and_18():
     assert raised.value.run_count == 18
     assert raised.value.thread_limit is None
     assert raised.value.thread_count == 18
+
+
+@pytest.mark.asyncio
+async def test_network_search_executes_five_calls_then_finishes_from_limit_feedback():
+    model = ScriptedInternetSearchModel(tool_batches=[[1], [2], [3], [4], [5], [6]])
+    executed_calls: list[int] = []
+    graph = _network_search_limit_graph(model, executed_calls)
+
+    result = await graph.ainvoke(
+        {"messages": [{"role": "user", "content": "run"}]}
+    )
+
+    assert executed_calls == [1, 2, 3, 4, 5]
+    assert model.call_count == 7
+    assert model.observed_limit_feedback is True
+    assert result["messages"][-1].content == (
+        "Finished with the available search results."
+    )
+
+
+@pytest.mark.asyncio
+async def test_network_search_parallel_batch_executes_only_remaining_capacity():
+    model = ScriptedInternetSearchModel(tool_batches=[[1, 2, 3, 4], [5, 6, 7]])
+    executed_calls: list[int] = []
+    graph = _network_search_limit_graph(model, executed_calls)
+
+    await graph.ainvoke({"messages": [{"role": "user", "content": "run"}]})
+
+    assert sorted(executed_calls) == [1, 2, 3, 4, 5]
+    assert model.observed_limit_feedback is True
+
+
+@pytest.mark.asyncio
+async def test_network_search_uncooperative_model_reaches_global_hard_ceiling():
+    model = UncooperativeInternetSearchModel()
+    executed_calls: list[int] = []
+    graph = _network_search_limit_graph(model, executed_calls)
+
+    with pytest.raises(ToolCallLimitExceededError) as raised:
+        await graph.ainvoke({"messages": [{"role": "user", "content": "run"}]})
+
+    assert executed_calls == [1, 2, 3, 4, 5]
+    assert model.call_count == 17
+    assert raised.value.tool_name is None
+    assert raised.value.run_limit == 16
+    assert raised.value.run_count == 17
+
+
+@pytest.mark.asyncio
+async def test_locked_deepagents_network_search_subagent_finishes_after_named_cap():
+    researcher_model = ScriptedInternetSearchModel(
+        tool_batches=[[1], [2], [3], [4], [5], [6]]
+    )
+    executed_calls: list[int] = []
+    researcher = _network_search_limit_graph(researcher_model, executed_calls)
+    coordinator = ScriptedSingleTaskThenFinishModel()
+    backend = CompositeBackend(default=StateBackend(), routes={})
+    graph = create_deep_agent(
+        model=coordinator,
+        tools=[],
+        system_prompt="Delegate exactly one bounded task.",
+        middleware=[],
+        subagents=[
+            {
+                "name": "network_search",
+                "description": "Run one bounded network search task.",
+                "runnable": researcher,
+            }
+        ],
+        permissions=list(build_filesystem_permissions()),
+        backend=backend,
+        context_schema=ResearchRuntimeContext,
+        name="network-search-cap-integration",
+    )
+    context = ResearchRuntimeContext(
+        thread_id="thread-network-search-cap-1",
+        run_id="run-network-search-cap-1",
+        segment_id="segment-network-search-cap-1",
+        profile_id="generic",
+    )
+
+    result = await graph.ainvoke(
+        {"messages": [{"role": "user", "content": "delegate"}]},
+        context=context,
+    )
+
+    assert "task" in coordinator.bound_tool_names
+    assert coordinator.call_count == 2
+    assert executed_calls == [1, 2, 3, 4, 5]
+    assert researcher_model.observed_limit_feedback is True
+    assert result["messages"][-1].content == "Coordinator finished."
 
 
 @pytest.mark.asyncio

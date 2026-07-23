@@ -100,10 +100,19 @@ def build_profile_middleware(
         "database_query",
         "knowledge_base",
     }:
-        return [
+        middleware = [
             ModelCallLimitMiddleware(run_limit=20, exit_behavior="error"),
             ToolCallLimitMiddleware(run_limit=16, exit_behavior="error"),
         ]
+        if role == "network_search":
+            middleware.append(
+                ToolCallLimitMiddleware(
+                    tool_name="internet_search",
+                    run_limit=5,
+                    exit_behavior="continue",
+                )
+            )
+        return middleware
     if profile_id == "talent-hiring-signal" and role == "researcher":
         return [
             ModelCallLimitMiddleware(run_limit=12, exit_behavior="error"),
@@ -118,17 +127,25 @@ def middleware_contract(middleware: Sequence[Any]) -> dict[str, Any]:
         "global_tool_run_limit": None,
         "task_run_limit": None,
         "exit_behavior": "error",
+        "named_tool_limits": {},
     }
     for item in middleware:
         if isinstance(item, ModelCallLimitMiddleware):
             contract["model_run_limit"] = item.run_limit
             contract["exit_behavior"] = item.exit_behavior
         elif isinstance(item, ToolCallLimitMiddleware):
-            key = (
-                "task_run_limit"
-                if item.tool_name == "task"
-                else "global_tool_run_limit"
-            )
-            contract[key] = item.run_limit
-            contract["exit_behavior"] = item.exit_behavior
+            if item.tool_name == "task":
+                contract["task_run_limit"] = item.run_limit
+                contract["exit_behavior"] = item.exit_behavior
+            elif item.tool_name is None:
+                contract["global_tool_run_limit"] = item.run_limit
+                contract["exit_behavior"] = item.exit_behavior
+            else:
+                contract["named_tool_limits"][item.tool_name] = {
+                    "run_limit": item.run_limit,
+                    "exit_behavior": item.exit_behavior,
+                }
+    contract["named_tool_limits"] = dict(
+        sorted(contract["named_tool_limits"].items())
+    )
     return contract

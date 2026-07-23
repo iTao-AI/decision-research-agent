@@ -26,7 +26,21 @@ def _canonical_completion_middleware():
 def _generic_researcher_tool_middleware():
     middleware = build_profile_middleware("generic", role="network_search")
     candidates = [
-        item for item in middleware if isinstance(item, ToolCallLimitMiddleware)
+        item
+        for item in middleware
+        if isinstance(item, ToolCallLimitMiddleware) and item.tool_name is None
+    ]
+    assert len(candidates) == 1
+    return candidates[0]
+
+
+def _network_search_named_tool_middleware():
+    middleware = build_profile_middleware("generic", role="network_search")
+    candidates = [
+        item
+        for item in middleware
+        if isinstance(item, ToolCallLimitMiddleware)
+        and item.tool_name == "internet_search"
     ]
     assert len(candidates) == 1
     return candidates[0]
@@ -40,6 +54,7 @@ def test_generic_coordinator_limits_are_fail_closed():
         "global_tool_run_limit": 40,
         "task_run_limit": 8,
         "exit_behavior": "error",
+        "named_tool_limits": {},
     }
 
 
@@ -118,15 +133,77 @@ def test_canonical_completion_never_reenters_twice():
     assert update is None
 
 
-def test_generic_researcher_limits_are_fail_closed():
-    for role in ("network_search", "database_query", "knowledge_base"):
+def test_network_search_has_soft_named_cap_and_hard_global_ceiling():
+    middleware = build_profile_middleware("generic", role="network_search")
+
+    assert middleware_contract(middleware) == {
+        "model_run_limit": 20,
+        "global_tool_run_limit": 16,
+        "task_run_limit": None,
+        "exit_behavior": "error",
+        "named_tool_limits": {
+            "internet_search": {
+                "run_limit": 5,
+                "exit_behavior": "continue",
+            }
+        },
+    }
+    assert [
+        (
+            type(item).__name__,
+            getattr(item, "tool_name", None),
+            item.run_limit,
+            item.exit_behavior,
+        )
+        for item in middleware
+    ] == [
+        ("ModelCallLimitMiddleware", None, 20, "error"),
+        ("ToolCallLimitMiddleware", None, 16, "error"),
+        ("ToolCallLimitMiddleware", "internet_search", 5, "continue"),
+    ]
+
+
+def test_database_and_knowledge_researchers_keep_only_hard_global_ceiling():
+    for role in ("database_query", "knowledge_base"):
         middleware = build_profile_middleware("generic", role=role)
+
         assert middleware_contract(middleware) == {
             "model_run_limit": 20,
             "global_tool_run_limit": 16,
             "task_run_limit": None,
             "exit_behavior": "error",
+            "named_tool_limits": {},
         }
+
+
+def test_network_search_named_cap_injects_bounded_feedback_after_five_calls():
+    middleware = _network_search_named_tool_middleware()
+    call = {
+        "name": "internet_search",
+        "args": {"query": "bounded"},
+        "id": "call-6",
+        "type": "tool_call",
+    }
+
+    update = middleware.after_model(
+        {
+            "messages": [AIMessage(content="", tool_calls=[call])],
+            "thread_tool_call_count": {"internet_search": 5},
+            "run_tool_call_count": {"internet_search": 5},
+        },
+        Runtime(),
+    )
+
+    assert update["thread_tool_call_count"] == {"internet_search": 5}
+    assert update["run_tool_call_count"] == {"internet_search": 6}
+    assert len(update["messages"]) == 1
+    feedback = update["messages"][0]
+    assert feedback.tool_call_id == "call-6"
+    assert feedback.name == "internet_search"
+    assert feedback.status == "error"
+    assert feedback.content == (
+        "Tool call limit exceeded. Do not call 'internet_search' again."
+    )
 
 
 def test_generic_researcher_allows_two_parallel_calls_from_12_to_14():
@@ -196,4 +273,5 @@ def test_talent_researcher_has_only_model_budget():
         "global_tool_run_limit": None,
         "task_run_limit": None,
         "exit_behavior": "error",
+        "named_tool_limits": {},
     }

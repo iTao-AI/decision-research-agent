@@ -1383,3 +1383,953 @@ authorized.
 Quality benchmarking across a frozen set of real or sanitized observations requires a separate
 design. One producer report must not be promoted into a general model, research-quality or
 downstream-product benchmark.
+
+## Post-Observation Evidence Diagnostic Receipt Implementation Amendment
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this
+> amendment task-by-task. Use `superpowers:test-driven-development` for every behavior change and
+> `superpowers:verification-before-completion` before the terminal report. The tasks share contract,
+> projection, sink, and integration files, so do not split them into parallel write lanes.
+
+**Goal:** Add one opt-in, post-cleanup Evidence Diagnostic Receipt that safely identifies the
+structural source of an exact `evidence_invalid / evidence` failure without changing public errors,
+Evidence acceptance, application authority, or provider behavior.
+
+**Architecture:** The validator that already rejects a row creates one closed typed reason. That
+reason travels only in memory on the existing `EvaluationError`, then the existing diagnostic
+selector may serialize it through the existing owner-only, non-overwriting sink after cleanup.
+Unknown or contradictory internal reasons remain unobserved and produce no receipt.
+
+**Tech Stack:** Python 3.11, Pydantic `2.13.4`, pydantic-core structured custom errors, pytest,
+existing bounded producer contracts/proof, existing downstream consumer projection, existing
+descriptor-relative diagnostic sink, Docker/Compose required authority lane, GitHub Actions.
+
+### Global Constraints
+
+- Before Task 1, mechanically append the approved design and implementation amendments to their
+  existing retained records on a branch created from clean `main == origin/main`. Preserve one
+  docs-only landing commit and obtain an authoritative exact-diff review before implementation.
+- Use one isolated branch named `codex/evidence-diagnostic-receipt` and one task-owned worktree.
+- Keep the existing `codex/bounded-live-producer-evidence` worktree clean and unchanged for the
+  later separately authorized observation.
+- Recommended execution depth is `high`. If the established parent window is already running at a
+  higher depth, it may remain there, but it must not fan out shared-file write lanes.
+- Public `dra.bounded-live-producer-evaluation-error.v1` bytes, failure code, phase, retryability,
+  and cleanup behavior remain unchanged.
+- `dra.downstream-consumer.v1`, its fixture bytes, CLI error bytes, accepted Evidence truth table,
+  and public schema remain unchanged.
+- API, OpenAPI, database, migrations, Agent runtime, result authority, Evidence ledger, review,
+  verification, publication, delivery, dependencies, CI provider policy, frontend, and `VERSION`
+  remain unchanged.
+- Do not parse `str(exc)`, Pydantic messages, raw values, URLs, timestamps, identities, or response
+  content. Only project-owned enum values and Pydantic custom error `type` values may cross the
+  diagnostic boundary.
+- No catch-all Evidence reason is allowed. Unknown, missing, multiple, or cross-stage reasons
+  produce no Evidence receipt.
+- Reuse the current `DiagnosticSink` and `_publish_diagnostic` implementation. Do not add another
+  filesystem writer or retain task runtime state.
+- No `observe-live`, credential access, provider/model/search request, retry, evidence publication,
+  release preparation, tag, Release, deploy, push, or pull request is authorized by implementation.
+- Use exact-file staging only; never use `git add .` or `git add -A`.
+
+### File Responsibility Map
+
+| File | Responsibility in this amendment |
+|---|---|
+| `scripts/downstream_consumer_contract.py` | Source-owned optional reason for existing Evidence contract failures |
+| `scripts/bounded_live_producer_contracts.py` | Closed stage/reason registry, in-memory diagnostic, strict receipt, final receipt reason projection, serializer |
+| `scripts/bounded_live_producer_proof.py` | Raw status attribution, downstream/final receipt mapping, exact receipt selection |
+| `scripts/bounded_live_producer_diagnostics.py` | Fourth fixed basename and reuse of the existing safe publisher |
+| `tests/integration/test_downstream_consumer_contract.py` | Predicate-to-reason matrix and frozen CLI/public compatibility |
+| `tests/unit/test_bounded_live_producer_contracts.py` | Strict models, pair registry, canonical bytes, public envelope compatibility |
+| `tests/integration/test_bounded_live_producer_proof.py` | End-to-end attribution, selection, cleanup ordering, no-receipt paths |
+| `tests/unit/test_bounded_live_producer_diagnostics.py` | Preflight, non-overwrite, permissions, identity/race and residue behavior |
+| `docs/reference/bounded-live-producer-evaluation.md` | Current operator contract and complete four-receipt selection truth |
+| `CHANGELOG.md` | One concise `Unreleased` capability/non-claim entry |
+| `tests/unit/test_documentation_contracts.py` | Exact stage/reason and non-authority documentation mutations |
+| `tests/unit/test_release_metadata.py` | Exact current `Unreleased` subsection truth without release drift |
+| `docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md` | Mechanically landed approved design amendment; unchanged during Tasks 1–4 |
+| `docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md` | Mechanically landed implementation amendment; unchanged during Tasks 1–4 |
+
+### Mechanical Landing Gate
+
+Before Task 1:
+
+1. verify the primary checkout is clean and `main == origin/main`;
+2. create `codex/evidence-diagnostic-receipt` in one isolated task-owned worktree;
+3. append the approved design amendment byte-for-byte to the existing bounded producer design;
+4. append this implementation amendment byte-for-byte to the existing bounded producer plan;
+5. prove the pre-existing target prefixes are byte-identical to their base versions and each
+   appended suffix is byte-identical to its approved source;
+6. run `git diff --check` and public/private, credential-value, and unfinished-marker scans;
+7. create one local commit named
+   `docs: define Evidence diagnostic receipt delivery`; and
+8. stop with a clean worktree for authoritative exact-diff review.
+
+Only an explicit follow-up after that review authorizes Task 1. Tasks 1–4 retain the landing commit
+and do not rewrite either approved amendment.
+
+### Execution Topology
+
+Execute Tasks 1 through 4 serially. Tasks 1–3 all modify
+`scripts/bounded_live_producer_contracts.py`, `scripts/bounded_live_producer_proof.py`, or their
+shared tests; parallel write lanes would add merge and semantic-order risk. Independent read-only
+audits and final proof commands may run concurrently after Task 4 has produced a clean committed
+HEAD. No child-agent delegation is required.
+
+---
+
+### Task 1: Define The Closed Evidence Diagnostic Contract
+
+**Files:**
+- Modify: `scripts/bounded_live_producer_contracts.py`
+- Modify: `tests/unit/test_bounded_live_producer_contracts.py`
+
+**Interfaces:**
+- Produces: `EVIDENCE_DIAGNOSTIC_SCHEMA_VERSION`
+- Produces: `EvidenceDiagnosticStage`, `EvidenceDiagnosticReason`
+- Produces: `EvidenceBoundaryDiagnostic`, `EvidenceDiagnosticReceipt`
+- Produces: `serialize_evidence_diagnostic(error: EvaluationError) -> bytes`
+- Changes: `EvaluationError.diagnostic` accepts exactly
+  `ResultBoundaryDiagnostic | RunFailureDiagnostic | EvidenceBoundaryDiagnostic | None`
+- Preserves: `serialize_error`, existing three receipt serializers, and provider-free output bytes
+
+- [ ] **Step 1: Write failing strict-contract and compatibility tests**
+
+Extend the imports in `tests/unit/test_bounded_live_producer_contracts.py` and add the exact
+registry matrix:
+
+```python
+EVIDENCE_DIAGNOSTIC_PAIRS = (
+    ("status_projection", "row_count_exceeded"),
+    ("status_projection", "row_shape_invalid"),
+    ("status_projection", "ownership_invalid"),
+    ("consumer_contract", "required_fields_invalid"),
+    ("consumer_contract", "evidence_id_invalid"),
+    ("consumer_contract", "evidence_id_duplicate"),
+    ("consumer_contract", "source_identity_invalid"),
+    ("consumer_contract", "source_url_invalid"),
+    ("consumer_contract", "retrieved_at_invalid"),
+    ("consumer_contract", "citation_status_invalid"),
+    ("consumer_contract", "verification_status_invalid"),
+    ("receipt_contract", "source_url_required"),
+    ("receipt_contract", "source_url_policy_invalid"),
+    ("receipt_contract", "source_identity_too_long"),
+    ("receipt_contract", "retrieved_at_too_long"),
+)
+
+
+@pytest.mark.parametrize(("stage", "reason"), EVIDENCE_DIAGNOSTIC_PAIRS)
+def test_evidence_diagnostic_accepts_only_registered_pairs(
+    stage: str, reason: str
+) -> None:
+    diagnostic = EvidenceBoundaryDiagnostic(
+        stage=EvidenceDiagnosticStage(stage),
+        reason=EvidenceDiagnosticReason(reason),
+    )
+    assert diagnostic.model_dump(mode="json") == {"stage": stage, "reason": reason}
+
+
+def test_evidence_diagnostic_rejects_cross_stage_pair() -> None:
+    with pytest.raises(ValidationError, match="evidence_diagnostic_pair_invalid"):
+        EvidenceBoundaryDiagnostic(
+            stage=EvidenceDiagnosticStage.STATUS_PROJECTION,
+            reason=EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID,
+        )
+
+
+def test_evidence_diagnostic_receipt_has_exact_canonical_bytes() -> None:
+    error = EvaluationError(
+        "evidence_invalid",
+        "evidence",
+        False,
+        CleanupStatus.SUCCEEDED,
+        diagnostic=EvidenceBoundaryDiagnostic(
+            stage=EvidenceDiagnosticStage.RECEIPT_CONTRACT,
+            reason=EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID,
+        ),
+    )
+    assert serialize_evidence_diagnostic(error) == (
+        b'{"evidence_boundary":{"reason":"source_url_policy_invalid",'
+        b'"stage":"receipt_contract"},"primary":{"cleanup_status":"succeeded",'
+        b'"code":"evidence_invalid","phase":"evidence","retryable":false},'
+        b'"schema_version":"dra.bounded-live-producer-evidence-diagnostic.v1"}\n'
+    )
+```
+
+Also add tests that:
+
+- accept only final cleanup status `succeeded` or `failed`;
+- reject `not_started`, extra fields, coercion, every missing field, and every cross-stage pair;
+- reject an Evidence diagnostic attached to any primary other than
+  `evidence_invalid / evidence`;
+- prove `serialize_error(enriched) == serialize_error(baseline)`;
+- capture current exact bytes for Result, Run Failure, and Call Budget receipts before changing the
+  registry, then assert those bytes remain unchanged; and
+- assert canonical receipt bytes remain below `MAX_DIAGNOSTIC_BYTES` and contain none of the
+  forbidden public keys or markers.
+
+- [ ] **Step 2: Run the contract tests to verify RED**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/unit/test_bounded_live_producer_contracts.py \
+  -k 'evidence_diagnostic or diagnostic_compatibility or default_public_error'
+```
+
+Expected: collection or assertion failures because the Evidence diagnostic types and serializer do
+not exist. Existing compatibility tests must remain green within the same run.
+
+- [ ] **Step 3: Implement the strict types and serializer**
+
+Add the schema constant, enums, exact pair registry, and models beside the existing result/run
+diagnostic types:
+
+```python
+EVIDENCE_DIAGNOSTIC_SCHEMA_VERSION = (
+    "dra.bounded-live-producer-evidence-diagnostic.v1"
+)
+
+
+class EvidenceDiagnosticStage(str, Enum):
+    STATUS_PROJECTION = "status_projection"
+    CONSUMER_CONTRACT = "consumer_contract"
+    RECEIPT_CONTRACT = "receipt_contract"
+
+
+class EvidenceDiagnosticReason(str, Enum):
+    ROW_COUNT_EXCEEDED = "row_count_exceeded"
+    ROW_SHAPE_INVALID = "row_shape_invalid"
+    OWNERSHIP_INVALID = "ownership_invalid"
+    REQUIRED_FIELDS_INVALID = "required_fields_invalid"
+    EVIDENCE_ID_INVALID = "evidence_id_invalid"
+    EVIDENCE_ID_DUPLICATE = "evidence_id_duplicate"
+    SOURCE_IDENTITY_INVALID = "source_identity_invalid"
+    SOURCE_URL_INVALID = "source_url_invalid"
+    RETRIEVED_AT_INVALID = "retrieved_at_invalid"
+    CITATION_STATUS_INVALID = "citation_status_invalid"
+    VERIFICATION_STATUS_INVALID = "verification_status_invalid"
+    SOURCE_URL_REQUIRED = "source_url_required"
+    SOURCE_URL_POLICY_INVALID = "source_url_policy_invalid"
+    SOURCE_IDENTITY_TOO_LONG = "source_identity_too_long"
+    RETRIEVED_AT_TOO_LONG = "retrieved_at_too_long"
+```
+
+Define `_EVIDENCE_DIAGNOSTIC_PAIRS` as a complete stage-keyed `frozenset` registry. Then add:
+
+```python
+class EvidenceBoundaryDiagnostic(StrictModel):
+    stage: EvidenceDiagnosticStage
+    reason: EvidenceDiagnosticReason
+
+    @model_validator(mode="after")
+    def require_registered_pair(self) -> "EvidenceBoundaryDiagnostic":
+        if self.reason not in _EVIDENCE_DIAGNOSTIC_PAIRS[self.stage]:
+            raise ValueError("evidence_diagnostic_pair_invalid")
+        return self
+
+
+class EvidenceDiagnosticPrimary(StrictModel):
+    code: Literal[FailureCode.EVIDENCE_INVALID]
+    phase: Literal[FailurePhase.EVIDENCE]
+    retryable: Literal[False]
+    cleanup_status: Literal[CleanupStatus.SUCCEEDED, CleanupStatus.FAILED]
+
+
+class EvidenceDiagnosticReceipt(StrictModel):
+    schema_version: Literal[
+        "dra.bounded-live-producer-evidence-diagnostic.v1"
+    ]
+    primary: EvidenceDiagnosticPrimary
+    evidence_boundary: EvidenceBoundaryDiagnostic
+```
+
+Extend `EvaluationError` with the new exact type and eligibility check. Do not loosen the existing
+two diagnostic eligibility checks. Implement `serialize_evidence_diagnostic` by following the
+existing canonical serializer pattern: strict receipt construction, `_assert_public_safe`, sorted
+compact UTF-8 JSON, one newline, `allow_nan=False`, and the existing 4 KiB bound.
+
+- [ ] **Step 4: Run Task 1 GREEN and the frozen compatibility tests**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/unit/test_bounded_live_producer_contracts.py
+git diff --check
+```
+
+Expected: PASS. The new exact bytes pass, the public envelope remains byte-identical, and all three
+existing diagnostic receipt bytes remain unchanged.
+
+- [ ] **Step 5: Commit Task 1**
+
+```bash
+git add scripts/bounded_live_producer_contracts.py \
+  tests/unit/test_bounded_live_producer_contracts.py
+git commit -m "feat(eval): define Evidence diagnostic contracts"
+```
+
+---
+
+### Task 2: Attribute Evidence Rejections At Their Validation Source
+
+**Files:**
+- Modify: `scripts/downstream_consumer_contract.py`
+- Modify: `scripts/bounded_live_producer_contracts.py`
+- Modify: `scripts/bounded_live_producer_proof.py`
+- Modify: `tests/integration/test_downstream_consumer_contract.py`
+- Modify: `tests/unit/test_bounded_live_producer_contracts.py`
+- Modify: `tests/integration/test_bounded_live_producer_proof.py`
+
+**Interfaces:**
+- Produces: `EvidenceContractReason`
+- Changes: `ContractValidationError(code, *, evidence_reason=None)` with unchanged `.code` and
+  optional typed `.evidence_reason`
+- Produces: `evidence_receipt_diagnostic_reason(error: ValidationError) ->
+  EvidenceDiagnosticReason | None`
+- Changes: `_error(..., diagnostic=...)` accepts `EvidenceBoundaryDiagnostic`
+- Preserves: accepted Evidence rows and every public downstream/evaluation byte
+
+- [ ] **Step 1: Write the downstream predicate-to-reason RED matrix**
+
+In `tests/integration/test_downstream_consumer_contract.py`, retain the existing unsafe/type tests
+and add exact reason assertions. Use the current canonical fixture helpers and cover at least:
+
+```python
+@pytest.mark.parametrize(
+    ("mutation", "expected_reason"),
+    [
+        (lambda row: row.pop("source_url"), "required_fields_invalid"),
+        (lambda row: row.__setitem__("evidence_id", "bad id"), "evidence_id_invalid"),
+        (lambda row: row.__setitem__("source_identity", ""), "source_identity_invalid"),
+        (lambda row: row.__setitem__("source_url", "http://example.com"), "source_url_invalid"),
+        (lambda row: row.__setitem__("retrieved_at", "not-a-time"), "retrieved_at_invalid"),
+        (lambda row: row.__setitem__("citation_status", "unknown"), "citation_status_invalid"),
+        (
+            lambda row: row.__setitem__("verification_status", "pending"),
+            "verification_status_invalid",
+        ),
+    ],
+)
+def test_projection_attaches_closed_evidence_reason(mutation, expected_reason) -> None:
+    status = _canonical_status()
+    mutation(status["evidence"][0])
+    with pytest.raises(ContractValidationError) as caught:
+        _project(status=status)
+    assert caught.value.code == "contract_evidence_invalid"
+    assert caught.value.evidence_reason.value == expected_reason
+```
+
+Add separate duplicate-ID and non-object-row cases. Keep the existing subprocess CLI test and add
+an exact byte assertion proving it still emits only:
+
+```json
+{"status":"invalid","code":"contract_evidence_invalid"}
+```
+
+The optional reason must not appear in stdout, stderr, fixture JSON, or serialized contract output.
+
+- [ ] **Step 2: Write raw-status and final-receipt RED matrices**
+
+In `tests/integration/test_bounded_live_producer_proof.py`, add one table for:
+
+```python
+(
+    ("more_than_100_rows", "status_projection", "row_count_exceeded"),
+    ("non_object_row", "status_projection", "row_shape_invalid"),
+    ("foreign_run_or_segment", "status_projection", "ownership_invalid"),
+    ("missing_required_field", "consumer_contract", "required_fields_invalid"),
+    ("duplicate_id", "consumer_contract", "evidence_id_duplicate"),
+    ("null_source_url", "receipt_contract", "source_url_required"),
+    ("query_source_url", "receipt_contract", "source_url_policy_invalid"),
+    ("oversized_source_identity", "receipt_contract", "source_identity_too_long"),
+    ("oversized_retrieved_at", "receipt_contract", "retrieved_at_too_long"),
+)
+```
+
+Each case must assert the unchanged public `code=evidence_invalid`, `phase=evidence`, and the exact
+typed stage/reason. Add negative tests proving all of these yield `diagnostic is None`:
+
+- missing or empty Evidence (`evidence_missing`);
+- manually raised `ContractValidationError("contract_evidence_invalid")` with no typed reason;
+- an unknown or multiple Pydantic error type;
+- `required_cited_domain_missing`, artifact, fallback, result, and run-state failures; and
+- a forged cross-stage reason rejected at construction.
+
+In `tests/unit/test_bounded_live_producer_contracts.py`, add locked-Pydantic tests proving the four
+receipt-only custom validation types are projected without reading `msg`, `input`, `ctx`, or `url`.
+
+- [ ] **Step 3: Run Task 2 tests to verify RED**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/integration/test_downstream_consumer_contract.py \
+  tests/unit/test_bounded_live_producer_contracts.py \
+  tests/integration/test_bounded_live_producer_proof.py \
+  -k 'evidence_reason or evidence_diagnostic or evidence_mutation or evidence_ownership'
+```
+
+Expected: FAIL because downstream exceptions have no reason, raw projection has no diagnostic, and
+the final receipt contract still emits only generic Pydantic errors.
+
+- [ ] **Step 4: Add source-owned downstream reasons**
+
+In `scripts/downstream_consumer_contract.py`, add:
+
+```python
+class EvidenceContractReason(str, Enum):
+    REQUIRED_FIELDS_INVALID = "required_fields_invalid"
+    EVIDENCE_ID_INVALID = "evidence_id_invalid"
+    EVIDENCE_ID_DUPLICATE = "evidence_id_duplicate"
+    SOURCE_IDENTITY_INVALID = "source_identity_invalid"
+    SOURCE_URL_INVALID = "source_url_invalid"
+    RETRIEVED_AT_INVALID = "retrieved_at_invalid"
+    CITATION_STATUS_INVALID = "citation_status_invalid"
+    VERIFICATION_STATUS_INVALID = "verification_status_invalid"
+
+
+class ContractValidationError(ValueError):
+    def __init__(
+        self,
+        code: str,
+        *,
+        evidence_reason: EvidenceContractReason | None = None,
+    ) -> None:
+        if evidence_reason is not None and (
+            type(evidence_reason) is not EvidenceContractReason
+            or code != "contract_evidence_invalid"
+        ):
+            raise ValueError("contract_diagnostic_invalid")
+        super().__init__(code)
+        self.code = code
+        self.evidence_reason = evidence_reason
+
+
+def _evidence_fail(reason: EvidenceContractReason) -> NoReturn:
+    raise ContractValidationError(
+        "contract_evidence_invalid",
+        evidence_reason=reason,
+    )
+```
+
+Replace each existing `_validate_evidence_rows` predicate's generic `_fail` with the exact
+`_evidence_fail` reason. Validate `evidence_id` directly at that predicate so `_identifier` does not
+erase the reason. Leave unrelated fixture-level equality defense without a guessed reason. Do not
+change accepted values, field sets, URL rules, fixture serialization, or CLI `_error`.
+Add constructor tests that reject a plain string in `evidence_reason` and reject a typed Evidence
+reason attached to any code other than `contract_evidence_invalid`.
+
+- [ ] **Step 5: Add model-owned final receipt reasons**
+
+Use the locked Pydantic v2 native custom error type:
+
+```python
+from pydantic_core import PydanticCustomError
+```
+
+Refactor only the four final-receipt-only predicates into field validators that raise these exact
+custom types with the generic message `evidence_invalid` and no context object:
+
+```python
+_EVIDENCE_RECEIPT_ERROR_REASONS = {
+    "dra_evidence_source_url_required": EvidenceDiagnosticReason.SOURCE_URL_REQUIRED,
+    "dra_evidence_source_url_policy_invalid": (
+        EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID
+    ),
+    "dra_evidence_source_identity_too_long": (
+        EvidenceDiagnosticReason.SOURCE_IDENTITY_TOO_LONG
+    ),
+    "dra_evidence_retrieved_at_too_long": (
+        EvidenceDiagnosticReason.RETRIEVED_AT_TOO_LONG
+    ),
+}
+```
+
+`source_url` uses a `mode="before"` validator only to classify `None` as required; other wrong
+types continue through strict Pydantic validation and remain unclassified. Its after-validator owns
+the existing query, fragment, port, host, IP, and domain policy. It catches the same parsing,
+Unicode, and invalid-port exceptions currently collapsed by the model and raises only the custom
+policy type. `source_identity` and `retrieved_at` field validators own only their existing byte
+bounds. Existing identifier, non-empty, timestamp parsing/timezone, citation, and verification
+acceptance remains unchanged.
+
+Add the safe projector:
+
+```python
+def evidence_receipt_diagnostic_reason(
+    error: ValidationError,
+) -> EvidenceDiagnosticReason | None:
+    rows = error.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    )
+    if len(rows) != 1:
+        return None
+    error_type = rows[0].get("type")
+    if type(error_type) is not str:
+        return None
+    return _EVIDENCE_RECEIPT_ERROR_REASONS.get(error_type)
+```
+
+The function reads only one machine-owned error type. It never reads or serializes `loc`, `msg`,
+input, context, URL, or exception text. Tests against locked Pydantic `2.13.4` are the authority for
+the `errors(...)` keyword support and custom type behavior.
+
+- [ ] **Step 6: Attach exact diagnostics in the live projection**
+
+In `scripts/bounded_live_producer_proof.py`:
+
+- split the current combined raw-row predicate into row-shape and ownership checks without changing
+  order relative to count, artifact hash, or downstream projection;
+- construct `EvidenceBoundaryDiagnostic` at those exact predicates;
+- translate only a typed `EvidenceContractReason` value into the same-named
+  `EvidenceDiagnosticReason` under stage `consumer_contract`;
+- project only a recognized custom Pydantic reason under stage `receipt_contract`; and
+- preserve `diagnostic=None` for missing, unknown, malformed, or multiple reasons.
+
+Use one helper:
+
+```python
+def _evidence_diagnostic(
+    stage: EvidenceDiagnosticStage,
+    reason: EvidenceDiagnosticReason,
+) -> EvidenceBoundaryDiagnostic:
+    return EvidenceBoundaryDiagnostic(stage=stage, reason=reason)
+```
+
+Do not add any outer predicate that inspects a raw row again after a validator fails.
+
+- [ ] **Step 7: Run Task 2 GREEN and frozen downstream compatibility**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/integration/test_downstream_consumer_contract.py \
+  tests/unit/test_bounded_live_producer_contracts.py \
+  tests/integration/test_bounded_live_producer_proof.py
+PYTHON_DOTENV_DISABLED=1 python scripts/downstream_consumer_contract.py check \
+  --input docs/evidence/downstream-consumer-contract-v1.json
+git diff --check
+```
+
+Expected: PASS. The downstream command returns its existing `valid` envelope, fixture bytes remain
+unchanged, public Evidence acceptance is unchanged, and every approved reason is source-owned.
+
+- [ ] **Step 8: Commit Task 2**
+
+```bash
+git add scripts/downstream_consumer_contract.py \
+  scripts/bounded_live_producer_contracts.py \
+  scripts/bounded_live_producer_proof.py \
+  tests/integration/test_downstream_consumer_contract.py \
+  tests/unit/test_bounded_live_producer_contracts.py \
+  tests/integration/test_bounded_live_producer_proof.py
+git commit -m "feat(eval): classify Evidence rejection sources"
+```
+
+---
+
+### Task 3: Publish The Fourth Receipt Through The Existing Safe Sink
+
+**Files:**
+- Modify: `scripts/bounded_live_producer_diagnostics.py`
+- Modify: `scripts/bounded_live_producer_proof.py`
+- Modify: `tests/unit/test_bounded_live_producer_diagnostics.py`
+- Modify: `tests/integration/test_bounded_live_producer_proof.py`
+- Modify: `tests/unit/test_bounded_live_producer_contracts.py`
+
+**Interfaces:**
+- Produces: `EVIDENCE_DIAGNOSTIC_FILENAME =
+  "bounded-live-producer-evidence-diagnostic-v1.json"`
+- Produces: `publish_evidence_diagnostic(sink, error, *, remaining_seconds) -> Path`
+- Changes: `_DIAGNOSTIC_SERIALIZERS` and `_publish_diagnostic_best_effort`
+- Preserves: one receipt maximum, call-budget precedence, current writer, current cleanup ownership
+
+- [ ] **Step 1: Write sink/preflight RED tests**
+
+Add tests that assert:
+
+```python
+def test_evidence_diagnostic_uses_fixed_owner_only_non_overwriting_file(tmp_path: Path) -> None:
+    repository, output = _safe_directories(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+    error = _evidence_error(cleanup_status=CleanupStatus.SUCCEEDED)
+
+    path = publish_evidence_diagnostic(
+        sink,
+        error,
+        remaining_seconds=lambda minimum: 10.0,
+    )
+
+    assert path.name == "bounded-live-producer-evidence-diagnostic-v1.json"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert EvidenceDiagnosticReceipt.model_validate_json(
+        path.read_bytes(), strict=True
+    ).evidence_boundary.reason.value == "source_url_policy_invalid"
+    with pytest.raises(DiagnosticOutputError):
+        publish_evidence_diagnostic(
+            sink,
+            error,
+            remaining_seconds=lambda minimum: 10.0,
+        )
+```
+
+Extend the existing preflight parameterization so any pre-existing one of the four fixed final
+filenames blocks the invocation. Reuse the current mutation tests to cover symlink traversal,
+directory replacement, temporary replacement, final-link replacement, owner/mode drift, short
+write, deadline expiration, `fsync` failure, and exact residue cleanup for the new serializer.
+
+- [ ] **Step 2: Write selection and cleanup-order RED tests**
+
+Extend the provider-free live boundary helper in
+`tests/integration/test_bounded_live_producer_proof.py` to observe an `"evidence"` publication and
+add:
+
+```python
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_evidence_diagnostic_is_selected_after_final_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup_fails: bool,
+) -> None:
+    diagnostic_dir = _owner_only_diagnostic_dir(tmp_path)
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=_evidence_diagnostic_error(),
+        diagnostic_dir=diagnostic_dir,
+        fail_cleanup_refresh=cleanup_fails,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    expected_cleanup = "failed" if cleanup_fails else "succeeded"
+    assert caught.value.code is FailureCode.EVIDENCE_INVALID
+    assert caught.value.cleanup_status.value == expected_cleanup
+    receipt = EvidenceDiagnosticReceipt.model_validate_json(
+        (diagnostic_dir / EVIDENCE_DIAGNOSTIC_FILENAME).read_bytes(),
+        strict=True,
+    )
+    assert receipt.primary.cleanup_status.value == expected_cleanup
+    assert holder["diagnostic_publications"] == ["evidence"]
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+```
+
+Add the complete selection table and assert exactly one publisher call:
+
+- typed result diagnostic -> Result receipt;
+- call-budget run failure with valid sidecar -> Call Budget receipt;
+- other typed run failure -> Run Failure receipt;
+- typed Evidence failure -> Evidence receipt;
+- success, untyped Evidence failure, `evidence_missing`, required-domain/source-domain, artifact,
+  fallback, and other failures -> no receipt.
+
+Also prove diagnostic publication failure preserves the original public Evidence error and final
+cleanup status.
+
+- [ ] **Step 3: Run Task 3 tests to verify RED**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/unit/test_bounded_live_producer_contracts.py \
+  tests/unit/test_bounded_live_producer_diagnostics.py \
+  tests/integration/test_bounded_live_producer_proof.py \
+  -k 'evidence_diagnostic or diagnostic_selection or diagnostic_publication'
+```
+
+Expected: FAIL because the fourth filename, serializer registration, publisher, and selection
+branch do not exist.
+
+- [ ] **Step 4: Register and publish the fixed receipt**
+
+In `scripts/bounded_live_producer_diagnostics.py`:
+
+```python
+EVIDENCE_DIAGNOSTIC_FILENAME = (
+    "bounded-live-producer-evidence-diagnostic-v1.json"
+)
+```
+
+Register `serialize_evidence_diagnostic` in `_DIAGNOSTIC_SERIALIZERS` and add
+`publish_evidence_diagnostic` as a thin wrapper over `_publish_diagnostic`. Do not copy or alter the
+writer.
+
+In `_publish_diagnostic_best_effort`, add one exact branch:
+
+```python
+elif (
+    type(error.diagnostic) is EvidenceBoundaryDiagnostic
+    and error.code is FailureCode.EVIDENCE_INVALID
+    and error.phase is FailurePhase.EVIDENCE
+):
+    publisher = publish_evidence_diagnostic
+    arguments = (sink, error)
+```
+
+Keep call-budget selection before generic run-failure selection. Keep the best-effort exception
+boundary and at-most-one publisher invocation unchanged.
+
+- [ ] **Step 5: Run Task 3 GREEN and all diagnostic compatibility tests**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/unit/test_bounded_live_producer_contracts.py \
+  tests/unit/test_bounded_live_producer_diagnostics.py \
+  tests/integration/test_bounded_live_producer_proof.py
+git diff --check
+```
+
+Expected: PASS, including exact bytes for all four receipts, public error compatibility, post-cleanup
+ordering, non-overwrite, replacement-race preservation, and zero task temp residue.
+
+- [ ] **Step 6: Commit Task 3**
+
+```bash
+git add scripts/bounded_live_producer_diagnostics.py \
+  scripts/bounded_live_producer_proof.py \
+  tests/unit/test_bounded_live_producer_contracts.py \
+  tests/unit/test_bounded_live_producer_diagnostics.py \
+  tests/integration/test_bounded_live_producer_proof.py
+git commit -m "feat(eval): publish Evidence diagnostic receipts"
+```
+
+---
+
+### Task 4: Publish The Current Contract And Verify The Integrated Branch
+
+**Files:**
+- Modify: `docs/reference/bounded-live-producer-evaluation.md`
+- Modify: `CHANGELOG.md`
+- Modify: `tests/unit/test_documentation_contracts.py`
+- Modify: `tests/unit/test_release_metadata.py`
+- Verify unchanged: `docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md`
+- Verify unchanged: `docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md`
+
+**Interfaces:**
+- Documents: schema, fixed basename, exact stage/reason pairs, four-way selection, cleanup ordering,
+  non-authority, no-retention, and no-retry boundaries
+- Preserves: historical release sections and `VERSION=0.1.5`
+
+- [ ] **Step 1: Write failing documentation and release contracts**
+
+Add an exact documentation contract that requires:
+
+- `dra.bounded-live-producer-evidence-diagnostic.v1`;
+- `bounded-live-producer-evidence-diagnostic-v1.json`;
+- every exact stage/reason pair from the approved registry;
+- all four receipt selections and the at-most-one rule;
+- post-cleanup publication with final `succeeded|failed` cleanup status;
+- the absence of IDs, URLs, timestamps, counts, field lengths, content, exceptions, paths,
+  credentials, raw input, logs, and traces;
+- unknown or contradictory reason -> no Evidence receipt;
+- no public error/API/DB/Agent/result/Evidence/downstream authority change;
+- no retry, provider execution, live evidence, version, or release claim; and
+- the exact approved design and plan amendments.
+
+Mutation tests must fail when one reason is removed, a reason is moved to a different stage, a
+catch-all reason is added, raw details are claimed, the receipt is described as authoritative, or
+automatic retry is implied.
+
+Update `test_release_metadata.py` so the exact current `Unreleased / Bounded live producer
+evaluation` subsection contains one concise receipt bullet and retains the existing no-live-proof,
+cost, and version non-claims. The `v0.1.5` and earlier suffix must remain byte-stable.
+
+- [ ] **Step 2: Run documentation tests to verify RED**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/unit/test_documentation_contracts.py \
+  tests/unit/test_release_metadata.py \
+  -k 'bounded_live or evidence_diagnostic or unreleased'
+```
+
+Expected: FAIL because current reference, changelog, and retained records do not contain the fourth
+receipt contract.
+
+- [ ] **Step 3: Update current public documentation and retained records**
+
+Update the reference's diagnostic table to four receipt types and add the exact safe Evidence
+registry. Make clear that `row_count_exceeded` exposes no count and all other reasons expose no
+value. Preserve the result, run-failure, and call-budget sections.
+
+Add one concise `Unreleased` bullet such as:
+
+```markdown
+- Added an opt-in, post-cleanup Evidence diagnostic receipt with closed structural
+  stage/reason values; public errors, Evidence authority, raw content, and retry behavior remain
+  unchanged.
+```
+
+Verify the mechanically landed design and implementation amendments are unchanged from the
+reviewed landing commit. Do not edit historical release notes or create a new evidence index entry
+because no live evidence exists.
+
+- [ ] **Step 4: Run documentation GREEN and exact history checks**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/unit/test_documentation_contracts.py \
+  tests/unit/test_release_metadata.py \
+  tests/unit/test_release_presentation_contracts.py \
+  tests/unit/test_final_presentation_audit.py
+git diff --check
+```
+
+Expected: PASS. `Unreleased` describes current main only, `v0.1.5` remains published history, and no
+live Evidence or retry claim appears.
+
+- [ ] **Step 5: Commit Task 4**
+
+```bash
+git add CHANGELOG.md \
+  docs/reference/bounded-live-producer-evaluation.md \
+  tests/unit/test_documentation_contracts.py \
+  tests/unit/test_release_metadata.py
+git commit -m "docs(eval): define Evidence diagnostic receipts"
+```
+
+- [ ] **Step 6: Record Docker and filesystem preflight before the heavy gate**
+
+Record task ownership and before-inventory without deleting anything:
+
+```bash
+df -Pk .
+docker version
+docker compose version
+docker system df
+docker buildx du
+docker ps -a --no-trunc
+docker image ls --no-trunc
+docker network ls
+docker volume ls
+docker image inspect mysql:8.0 >/dev/null
+docker run --rm --pull never --network none --cap-drop ALL \
+  --security-opt no-new-privileges --entrypoint sh mysql:8.0 -c 'df -Pk /'
+```
+
+If the required existing base image is absent, Docker VM capacity is below the repository gate, or
+ownership is ambiguous, stop and report the exact blocker. Do not run a broad prune, restart Docker,
+change daemon/BuildKit settings, or delete non-task resources.
+
+- [ ] **Step 7: Run the focused and complete provider-free matrices**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/integration/test_downstream_consumer_contract.py \
+  tests/unit/test_bounded_live_producer_contracts.py \
+  tests/unit/test_bounded_live_producer_diagnostics.py \
+  tests/unit/test_bounded_live_producer_http.py \
+  tests/unit/test_bounded_live_producer_lifecycle.py \
+  tests/unit/test_bounded_live_producer_runtime_diagnostics.py \
+  tests/integration/test_bounded_live_producer_proof.py \
+  tests/unit/test_documentation_contracts.py \
+  tests/unit/test_release_metadata.py
+
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q -m 'not docker'
+```
+
+Expected: all tests PASS in the repository's locked Python 3.11 environment. If the host interpreter
+does not match locked dependencies, use the already approved task-owned locked-image path for
+verification and report the host mismatch; do not install an unapproved dependency or use an import
+stub as full-suite evidence.
+
+- [ ] **Step 8: Run deterministic proofs and compare bounded producer bytes**
+
+```bash
+proof_tmp="$(mktemp -d)"
+trap 'rm -rf "$proof_tmp"' EXIT
+
+PYTHON_DOTENV_DISABLED=1 python scripts/bounded_live_producer_proof.py check \
+  >"$proof_tmp/one.json"
+PYTHON_DOTENV_DISABLED=1 python scripts/bounded_live_producer_proof.py check \
+  >"$proof_tmp/two.json"
+cmp "$proof_tmp/one.json" "$proof_tmp/two.json"
+
+PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/run_creation_idempotency_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/run_dispatch_reconciliation_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/secure_local_runtime_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/downstream_consumer_contract.py check \
+  --input docs/evidence/downstream-consumer-contract-v1.json
+```
+
+Expected: every proof reports its existing valid/match result, and the two bounded producer outputs
+are byte-identical. No live evidence file is created.
+
+- [ ] **Step 9: Run the required Docker authority lane**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 \
+DECISION_RESEARCH_AGENT_REQUIRE_DOCKER_TESTS=true \
+python -m pytest -q -m docker
+```
+
+Expected: PASS with no provider credential or provider/model/search activity. Reuse the lane's
+task-owned build where possible and let its exact lifecycle cleanup remove only task-owned
+containers, networks, ephemeral volumes, temporary directories, and task images.
+
+- [ ] **Step 10: Run identity, presentation, scope, safety, and residue audits**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python scripts/check_canonical_identity.py --root .
+PYTHON_DOTENV_DISABLED=1 python scripts/final_presentation_audit.py
+git diff --check origin/main..HEAD
+git status --short
+```
+
+Also verify:
+
+- changed files are limited to the approved implementation, tests, reference, changelog, and two
+  retained design/plan records;
+- no diff exists in API, DB, migrations, Agent runtime, dependencies, constraints, CI, frontend,
+  `VERSION`, release notes, committed evidence, or provider configuration;
+- no private path/name, credential value, raw input, payload, exception text, query, scope, content,
+  unsupported claim, or unfinished marker was added;
+- `docs/evidence/bounded-live-producer-v1.json` and `.md` remain absent;
+- task-owned containers, Compose projects, networks, volumes, images, temporary roots, credential
+  snapshots, diagnostic directories, and processes are zero after verification; and
+- shared base images and BuildKit cache remain untouched unless a separately authorized cleanup is
+  performed.
+
+Frontend tests are not a local gate because no frontend source, manifest, lockfile, or shared UI
+contract changes. Hosted CI will still run the existing frontend job.
+
+- [ ] **Step 11: Perform implementation-plan self-check and stop for review**
+
+Map every approved design requirement to Tasks 1–4. Search the final plan and diff for incomplete
+instructions, inconsistent type/function names, and unsupported extensions. Confirm the initial
+mechanical landing commit and all four implementation commits are retained, the implementation
+worktree is clean, and the protected evidence worktree is unchanged.
+
+Return a `READY` report containing:
+
+- base and final HEAD;
+- ordered commits;
+- exact changed files and diff size;
+- each RED and GREEN command/result;
+- focused, full non-Docker, deterministic, Docker, documentation, identity and safety evidence;
+- Docker before/after inventory and exact retained resources;
+- public byte-compatibility and authority-boundary results;
+- remaining risk; and
+- explicit confirmation that no provider/live observation, credential access, evidence
+  publication, push, PR, merge, tag, Release, deploy, dependency install, broad Docker cleanup, or
+  protected-worktree cleanup occurred.
+
+Do not push or create a PR. Stop at the clean local branch for authoritative branch-diff review.
+
+### Completion Gate
+
+- Every approved stage/reason pair is source-owned and mutation-tested.
+- Unknown or contradictory reason state publishes no receipt.
+- Public error, downstream fixture/CLI, provider-free output, and three existing receipt bytes are
+  unchanged.
+- The new strict receipt is written only for exact typed `evidence_invalid / evidence`, after final
+  cleanup, through the existing safe sink and one fixed basename.
+- One invocation cannot publish more than one receipt.
+- No raw or identifying Evidence detail enters memory projection output, receipt, logs, or public
+  documentation.
+- Focused, full relevant, deterministic, Docker, documentation, identity, presentation, scope,
+  safety, and residue gates pass on the exact reviewed HEAD.
+- The implementation remains one focused PR and does not start another live observation or release.

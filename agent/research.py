@@ -224,13 +224,15 @@ def _url_is_cited(source_url: str, report_text: str) -> bool:
 def mark_cited_evidence(
     entries: list[EvidenceEntry], report_text: str
 ) -> list[EvidenceEntry]:
-    """Mark evidence as cited when its source URL appears in the final report."""
+    """Recompute citation status from URLs in the final report."""
     marked: list[EvidenceEntry] = []
     for entry in entries:
-        if entry.source_url and _url_is_cited(entry.source_url, report_text):
-            marked.append(replace(entry, citation_status="cited"))
-        else:
-            marked.append(entry)
+        citation_status = (
+            "cited"
+            if entry.source_url and _url_is_cited(entry.source_url, report_text)
+            else "uncited"
+        )
+        marked.append(replace(entry, citation_status=citation_status))
     return marked
 
 

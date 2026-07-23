@@ -116,6 +116,25 @@ class TestResearchEvidence:
 
         assert marked[0].citation_status == "uncited"
 
+    def test_mark_cited_evidence_recomputes_precited_unmatched_as_uncited(self):
+        from agent.research import EvidenceEntry, mark_cited_evidence
+
+        entry = EvidenceEntry(
+            thread_id="thread-001",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="tavily_search",
+            source_url="https://example.com/source",
+            snippet="source summary",
+            citation_status="cited",
+            verification_status="verified",
+        )
+
+        marked = mark_cited_evidence([entry], "Final report has no source URL.")
+
+        assert marked[0].citation_status == "uncited"
+        assert marked[0].verification_status == "verified"
+
     def test_extract_evidence_skips_untrusted_plain_text_without_url(self):
         from agent.research import extract_evidence_entries
 

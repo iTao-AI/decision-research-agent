@@ -50,6 +50,10 @@ All notable changes to this project are documented in this file.
   `internet_search` calls through the existing Evidence extractor, with
   deterministic deduplication before freeze. Researcher summaries remain
   context for the coordinator rather than Evidence authority.
+- Recorded one timezone-aware UTC observation time for all Evidence rows from
+  each completed source-tool response. Successful generic finalization
+  recomputes `cited` or `uncited` from the canonical persisted artifact, while
+  failure, cancellation, timeout, and Talent paths retain frozen Evidence.
 - Added an opt-in, post-cleanup Evidence diagnostic receipt with closed
   structural stage/reason values; public errors, Evidence authority, raw
   content, and retry behavior remain unchanged.

@@ -185,7 +185,15 @@ def test_changelog_preserves_published_release_boundary() -> None:
   content, and retry behavior remain unchanged.
 - No live provider observation or JSON/Markdown evidence report is committed;
   `VERSION` and the v0.1.5 release record remain unchanged."""
-    assert unreleased.strip() == bounded_producer_subsection
+    assert unreleased.count("### Bounded live producer evaluation") == 1
+    bounded_actual = (
+        "### Bounded live producer evaluation"
+        + unreleased.split(
+            "### Bounded live producer evaluation",
+            1,
+        )[1]
+    )
+    assert bounded_actual.strip() == bounded_producer_subsection
     v0_1_5 = changelog.split(v0_1_5_heading, 1)[1].split(v0_1_4_heading, 1)[0]
     secure_runtime_subsection = """### Secure local runtime access
 
@@ -298,6 +306,22 @@ def test_changelog_contains_v0_1_0_release_entry() -> None:
     assert "Backend-and-CLI release" in changelog
     assert "Breaking Changes" in changelog
     assert "Pre-v0.1.0 compatibility aliases and task/thread routes were removed" in changelog
+
+
+def test_unreleased_records_deepseek_provider_protocol_closure() -> None:
+    changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split(
+        "## [0.1.5]",
+        1,
+    )[0]
+
+    assert "### DeepSeek provider protocol" in unreleased
+    assert "langchain-deepseek==1.1.0" in unreleased
+    assert "reasoning_content" in unreleased
+    assert "bounded local provider-protocol telemetry" in unreleased
+    assert "remote tracing disabled" in unreleased
+    assert "No live provider result" in unreleased
+    assert "## [0.1.5]" not in unreleased
 
 
 def test_security_policy_matches_current_release_surface() -> None:

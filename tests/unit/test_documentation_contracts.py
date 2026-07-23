@@ -48,6 +48,37 @@ def _collapsed(text: str) -> str:
     return " ".join(text.split())
 
 
+def test_deepseek_provider_protocol_documentation_matches_runtime():
+    env_example = (
+        PROJECT_ROOT / ".env.example"
+    ).read_text(encoding="utf-8")
+    reference = (
+        PROJECT_ROOT / "docs/reference/external-services.md"
+    ).read_text(encoding="utf-8")
+
+    assert "DEEPSEEK_API_KEY=" in env_example
+    assert "DEEPSEEK_API_BASE=https://api.deepseek.com" in env_example
+    assert "DEEPSEEK_API_KEY" in reference
+    assert "DEEPSEEK_API_BASE" in reference
+    assert "OPENAI_API_KEY" in reference
+    assert "OPENAI_BASE_URL" in reference
+    assert "official LangChain DeepSeek integration" in reference
+    assert "reasoning_content" in reference
+    assert "provider protocol state" in reference
+    assert "not Evidence" in reference
+    assert "does not prove a live provider result" in reference
+    assert "## Optional LangSmith Diagnostics" in reference
+    assert "deepseek_provider_selected" in reference
+    assert "deepseek_reasoning_protocol_validated" in reference
+    assert "deepseek_reasoning_protocol_rejected" in reference
+    assert "model_fallback_activated" in reference
+    assert "LANGSMITH_TRACING=false" in reference
+    assert "LANGSMITH_HIDE_INPUTS=true" in reference
+    assert "LANGSMITH_HIDE_OUTPUTS=true" in reference
+    assert "bounded-live" in reference
+    assert "separate operator authorization" in reference
+
+
 V015_RELEASE_H2_ORDER = (
     "Supported Surface",
     "Changes",

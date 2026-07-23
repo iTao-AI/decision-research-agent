@@ -4,7 +4,7 @@
 
 | 服务 | 用途 | 超时 | 重试与降级 |
 |---|---|---|---|
-| OpenAI-compatible provider (default DeepSeek) | LLM 推理 | 120s | 可配置 fallback model；provider 错误继续按调用方契约处理 |
+| Official DeepSeek provider integration | LLM 推理 | 120s | 可配置 fallback model；provider 错误继续按调用方契约处理 |
 | Tavily Search | 公共网络搜索 | 单次 15s，并设置有界总超时 | 3 total attempts；成功结果进入短期 cache；无备用搜索引擎 |
 | RAGFlow | 可选知识库检索 | 单次 60s | 非 timeout 异常最多 3 total attempts；terminal on timeout；失败返回有界错误文本 |
 | MySQL | 通用 profile 的只读数据查询 | 连接 10s，读取/查询 30s | 连接池管理；无透明写入或跨服务 fallback |
@@ -13,17 +13,47 @@
 `tools/ragflow_tools.py` 和 `tools/mysql_tools.py` 的当前实现。本文不声明外部
 provider SLA。
 
-## OpenAI-Compatible Provider
+## DeepSeek And OpenAI-Compatible Providers
 
-- 环境变量：`OPENAI_BASE_URL`, `OPENAI_API_KEY`, `LLM_MODEL`,
-  `LLM_FALLBACK_MODEL`, `LLM_REASONING_EFFORT`, `LLM_THINKING_MODE`。
-- 默认配置面向 DeepSeek；调用协议仍是 OpenAI-compatible provider contract。
+- `deepseek-*` model identifiers use the official LangChain DeepSeek integration.
+- DeepSeek configuration prefers `DEEPSEEK_API_BASE` and
+  `DEEPSEEK_API_KEY`; `OPENAI_BASE_URL` and `OPENAI_API_KEY` remain
+  compatibility aliases.
+- Non-DeepSeek identifiers retain the OpenAI-compatible provider path.
 - `LLM_QWEN_MAX` 仅在 `LLM_MODEL` 未设置时作为兼容配置读取。
 - 默认请求超时为 120s。Fallback model 是 provider/model fallback，不代表
   对所有错误自动成功或具备可用性承诺。
+- Thinking-mode assistant tool calls preserve the exact
+  `reasoning_content` as provider protocol state for the next request.
+- Provider protocol state is not Evidence, application state, review,
+  publication, or delivery authority.
 - 当强制 tool selection 与 provider thinking mode 不兼容时，运行时只对该次
   tool binding 使用关闭 thinking 的模型副本；普通调用保留配置的 thinking
   mode。
+- Provider-free tests cover the protocol adapter and real DeepAgents
+  composition. This does not prove a live provider result, research quality,
+  cost, or production readiness.
+
+## Optional LangSmith Diagnostics
+
+- Local structured logs use only `deepseek_provider_selected`,
+  `deepseek_reasoning_protocol_validated`,
+  `deepseek_reasoning_protocol_rejected`, and
+  `model_fallback_activated`. They contain bounded provider/protocol facts,
+  counts, codes, and exception class names; they never contain reasoning,
+  message/tool payloads, credentials, provider response bodies, exception
+  text, or tracebacks.
+- LangChain and DeepAgents already support automatic LangSmith tracing.
+  DeepSeek model runs carry only the allowlisted provider family, model role,
+  provider protocol, and thinking-mode tags/metadata added by this change.
+- Checked-in configuration keeps `LANGSMITH_TRACING=false`,
+  `LANGSMITH_HIDE_INPUTS=true`, and `LANGSMITH_HIDE_OUTPUTS=true`; no key is
+  committed.
+- The bounded-live producer continues to require tracing disabled, hidden
+  inputs/outputs, and an empty LangSmith key.
+- A privacy-first remote trace smoke is a separate operator authorization.
+  It is not required for provider correctness and does not own ResearchRun,
+  Evidence, review, publication, or delivery truth.
 
 ## Tavily Search
 

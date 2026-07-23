@@ -14,7 +14,7 @@ def test_external_services_reference_matches_resilience_contract() -> None:
     text = (ROOT / "docs/reference/external-services.md").read_text(encoding="utf-8")
 
     required = [
-        "OpenAI-compatible provider (default DeepSeek)",
+        "Official DeepSeek provider integration",
         "15s",
         "60s",
         "10s",

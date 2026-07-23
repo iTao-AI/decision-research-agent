@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### DeepSeek provider protocol
+
+- Routed `deepseek-*` primary and fallback models through the official
+  LangChain DeepSeek integration, pinned as `langchain-deepseek==1.1.0`.
+- Added a narrow provider adapter that preserves exact non-empty
+  `reasoning_content` across thinking-mode tool-call turns and fails before
+  transport when required protocol state is missing or unalignable.
+- Preserved the OpenAI-compatible path for non-DeepSeek models, existing
+  credential aliases, forced-tool-choice compatibility, call budgets, and
+  application-owned Evidence and delivery authority.
+- Added bounded local provider-protocol telemetry and privacy-safe
+  LangSmith-ready tags/metadata while keeping remote tracing disabled for
+  required and bounded-live verification.
+- No live provider result, research-quality result, cost result, consumer
+  acceptance, deployment, or release claim is made by this provider-free
+  change.
+
 ### Bounded live producer evaluation
 
 - Added a deterministic provider-free contract check and a separately

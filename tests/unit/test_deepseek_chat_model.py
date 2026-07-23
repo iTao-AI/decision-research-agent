@@ -443,3 +443,19 @@ def test_observability_failure_cannot_change_protocol_result(monkeypatch):
         )
 
     assert raised.value.code == "deepseek_reasoning_content_missing"
+
+
+def test_protocol_failure_does_not_log_reasoning_or_tool_arguments(caplog):
+    model = _model()
+    message = AIMessage(
+        content="",
+        tool_calls=[_tool_call("call-1", "sensitive-query")],
+    )
+
+    with pytest.raises(DeepSeekReasoningProtocolError):
+        model._get_request_payload(
+            [HumanMessage(content="sensitive-user-content"), message]
+        )
+
+    assert "sensitive-query" not in caplog.text
+    assert "sensitive-user-content" not in caplog.text

@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 from pathlib import PurePosixPath
 from typing import Any, Sequence
 
@@ -14,7 +15,9 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import StructuredTool
 from pydantic import Field
+from openai.types.chat import ChatCompletion
 
+from agent.deepseek_chat_model import DeepSeekThinkingChatModel
 from agent.deepagents_harness import (
     DeepAgentsHarness,
     build_filesystem_permissions,
@@ -82,6 +85,92 @@ class ScriptedCanonicalWriteModel(BaseChatModel):
         else:
             message = AIMessage(content="Canonical report written.")
         return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class ScriptedDeepSeekWriteModel(DeepSeekThinkingChatModel):
+    call_count: int = 0
+    request_payloads: list[dict[str, Any]] = Field(default_factory=list)
+
+    def _response(self) -> ChatCompletion:
+        if self.call_count == 1:
+            message = {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "bounded-tool-reasoning",
+                "tool_calls": [
+                    {
+                        "id": "call-write-report",
+                        "type": "function",
+                        "function": {
+                            "name": "write_file",
+                            "arguments": (
+                                '{"file_path":'
+                                '"/workspace/research-report.md",'
+                                '"content":"# Canonical report\\n"}'
+                            ),
+                        },
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        else:
+            message = {
+                "role": "assistant",
+                "content": "Canonical report written.",
+            }
+            finish_reason = "stop"
+
+        return ChatCompletion.model_validate(
+            {
+                "id": f"completion-{self.call_count}",
+                "object": "chat.completion",
+                "created": 0,
+                "model": self.model_name,
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": finish_reason,
+                        "message": message,
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+        )
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del run_manager
+        payload = self._get_request_payload(
+            messages,
+            stop=stop,
+            **kwargs,
+        )
+        self.request_payloads.append(deepcopy(payload))
+        self.call_count += 1
+        return self._create_chat_result(self._response())
+
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        return self._generate(
+            messages,
+            stop=stop,
+            run_manager=run_manager,
+            **kwargs,
+        )
 
 
 class ScriptedMissingThenWriteModel(ScriptedCanonicalWriteModel):
@@ -491,6 +580,105 @@ async def test_locked_deepagents_write_file_reaches_application_observer(tmp_pat
     assert outcome.report_candidate == ReportCandidate(
         path=PurePosixPath("/workspace/research-report.md"),
         content="# Canonical report\n",
+    )
+
+
+@pytest.mark.asyncio
+async def test_deepseek_tool_turn_round_trips_reasoning_to_canonical_report(
+    tmp_path,
+):
+    model = ScriptedDeepSeekWriteModel(
+        model="deepseek-v4-pro",
+        api_key="provider-test-key",
+        base_url="https://api.deepseek.com",
+        max_retries=0,
+        extra_body={"thinking": {"type": "enabled"}},
+    )
+    service = ResearchExecutionService(
+        harness=_real_deepagents_harness(
+            model,
+            completion_guard=False,
+        ),
+        project_root=tmp_path,
+    )
+
+    outcome = await service.execute(
+        "Produce the canonical report.",
+        "thread-deepseek-protocol-1",
+        run_id="run-deepseek-protocol-1",
+        segment_id="segment-deepseek-protocol-1",
+        profile_id="generic",
+    )
+
+    assert model.call_count == 2
+    assert outcome.report_candidate == ReportCandidate(
+        path=PurePosixPath("/workspace/research-report.md"),
+        content="# Canonical report\n",
+    )
+    assistant_messages = [
+        message
+        for message in model.request_payloads[1]["messages"]
+        if message["role"] == "assistant" and message.get("tool_calls")
+    ]
+    assert len(assistant_messages) == 1
+    assert (
+        assistant_messages[0]["reasoning_content"]
+        == "bounded-tool-reasoning"
+    )
+
+
+def test_deepseek_sync_graph_round_trips_reasoning():
+    model = ScriptedDeepSeekWriteModel(
+        model="deepseek-v4-pro",
+        api_key="provider-test-key",
+        base_url="https://api.deepseek.com",
+        max_retries=0,
+        extra_body={"thinking": {"type": "enabled"}},
+    )
+    backend = CompositeBackend(default=StateBackend(), routes={})
+    graph = create_deep_agent(
+        model=model,
+        tools=[],
+        system_prompt="Write the requested canonical report.",
+        middleware=[],
+        subagents=[],
+        permissions=list(build_filesystem_permissions()),
+        backend=backend,
+        context_schema=ResearchRuntimeContext,
+        name="deepseek-protocol-sync",
+    )
+    context = ResearchRuntimeContext(
+        thread_id="thread-deepseek-sync-1",
+        run_id="run-deepseek-sync-1",
+        segment_id="segment-deepseek-sync-1",
+        profile_id="generic",
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Produce the canonical report.",
+                }
+            ]
+        },
+        context=context,
+    )
+
+    assert model.call_count == 2
+    assert result["files"]["/workspace/research-report.md"]["content"] == (
+        "# Canonical report\n"
+    )
+    assistant_messages = [
+        message
+        for message in model.request_payloads[1]["messages"]
+        if message["role"] == "assistant" and message.get("tool_calls")
+    ]
+    assert len(assistant_messages) == 1
+    assert (
+        assistant_messages[0]["reasoning_content"]
+        == "bounded-tool-reasoning"
     )
 
 

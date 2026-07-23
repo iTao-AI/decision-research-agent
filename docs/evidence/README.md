@@ -33,19 +33,26 @@ Directory presence does not confer verification or current release authority.
 |---|---|
 | [real-source-proof.json](real-source-proof.json) | Machine-readable bounded real-source workflow proof and report hashes. |
 | [real-source-proof.md](real-source-proof.md) | Human-readable proof procedure, verification/publication outcome, and explicit limitations. |
+| [bounded-live-producer-v1.json](bounded-live-producer-v1.json) | Machine-readable sanitized record of one bounded DeepSeek producer observation: `completed / not_required / ready`, `supported / accept_draft`, 59 Evidence rows, cited sources from `docs.python.org` and `peps.python.org`, and cost and search cost remain `not_observed`. |
+| [bounded-live-producer-v1.md](bounded-live-producer-v1.md) | Deterministic human-readable projection of the same reviewed observation and its explicit limits. |
 
 This bounded observation remains a valid historical reviewed record. It is
 not a current deterministic release gate and is
 not comprehensive truth verification.
 
+The bounded live pair is one bounded DeepSeek producer observation, not a
+required CI or current release baseline. It does not prove source truth,
+research or provider quality, downstream business acceptance, provider billing,
+exactly-once execution, production readiness, or an SLA.
+
 ## Absent Future Evidence
 
 The [Bounded Live Producer Evaluation](../reference/bounded-live-producer-evaluation.md)
 documents a deterministic provider-free contract check and a separately
-authorized live observation path. No live report is committed: the absent
-`bounded-live-producer-v1.json` and `bounded-live-producer-v1.md` paths are not
-completed evidence. A later authorized run and reviewed evidence-only change
-are required before either path may be indexed as an observation.
+authorized live observation path. Any future observation remains absent until
+it receives its own authorization and reviewed evidence-only change. The
+historical record above does not authorize a retry or become a current
+deterministic release gate.
 
 The dispatch proof explicitly records `exactly_once_execution: not_claimed`,
 `running_execution_recovery: not_proven`,

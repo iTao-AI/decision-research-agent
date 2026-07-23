@@ -7,9 +7,10 @@ surface, application-owned persistence, canonical downstream projection,
 backend restart, same-key replay, and exact task-owned cleanup.
 
 Implementation availability proves deterministic contracts and a provider-free
-Docker lifecycle only. No provider-backed observation claim is valid until an
-operator separately authorizes one `observe-live` run and a later review accepts
-the generated evidence.
+Docker lifecycle only. The repository also retains one reviewed bounded
+DeepSeek provider observation produced by a separately authorized
+`observe-live` run; that historical record does not broaden the deterministic
+contract or release authority.
 
 ## Provider-Free Contract Check
 
@@ -305,7 +306,7 @@ disposition. The exact original request and idempotency key must then return
 
 ## Outputs And Evidence Status
 
-Successful live observation may publish only these two previously absent paths:
+The reviewed evidence-only change retains these two paths:
 
 ```text
 docs/evidence/bounded-live-producer-v1.json
@@ -321,7 +322,16 @@ authority even if rollback operations fail. Rollback removes run-created links
 when the filesystem permits it without touching pre-existing paths. An
 unremovable Markdown-only residue is non-authoritative and blocks a later
 overwrite; rollback failure never replaces the stable primary output error. No
-live report is committed by this implementation change.
+later observation may overwrite this pair.
+
+The retained record captures one bounded DeepSeek producer observation with
+terminal `completed / not_required / ready`, result `supported / accept_draft`,
+59 Evidence rows, cited Evidence from both `docs.python.org` and
+`peps.python.org`, and cost/search cost `not_observed`. It is a historical
+reviewed record, not a required CI or current release baseline. It does not
+prove source truth, research quality, provider quality, downstream business
+acceptance, provider billing, exactly-once execution, production readiness, or
+an SLA.
 
 ## Stable Failure Taxonomy
 

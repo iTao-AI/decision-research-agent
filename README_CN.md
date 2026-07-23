@@ -257,8 +257,14 @@ top-level workflow step。当前 required-gate authority 是
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
 
 Bounded live producer 的 `check` 不使用 provider，也不启动 Docker。其需要
-单独授权的 `observe-live` 命令只在文档中说明，不会被 tests 或 CI 调用；本次
-implementation 未提交 live report。
+单独授权的 `observe-live` 命令不会被 tests 或 CI 调用。仓库保留了一次已审查的
+[bounded DeepSeek producer 历史记录](docs/evidence/bounded-live-producer-v1.md)：
+terminal `completed / not_required / ready`、result `supported / accept_draft`、
+59 条 Evidence、`docs.python.org` 与 `peps.python.org` 均有 cited source，
+cost/search cost 为 `not_observed`。它不是 required CI 或 current release
+baseline，也不证明 source truth、research/provider quality、downstream
+business acceptance、provider billing、exactly-once、production readiness
+或 SLA。
 
 ## 文档
 
@@ -293,10 +299,11 @@ implementation 未提交 live report。
   endpoint、`409 run_failed` envelope 与冻结的
   `dra.downstream-consumer.v1` fixture 保持不变；该有界证明不构成 provider
   diagnosis、billing record 或 exactly-once execution 声明。
-- Bounded live producer harness 只证明确定性 contracts 与一次 provider-free
-  Docker lifecycle；provider/model 执行、live evidence publication、provider
-  quality、research truth、billing、hosted deployment 与 SLA 声明仍需单独授权，
-  不属于本次 implementation。
+- Bounded live producer harness 的 required gate 只证明确定性 contracts 与一次
+  provider-free Docker lifecycle；单独审查的历史 observation 记录一次有界
+  provider execution，但不升级为 required CI/release authority、provider 或
+  research quality、research truth、billing、downstream acceptance、hosted
+  deployment 或 SLA。
 - Source launcher 仅在 direct-loopback 边界支持 credential-free 访问。
   Compose 要求认证，只把 backend/MySQL 发布到 `127.0.0.1`，并使用 required
   secrets、health declarations、warning-level logging、capability drop 与

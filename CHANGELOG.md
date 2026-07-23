@@ -27,6 +27,19 @@ All notable changes to this project are documented in this file.
   acceptance, deployment, or release claim is made by this provider-free
   change.
 
+### Bounded live observation evidence
+
+- Retained one reviewed bounded DeepSeek producer observation as a historical
+  JSON/Markdown record: `completed / not_required / ready`, `supported /
+  accept_draft`, 59 Evidence rows, cited sources from `docs.python.org` and
+  `peps.python.org`, and cost/search cost `not_observed`.
+- The observation is not a required CI or current release baseline and does not
+  claim source truth, research/provider quality, downstream business
+  acceptance, provider billing, exactly-once execution, production readiness,
+  or an SLA; `VERSION` and the v0.1.5 release record remain unchanged.
+- This evidence-only record supersedes the Change 1 implementation-state
+  absence note retained below as historical provenance.
+
 ### Bounded live producer evaluation
 
 - Added a deterministic provider-free contract check and a separately

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -1514,7 +1515,7 @@ def test_run_failure_cause_links_reject_deliberate_mutation(
     )
 
 
-def test_bounded_live_producer_reference_is_discoverable_without_live_evidence() -> None:
+def test_bounded_live_producer_reference_and_reviewed_evidence_are_discoverable() -> None:
     reference_path = (
         PROJECT_ROOT
         / "docs"
@@ -1531,7 +1532,7 @@ def test_bounded_live_producer_reference_is_discoverable_without_live_evidence()
         "supported",
         "accept_draft",
         "estimate-only",
-        "No provider-backed observation claim",
+        "one reviewed bounded DeepSeek provider observation",
         "not exactly-once execution",
         "not a billing record",
         "not a hosted deployment",
@@ -1629,11 +1630,39 @@ def test_bounded_live_producer_reference_is_discoverable_without_live_evidence()
 
     json_evidence = PROJECT_ROOT / "docs/evidence/bounded-live-producer-v1.json"
     markdown_evidence = PROJECT_ROOT / "docs/evidence/bounded-live-producer-v1.md"
-    assert not json_evidence.exists()
-    assert not markdown_evidence.exists()
-    assert "No live report is committed" in readme
-    assert "未提交 live report" in readme_cn
-    assert "No live report is committed" in evidence_index
+    assert json_evidence.is_file()
+    assert markdown_evidence.is_file()
+    assert json_evidence.stat().st_size == 30_478
+    assert markdown_evidence.stat().st_size == 13_448
+    assert hashlib.sha256(json_evidence.read_bytes()).hexdigest() == (
+        "e8aa071c438a4337850069a8a14e2042a60960461c08e741a816a2f7491df21e"
+    )
+    assert hashlib.sha256(markdown_evidence.read_bytes()).hexdigest() == (
+        "8d64817f2503fbcc70c43c41a4b60a299fd80972e25c18f6b5097f9be52c9d14"
+    )
+    for document in (readme, readme_cn, docs_index, evidence_index, reference):
+        normalized_document = " ".join(document.split())
+        assert "completed / not_required / ready" in normalized_document
+        assert "supported / accept_draft" in normalized_document
+        assert "59" in normalized_document
+        assert "docs.python.org" in normalized_document
+        assert "peps.python.org" in normalized_document
+        assert "not_observed" in normalized_document
+    for phrase in (
+        "source truth",
+        "research quality",
+        "provider quality",
+        "downstream business acceptance",
+        "provider billing",
+        "exactly-once",
+        "production readiness",
+        "SLA",
+    ):
+        assert phrase in normalized_reference
+    assert "not a required CI or current release baseline" in normalized_reference
+    assert "No live report is committed" not in readme
+    assert "未提交 live report" not in readme_cn
+    assert "No live report is committed" not in evidence_index
 
 
 @pytest.mark.parametrize(
@@ -1665,7 +1694,7 @@ def test_bounded_live_producer_design_rejects_precheck_order_mutation(
                 replacement,
             ),
         ),
-        contract=test_bounded_live_producer_reference_is_discoverable_without_live_evidence,
+        contract=test_bounded_live_producer_reference_and_reviewed_evidence_are_discoverable,
     )
 
 

@@ -39,6 +39,12 @@ external evaluation of the public contract surface.
 - [Bounded Live Producer Evaluation](reference/bounded-live-producer-evaluation.md)
   — provider-free contract check, separately authorized live command, bounded
   loopback lifecycle, stable output, and explicit non-claims.
+- [Bounded Live Producer Observation](evidence/bounded-live-producer-v1.md)
+  ([JSON](evidence/bounded-live-producer-v1.json)) — historical reviewed record
+  of one bounded DeepSeek producer observation: `completed / not_required /
+  ready`, `supported / accept_draft`, 59 Evidence rows, cited sources from
+  `docs.python.org` and `peps.python.org`, and cost/search cost `not_observed`;
+  not a required CI or current release baseline.
 - [Data Models](reference/data-models.md) — run, Evidence, artifact, review, and publication records.
 - [State Machines](reference/state-machines.md) — execution, delivery, review, and verification transitions.
 - [Tool Registry](reference/tool-registry.md) — server-owned tool and Skill boundaries.

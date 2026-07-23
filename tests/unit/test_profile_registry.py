@@ -139,6 +139,7 @@ def test_talent_agent_compiler_enforces_restricted_harness(monkeypatch):
         "global_tool_run_limit": None,
         "task_run_limit": None,
         "exit_behavior": "error",
+        "named_tool_limits": {},
     }
 
 

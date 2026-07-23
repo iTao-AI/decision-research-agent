@@ -39,8 +39,13 @@ All notable changes to this project are documented in this file.
   retaining the existing network, privilege, mount, and cleanup boundaries.
 - Adjusted the generic named researcher tool-call run limit from 12 to 16;
   LangChain's native limiter remains fail closed with `exit_behavior="error"`.
-- This tuning does not claim research quality, provider cost, business
-  acceptance, or a successful live proof.
+- Upgraded the existing five-call `network_search` prompt boundary to a
+  runtime-enforced `internet_search` named-tool limit with
+  `exit_behavior="continue"`; blocked calls return bounded feedback to the
+  model without executing the tool.
+- The generic researcher global tool limit 16 and model limit 20 remain
+  fail-closed ceilings. This policy does not claim research quality, provider
+  cost, business acceptance, or a successful live proof.
 - Added an opt-in, post-cleanup Evidence diagnostic receipt with closed
   structural stage/reason values; public errors, Evidence authority, raw
   content, and retry behavior remain unchanged.

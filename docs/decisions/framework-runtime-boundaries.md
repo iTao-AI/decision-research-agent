@@ -85,6 +85,13 @@ LangSmith receives bounded metadata with inputs and outputs hidden by default.
 Trace availability never changes business readiness, Evidence authority,
 review resolution, publication, or delivery.
 
+The classic LangGraph stream adapter opts into `subgraphs=True` and validates
+the locked namespace/payload tuple shape before dispatch. Unknown or malformed
+nested output fails closed. Only completed `internet_search` `ToolMessage`
+objects from an identified `network_search` subgraph reach the existing
+Evidence extractor; other tool output, model text, reasoning, and summaries do
+not acquire Evidence authority.
+
 ## Trade-offs
 
 - An application-owned port adds an adapter boundary, but prevents framework

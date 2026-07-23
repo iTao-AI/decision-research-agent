@@ -970,8 +970,15 @@ async def _native_signal_snapshot(
     from agent.deepagents_harness import DeepAgentsHarness
 
     class RaisingGraph:
-        async def astream(self, _input: Any, *, config: Any, context: Any):
-            del config, context
+        async def astream(
+            self,
+            _input: Any,
+            *,
+            config: Any,
+            context: Any,
+            subgraphs: bool = False,
+        ):
+            del config, context, subgraphs
             if False:
                 yield {}
             raise native_exception

@@ -122,6 +122,15 @@ recursion budgets and does not promote chat text or fallback content into the
 canonical artifact. If the one correction still produces no valid file,
 finalization keeps the existing fallback and fail-closed delivery behavior.
 
+Nested generic research streams use a validated namespace/payload adapter.
+Completed `network_search` `internet_search` results are merged through the
+existing source-result contract, followed by deterministic deduplication
+before Evidence freeze. The researcher final response must return the exact
+public HTTPS source URLs actually returned by the search tool so the
+coordinator can retain citations; this does not replace tool-result Evidence
+authority. Other nested tools and arbitrary subagent text do not create
+Evidence, and this capture path does not change delivery readiness.
+
 ## Talent Review And Publication
 
 ```mermaid

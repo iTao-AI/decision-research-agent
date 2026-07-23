@@ -103,6 +103,13 @@ diagnostics only. Service-owned tables remain the source of truth for
 ResearchRun, EvidenceLedger, review decisions, verification snapshots,
 publication state, and delivery.
 
+For generic research, the harness exposes validated nested
+`internet_search` `ToolMessage` results to the application observer. Those
+source-tool results pass through the existing Evidence extraction and freeze
+boundaries; arbitrary nested output and subagent summaries do not become
+Evidence. Exact source URLs in a researcher summary preserve citations for the
+coordinator, but are not subagent summaries elevated to business authority.
+
 ## Interface Consistency
 
 Web, CLI, REST, WebSocket, and first-party automation all consume canonical

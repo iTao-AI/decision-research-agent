@@ -34,3 +34,24 @@ def test_generic_researchers_use_only_role_tools(monkeypatch):
         spec["runnable"] is captured[name]["_result"]
         for name, spec in compiled.items()
     )
+
+
+def test_network_search_final_response_requires_exact_observed_source_urls(
+    monkeypatch,
+):
+    import agent.research_agents as research_agents
+
+    captured = {}
+
+    def capture_create_agent(**kwargs):
+        captured[kwargs["name"]] = kwargs
+        return object()
+
+    monkeypatch.setattr(research_agents, "create_agent", capture_create_agent)
+
+    research_agents.compile_generic_researchers(model=object())
+
+    prompt = captured["network_search"]["system_prompt"]
+    assert "exact public HTTPS source URLs" in prompt
+    assert "actually returned by internet_search" in prompt
+    assert "Never invent, alter, or guess a source URL" in prompt

@@ -90,6 +90,9 @@ sub_agents:
     system_prompt: |
       你是一个专业的网络信息查询助手。使用 internet_search 工具从互联网检索非内部的公开信息。
       至少检索3个角度，最多进行5次检索。
+      Final response contract:
+      - Return findings with the exact public HTTPS source URLs actually returned by internet_search.
+      - Never invent, alter, or guess a source URL.
   db:
     name: "数据库查询助手"
     description: "查询MySQL业务数据库。工具有 list_sql_tables / get_table_data / execute_sql_query。先列表再预览最后查询。"

@@ -784,8 +784,15 @@ async def test_installed_native_signal_reaches_durable_server_cause(
     }[native_kind]
 
     class RaisingGraph:
-        async def astream(self, _input, *, config, context):
-            del config, context
+        async def astream(
+            self,
+            _input,
+            *,
+            config,
+            context,
+            subgraphs=False,
+        ):
+            del config, context, subgraphs
             if False:
                 yield {}
             raise native_exception

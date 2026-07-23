@@ -5,8 +5,11 @@ import asyncio
 from dataclasses import replace
 import os
 from pathlib import Path, PurePosixPath
+import re
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlparse
+
+from langchain_core.messages import AIMessage, ToolMessage
 
 from agent.harness_contracts import (
     AgentHarness,
@@ -17,6 +20,7 @@ from agent.harness_contracts import (
     ReportCandidate,
 )
 from agent.research import (
+    EvidenceEntry,
     extract_evidence_entries,
     merge_evidence_entries,
 )
@@ -42,6 +46,12 @@ from tools.tavily_tools import clear_search_cache
 
 _TALENT_PROFILE_ID = "talent-hiring-signal"
 _REPORT_PATH = PurePosixPath("/workspace/research-report.md")
+_NESTED_NAMESPACE_PART_RE = re.compile(
+    r"^[A-Za-z0-9_.-]{1,128}:[A-Za-z0-9_-]{1,128}$"
+)
+_NESTED_SOURCE_TOOLS = {
+    "network_search": frozenset({"internet_search"}),
+}
 
 
 def _allowed_source_domains(scope: Mapping[str, Any]) -> tuple[str, ...]:
@@ -116,11 +126,30 @@ def _mark_declared_fixture_evidence(
     ]
 
 
+def _dedupe_nested_source_evidence(
+    entries: Sequence[EvidenceEntry],
+) -> list[EvidenceEntry]:
+    merged = merge_evidence_entries(list(entries))
+    nested_source_identities = {
+        entry.source_identity
+        for entry in merged
+        if entry.subagent_name == "network_search"
+        and entry.tool_name == "internet_search"
+    }
+    return [
+        entry
+        for entry in merged
+        if entry.source_identity not in nested_source_identities
+        or entry.tool_name != "task"
+    ]
+
+
 class AccumulatorExecutionObserver(ExecutionObserver):
     """Translate framework stream output into application-owned state."""
 
     def __init__(self, accumulator: AgentRunAccumulator):
         self.accumulator = accumulator
+        self._nested_roles: dict[tuple[str, ...], str] = {}
         self._callbacks = (
             TokenTrackingCallbackHandler(
                 thread_id=accumulator.run_id or accumulator.thread_id
@@ -146,6 +175,60 @@ class AccumulatorExecutionObserver(ExecutionObserver):
                     path=_REPORT_PATH,
                     content=content,
                 )
+
+    def on_nested_stream_chunk(
+        self,
+        namespace: tuple[str, ...],
+        chunk: Mapping[str, Any],
+    ) -> None:
+        """Capture only trusted source ToolMessages from validated subgraphs."""
+        if (
+            self.accumulator.profile_id != "generic"
+            or type(namespace) is not tuple
+            or not namespace
+            or any(
+                type(part) is not str
+                or _NESTED_NAMESPACE_PART_RE.fullmatch(part) is None
+                for part in namespace
+            )
+        ):
+            return
+
+        messages: list[Any] = []
+        for state in chunk.values():
+            if not isinstance(state, Mapping):
+                continue
+            state_messages = state.get("messages")
+            if isinstance(state_messages, list):
+                messages.extend(state_messages)
+
+        for message in messages:
+            if (
+                isinstance(message, AIMessage)
+                and message.name in _NESTED_SOURCE_TOOLS
+            ):
+                self._nested_roles[namespace] = message.name
+
+        role = self._nested_roles.get(namespace)
+        allowed_tools = _NESTED_SOURCE_TOOLS.get(role or "")
+        if allowed_tools is None:
+            return
+
+        for message in messages:
+            if (
+                not isinstance(message, ToolMessage)
+                or message.name not in allowed_tools
+            ):
+                continue
+            process_stream_chunk(
+                {
+                    role: {
+                        "messages": [message],
+                    }
+                },
+                self.accumulator,
+                monitor,
+            )
 
     def on_error(self, error: Exception) -> None:
         self.accumulator.diagnostics.append(
@@ -281,7 +364,9 @@ class ResearchExecutionService:
     ) -> ExecutionOutcome:
         accumulator = observer.accumulator
         execution_id = accumulator.run_id or accumulator.thread_id
-        evidence_entries = list(accumulator.evidence_entries)
+        evidence_entries = _dedupe_nested_source_evidence(
+            accumulator.evidence_entries
+        )
         evidence_entries = _mark_declared_fixture_evidence(
             evidence_entries,
             execution_id=execution_id,

@@ -729,6 +729,32 @@ def test_architecture_deep_dive_preserves_authority_boundaries() -> None:
     assert "not business ledgers" in architecture
 
 
+def test_nested_evidence_capture_documentation_preserves_authority_boundary() -> None:
+    architecture = (PROJECT_ROOT / "docs" / "architecture.md").read_text(
+        encoding="utf-8"
+    )
+    framework_boundary = (
+        PROJECT_ROOT / "docs" / "decisions" / "framework-runtime-boundaries.md"
+    ).read_text(encoding="utf-8")
+    state_machines = (
+        PROJECT_ROOT / "docs" / "reference" / "state-machines.md"
+    ).read_text(encoding="utf-8")
+    changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "nested `internet_search` `ToolMessage`" in _collapsed(architecture)
+    assert "not subagent summaries" in _collapsed(architecture)
+    assert "`subgraphs=True`" in _collapsed(framework_boundary)
+    assert "fails closed" in _collapsed(framework_boundary)
+    assert "existing Evidence extractor" in _collapsed(framework_boundary)
+    assert "deterministic deduplication" in _collapsed(state_machines)
+    assert "exact public HTTPS source URLs" in _collapsed(state_machines)
+    assert (
+        "does not replace tool-result Evidence authority"
+        in _collapsed(state_machines)
+    )
+    assert "nested subgraph source-tool results" in _collapsed(changelog)
+
+
 def test_demo_console_docs_state_deterministic_video_boundary() -> None:
     guide = (PROJECT_ROOT / "docs" / "demo-console.md").read_text(encoding="utf-8")
 

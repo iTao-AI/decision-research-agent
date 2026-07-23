@@ -2295,6 +2295,68 @@ def test_evidence_finalization_contract_is_documented() -> None:
     assert "multiple distinct recognized reasons" in collapsed_bounded_reference
 
 
+def _assert_bounded_live_domain_request_alignment_contract() -> None:
+    reference_path = (
+        PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md"
+    )
+    design_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+    )
+    plan_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md"
+    )
+    changelog_path = PROJECT_ROOT / "CHANGELOG.md"
+    reference = _collapsed(reference_path.read_text(encoding="utf-8"))
+    design = _collapsed(design_path.read_text(encoding="utf-8"))
+    plan = _collapsed(plan_path.read_text(encoding="utf-8"))
+    changelog = _collapsed(changelog_path.read_text(encoding="utf-8"))
+
+    shared_phrases = (
+        "manifest base `query` bytes remain unchanged",
+        "ordered `required_cited_domains`",
+        "all-of requirement, not one-of",
+        "`request_sha256` binds the effective query actually sent",
+    )
+    for document in (reference, design, plan):
+        for phrase in shared_phrases:
+            assert phrase in document
+
+    assert (
+        "at least one accepted cited public HTTPS source actually returned by "
+        "`internet_search` from each exact required domain"
+    ) in reference
+    assert (
+        "does not add a runtime source allowlist, force search routing, or change "
+        "generic Agent authority"
+    ) in reference
+    assert (
+        "Derived the bounded live create query from the ordered required cited "
+        "domains while preserving the immutable manifest"
+    ) in changelog
+
+
+def test_bounded_live_domain_request_alignment_contract_is_documented() -> None:
+    _assert_bounded_live_domain_request_alignment_contract()
+
+
+def test_bounded_live_domain_request_alignment_rejects_one_of_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+        replacements=(
+            (
+                "all-of requirement,\nnot one-of",
+                "one-of requirement,\nnot all-of",
+            ),
+        ),
+        contract=_assert_bounded_live_domain_request_alignment_contract,
+    )
+
+
 @pytest.mark.parametrize(
     ("old", "new"),
     (

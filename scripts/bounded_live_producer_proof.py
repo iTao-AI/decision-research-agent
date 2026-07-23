@@ -931,18 +931,44 @@ def publish_paired_output(
     return root / JSON_OUTPUT, root / MARKDOWN_OUTPUT
 
 
+def _effective_query(manifest: Any) -> str:
+    domains = json.dumps(
+        list(manifest.required_cited_domains),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    effective_query = (
+        manifest.query
+        + "\n\nEvaluation source requirement: For each exact domain in the ordered "
+        f"list {domains}, retrieve and use at least one public HTTPS source "
+        "actually returned by `internet_search` that passes the current "
+        "source-admission contract, and cite at least one accepted source from "
+        "every listed domain in the final canonical report. All listed domains "
+        "are required; one domain cannot substitute for another."
+    )
+    encoded = effective_query.encode("utf-8")
+    if (
+        "\r" in effective_query
+        or not effective_query.strip()
+        or len(encoded) > manifest.bounds.query_utf8_bytes_max
+    ):
+        raise _error(FailureCode.MANIFEST_INVALID, FailurePhase.INPUT)
+    return effective_query
+
+
 def _new_request(manifest: Any) -> tuple[bytes, str, str, str]:
     thread_id = f"proof-thread-{secrets.token_hex(16)}"
     key = f"proof-key-{secrets.token_hex(16)}"
+    effective_query = _effective_query(manifest)
     payload = {
-        "query": manifest.query,
+        "query": effective_query,
         "thread_id": thread_id,
         "profile_id": manifest.profile_id,
         "scope": manifest.scope,
     }
     request_bytes = _canonical_bytes(payload)
     request_hash = run_create_request_hash(
-        query=manifest.query,
+        query=effective_query,
         thread_id=thread_id,
         profile_id=manifest.profile_id,
         scope=manifest.scope,

@@ -268,6 +268,14 @@ The proof computes and publishes the canonical request SHA-256 and manifest SHA-
 repeat the research question or scope in the report. The manifest remains the reviewable public
 input authority.
 
+The manifest base `query` bytes remain unchanged. The evaluation request compiler appends one
+bounded public-neutral instruction derived from the ordered `required_cited_domains`. It requires
+at least one accepted cited public HTTPS source actually returned by `internet_search` from each
+exact required domain in the final canonical report. This is an all-of requirement, not one-of.
+The create payload and idempotency fingerprint use the same effective query, so
+`request_sha256` binds the effective query actually sent. This does not add a runtime source
+allowlist, force provider search routing, or change generic Agent authority.
+
 ## Credential And Operator Boundary
 
 `observe-live` requires two separate operator-owned inputs:
@@ -461,8 +469,8 @@ adds only scenario acceptance rules:
 - unique evidence IDs according to the current consumer contract and non-empty source identities;
 - exact source URL scheme `https`;
 - public DNS host, no localhost, IP literal, userinfo, query, fragment, or non-default port;
-- `citation_status=cited` for at least one accepted row whose host belongs to the manifest's exact
-  required cited source domains;
+- `citation_status=cited` for at least one accepted row from each exact domain in the manifest's
+  ordered required cited source domains;
 - supported bounded verification status as compatibility metadata; and
 - stable order before and after restart.
 

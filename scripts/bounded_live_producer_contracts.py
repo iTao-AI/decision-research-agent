@@ -20,6 +20,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 from api.run_failure_cause_models import (
     RUN_FAILURE_CAUSE_CODES,
@@ -889,43 +890,131 @@ class EvidenceReceipt(StrictModel):
     citation_status: Literal["cited", "uncited"]
     verification_status: Literal["verified", "unverified"]
 
-    @model_validator(mode="after")
-    def validate_evidence(self) -> "EvidenceReceipt":
-        if (
-            not _IDENTIFIER_RE.fullmatch(self.evidence_id)
-            or not self.source_identity.strip()
-            or len(self.source_identity.encode("utf-8")) > 4096
-            or len(self.retrieved_at.encode("utf-8")) > 64
-        ):
-            raise ValueError("evidence_invalid")
+    @field_validator("source_url", mode="before")
+    @classmethod
+    def classify_required_source_url(cls, value: object) -> object:
+        if value is None:
+            raise PydanticCustomError(
+                "dra_evidence_source_url_required",
+                "evidence_invalid",
+            )
+        return value
+
+    @field_validator("source_url")
+    @classmethod
+    def validate_source_url_policy(cls, value: str) -> str:
         try:
-            timestamp = datetime.fromisoformat(self.retrieved_at)
-            parsed = urlsplit(self.source_url)
-        except (ValueError, UnicodeError) as exc:
-            raise ValueError("evidence_invalid") from exc
-        hostname = parsed.hostname
+            parsed = urlsplit(value)
+            hostname = parsed.hostname
+            port = parsed.port
+        except (ValueError, UnicodeError):
+            raise PydanticCustomError(
+                "dra_evidence_source_url_policy_invalid",
+                "evidence_invalid",
+            ) from None
         if (
-            timestamp.tzinfo is None
-            or timestamp.utcoffset() is None
-            or parsed.scheme != "https"
+            parsed.scheme != "https"
             or not hostname
             or parsed.username is not None
             or parsed.password is not None
             or parsed.query
             or parsed.fragment
-            or parsed.port not in {None, 443}
+            or port not in {None, 443}
         ):
-            raise ValueError("evidence_invalid")
+            raise PydanticCustomError(
+                "dra_evidence_source_url_policy_invalid",
+                "evidence_invalid",
+            )
         lowered = hostname.lower().rstrip(".")
-        if lowered != hostname or lowered.endswith((".local", ".internal", ".localhost")):
-            raise ValueError("evidence_invalid")
+        if lowered != hostname or lowered.endswith(
+            (".local", ".internal", ".localhost")
+        ):
+            raise PydanticCustomError(
+                "dra_evidence_source_url_policy_invalid",
+                "evidence_invalid",
+            )
         try:
             address = ipaddress.ip_address(lowered)
         except ValueError:
             address = None
         if address is not None or not _DOMAIN_RE.fullmatch(lowered):
+            raise PydanticCustomError(
+                "dra_evidence_source_url_policy_invalid",
+                "evidence_invalid",
+            )
+        return value
+
+    @field_validator("source_identity")
+    @classmethod
+    def validate_source_identity_bound(cls, value: str) -> str:
+        try:
+            too_long = len(value.encode("utf-8")) > 4096
+        except UnicodeError as exc:
+            raise ValueError("evidence_invalid") from exc
+        if too_long:
+            raise PydanticCustomError(
+                "dra_evidence_source_identity_too_long",
+                "evidence_invalid",
+            )
+        return value
+
+    @field_validator("retrieved_at")
+    @classmethod
+    def validate_retrieved_at_bound(cls, value: str) -> str:
+        try:
+            too_long = len(value.encode("utf-8")) > 64
+        except UnicodeError as exc:
+            raise ValueError("evidence_invalid") from exc
+        if too_long:
+            raise PydanticCustomError(
+                "dra_evidence_retrieved_at_too_long",
+                "evidence_invalid",
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> "EvidenceReceipt":
+        if not _IDENTIFIER_RE.fullmatch(
+            self.evidence_id
+        ) or not self.source_identity.strip():
+            raise ValueError("evidence_invalid")
+        try:
+            timestamp = datetime.fromisoformat(self.retrieved_at)
+        except ValueError as exc:
+            raise ValueError("evidence_invalid") from exc
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
             raise ValueError("evidence_invalid")
         return self
+
+
+_EVIDENCE_RECEIPT_ERROR_REASONS = {
+    "dra_evidence_source_url_required": EvidenceDiagnosticReason.SOURCE_URL_REQUIRED,
+    "dra_evidence_source_url_policy_invalid": (
+        EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID
+    ),
+    "dra_evidence_source_identity_too_long": (
+        EvidenceDiagnosticReason.SOURCE_IDENTITY_TOO_LONG
+    ),
+    "dra_evidence_retrieved_at_too_long": (
+        EvidenceDiagnosticReason.RETRIEVED_AT_TOO_LONG
+    ),
+}
+
+
+def evidence_receipt_diagnostic_reason(
+    error: ValidationError,
+) -> EvidenceDiagnosticReason | None:
+    rows = error.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    )
+    if len(rows) != 1:
+        return None
+    error_type = rows[0].get("type")
+    if type(error_type) is not str:
+        return None
+    return _EVIDENCE_RECEIPT_ERROR_REASONS.get(error_type)
 
 
 class RestartReceipt(StrictModel):

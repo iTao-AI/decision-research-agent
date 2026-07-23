@@ -215,6 +215,89 @@ def test_projection_enforces_evidence_identity_url_and_duplicates():
 
 
 @pytest.mark.parametrize(
+    ("mutation", "expected_reason"),
+    [
+        (lambda row: row.pop("source_url"), "required_fields_invalid"),
+        (lambda row: row.__setitem__("evidence_id", "bad id"), "evidence_id_invalid"),
+        (lambda row: row.__setitem__("source_identity", ""), "source_identity_invalid"),
+        (
+            lambda row: row.__setitem__("source_url", "http://example.com"),
+            "source_url_invalid",
+        ),
+        (
+            lambda row: row.__setitem__("retrieved_at", "not-a-time"),
+            "retrieved_at_invalid",
+        ),
+        (
+            lambda row: row.__setitem__("citation_status", "unknown"),
+            "citation_status_invalid",
+        ),
+        (
+            lambda row: row.__setitem__("verification_status", "pending"),
+            "verification_status_invalid",
+        ),
+    ],
+)
+def test_projection_attaches_closed_evidence_reason(
+    mutation, expected_reason: str
+) -> None:
+    from scripts.downstream_consumer_contract import ContractValidationError
+
+    status = _canonical_status()
+    mutation(status["evidence"][0])
+
+    with pytest.raises(ContractValidationError) as caught:
+        _project(status=status)
+
+    assert caught.value.code == "contract_evidence_invalid"
+    assert caught.value.evidence_reason.value == expected_reason
+
+
+def test_projection_attaches_duplicate_evidence_reason() -> None:
+    from scripts.downstream_consumer_contract import ContractValidationError
+
+    status = _canonical_status()
+    status["evidence"].append(copy.deepcopy(status["evidence"][0]))
+
+    with pytest.raises(ContractValidationError) as caught:
+        _project(status=status)
+
+    assert caught.value.code == "contract_evidence_invalid"
+    assert caught.value.evidence_reason.value == "evidence_id_duplicate"
+
+
+def test_projection_attaches_row_shape_evidence_reason() -> None:
+    from scripts.downstream_consumer_contract import ContractValidationError
+
+    status = _canonical_status()
+    status["evidence"] = ["not-an-object"]
+
+    with pytest.raises(ContractValidationError) as caught:
+        _project(status=status)
+
+    assert caught.value.code == "contract_evidence_invalid"
+    assert caught.value.evidence_reason.value == "required_fields_invalid"
+
+
+def test_evidence_reason_constructor_is_typed_and_code_scoped() -> None:
+    from scripts.downstream_consumer_contract import (
+        ContractValidationError,
+        EvidenceContractReason,
+    )
+
+    with pytest.raises(ValueError, match="contract_diagnostic_invalid"):
+        ContractValidationError(
+            "contract_evidence_invalid",
+            evidence_reason="source_url_invalid",  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValueError, match="contract_diagnostic_invalid"):
+        ContractValidationError(
+            "contract_state_invalid",
+            evidence_reason=EvidenceContractReason.SOURCE_URL_INVALID,
+        )
+
+
+@pytest.mark.parametrize(
     ("field", "value"),
     [
         ("citation_status", "unknown"),
@@ -305,6 +388,9 @@ def test_cli_bounds_non_string_evidence_status_error(tmp_path):
 
     assert completed.returncode == 1
     assert completed.stdout == ""
+    assert completed.stderr == (
+        '{"status":"invalid","code":"contract_evidence_invalid"}\n'
+    )
     assert json.loads(completed.stderr) == {
         "status": "invalid",
         "code": "contract_evidence_invalid",

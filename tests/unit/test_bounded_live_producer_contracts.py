@@ -20,6 +20,7 @@ from scripts.bounded_live_producer_contracts import (
     EvidenceDiagnosticReason,
     EvidenceDiagnosticReceipt,
     EvidenceDiagnosticStage,
+    EvidenceReceipt,
     ErrorEnvelope,
     EvaluationError,
     EvaluationValidationError,
@@ -43,6 +44,7 @@ from scripts.bounded_live_producer_contracts import (
     serialize_report,
     serialize_result_diagnostic,
     serialize_run_failure_diagnostic,
+    evidence_receipt_diagnostic_reason,
     validate_live_report,
 )
 from scripts.bounded_live_producer_runtime_diagnostics import parse_call_budget_sidecar
@@ -679,6 +681,93 @@ def test_evidence_diagnostic_compatibility_preserves_existing_receipt_bytes() ->
         b'"call_budget_exceeded","observation_status":"observed","phase":"execution"},'
         b'"schema_version":"dra.bounded-live-producer-call-budget-diagnostic.v1"}\n'
     )
+
+
+def _evidence_receipt_payload() -> dict[str, object]:
+    return {
+        "evidence_id": "ev-contract-1",
+        "source_url": "https://example.com/public-source",
+        "source_identity": "https://example.com/public-source",
+        "retrieved_at": "2026-07-23T00:00:00+00:00",
+        "citation_status": "cited",
+        "verification_status": "unverified",
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_reason"),
+    [
+        ("source_url", None, "source_url_required"),
+        (
+            "source_url",
+            "https://example.com/public-source?private=query",
+            "source_url_policy_invalid",
+        ),
+        ("source_identity", "x" * 4097, "source_identity_too_long"),
+        (
+            "retrieved_at",
+            "2026-07-23T00:00:00." + "1" * 80 + "+00:00",
+            "retrieved_at_too_long",
+        ),
+    ],
+)
+def test_evidence_receipt_diagnostic_projects_only_locked_custom_error_type(
+    field: str, value: object, expected_reason: str
+) -> None:
+    payload = _evidence_receipt_payload()
+    payload[field] = value
+
+    with pytest.raises(ValidationError) as caught:
+        EvidenceReceipt.model_validate(payload, strict=True)
+
+    reason = evidence_receipt_diagnostic_reason(caught.value)
+    assert reason is not None
+    assert reason.value == expected_reason
+
+
+def test_evidence_receipt_diagnostic_rejects_unknown_or_multiple_errors() -> None:
+    payload = _evidence_receipt_payload()
+    payload["source_url"] = 7
+    with pytest.raises(ValidationError) as unknown:
+        EvidenceReceipt.model_validate(payload, strict=True)
+    assert evidence_receipt_diagnostic_reason(unknown.value) is None
+
+    payload = _evidence_receipt_payload()
+    payload["source_url"] = 7
+    payload["source_identity"] = 7
+    with pytest.raises(ValidationError) as multiple:
+        EvidenceReceipt.model_validate(payload, strict=True)
+    assert len(
+        multiple.value.errors(
+            include_url=False,
+            include_context=False,
+            include_input=False,
+        )
+    ) > 1
+    assert evidence_receipt_diagnostic_reason(multiple.value) is None
+
+
+def test_evidence_receipt_diagnostic_reads_only_machine_owned_error_type() -> None:
+    class ErrorRows:
+        def errors(self, **options):
+            assert options == {
+                "include_url": False,
+                "include_context": False,
+                "include_input": False,
+            }
+            return [
+                {
+                    "type": "dra_evidence_source_url_policy_invalid",
+                    "loc": object(),
+                    "msg": object(),
+                    "input": object(),
+                    "ctx": object(),
+                    "url": object(),
+                }
+            ]
+
+    reason = evidence_receipt_diagnostic_reason(ErrorRows())  # type: ignore[arg-type]
+    assert reason is EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID
 
 
 def _diagnostic() -> ResultBoundaryDiagnostic:

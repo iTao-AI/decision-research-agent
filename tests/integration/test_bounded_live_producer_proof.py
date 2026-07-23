@@ -22,6 +22,9 @@ from scripts.bounded_live_producer_contracts import (
     LIMITS,
     CleanupReceipt,
     CleanupStatus,
+    EvidenceBoundaryDiagnostic,
+    EvidenceDiagnosticReason,
+    EvidenceDiagnosticStage,
     EvaluationError,
     LiveReportModel,
     ResultBoundaryDiagnostic,
@@ -1421,6 +1424,189 @@ def test_project_live_observation_classifies_unexpected_projection_disposition(
             json.dumps(_result(), sort_keys=True, separators=(",", ":")).encode("utf-8")
         ),
     }
+
+
+def _evidence_mutation_status(case: str) -> dict[str, Any]:
+    status = _status()
+    rows = status["evidence"]
+    if case == "more_than_100_rows":
+        status["evidence"] = [
+            {**rows[index % len(rows)], "evidence_id": f"ev-proof-{index}"}
+            for index in range(101)
+        ]
+    elif case == "non_object_row":
+        status["evidence"] = [rows[0], "not-an-object"]
+    elif case == "foreign_run_or_segment":
+        rows[0] = {**rows[0], "run_id": "foreign-run"}
+    elif case == "missing_required_field":
+        rows[0].pop("source_url")
+    elif case == "duplicate_id":
+        rows[1] = {**rows[1], "evidence_id": rows[0]["evidence_id"]}
+    elif case == "null_source_url":
+        rows[0] = {**rows[0], "source_url": None}
+    elif case == "query_source_url":
+        rows[0] = {
+            **rows[0],
+            "source_url": (
+                "https://docs.python.org/3/howto/free-threading-python.html?private=1"
+            ),
+        }
+    elif case == "oversized_source_identity":
+        rows[0] = {**rows[0], "source_identity": "x" * 4097}
+    elif case == "oversized_retrieved_at":
+        rows[0] = {
+            **rows[0],
+            "retrieved_at": "2026-07-23T00:00:00." + "1" * 80 + "+00:00",
+        }
+    else:
+        raise AssertionError(f"unknown test case: {case}")
+    return status
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_stage", "expected_reason"),
+    [
+        ("more_than_100_rows", "status_projection", "row_count_exceeded"),
+        ("non_object_row", "status_projection", "row_shape_invalid"),
+        ("foreign_run_or_segment", "status_projection", "ownership_invalid"),
+        (
+            "missing_required_field",
+            "consumer_contract",
+            "required_fields_invalid",
+        ),
+        ("duplicate_id", "consumer_contract", "evidence_id_duplicate"),
+        ("null_source_url", "receipt_contract", "source_url_required"),
+        (
+            "query_source_url",
+            "receipt_contract",
+            "source_url_policy_invalid",
+        ),
+        (
+            "oversized_source_identity",
+            "receipt_contract",
+            "source_identity_too_long",
+        ),
+        (
+            "oversized_retrieved_at",
+            "receipt_contract",
+            "retrieved_at_too_long",
+        ),
+    ],
+)
+def test_project_live_observation_attaches_exact_evidence_diagnostic(
+    case: str, expected_stage: str, expected_reason: str
+) -> None:
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot(status=_evidence_mutation_status(case))
+
+    assert caught.value.code.value == "evidence_invalid"
+    assert caught.value.phase.value == "evidence"
+    assert caught.value.diagnostic is not None
+    assert caught.value.diagnostic.model_dump(mode="json") == {
+        "stage": expected_stage,
+        "reason": expected_reason,
+    }
+
+
+@pytest.mark.parametrize("evidence", [None, []])
+def test_project_live_observation_keeps_missing_evidence_unclassified(
+    evidence: object,
+) -> None:
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot(status=_status(evidence=evidence))
+
+    assert caught.value.code.value == "evidence_missing"
+    assert caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize(
+    "invalid_fields",
+    [
+        {"source_url": 7},
+        {"source_url": 7, "source_identity": 7},
+    ],
+)
+def test_project_live_observation_keeps_unknown_or_multiple_receipt_errors_unclassified(
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_fields: dict[str, object],
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    projected_row = {
+        key: value
+        for key, value in _status()["evidence"][0].items()
+        if key
+        in {
+            "evidence_id",
+            "source_url",
+            "source_identity",
+            "retrieved_at",
+            "citation_status",
+            "verification_status",
+        }
+    }
+    projected_row.update(invalid_fields)
+    monkeypatch.setattr(
+        module,
+        "project_consumer_case",
+        lambda **_kwargs: {
+            "expected": {"support": "supported", "disposition": "accept_draft"},
+            "evidence": [projected_row],
+        },
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot()
+
+    assert caught.value.code.value == "evidence_invalid"
+    assert caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "required_cited_domain_missing",
+        "artifact_invalid",
+        "fallback_rejected",
+        "unclassified_result",
+        "run_state_invalid",
+    ],
+)
+def test_non_evidence_failures_never_gain_evidence_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    status = _status()
+    result = _result()
+    if case == "required_cited_domain_missing":
+        status["evidence"][0]["citation_status"] = "uncited"
+    elif case == "artifact_invalid":
+        result["artifact"] = {**result["artifact"], "media_type": "text/plain"}
+    elif case == "fallback_rejected":
+        status["execution_status"] = "completed_with_fallback"
+    elif case == "unclassified_result":
+        monkeypatch.setattr(
+            module,
+            "project_consumer_case",
+            lambda **_kwargs: (_ for _ in ()).throw(
+                module.ContractValidationError("unclassified_contract_error")
+            ),
+        )
+    elif case == "run_state_invalid":
+        status["segments"] = []
+
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot(status=status, result=result)
+
+    assert caught.value.diagnostic is None
+
+
+def test_forged_cross_stage_evidence_reason_fails_before_projection() -> None:
+    with pytest.raises(ValueError, match="evidence_diagnostic_pair_invalid"):
+        EvidenceBoundaryDiagnostic(
+            stage=EvidenceDiagnosticStage.STATUS_PROJECTION,
+            reason=EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID,
+        )
 
 
 @pytest.mark.parametrize(

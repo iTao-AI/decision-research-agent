@@ -9,9 +9,10 @@ import re
 import sys
 from dataclasses import asdict
 from datetime import datetime
+from enum import Enum
 from pathlib import PurePosixPath, Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, NoReturn
 from urllib.parse import urlsplit
 from unittest.mock import patch
 from uuid import UUID
@@ -179,14 +180,43 @@ _CASE_CONTRACTS = {
 }
 
 
+class EvidenceContractReason(str, Enum):
+    REQUIRED_FIELDS_INVALID = "required_fields_invalid"
+    EVIDENCE_ID_INVALID = "evidence_id_invalid"
+    EVIDENCE_ID_DUPLICATE = "evidence_id_duplicate"
+    SOURCE_IDENTITY_INVALID = "source_identity_invalid"
+    SOURCE_URL_INVALID = "source_url_invalid"
+    RETRIEVED_AT_INVALID = "retrieved_at_invalid"
+    CITATION_STATUS_INVALID = "citation_status_invalid"
+    VERIFICATION_STATUS_INVALID = "verification_status_invalid"
+
+
 class ContractValidationError(ValueError):
-    def __init__(self, code: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        evidence_reason: EvidenceContractReason | None = None,
+    ) -> None:
+        if evidence_reason is not None and (
+            type(evidence_reason) is not EvidenceContractReason
+            or code != "contract_evidence_invalid"
+        ):
+            raise ValueError("contract_diagnostic_invalid")
         super().__init__(code)
         self.code = code
+        self.evidence_reason = evidence_reason
 
 
 def _fail(code: str) -> None:
     raise ContractValidationError(code)
+
+
+def _evidence_fail(reason: EvidenceContractReason) -> NoReturn:
+    raise ContractValidationError(
+        "contract_evidence_invalid",
+        evidence_reason=reason,
+    )
 
 
 def _require_exact_keys(value: object, expected: set[str], code: str) -> dict:
@@ -244,19 +274,23 @@ def _validate_artifact(value: object) -> dict[str, Any]:
 
 def _validate_evidence_rows(value: object, *, exact: bool) -> list[dict[str, Any]]:
     if not isinstance(value, list):
-        _fail("contract_evidence_invalid")
+        _evidence_fail(EvidenceContractReason.REQUIRED_FIELDS_INVALID)
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
     for raw in value:
         if not isinstance(raw, dict):
-            _fail("contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.REQUIRED_FIELDS_INVALID)
         if exact and set(raw) != EVIDENCE_KEYS:
-            _fail("contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.REQUIRED_FIELDS_INVALID)
         if not EVIDENCE_KEYS.issubset(raw):
-            _fail("contract_evidence_invalid")
-        evidence_id = _identifier(raw["evidence_id"], "contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.REQUIRED_FIELDS_INVALID)
+        evidence_id = raw["evidence_id"]
+        if not isinstance(evidence_id, str) or not _IDENTIFIER_RE.fullmatch(
+            evidence_id
+        ):
+            _evidence_fail(EvidenceContractReason.EVIDENCE_ID_INVALID)
         if evidence_id in seen:
-            _fail("contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.EVIDENCE_ID_DUPLICATE)
         seen.add(evidence_id)
         source_identity = raw["source_identity"]
         if (
@@ -264,28 +298,28 @@ def _validate_evidence_rows(value: object, *, exact: bool) -> list[dict[str, Any
             or not source_identity.strip()
             or _HOST_ABSOLUTE_PATH_RE.search(source_identity)
         ):
-            _fail("contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.SOURCE_IDENTITY_INVALID)
         source_url = raw["source_url"]
         if source_url is not None:
             if not isinstance(source_url, str):
-                _fail("contract_evidence_invalid")
+                _evidence_fail(EvidenceContractReason.SOURCE_URL_INVALID)
             try:
                 parsed = urlsplit(source_url)
                 hostname = parsed.hostname
             except ValueError:
-                _fail("contract_evidence_invalid")
+                _evidence_fail(EvidenceContractReason.SOURCE_URL_INVALID)
             if (
                 parsed.scheme != "https"
                 or not hostname
                 or parsed.username is not None
                 or parsed.password is not None
             ):
-                _fail("contract_evidence_invalid")
+                _evidence_fail(EvidenceContractReason.SOURCE_URL_INVALID)
             lowered_hostname = hostname.lower().rstrip(".")
             if lowered_hostname == "localhost" or lowered_hostname.endswith(
                 ".localhost"
             ):
-                _fail("contract_evidence_invalid")
+                _evidence_fail(EvidenceContractReason.SOURCE_URL_INVALID)
             try:
                 address = ipaddress.ip_address(lowered_hostname)
             except ValueError:
@@ -293,28 +327,28 @@ def _validate_evidence_rows(value: object, *, exact: bool) -> list[dict[str, Any
             if address is not None and (
                 address.is_loopback or address.is_private or address.is_link_local
             ):
-                _fail("contract_evidence_invalid")
+                _evidence_fail(EvidenceContractReason.SOURCE_URL_INVALID)
         retrieved_at = raw["retrieved_at"]
         if not isinstance(retrieved_at, str):
-            _fail("contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.RETRIEVED_AT_INVALID)
         try:
             parsed_retrieved_at = datetime.fromisoformat(retrieved_at)
         except ValueError:
-            _fail("contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.RETRIEVED_AT_INVALID)
         if parsed_retrieved_at.tzinfo is None or parsed_retrieved_at.utcoffset() is None:
-            _fail("contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.RETRIEVED_AT_INVALID)
         citation_status = raw["citation_status"]
         if (
             not isinstance(citation_status, str)
             or citation_status not in _CITATION_STATUSES
         ):
-            _fail("contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.CITATION_STATUS_INVALID)
         verification_status = raw["verification_status"]
         if (
             not isinstance(verification_status, str)
             or verification_status not in _VERIFICATION_STATUSES
         ):
-            _fail("contract_evidence_invalid")
+            _evidence_fail(EvidenceContractReason.VERIFICATION_STATUS_INVALID)
         rows.append({key: raw[key] for key in sorted(EVIDENCE_KEYS)})
     return rows
 

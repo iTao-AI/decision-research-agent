@@ -1570,6 +1570,16 @@ def test_bounded_live_producer_reference_and_reviewed_evidence_are_discoverable(
     changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "host production dependency graph" in changelog
     assert "exact locked backend image" in changelog
+    assert "### Bounded live observation evidence" in changelog
+    assert (
+        "The reviewed observation remains historical evidence rather than a "
+        "required CI baseline"
+        in " ".join(changelog.split())
+    )
+    assert (
+        "No live provider observation or JSON/Markdown evidence report is committed"
+        not in changelog
+    )
 
     plan = (
         PROJECT_ROOT

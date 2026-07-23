@@ -37,8 +37,6 @@ All notable changes to this project are documented in this file.
   claim source truth, research/provider quality, downstream business
   acceptance, provider billing, exactly-once execution, production readiness,
   or an SLA; `VERSION` and the v0.1.5 release record remain unchanged.
-- This evidence-only record supersedes the Change 1 implementation-state
-  absence note retained below as historical provenance.
 
 ### Bounded live producer evaluation
 
@@ -78,8 +76,9 @@ All notable changes to this project are documented in this file.
   domains while preserving the immutable manifest. The create payload and
   request hash bind the same effective query, and acceptance still requires
   cited admitted sources from every required domain.
-- No live provider observation or JSON/Markdown evidence report is committed;
-  `VERSION` and the v0.1.5 release record remain unchanged.
+- Required CI remains provider-free. The reviewed observation remains historical
+  evidence rather than a required CI baseline; `VERSION` and the v0.1.5 release
+  record remain unchanged.
 
 ## [0.1.5] - 2026-07-18
 

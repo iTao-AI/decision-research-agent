@@ -204,8 +204,9 @@ def test_changelog_preserves_published_release_boundary() -> None:
   domains while preserving the immutable manifest. The create payload and
   request hash bind the same effective query, and acceptance still requires
   cited admitted sources from every required domain.
-- No live provider observation or JSON/Markdown evidence report is committed;
-  `VERSION` and the v0.1.5 release record remain unchanged."""
+- Required CI remains provider-free. The reviewed observation remains historical
+  evidence rather than a required CI baseline; `VERSION` and the v0.1.5 release
+  record remain unchanged."""
     assert unreleased.count("### Bounded live producer evaluation") == 1
     bounded_actual = (
         "### Bounded live producer evaluation"

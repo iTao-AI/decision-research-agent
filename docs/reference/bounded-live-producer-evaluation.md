@@ -96,10 +96,14 @@ filename or general output root.
 | Eligible primary | Selected receipt | Fixed basename |
 |---|---|---|
 | `consumer_projection_invalid / result` | Result Diagnostic Receipt v1 | `bounded-live-producer-result-diagnostic-v1.json` |
-| `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-run-failure-diagnostic-v1.json` |
+| exact `run_failed / observe` call-budget failure with a valid sidecar | Call Budget Diagnostic Receipt v1 | `bounded-live-producer-call-budget-diagnostic-v1.json` |
+| other typed `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-run-failure-diagnostic-v1.json` |
+| typed `evidence_invalid / evidence` | Evidence Diagnostic Receipt v1 | `bounded-live-producer-evidence-diagnostic-v1.json` |
 
-The command publishes at most one receipt after final cleanup. The preflight rejects
-the directory if either fixed filename already exists. Both formats are
+Exactly one of Result, Call Budget, Run Failure, or Evidence Diagnostic Receipt v1
+can be selected for one invocation, and the command publishes at most one receipt
+after final cleanup. The preflight rejects the directory if any fixed filename
+already exists. All four formats are
 canonical UTF-8 JSON bounded to 4 KiB, and the resulting regular file is mode
 `0600`. The directory must be absolute, owner-only, repo-external, owned by the
 current user, free of symlink traversal, and identity-stable for the command
@@ -147,6 +151,31 @@ application-owned `RUN_FAILURE_CAUSE_CODES` matrix:
 | `execution` | `call_budget_exceeded`, `cancelled`, `execution_error`, `invalid_research_packet`, `missing_research_packet`, `recursion_limit_exceeded`, `run_timeout` |
 | `finalization` | `cancelled`, `run_finalization_failed`, `run_timeout` |
 
+### Evidence Diagnostic Receipt v1
+
+The receipt uses schema `dra.bounded-live-producer-evidence-diagnostic.v1` and
+fixed basename `bounded-live-producer-evidence-diagnostic-v1.json`. It is
+eligible only for exact typed `evidence_invalid / evidence`; the existing public
+error bytes remain unchanged. `cleanup_status` is exactly `succeeded` or
+`failed` because publication occurs after final cleanup.
+
+| Stage | Exact reasons |
+|---|---|
+| `status_projection` | `row_count_exceeded`, `row_shape_invalid`, `ownership_invalid` |
+| `consumer_contract` | `required_fields_invalid`, `evidence_id_invalid`, `evidence_id_duplicate`, `source_identity_invalid`, `source_url_invalid`, `retrieved_at_invalid`, `citation_status_invalid`, `verification_status_invalid` |
+| `receipt_contract` | `source_url_required`, `source_url_policy_invalid`, `source_identity_too_long`, `retrieved_at_too_long` |
+
+`row_count_exceeded` exposes no count, and all other reasons expose no rejected
+value. An unknown, missing, multiple, or cross-stage reason publishes no Evidence
+receipt.
+The Evidence receipt contains no IDs, URLs, timestamps, counts, field lengths, content, exception text, paths, credentials, raw input, logs, or traces.
+The Evidence receipt remains a non-authoritative operator diagnostic.
+The Evidence receipt does not authorize a retry.
+It does not change the public error,
+API, database, Agent runtime, canonical result, Evidence, or downstream
+authority. It does not run a provider, create live evidence, change `VERSION`,
+or make a release claim.
+
 The run-failure receipt contains no raw body or content, run, thread, or segment
 identity, timestamp, HTTP status or byte count, provider or model identity, or
 path, log, trace, or credential material. Result diagnostics continue to omit
@@ -154,8 +183,8 @@ raw response bodies, artifact and Evidence content, URLs, credentials, provider
 payloads, and exception text.
 
 A successful observation, a more precise stable failure, an omitted diagnostic
-option, or the provider-free `check` command creates no receipt. Neither receipt
-is application authority. Each receipt is not live evidence, canonical result
+option, or the provider-free `check` command creates no receipt. No receipt is
+application authority. Each receipt is not live evidence, canonical result
 authority, Evidence authority, or downstream business authority. A receipt does
 not authorize a retry. Each eligible receipt is written after cleanup so its
 cleanup status is final. A best-effort publication failure never replaces the
@@ -373,8 +402,8 @@ path, host copy, retained failed container, or retained output volume is permitt
 A valid value selects `dra.bounded-live-producer-call-budget-diagnostic.v1` at the fixed operator
 filename `bounded-live-producer-call-budget-diagnostic-v1.json`. It contains the existing
 `run_failed/observe` primary, exact application run-failure cause, and the seven limiter fields.
-Exactly one of result-boundary, generic run-failure, or call-budget receipt can be published, and
-publication occurs after final cleanup. The owner-only sink remains non-overwriting, inode-bound,
+Exactly one of result-boundary, call-budget, generic run-failure, or Evidence receipt can be
+published, and publication occurs after final cleanup. The owner-only sink remains non-overwriting, inode-bound,
 bounded and best effort.
 
 This is operator-only diagnostic transport: there is no API, database, or public failure contract change;

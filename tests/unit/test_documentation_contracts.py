@@ -1676,8 +1676,16 @@ def test_bounded_run_failure_diagnostic_receipt_is_scoped_and_discoverable() -> 
         PROJECT_ROOT
         / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
     )
-    reference = " ".join(reference_path.read_text(encoding="utf-8").split())
+    raw_reference = reference_path.read_text(encoding="utf-8")
+    reference = " ".join(raw_reference.split())
     design = " ".join(design_path.read_text(encoding="utf-8").split())
+    run_failure_section = _collapsed(
+        _section_between(
+            raw_reference,
+            "### Run Failure Diagnostic Receipt v1",
+            "### Evidence Diagnostic Receipt v1",
+        )
+    )
 
     for phrase in (
         "dra.bounded-live-producer-run-failure-diagnostic.v1",
@@ -1685,7 +1693,7 @@ def test_bounded_run_failure_diagnostic_receipt_is_scoped_and_discoverable() -> 
         "status-before-result",
         "No failed, fallback, delivery-blocked, or malformed terminal state requests `/result`",
         "`cleanup_status` is exactly `succeeded` or `failed`",
-        "preflight rejects the directory if either fixed filename already exists",
+        "preflight rejects the directory if any fixed filename already exists",
         "at most one receipt",
         "Result Diagnostic Receipt v1 remains byte- and behavior-compatible",
         "application-owned `RUN_FAILURE_CAUSE_CODES` matrix",
@@ -1700,9 +1708,11 @@ def test_bounded_run_failure_diagnostic_receipt_is_scoped_and_discoverable() -> 
         rendered_codes = ", ".join(f"`{code}`" for code in sorted(codes))
         assert f"| `{phase}` | {rendered_codes} |" in reference
 
+    assert "`cleanup_status` is exactly `succeeded` or `failed`" in run_failure_section
+
     for exact_row in (
         "| `consumer_projection_invalid / result` | Result Diagnostic Receipt v1 | `bounded-live-producer-result-diagnostic-v1.json` |",
-        "| `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-run-failure-diagnostic-v1.json` |",
+        "| other typed `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-run-failure-diagnostic-v1.json` |",
     ):
         assert exact_row in reference
 
@@ -1737,8 +1747,8 @@ def test_bounded_run_failure_diagnostic_receipt_is_scoped_and_discoverable() -> 
         ),
         (
             PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
-            "| `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-run-failure-diagnostic-v1.json` |",
-            "| `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-result-diagnostic-v1.json` |",
+            "| other typed `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-run-failure-diagnostic-v1.json` |",
+            "| other typed `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-result-diagnostic-v1.json` |",
         ),
         (
             PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
@@ -2041,4 +2051,144 @@ def test_limiter_diagnostic_sidecar_contract_rejects_mutation(
         path=path,
         replacements=((old, new),),
         contract=_assert_limiter_diagnostic_sidecar_contract,
+    )
+
+
+EVIDENCE_DIAGNOSTIC_REFERENCE_ROWS = (
+    "| `status_projection` | `row_count_exceeded`, `row_shape_invalid`, `ownership_invalid` |",
+    "| `consumer_contract` | `required_fields_invalid`, `evidence_id_invalid`, `evidence_id_duplicate`, `source_identity_invalid`, `source_url_invalid`, `retrieved_at_invalid`, `citation_status_invalid`, `verification_status_invalid` |",
+    "| `receipt_contract` | `source_url_required`, `source_url_policy_invalid`, `source_identity_too_long`, `retrieved_at_too_long` |",
+)
+
+
+def _assert_evidence_diagnostic_receipt_contract() -> None:
+    reference_path = (
+        PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md"
+    )
+    design_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/specs/2026-07-18-bounded-live-producer-evaluation-design.md"
+    )
+    plan_path = (
+        PROJECT_ROOT
+        / "docs/superpowers/plans/2026-07-18-bounded-live-producer-evaluation-implementation.md"
+    )
+    reference = reference_path.read_text(encoding="utf-8")
+    design = design_path.read_text(encoding="utf-8")
+    plan = plan_path.read_text(encoding="utf-8")
+    collapsed_reference = _collapsed(reference)
+
+    for phrase in (
+        "dra.bounded-live-producer-evidence-diagnostic.v1",
+        "bounded-live-producer-evidence-diagnostic-v1.json",
+        "Exactly one of Result, Call Budget, Run Failure, or Evidence Diagnostic Receipt v1",
+        "at most one receipt",
+        "after final cleanup",
+        "`cleanup_status` is exactly `succeeded` or `failed`",
+        "`row_count_exceeded` exposes no count",
+        "all other reasons expose no rejected value",
+        "unknown, missing, multiple, or cross-stage reason publishes no Evidence receipt",
+        "contains no IDs, URLs, timestamps, counts, field lengths, content, exception text, paths, credentials, raw input, logs, or traces",
+        "non-authoritative operator diagnostic",
+        "does not authorize a retry",
+        "does not change the public error, API, database, Agent runtime, canonical result, Evidence, or downstream authority",
+        "does not run a provider, create live evidence, change `VERSION`, or make a release claim",
+    ):
+        assert phrase in collapsed_reference
+
+    evidence_section = _section_between(
+        reference,
+        "### Evidence Diagnostic Receipt v1",
+        "## Source, Lifecycle, And Deadlines",
+    )
+    observed_rows = tuple(
+        line
+        for line in evidence_section.splitlines()
+        if line.startswith("| `")
+    )
+    assert observed_rows == EVIDENCE_DIAGNOSTIC_REFERENCE_ROWS
+    collapsed_evidence_section = _collapsed(evidence_section)
+    for sentence in (
+        "The Evidence receipt contains no IDs, URLs, timestamps, counts, field lengths, content, exception text, paths, credentials, raw input, logs, or traces.",
+        "The Evidence receipt remains a non-authoritative operator diagnostic.",
+        "The Evidence receipt does not authorize a retry.",
+    ):
+        assert sentence in collapsed_evidence_section
+
+    receipt_rows = (
+        "| `consumer_projection_invalid / result` | Result Diagnostic Receipt v1 | `bounded-live-producer-result-diagnostic-v1.json` |",
+        "| exact `run_failed / observe` call-budget failure with a valid sidecar | Call Budget Diagnostic Receipt v1 | `bounded-live-producer-call-budget-diagnostic-v1.json` |",
+        "| other typed `run_failed / observe` | Run Failure Diagnostic Receipt v1 | `bounded-live-producer-run-failure-diagnostic-v1.json` |",
+        "| typed `evidence_invalid / evidence` | Evidence Diagnostic Receipt v1 | `bounded-live-producer-evidence-diagnostic-v1.json` |",
+    )
+    for row in receipt_rows:
+        assert row in reference
+
+    assert "### Post-Observation Evidence Diagnostic Amendment" in design
+    assert "## Post-Observation Evidence Diagnostic Receipt Implementation Amendment" in plan
+    for historical in (design, plan):
+        for phrase in (
+            "dra.bounded-live-producer-evidence-diagnostic.v1",
+            "row_count_exceeded",
+            "verification_status_invalid",
+            "source_url_required",
+            "retrieved_at_too_long",
+            "unknown",
+            "no receipt",
+        ):
+            assert phrase in historical
+
+
+def test_evidence_diagnostic_receipt_contract_is_closed_and_non_authoritative() -> None:
+    _assert_evidence_diagnostic_receipt_contract()
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    (
+        (
+            EVIDENCE_DIAGNOSTIC_REFERENCE_ROWS[0],
+            "| `status_projection` | `row_shape_invalid`, `ownership_invalid` |",
+        ),
+        (
+            EVIDENCE_DIAGNOSTIC_REFERENCE_ROWS[2],
+            "| `consumer_contract` | `source_url_required`, `source_url_policy_invalid`, `source_identity_too_long`, `retrieved_at_too_long` |",
+        ),
+        (
+            EVIDENCE_DIAGNOSTIC_REFERENCE_ROWS[2],
+            EVIDENCE_DIAGNOSTIC_REFERENCE_ROWS[2]
+            + "\n| `receipt_contract` | `other` |",
+        ),
+        (
+            "The Evidence receipt contains no IDs, URLs, timestamps, counts, field lengths, content, exception text, paths, credentials, raw input, logs, or traces.",
+            "The Evidence receipt contains raw Evidence values.",
+        ),
+        (
+            "The Evidence receipt remains a non-authoritative operator diagnostic.",
+            "The Evidence receipt is authoritative Evidence.",
+        ),
+        (
+            "The Evidence receipt does not authorize a retry.",
+            "The Evidence receipt automatically retries the observation.",
+        ),
+    ),
+    ids=(
+        "reason-removed",
+        "reason-moved-stage",
+        "catch-all-added",
+        "raw-detail-claimed",
+        "authority-promoted",
+        "automatic-retry-implied",
+    ),
+)
+def test_evidence_diagnostic_receipt_rejects_documentation_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    old: str,
+    new: str,
+) -> None:
+    _assert_contract_rejects_mutation(
+        monkeypatch,
+        path=PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md",
+        replacements=((old, new),),
+        contract=_assert_evidence_diagnostic_receipt_contract,
     )

@@ -20,6 +20,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 from api.run_failure_cause_models import (
     RUN_FAILURE_CAUSE_CODES,
@@ -38,6 +39,9 @@ RUN_FAILURE_DIAGNOSTIC_SCHEMA_VERSION = (
 )
 CALL_BUDGET_DIAGNOSTIC_SCHEMA_VERSION = (
     "dra.bounded-live-producer-call-budget-diagnostic.v1"
+)
+EVIDENCE_DIAGNOSTIC_SCHEMA_VERSION = (
+    "dra.bounded-live-producer-evidence-diagnostic.v1"
 )
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_PUBLIC_BYTES = 1024 * 1024
@@ -250,6 +254,87 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
+class EvidenceDiagnosticStage(str, Enum):
+    STATUS_PROJECTION = "status_projection"
+    CONSUMER_CONTRACT = "consumer_contract"
+    RECEIPT_CONTRACT = "receipt_contract"
+
+
+class EvidenceDiagnosticReason(str, Enum):
+    ROW_COUNT_EXCEEDED = "row_count_exceeded"
+    ROW_SHAPE_INVALID = "row_shape_invalid"
+    OWNERSHIP_INVALID = "ownership_invalid"
+    REQUIRED_FIELDS_INVALID = "required_fields_invalid"
+    EVIDENCE_ID_INVALID = "evidence_id_invalid"
+    EVIDENCE_ID_DUPLICATE = "evidence_id_duplicate"
+    SOURCE_IDENTITY_INVALID = "source_identity_invalid"
+    SOURCE_URL_INVALID = "source_url_invalid"
+    RETRIEVED_AT_INVALID = "retrieved_at_invalid"
+    CITATION_STATUS_INVALID = "citation_status_invalid"
+    VERIFICATION_STATUS_INVALID = "verification_status_invalid"
+    SOURCE_URL_REQUIRED = "source_url_required"
+    SOURCE_URL_POLICY_INVALID = "source_url_policy_invalid"
+    SOURCE_IDENTITY_TOO_LONG = "source_identity_too_long"
+    RETRIEVED_AT_TOO_LONG = "retrieved_at_too_long"
+
+
+_EVIDENCE_DIAGNOSTIC_PAIRS = {
+    EvidenceDiagnosticStage.STATUS_PROJECTION: frozenset(
+        {
+            EvidenceDiagnosticReason.ROW_COUNT_EXCEEDED,
+            EvidenceDiagnosticReason.ROW_SHAPE_INVALID,
+            EvidenceDiagnosticReason.OWNERSHIP_INVALID,
+        }
+    ),
+    EvidenceDiagnosticStage.CONSUMER_CONTRACT: frozenset(
+        {
+            EvidenceDiagnosticReason.REQUIRED_FIELDS_INVALID,
+            EvidenceDiagnosticReason.EVIDENCE_ID_INVALID,
+            EvidenceDiagnosticReason.EVIDENCE_ID_DUPLICATE,
+            EvidenceDiagnosticReason.SOURCE_IDENTITY_INVALID,
+            EvidenceDiagnosticReason.SOURCE_URL_INVALID,
+            EvidenceDiagnosticReason.RETRIEVED_AT_INVALID,
+            EvidenceDiagnosticReason.CITATION_STATUS_INVALID,
+            EvidenceDiagnosticReason.VERIFICATION_STATUS_INVALID,
+        }
+    ),
+    EvidenceDiagnosticStage.RECEIPT_CONTRACT: frozenset(
+        {
+            EvidenceDiagnosticReason.SOURCE_URL_REQUIRED,
+            EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID,
+            EvidenceDiagnosticReason.SOURCE_IDENTITY_TOO_LONG,
+            EvidenceDiagnosticReason.RETRIEVED_AT_TOO_LONG,
+        }
+    ),
+}
+
+
+class EvidenceBoundaryDiagnostic(StrictModel):
+    stage: EvidenceDiagnosticStage
+    reason: EvidenceDiagnosticReason
+
+    @model_validator(mode="after")
+    def require_registered_pair(self) -> "EvidenceBoundaryDiagnostic":
+        if self.reason not in _EVIDENCE_DIAGNOSTIC_PAIRS[self.stage]:
+            raise ValueError("evidence_diagnostic_pair_invalid")
+        return self
+
+
+class EvidenceDiagnosticPrimary(StrictModel):
+    code: Literal[FailureCode.EVIDENCE_INVALID]
+    phase: Literal[FailurePhase.EVIDENCE]
+    retryable: Literal[False]
+    cleanup_status: Literal[CleanupStatus.SUCCEEDED, CleanupStatus.FAILED]
+
+
+class EvidenceDiagnosticReceipt(StrictModel):
+    schema_version: Literal[
+        "dra.bounded-live-producer-evidence-diagnostic.v1"
+    ]
+    primary: EvidenceDiagnosticPrimary
+    evidence_boundary: EvidenceBoundaryDiagnostic
+
+
 class ResultDiagnosticStage(str, Enum):
     CONNECTION = "connection"
     RESPONSE_STATUS = "response_status"
@@ -399,7 +484,12 @@ class EvaluationError(Exception):
         retryable: bool,
         cleanup_status: CleanupStatus | str = CleanupStatus.NOT_STARTED,
         *,
-        diagnostic: ResultBoundaryDiagnostic | RunFailureDiagnostic | None = None,
+        diagnostic: (
+            ResultBoundaryDiagnostic
+            | RunFailureDiagnostic
+            | EvidenceBoundaryDiagnostic
+            | None
+        ) = None,
     ) -> None:
         try:
             validated_code = FailureCode(code)
@@ -420,8 +510,18 @@ class EvaluationError(Exception):
                 validated_code is not FailureCode.RUN_FAILED
                 or validated_phase is not FailurePhase.OBSERVE
             )
+            or type(diagnostic) is EvidenceBoundaryDiagnostic
+            and (
+                validated_code is not FailureCode.EVIDENCE_INVALID
+                or validated_phase is not FailurePhase.EVIDENCE
+            )
             or diagnostic is not None
-            and type(diagnostic) not in {ResultBoundaryDiagnostic, RunFailureDiagnostic}
+            and type(diagnostic)
+            not in {
+                ResultBoundaryDiagnostic,
+                RunFailureDiagnostic,
+                EvidenceBoundaryDiagnostic,
+            }
         ):
             raise ValueError("evaluation_error_invalid")
         super().__init__(validated_code.value)
@@ -790,43 +890,131 @@ class EvidenceReceipt(StrictModel):
     citation_status: Literal["cited", "uncited"]
     verification_status: Literal["verified", "unverified"]
 
-    @model_validator(mode="after")
-    def validate_evidence(self) -> "EvidenceReceipt":
-        if (
-            not _IDENTIFIER_RE.fullmatch(self.evidence_id)
-            or not self.source_identity.strip()
-            or len(self.source_identity.encode("utf-8")) > 4096
-            or len(self.retrieved_at.encode("utf-8")) > 64
-        ):
-            raise ValueError("evidence_invalid")
+    @field_validator("source_url", mode="before")
+    @classmethod
+    def classify_required_source_url(cls, value: object) -> object:
+        if value is None:
+            raise PydanticCustomError(
+                "dra_evidence_source_url_required",
+                "evidence_invalid",
+            )
+        return value
+
+    @field_validator("source_url")
+    @classmethod
+    def validate_source_url_policy(cls, value: str) -> str:
         try:
-            timestamp = datetime.fromisoformat(self.retrieved_at)
-            parsed = urlsplit(self.source_url)
-        except (ValueError, UnicodeError) as exc:
-            raise ValueError("evidence_invalid") from exc
-        hostname = parsed.hostname
+            parsed = urlsplit(value)
+            hostname = parsed.hostname
+            port = parsed.port
+        except (ValueError, UnicodeError):
+            raise PydanticCustomError(
+                "dra_evidence_source_url_policy_invalid",
+                "evidence_invalid",
+            ) from None
         if (
-            timestamp.tzinfo is None
-            or timestamp.utcoffset() is None
-            or parsed.scheme != "https"
+            parsed.scheme != "https"
             or not hostname
             or parsed.username is not None
             or parsed.password is not None
             or parsed.query
             or parsed.fragment
-            or parsed.port not in {None, 443}
+            or port not in {None, 443}
         ):
-            raise ValueError("evidence_invalid")
+            raise PydanticCustomError(
+                "dra_evidence_source_url_policy_invalid",
+                "evidence_invalid",
+            )
         lowered = hostname.lower().rstrip(".")
-        if lowered != hostname or lowered.endswith((".local", ".internal", ".localhost")):
-            raise ValueError("evidence_invalid")
+        if lowered != hostname or lowered.endswith(
+            (".local", ".internal", ".localhost")
+        ):
+            raise PydanticCustomError(
+                "dra_evidence_source_url_policy_invalid",
+                "evidence_invalid",
+            )
         try:
             address = ipaddress.ip_address(lowered)
         except ValueError:
             address = None
         if address is not None or not _DOMAIN_RE.fullmatch(lowered):
+            raise PydanticCustomError(
+                "dra_evidence_source_url_policy_invalid",
+                "evidence_invalid",
+            )
+        return value
+
+    @field_validator("source_identity")
+    @classmethod
+    def validate_source_identity_bound(cls, value: str) -> str:
+        try:
+            too_long = len(value.encode("utf-8")) > 4096
+        except UnicodeError as exc:
+            raise ValueError("evidence_invalid") from exc
+        if too_long:
+            raise PydanticCustomError(
+                "dra_evidence_source_identity_too_long",
+                "evidence_invalid",
+            )
+        return value
+
+    @field_validator("retrieved_at")
+    @classmethod
+    def validate_retrieved_at_bound(cls, value: str) -> str:
+        try:
+            too_long = len(value.encode("utf-8")) > 64
+        except UnicodeError as exc:
+            raise ValueError("evidence_invalid") from exc
+        if too_long:
+            raise PydanticCustomError(
+                "dra_evidence_retrieved_at_too_long",
+                "evidence_invalid",
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> "EvidenceReceipt":
+        if not _IDENTIFIER_RE.fullmatch(
+            self.evidence_id
+        ) or not self.source_identity.strip():
+            raise ValueError("evidence_invalid")
+        try:
+            timestamp = datetime.fromisoformat(self.retrieved_at)
+        except ValueError as exc:
+            raise ValueError("evidence_invalid") from exc
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
             raise ValueError("evidence_invalid")
         return self
+
+
+_EVIDENCE_RECEIPT_ERROR_REASONS = {
+    "dra_evidence_source_url_required": EvidenceDiagnosticReason.SOURCE_URL_REQUIRED,
+    "dra_evidence_source_url_policy_invalid": (
+        EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID
+    ),
+    "dra_evidence_source_identity_too_long": (
+        EvidenceDiagnosticReason.SOURCE_IDENTITY_TOO_LONG
+    ),
+    "dra_evidence_retrieved_at_too_long": (
+        EvidenceDiagnosticReason.RETRIEVED_AT_TOO_LONG
+    ),
+}
+
+
+def evidence_receipt_diagnostic_reason(
+    error: ValidationError,
+) -> EvidenceDiagnosticReason | None:
+    rows = error.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    )
+    if len(rows) != 1:
+        return None
+    error_type = rows[0].get("type")
+    if type(error_type) is not str:
+        return None
+    return _EVIDENCE_RECEIPT_ERROR_REASONS.get(error_type)
 
 
 class RestartReceipt(StrictModel):
@@ -1163,6 +1351,36 @@ def serialize_result_diagnostic(error: EvaluationError) -> bytes:
             cleanup_status=error.cleanup_status,
         ),
         result_boundary=error.diagnostic,
+    )
+    payload = receipt.model_dump(mode="json")
+    _assert_public_safe(payload)
+    raw = (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if len(raw) > MAX_DIAGNOSTIC_BYTES:
+        _validation_fail("diagnostic_invalid")
+    return raw
+
+
+def serialize_evidence_diagnostic(error: EvaluationError) -> bytes:
+    if type(error.diagnostic) is not EvidenceBoundaryDiagnostic:
+        _validation_fail("diagnostic_invalid")
+    receipt = EvidenceDiagnosticReceipt(
+        schema_version=EVIDENCE_DIAGNOSTIC_SCHEMA_VERSION,
+        primary=EvidenceDiagnosticPrimary(
+            code=error.code,
+            phase=error.phase,
+            retryable=error.retryable,
+            cleanup_status=error.cleanup_status,
+        ),
+        evidence_boundary=error.diagnostic,
     )
     payload = receipt.model_dump(mode="json")
     _assert_public_safe(payload)

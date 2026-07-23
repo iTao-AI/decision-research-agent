@@ -180,6 +180,9 @@ def test_changelog_preserves_published_release_boundary() -> None:
   LangChain's native limiter remains fail closed with `exit_behavior="error"`.
 - This tuning does not claim research quality, provider cost, business
   acceptance, or a successful live proof.
+- Added an opt-in, post-cleanup Evidence diagnostic receipt with closed
+  structural stage/reason values; public errors, Evidence authority, raw
+  content, and retry behavior remain unchanged.
 - No live provider observation or JSON/Markdown evidence report is committed;
   `VERSION` and the v0.1.5 release record remain unchanged."""
     assert unreleased.strip() == bounded_producer_subsection

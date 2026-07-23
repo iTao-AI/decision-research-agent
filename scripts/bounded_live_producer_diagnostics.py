@@ -12,6 +12,7 @@ from scripts.bounded_live_producer_contracts import (
     CallBudgetLimiter,
     EvaluationError,
     MAX_DIAGNOSTIC_BYTES,
+    serialize_evidence_diagnostic,
     serialize_result_diagnostic,
     serialize_call_budget_diagnostic,
     serialize_run_failure_diagnostic,
@@ -25,6 +26,9 @@ RUN_FAILURE_DIAGNOSTIC_FILENAME = (
 CALL_BUDGET_DIAGNOSTIC_FILENAME = (
     "bounded-live-producer-call-budget-diagnostic-v1.json"
 )
+EVIDENCE_DIAGNOSTIC_FILENAME = (
+    "bounded-live-producer-evidence-diagnostic-v1.json"
+)
 DIAGNOSTIC_FILENAME = RESULT_DIAGNOSTIC_FILENAME
 _DIAGNOSTIC_SERIALIZERS: dict[str, Callable[..., bytes]] = {
     RESULT_DIAGNOSTIC_FILENAME: lambda error: serialize_result_diagnostic(error),
@@ -32,6 +36,7 @@ _DIAGNOSTIC_SERIALIZERS: dict[str, Callable[..., bytes]] = {
         error
     ),
     CALL_BUDGET_DIAGNOSTIC_FILENAME: serialize_call_budget_diagnostic,
+    EVIDENCE_DIAGNOSTIC_FILENAME: lambda error: serialize_evidence_diagnostic(error),
 }
 
 
@@ -315,6 +320,25 @@ def publish_run_failure_diagnostic(
             sink,
             error,
             filename=RUN_FAILURE_DIAGNOSTIC_FILENAME,
+            remaining_seconds=remaining_seconds,
+        )
+    except DiagnosticOutputError:
+        raise
+    except Exception as exc:
+        raise DiagnosticOutputError from exc
+
+
+def publish_evidence_diagnostic(
+    sink: DiagnosticSink,
+    error: EvaluationError,
+    *,
+    remaining_seconds: Callable[[float], float],
+) -> Path:
+    try:
+        return _publish_diagnostic(
+            sink,
+            error,
+            filename=EVIDENCE_DIAGNOSTIC_FILENAME,
             remaining_seconds=remaining_seconds,
         )
     except DiagnosticOutputError:

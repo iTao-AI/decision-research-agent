@@ -40,6 +40,9 @@ from scripts.bounded_live_producer_contracts import (
     CleanupReceipt,
     CleanupStatus,
     CostNotObserved,
+    EvidenceBoundaryDiagnostic,
+    EvidenceDiagnosticReason,
+    EvidenceDiagnosticStage,
     EvaluationError,
     EvaluationValidationError,
     EvidenceReceipt,
@@ -57,6 +60,7 @@ from scripts.bounded_live_producer_contracts import (
     ResultReceipt,
     RunReceipt,
     UsageNotObserved,
+    evidence_receipt_diagnostic_reason,
     load_manifest,
     render_markdown,
     serialize_error,
@@ -68,6 +72,7 @@ from scripts.bounded_live_producer_diagnostics import (
     DiagnosticSink,
     preflight_diagnostic_dir,
     publish_call_budget_diagnostic,
+    publish_evidence_diagnostic,
     publish_result_diagnostic,
     publish_run_failure_diagnostic,
 )
@@ -75,6 +80,7 @@ from scripts.bounded_live_producer_runtime_diagnostics import CallBudgetOriginSi
 from scripts.bounded_live_producer_http import CreateAmbiguous, ProofHttpClient
 from scripts.downstream_consumer_contract import (
     ContractValidationError,
+    EvidenceContractReason,
     project_consumer_case,
 )
 
@@ -109,7 +115,12 @@ def _error(
     code: FailureCode | str,
     phase: FailurePhase | str,
     *,
-    diagnostic: ResultBoundaryDiagnostic | RunFailureDiagnostic | None = None,
+    diagnostic: (
+        ResultBoundaryDiagnostic
+        | RunFailureDiagnostic
+        | EvidenceBoundaryDiagnostic
+        | None
+    ) = None,
 ) -> EvaluationError:
     return EvaluationError(code, phase, False, diagnostic=diagnostic)
 
@@ -125,6 +136,13 @@ def _consumer_diagnostic(
         http_status=200,
         response_bytes=response_bytes,
     )
+
+
+def _evidence_diagnostic(
+    stage: EvidenceDiagnosticStage,
+    reason: EvidenceDiagnosticReason,
+) -> EvidenceBoundaryDiagnostic:
+    return EvidenceBoundaryDiagnostic(stage=stage, reason=reason)
 
 
 def _identifier(value: object) -> bool:
@@ -364,14 +382,36 @@ def project_live_observation(
     if type(raw_evidence) is not list or not raw_evidence:
         raise _error(FailureCode.EVIDENCE_MISSING, FailurePhase.EVIDENCE)
     if len(raw_evidence) > 100:
-        raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE)
+        raise _error(
+            FailureCode.EVIDENCE_INVALID,
+            FailurePhase.EVIDENCE,
+            diagnostic=_evidence_diagnostic(
+                EvidenceDiagnosticStage.STATUS_PROJECTION,
+                EvidenceDiagnosticReason.ROW_COUNT_EXCEEDED,
+            ),
+        )
+    if any(type(row) is not dict for row in raw_evidence):
+        raise _error(
+            FailureCode.EVIDENCE_INVALID,
+            FailurePhase.EVIDENCE,
+            diagnostic=_evidence_diagnostic(
+                EvidenceDiagnosticStage.STATUS_PROJECTION,
+                EvidenceDiagnosticReason.ROW_SHAPE_INVALID,
+            ),
+        )
     if any(
-        type(row) is not dict
-        or row.get("run_id") != expected_run_id
+        row.get("run_id") != expected_run_id
         or row.get("segment_id") != expected_segment_id
         for row in raw_evidence
     ):
-        raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE)
+        raise _error(
+            FailureCode.EVIDENCE_INVALID,
+            FailurePhase.EVIDENCE,
+            diagnostic=_evidence_diagnostic(
+                EvidenceDiagnosticStage.STATUS_PROJECTION,
+                EvidenceDiagnosticReason.OWNERSHIP_INVALID,
+            ),
+        )
     _validate_artifact_hash(result_payload)
     try:
         projection = project_consumer_case(
@@ -382,7 +422,22 @@ def project_live_observation(
         )
     except ContractValidationError as exc:
         if exc.code == "contract_evidence_invalid":
-            raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE) from exc
+            reason = None
+            if type(exc.evidence_reason) is EvidenceContractReason:
+                reason = EvidenceDiagnosticReason(exc.evidence_reason.value)
+            diagnostic = (
+                _evidence_diagnostic(
+                    EvidenceDiagnosticStage.CONSUMER_CONTRACT,
+                    reason,
+                )
+                if reason is not None
+                else None
+            )
+            raise _error(
+                FailureCode.EVIDENCE_INVALID,
+                FailurePhase.EVIDENCE,
+                diagnostic=diagnostic,
+            ) from exc
         if exc.code == "contract_artifact_invalid":
             raise _error(FailureCode.ARTIFACT_INVALID, FailurePhase.RESULT) from exc
         if exc.code == "contract_state_invalid":
@@ -424,12 +479,37 @@ def project_live_observation(
             ),
         )
     try:
-        evidence = tuple(
-            EvidenceReceipt.model_validate(row, strict=True)
-            for row in projection["evidence"]
-        )
-    except (KeyError, TypeError, ValidationError) as exc:
+        projected_evidence = projection["evidence"]
+        evidence_rows: list[EvidenceReceipt] = []
+        evidence_rejections: list[EvidenceDiagnosticReason | None] = []
+        for row in projected_evidence:
+            try:
+                evidence_rows.append(EvidenceReceipt.model_validate(row, strict=True))
+            except ValidationError as exc:
+                evidence_rejections.append(evidence_receipt_diagnostic_reason(exc))
+    except (KeyError, TypeError) as exc:
         raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE) from exc
+    if evidence_rejections:
+        reason = (
+            evidence_rejections[0]
+            if len(evidence_rejections) == 1
+            and type(evidence_rejections[0]) is EvidenceDiagnosticReason
+            else None
+        )
+        diagnostic = (
+            _evidence_diagnostic(
+                EvidenceDiagnosticStage.RECEIPT_CONTRACT,
+                reason,
+            )
+            if reason is not None
+            else None
+        )
+        raise _error(
+            FailureCode.EVIDENCE_INVALID,
+            FailurePhase.EVIDENCE,
+            diagnostic=diagnostic,
+        )
+    evidence = tuple(evidence_rows)
     cited_hosts = {
         urlsplit(row.source_url).hostname
         for row in evidence
@@ -1183,6 +1263,13 @@ def _publish_diagnostic_best_effort(
         and error.phase is FailurePhase.OBSERVE
     ):
         publisher = publish_run_failure_diagnostic
+        arguments = (sink, error)
+    elif (
+        type(error.diagnostic) is EvidenceBoundaryDiagnostic
+        and error.code is FailureCode.EVIDENCE_INVALID
+        and error.phase is FailurePhase.EVIDENCE
+    ):
+        publisher = publish_evidence_diagnostic
         arguments = (sink, error)
     else:
         return

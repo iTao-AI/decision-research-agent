@@ -10,6 +10,10 @@ import pytest
 
 from scripts.bounded_live_producer_contracts import (
     CleanupStatus,
+    EvidenceBoundaryDiagnostic,
+    EvidenceDiagnosticReason,
+    EvidenceDiagnosticReceipt,
+    EvidenceDiagnosticStage,
     EvaluationError,
     ResultBoundaryDiagnostic,
     ResultDiagnosticReason,
@@ -23,11 +27,13 @@ from scripts.bounded_live_producer_diagnostics import (
     RESULT_DIAGNOSTIC_FILENAME,
     RUN_FAILURE_DIAGNOSTIC_FILENAME,
     CALL_BUDGET_DIAGNOSTIC_FILENAME,
+    EVIDENCE_DIAGNOSTIC_FILENAME,
     DiagnosticOutputError,
     preflight_diagnostic_dir,
     publish_result_diagnostic,
     publish_run_failure_diagnostic,
     publish_call_budget_diagnostic,
+    publish_evidence_diagnostic,
 )
 from scripts.bounded_live_producer_runtime_diagnostics import parse_call_budget_sidecar
 
@@ -75,6 +81,21 @@ def _run_failure_error() -> EvaluationError:
             observation_status="observed",
             phase="execution",
             code="execution_error",
+        ),
+    )
+
+
+def _evidence_error(
+    *, cleanup_status: CleanupStatus = CleanupStatus.SUCCEEDED
+) -> EvaluationError:
+    return EvaluationError(
+        "evidence_invalid",
+        "evidence",
+        False,
+        cleanup_status,
+        diagnostic=EvidenceBoundaryDiagnostic(
+            stage=EvidenceDiagnosticStage.RECEIPT_CONTRACT,
+            reason=EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID,
         ),
     )
 
@@ -157,10 +178,132 @@ def test_publishes_call_budget_receipt_to_third_fixed_file(tmp_path: Path) -> No
     assert receipt.limiter == limiter
 
 
+def test_evidence_diagnostic_uses_fixed_owner_only_non_overwriting_file(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+    error = _evidence_error()
+
+    path = publish_evidence_diagnostic(
+        sink,
+        error,
+        remaining_seconds=lambda _minimum: 10.0,
+    )
+
+    assert path.name == "bounded-live-producer-evidence-diagnostic-v1.json"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    receipt = EvidenceDiagnosticReceipt.model_validate_json(
+        path.read_bytes(), strict=True
+    )
+    assert receipt.evidence_boundary.reason.value == "source_url_policy_invalid"
+    with pytest.raises(DiagnosticOutputError):
+        publish_evidence_diagnostic(
+            sink,
+            error,
+            remaining_seconds=lambda _minimum: 10.0,
+        )
+
+
+def test_evidence_diagnostic_reuses_sink_identity_guard(tmp_path: Path) -> None:
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+    output.chmod(0o755)
+
+    with pytest.raises(DiagnosticOutputError):
+        publish_evidence_diagnostic(
+            sink,
+            _evidence_error(),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    assert not (output / EVIDENCE_DIAGNOSTIC_FILENAME).exists()
+
+
+@pytest.mark.parametrize("failure", ["short_write", "deadline", "file_fsync"])
+def test_evidence_diagnostic_reuses_writer_failure_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    import scripts.bounded_live_producer_diagnostics as module
+
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+    deadline_calls = 0
+
+    if failure == "short_write":
+        monkeypatch.setattr(module.os, "write", lambda *_args, **_kwargs: 0)
+    elif failure == "file_fsync":
+        monkeypatch.setattr(
+            module.os,
+            "fsync",
+            lambda _descriptor: (_ for _ in ()).throw(OSError("private")),
+        )
+
+    def remaining(requested: float) -> float:
+        nonlocal deadline_calls
+        deadline_calls += 1
+        if failure == "deadline" and deadline_calls == 2:
+            raise TimeoutError("private")
+        return requested
+
+    with pytest.raises(DiagnosticOutputError):
+        publish_evidence_diagnostic(
+            sink,
+            _evidence_error(),
+            remaining_seconds=remaining,
+        )
+
+    assert list(output.iterdir()) == []
+
+
+def test_evidence_diagnostic_reuses_final_link_replacement_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import scripts.bounded_live_producer_diagnostics as module
+
+    repository = _repository(tmp_path)
+    output = _safe_dir(tmp_path)
+    sink = preflight_diagnostic_dir(output, repository_root=repository)
+    real_link = module.os.link
+
+    def replace_temporary_then_link(
+        source: str, destination: str, **kwargs: object
+    ) -> None:
+        temporary = output / source
+        temporary.unlink()
+        temporary.write_bytes(b"operator replacement")
+        real_link(source, destination, **kwargs)
+
+    monkeypatch.setattr(module.os, "link", replace_temporary_then_link)
+    with pytest.raises(DiagnosticOutputError):
+        publish_evidence_diagnostic(
+            sink,
+            _evidence_error(),
+            remaining_seconds=lambda requested: requested,
+        )
+
+    final = output / EVIDENCE_DIAGNOSTIC_FILENAME
+    assert final.read_bytes() == b"operator replacement"
+    temporary = next(path for path in output.iterdir() if path != final)
+    assert temporary.read_bytes() == b"operator replacement"
+
+
 @pytest.mark.parametrize(
-    "filename", [RESULT_DIAGNOSTIC_FILENAME, RUN_FAILURE_DIAGNOSTIC_FILENAME, CALL_BUDGET_DIAGNOSTIC_FILENAME]
+    "filename",
+    [
+        RESULT_DIAGNOSTIC_FILENAME,
+        RUN_FAILURE_DIAGNOSTIC_FILENAME,
+        CALL_BUDGET_DIAGNOSTIC_FILENAME,
+        EVIDENCE_DIAGNOSTIC_FILENAME,
+    ],
 )
-def test_preflight_rejects_both_fixed_names_without_modifying_them(
+def test_preflight_rejects_any_fixed_name_without_modifying_it(
     tmp_path: Path, filename: str
 ) -> None:
     repository = _repository(tmp_path)

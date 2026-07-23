@@ -985,3 +985,253 @@ This amendment makes no budget or no model adjustment, no API, database, canonic
 no role inference, and no LangSmith authority. It makes no live-success claim or
 successful live-provider evidence claim. Sidecar absence remains `not_observed`, publication is
 best effort, and neither the sidecar nor the receipt authorizes automatic retry.
+
+### Post-Observation Evidence Diagnostic Amendment
+
+A later bounded observation reached the accepted terminal result path and failed with the existing
+public `evidence_invalid / evidence` disposition. The owned lifecycle then removed the raw task
+state as designed, so the historical predicate that rejected that observation is not recoverable
+and must not be inferred.
+
+Provider-free reproduction proves that several distinct, valid rejection paths intentionally
+collapse to the same public error:
+
+- raw status Evidence count, row shape, or run/segment ownership;
+- the existing downstream consumer's required fields, identifier, source, timestamp, citation, or
+  verification rules; and
+- the final bounded receipt's stricter source URL and field-length rules.
+
+The public collapse remains correct because callers do not need internal validation details to act
+on a failed observation. The operator does need one safe structural reason before authorizing
+another provider-backed run. This separately approved amendment therefore adds one sibling,
+opt-in Evidence Diagnostic Receipt v1. It does not claim the cause of any earlier observation.
+
+#### Decision
+
+Add a typed in-memory Evidence boundary diagnostic at the exact validator that rejects a row, then
+allow the existing post-cleanup diagnostic selector to publish one strict operator receipt when
+and only when the primary failure is exactly `evidence_invalid / evidence`.
+
+The selected approach is:
+
+1. the raw status projection emits a closed reason at its existing count, shape, or ownership
+   predicate;
+2. the downstream consumer contract attaches an optional typed Evidence reason to its existing
+   in-process `ContractValidationError` while preserving the existing public code and CLI output;
+3. the final `EvidenceReceipt` path uses one model-owned typed validation helper shared by its
+   strict model and live projection, rather than replaying predicates in the outer proof; and
+4. the existing diagnostic sink publishes the resulting receipt after cleanup through one new
+   fixed basename.
+
+No caller may derive a reason from exception text, raw input, response content, or a second copy of
+the validation predicates. An unrecognized, missing, malformed, or contradictory internal reason
+produces no Evidence Diagnostic Receipt; the existing public failure remains unchanged.
+
+#### Rejected Alternatives
+
+##### Re-run Evidence predicates in the outer proof
+
+Rejected. A second validator would drift from the downstream and receipt contracts, could classify
+the same row differently, and would turn the diagnostic layer into a competing acceptance
+authority.
+
+##### Parse Pydantic or exception messages
+
+Rejected. Exception text is not a stable contract and may contain raw input, field values, URLs,
+or implementation details. Only project-owned typed values may enter the diagnostic projection.
+
+##### Add public Evidence failure codes or fields
+
+Rejected. Expanding the CLI error, REST API, database, canonical result, or Evidence schema would
+create compatibility and authority costs without improving application behavior. This capability
+is operator-only troubleshooting for a separately authorized proof.
+
+##### Retain task state, raw rows, or provider output
+
+Rejected. Retention would weaken cleanup, privacy, copyright, prompt-injection, and credential
+boundaries. The required decision can be made from a closed structural reason.
+
+#### Authority And Compatibility
+
+| Surface | Existing authority | Amendment responsibility |
+|---|---|---|
+| Raw status Evidence | Application status projection | Classify count, row shape, or ownership rejection without retaining a row |
+| Downstream Evidence acceptance | `project_consumer_case` and its existing predicates | Attach a closed in-process reason to `contract_evidence_invalid` only |
+| Final bounded receipt | Existing strict `EvidenceReceipt` contract | Emit a closed reason from the contract-owned validation source |
+| Public evaluation error | `dra.bounded-live-producer-evaluation-error.v1` | Remain byte-compatible and continue to report `evidence_invalid / evidence` |
+| Operator receipt | Existing owner-only diagnostic sink | Publish one non-authoritative structural receipt after cleanup |
+| Application state | DRA database, canonical result, and Evidence ledger | No diagnostic persistence, mutation, or new authority |
+
+The downstream consumer's public fixture, validator result, and CLI error bytes remain unchanged.
+The new optional exception attribute is in-process diagnostic metadata only. The final receipt does
+not make rejected Evidence valid and cannot promote, verify, publish, or authorize it.
+
+#### Closed Stage And Reason Registry
+
+The in-memory diagnostic contains exactly one allowed stage/reason pair. Every reason is generated
+where the corresponding predicate already owns validation.
+
+| Stage | Exact reasons | Meaning |
+|---|---|---|
+| `status_projection` | `row_count_exceeded` | More than the existing maximum of 100 rows was observed; the count is not retained |
+| `status_projection` | `row_shape_invalid` | At least one raw row was not an object |
+| `status_projection` | `ownership_invalid` | At least one row did not belong to the requested run and segment; identities are not retained |
+| `consumer_contract` | `required_fields_invalid` | A row did not contain the existing six required Evidence fields |
+| `consumer_contract` | `evidence_id_invalid` | An Evidence identifier failed the existing identifier contract |
+| `consumer_contract` | `evidence_id_duplicate` | A duplicate Evidence identifier was observed; the identifier is not retained |
+| `consumer_contract` | `source_identity_invalid` | Source identity type, emptiness, or public-safety validation failed |
+| `consumer_contract` | `source_url_invalid` | The downstream public HTTPS source URL contract failed |
+| `consumer_contract` | `retrieved_at_invalid` | Timestamp type, parsing, or timezone validation failed |
+| `consumer_contract` | `citation_status_invalid` | Citation status was outside the existing closed vocabulary |
+| `consumer_contract` | `verification_status_invalid` | Verification status was outside the existing closed vocabulary |
+| `receipt_contract` | `source_url_required` | The downstream contract accepted an absent URL, but the bounded live receipt requires one |
+| `receipt_contract` | `source_url_policy_invalid` | The bounded receipt's query, fragment, port, host, IP, or domain policy failed |
+| `receipt_contract` | `source_identity_too_long` | Source identity exceeded the existing receipt byte bound; its length is not retained |
+| `receipt_contract` | `retrieved_at_too_long` | Timestamp text exceeded the existing receipt byte bound; its length is not retained |
+
+Missing or empty Evidence remains the existing `evidence_missing / evidence` failure and is not
+eligible. Required cited-domain failure remains
+`required_cited_domain_missing / evidence`; source-domain allowlist failure remains
+`evidence_domain_rejected / evidence`. Artifact, result, fallback, run-state, usage, restart,
+replay, output, and cleanup failures keep their current classifications and are not eligible for
+this receipt.
+
+An unexpected Pydantic error, unknown downstream reason, impossible stage/reason pair, or internal
+exception fails closed without a diagnostic reason. It must not be converted to a catch-all reason
+that could conceal contract drift.
+
+#### Evidence Diagnostic Receipt v1
+
+The fixed JSON shape is:
+
+```json
+{
+  "schema_version": "dra.bounded-live-producer-evidence-diagnostic.v1",
+  "primary": {
+    "code": "evidence_invalid",
+    "phase": "evidence",
+    "retryable": false,
+    "cleanup_status": "succeeded"
+  },
+  "evidence_boundary": {
+    "stage": "receipt_contract",
+    "reason": "source_url_policy_invalid"
+  }
+}
+```
+
+The contract is strict, frozen, and extra-forbidden:
+
+- `schema_version` is exactly
+  `dra.bounded-live-producer-evidence-diagnostic.v1`;
+- `primary.code` is exactly `evidence_invalid`;
+- `primary.phase` is exactly `evidence`;
+- `primary.retryable` is exactly `false`;
+- `primary.cleanup_status` is exactly `succeeded` or `failed` and reflects the final cleanup
+  result;
+- `evidence_boundary.stage` and `.reason` form one exact pair in the registry above;
+- canonical UTF-8 JSON is bounded by the existing 4 KiB diagnostic limit; and
+- public-safety validation rejects extra fields, coercion, forbidden keys, paths, credentials, and
+  non-finite values.
+
+The receipt intentionally omits all Evidence, run, thread, segment, source, provider, model, and
+time identities. It also omits row counts, URLs, timestamps, field lengths, HTTP status, response
+bytes, content, snippets, queries, scopes, raw input, exceptions, logs, traces, paths, ports,
+credentials, tokens, and secret-derived data.
+
+The fixed basename is:
+
+```text
+bounded-live-producer-evidence-diagnostic-v1.json
+```
+
+#### Selection, Publication, And Cleanup
+
+The existing `--diagnostic-dir` remains the only operator diagnostic option. It continues to name
+one pre-existing, owner-only, repo-external directory rather than a filename. Preflight must reject
+the invocation when any registered final diagnostic filename already exists, including the new
+Evidence basename.
+
+The complete selection order remains exact:
+
+| Primary condition | Selected receipt |
+|---|---|
+| `consumer_projection_invalid / result` with a valid typed result diagnostic | Result Diagnostic Receipt v1 |
+| `run_failed / observe` with exact call-budget cause and a valid limiter sidecar | Call Budget Diagnostic Receipt v1 |
+| other `run_failed / observe` with a valid observed application cause | Run Failure Diagnostic Receipt v1 |
+| `evidence_invalid / evidence` with one valid typed Evidence diagnostic | Evidence Diagnostic Receipt v1 |
+| success or any other failure | no diagnostic receipt |
+
+One invocation publishes at most one receipt. Receipt construction happens from already validated
+in-memory values; publication happens only after final cleanup so `cleanup_status` is final. If
+cleanup fails, the original Evidence failure and typed diagnostic remain primary while the receipt
+records `cleanup_status=failed`. A sink or serialization failure is best effort and never replaces
+the public error.
+
+Publication reuses the current descriptor-relative, owner-only, non-overwriting, inode-bound,
+mode-`0600`, bounded-write, `fsync`, link, quarantine, and cleanup implementation. No second file
+writer, arbitrary filename, general output root, or task-state retention path is added. The
+invoking UID may modify its file during or after publication, so strict consumer validation remains
+mandatory and the receipt remains non-authoritative.
+
+#### TDD And Verification Requirements
+
+Implementation must add RED-to-GREEN coverage for:
+
+1. every allowed stage/reason pair and rejection of every cross-stage pair;
+2. strict receipt schema, exact canonical bytes, maximum size, public-safety, and extra-field
+   rejection;
+3. raw row-count, row-shape, and ownership source attribution without retaining values;
+4. every downstream Evidence predicate producing its exact optional in-process reason while
+   preserving the existing `contract_evidence_invalid` code and CLI bytes;
+5. the final receipt-only URL and field-length predicates using the model-owned typed validator,
+   with no outer predicate replay or exception-text parsing;
+6. unknown, missing, malformed, and contradictory internal reasons producing no receipt;
+7. exact four-way receipt selection, call-budget precedence, and at-most-one publication;
+8. success, `evidence_missing`, required-domain, source-domain, artifact, fallback, result, and
+   unrelated failures producing no Evidence receipt;
+9. cleanup success, cleanup failure, publication failure, pre-existing filename, symlink,
+   permission, identity, replacement-race, non-overwrite, and residue behavior through the existing
+   sink;
+10. byte compatibility for the public error envelope, provider-free `check`, downstream consumer
+    output, and all three existing diagnostic receipts;
+11. mutation tests that remove source reasons, swap a stage/reason pair, infer from exception text,
+    expose a forbidden field, or add a catch-all reason; and
+12. current documentation, `Unreleased` truth, identity, presentation, private-marker, credential,
+    and task-resource-cleanup contracts.
+
+Before landing, run the complete bounded provider-free matrix, deterministic `check` twice with
+byte comparison, the required Docker authority lane, downstream consumer contract, Agent
+evaluation, canonical identity, presentation audit, release/documentation contracts,
+`git diff --check`, prohibited-scope scans, and exact task-owned Docker cleanup. A host dependency
+or version mismatch must be reported accurately and cannot be hidden with a stub or an unapproved
+installation.
+
+No provider, model, search, credential, `observe-live`, retry, or evidence publication is part of
+this implementation or verification. A later one-shot observation requires this change to be
+reviewed, merged, and separately authorized.
+
+#### Documentation And Change Record
+
+Update the bounded producer reference to include the fourth fixed receipt, exact stage/reason
+registry, selection table, non-authority boundary, and no-retry rule. Add one concise bullet to the
+existing `Unreleased / Bounded live producer evaluation` subsection. Append a matching
+post-observation amendment to the original bounded producer implementation record. Do not create
+release notes, change `VERSION`, or describe the receipt as live evidence.
+
+#### Compatibility, Rollback, And Completion Boundary
+
+This amendment is opt-in and additive. With no `--diagnostic-dir`, default live failure output and
+provider-free output remain byte-compatible. Existing Result, Run Failure, and Call Budget receipt
+schemas, filenames, eligibility, bytes, and consumers remain compatible. No database migration,
+dependency change, CI provider credential, API consumer migration, version bump, or release is
+required.
+
+Rollback is one focused revert of the Evidence diagnostic contract, source reasons, selection,
+documentation, and tests. Existing public errors and the three earlier receipts remain available;
+no application state or published evidence requires repair.
+
+Completion proves only that a future `evidence_invalid / evidence` observation can expose one safe
+structural rejection class to an operator after cleanup. It does not prove the cause of a previous
+attempt, successful live research, Evidence truth, source verification, provider quality, cost,
+downstream acceptance, production readiness, or that another live attempt will succeed.

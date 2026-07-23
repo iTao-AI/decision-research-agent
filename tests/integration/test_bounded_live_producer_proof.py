@@ -22,6 +22,10 @@ from scripts.bounded_live_producer_contracts import (
     LIMITS,
     CleanupReceipt,
     CleanupStatus,
+    EvidenceBoundaryDiagnostic,
+    EvidenceDiagnosticReason,
+    EvidenceDiagnosticReceipt,
+    EvidenceDiagnosticStage,
     EvaluationError,
     LiveReportModel,
     ResultBoundaryDiagnostic,
@@ -32,6 +36,7 @@ from scripts.bounded_live_producer_contracts import (
 from scripts.bounded_live_producer_diagnostics import DIAGNOSTIC_FILENAME
 from scripts.bounded_live_producer_diagnostics import (
     CALL_BUDGET_DIAGNOSTIC_FILENAME,
+    EVIDENCE_DIAGNOSTIC_FILENAME,
     RUN_FAILURE_DIAGNOSTIC_FILENAME,
 )
 from scripts.bounded_live_producer_http import CreateAmbiguous, HttpObservation
@@ -313,6 +318,7 @@ def _install_provider_free_live_boundaries(
     real_result_diagnostic_publish = module.publish_result_diagnostic
     real_run_failure_diagnostic_publish = module.publish_run_failure_diagnostic
     real_call_budget_diagnostic_publish = module.publish_call_budget_diagnostic
+    real_evidence_diagnostic_publish = module.publish_evidence_diagnostic
 
     def result_diagnostic_publish(*args, **kwargs):
         events.append("diagnostic_publish")
@@ -335,6 +341,13 @@ def _install_provider_free_live_boundaries(
             raise diagnostic_publication_error
         return real_call_budget_diagnostic_publish(*args, **kwargs)
 
+    def evidence_diagnostic_publish(*args, **kwargs):
+        events.append("diagnostic_publish")
+        holder["diagnostic_publications"].append("evidence")
+        if diagnostic_publication_error is not None:
+            raise diagnostic_publication_error
+        return real_evidence_diagnostic_publish(*args, **kwargs)
+
     monkeypatch.setattr(
         module, "publish_result_diagnostic", result_diagnostic_publish
     )
@@ -347,6 +360,11 @@ def _install_provider_free_live_boundaries(
         module,
         "publish_call_budget_diagnostic",
         call_budget_diagnostic_publish,
+    )
+    monkeypatch.setattr(
+        module,
+        "publish_evidence_diagnostic",
+        evidence_diagnostic_publish,
     )
     if publication_error is not None:
         def fail_publication(*_args, **_kwargs):
@@ -589,6 +607,18 @@ def _call_budget_diagnostic_error() -> EvaluationError:
             observation_status="observed",
             phase="execution",
             code="call_budget_exceeded",
+        ),
+    )
+
+
+def _evidence_diagnostic_error() -> EvaluationError:
+    return EvaluationError(
+        "evidence_invalid",
+        "evidence",
+        False,
+        diagnostic=EvidenceBoundaryDiagnostic(
+            stage=EvidenceDiagnosticStage.RECEIPT_CONTRACT,
+            reason=EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID,
         ),
     )
 
@@ -1423,6 +1453,235 @@ def test_project_live_observation_classifies_unexpected_projection_disposition(
     }
 
 
+def _evidence_mutation_status(case: str) -> dict[str, Any]:
+    status = _status()
+    rows = status["evidence"]
+    if case == "more_than_100_rows":
+        status["evidence"] = [
+            {**rows[index % len(rows)], "evidence_id": f"ev-proof-{index}"}
+            for index in range(101)
+        ]
+    elif case == "non_object_row":
+        status["evidence"] = [rows[0], "not-an-object"]
+    elif case == "foreign_run_or_segment":
+        rows[0] = {**rows[0], "run_id": "foreign-run"}
+    elif case == "missing_required_field":
+        rows[0].pop("source_url")
+    elif case == "duplicate_id":
+        rows[1] = {**rows[1], "evidence_id": rows[0]["evidence_id"]}
+    elif case == "null_source_url":
+        rows[0] = {**rows[0], "source_url": None}
+    elif case == "query_source_url":
+        rows[0] = {
+            **rows[0],
+            "source_url": (
+                "https://docs.python.org/3/howto/free-threading-python.html?private=1"
+            ),
+        }
+    elif case == "oversized_source_identity":
+        rows[0] = {**rows[0], "source_identity": "x" * 4097}
+    elif case == "oversized_retrieved_at":
+        rows[0] = {
+            **rows[0],
+            "retrieved_at": "2026-07-23T00:00:00." + "1" * 80 + "+00:00",
+        }
+    else:
+        raise AssertionError(f"unknown test case: {case}")
+    return status
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_stage", "expected_reason"),
+    [
+        ("more_than_100_rows", "status_projection", "row_count_exceeded"),
+        ("non_object_row", "status_projection", "row_shape_invalid"),
+        ("foreign_run_or_segment", "status_projection", "ownership_invalid"),
+        (
+            "missing_required_field",
+            "consumer_contract",
+            "required_fields_invalid",
+        ),
+        ("duplicate_id", "consumer_contract", "evidence_id_duplicate"),
+        ("null_source_url", "receipt_contract", "source_url_required"),
+        (
+            "query_source_url",
+            "receipt_contract",
+            "source_url_policy_invalid",
+        ),
+        (
+            "oversized_source_identity",
+            "receipt_contract",
+            "source_identity_too_long",
+        ),
+        (
+            "oversized_retrieved_at",
+            "receipt_contract",
+            "retrieved_at_too_long",
+        ),
+    ],
+)
+def test_project_live_observation_attaches_exact_evidence_diagnostic(
+    case: str, expected_stage: str, expected_reason: str
+) -> None:
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot(status=_evidence_mutation_status(case))
+
+    assert caught.value.code.value == "evidence_invalid"
+    assert caught.value.phase.value == "evidence"
+    assert caught.value.diagnostic is not None
+    assert caught.value.diagnostic.model_dump(mode="json") == {
+        "stage": expected_stage,
+        "reason": expected_reason,
+    }
+
+
+@pytest.mark.parametrize("evidence", [None, []])
+def test_project_live_observation_keeps_missing_evidence_unclassified(
+    evidence: object,
+) -> None:
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot(status=_status(evidence=evidence))
+
+    assert caught.value.code.value == "evidence_missing"
+    assert caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize(
+    "invalid_fields",
+    [
+        {"source_url": 7},
+        {"source_url": 7, "source_identity": 7},
+    ],
+)
+def test_project_live_observation_keeps_unknown_or_multiple_receipt_errors_unclassified(
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_fields: dict[str, object],
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    projected_row = {
+        key: value
+        for key, value in _status()["evidence"][0].items()
+        if key
+        in {
+            "evidence_id",
+            "source_url",
+            "source_identity",
+            "retrieved_at",
+            "citation_status",
+            "verification_status",
+        }
+    }
+    projected_row.update(invalid_fields)
+    monkeypatch.setattr(
+        module,
+        "project_consumer_case",
+        lambda **_kwargs: {
+            "expected": {"support": "supported", "disposition": "accept_draft"},
+            "evidence": [projected_row],
+        },
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot()
+
+    assert caught.value.code.value == "evidence_invalid"
+    assert caught.value.diagnostic is None
+
+
+@pytest.mark.parametrize("stage", ["consumer_contract", "receipt_contract"])
+def test_multiple_evidence_rejection_sources_do_not_publish_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+) -> None:
+    status = _status()
+    if stage == "consumer_contract":
+        status["evidence"][0]["source_identity"] = ""
+        status["evidence"][1]["citation_status"] = "unknown"
+    else:
+        status["evidence"][0]["source_url"] = None
+        status["evidence"][1]["source_url"] = (
+            "https://peps.python.org/pep-0703/?private=1"
+        )
+
+    with pytest.raises(EvaluationError) as projected:
+        _snapshot(status=status)
+
+    assert projected.value.code.value == "evidence_invalid"
+    assert projected.value.phase.value == "evidence"
+    assert projected.value.diagnostic is None
+
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=projected.value,
+        diagnostic_dir=diagnostic_dir,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "evidence_invalid"
+    assert caught.value.diagnostic is None
+    assert holder["diagnostic_publications"] == []
+    assert list(diagnostic_dir.iterdir()) == []
+    assert "cleanup_receipt" in events
+    assert "diagnostic_publish" not in events
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "required_cited_domain_missing",
+        "artifact_invalid",
+        "fallback_rejected",
+        "unclassified_result",
+        "run_state_invalid",
+    ],
+)
+def test_non_evidence_failures_never_gain_evidence_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
+    status = _status()
+    result = _result()
+    if case == "required_cited_domain_missing":
+        status["evidence"][0]["citation_status"] = "uncited"
+    elif case == "artifact_invalid":
+        result["artifact"] = {**result["artifact"], "media_type": "text/plain"}
+    elif case == "fallback_rejected":
+        status["execution_status"] = "completed_with_fallback"
+    elif case == "unclassified_result":
+        monkeypatch.setattr(
+            module,
+            "project_consumer_case",
+            lambda **_kwargs: (_ for _ in ()).throw(
+                module.ContractValidationError("unclassified_contract_error")
+            ),
+        )
+    elif case == "run_state_invalid":
+        status["segments"] = []
+
+    with pytest.raises(EvaluationError) as caught:
+        _snapshot(status=status, result=result)
+
+    assert caught.value.diagnostic is None
+
+
+def test_forged_cross_stage_evidence_reason_fails_before_projection() -> None:
+    with pytest.raises(ValueError, match="evidence_diagnostic_pair_invalid"):
+        EvidenceBoundaryDiagnostic(
+            stage=EvidenceDiagnosticStage.STATUS_PROJECTION,
+            reason=EvidenceDiagnosticReason.SOURCE_URL_POLICY_INVALID,
+        )
+
+
 @pytest.mark.parametrize(
     ("mutator", "expected_code"),
     [
@@ -2142,6 +2401,148 @@ def test_observe_live_selects_run_failure_diagnostic_after_final_cleanup(
     assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
 
 
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_evidence_diagnostic_is_selected_after_final_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup_fails: bool,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=_evidence_diagnostic_error(),
+        diagnostic_dir=diagnostic_dir,
+        fail_cleanup_refresh=cleanup_fails,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    expected_cleanup = "failed" if cleanup_fails else "succeeded"
+    assert caught.value.code.value == "evidence_invalid"
+    assert caught.value.cleanup_status.value == expected_cleanup
+    receipt = EvidenceDiagnosticReceipt.model_validate_json(
+        (diagnostic_dir / EVIDENCE_DIAGNOSTIC_FILENAME).read_bytes(),
+        strict=True,
+    )
+    assert receipt.primary.cleanup_status.value == expected_cleanup
+    assert holder["diagnostic_publications"] == ["evidence"]
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.json").exists()
+    assert not (repository / "docs/evidence/bounded-live-producer-v1.md").exists()
+
+
+@pytest.mark.parametrize(
+    ("selection", "expected_publications"),
+    [
+        ("result", ["result"]),
+        ("call_budget", ["call_budget"]),
+        ("run_failure", ["run_failure"]),
+        ("evidence", ["evidence"]),
+        ("success", []),
+        ("untyped_evidence", []),
+        ("evidence_missing", []),
+        ("required_domain", []),
+        ("source_domain", []),
+        ("artifact", []),
+        ("fallback", []),
+        ("other", []),
+    ],
+)
+def test_diagnostic_selection_invokes_at_most_one_exact_publisher(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selection: str,
+    expected_publications: list[str],
+) -> None:
+    from scripts.bounded_live_producer_runtime_diagnostics import (
+        parse_call_budget_sidecar,
+    )
+
+    errors = {
+        "result": _result_diagnostic_error(),
+        "call_budget": _call_budget_diagnostic_error(),
+        "run_failure": _run_failure_diagnostic_error(),
+        "evidence": _evidence_diagnostic_error(),
+        "untyped_evidence": EvaluationError("evidence_invalid", "evidence", False),
+        "evidence_missing": EvaluationError("evidence_missing", "evidence", False),
+        "required_domain": EvaluationError(
+            "required_cited_domain_missing", "evidence", False
+        ),
+        "source_domain": EvaluationError(
+            "evidence_domain_rejected", "evidence", False
+        ),
+        "artifact": EvaluationError("artifact_invalid", "result", False),
+        "fallback": EvaluationError("run_fallback_rejected", "result", False),
+        "other": EvaluationError("evaluation_internal_error", "internal", False),
+    }
+    sidecar = parse_call_budget_sidecar(
+        {
+            "schema_version": "dra.call-budget-origin-sidecar.v1",
+            "limiter": {
+                "limiter_kind": "model",
+                "tool_scope": "not_applicable",
+                "run_count": 40,
+                "run_limit": 40,
+                "thread_count": 40,
+                "thread_limit": None,
+                "agent_role": "not_observed",
+            },
+        }
+    )
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, _repository, _events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=errors.get(selection),
+        diagnostic_dir=diagnostic_dir,
+        limiter_diagnostics=selection == "call_budget",
+        extracted_sidecar=sidecar if selection == "call_budget" else None,
+    )
+
+    if selection == "success":
+        assert invoke().status == "valid"
+    else:
+        with pytest.raises(EvaluationError):
+            invoke()
+
+    assert holder["diagnostic_publications"] == expected_publications
+    assert len(holder["diagnostic_publications"]) <= 1
+
+
+def test_evidence_diagnostic_publication_failure_preserves_primary_and_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic_dir = tmp_path / "diagnostic"
+    diagnostic_dir.mkdir(mode=0o700)
+    diagnostic_dir.chmod(0o700)
+    invoke, _repository, events, holder = _install_provider_free_live_boundaries(
+        tmp_path,
+        monkeypatch,
+        terminal_error=_evidence_diagnostic_error(),
+        diagnostic_dir=diagnostic_dir,
+        diagnostic_publication_error=RuntimeError("private publication detail"),
+        fail_cleanup_refresh=True,
+    )
+
+    with pytest.raises(EvaluationError) as caught:
+        invoke()
+
+    assert caught.value.code.value == "evidence_invalid"
+    assert caught.value.phase.value == "evidence"
+    assert caught.value.cleanup_status is CleanupStatus.FAILED
+    assert isinstance(caught.value.diagnostic, EvidenceBoundaryDiagnostic)
+    assert holder["diagnostic_publications"] == ["evidence"]
+    assert events.index("cleanup_receipt") < events.index("diagnostic_publish")
+    assert not (diagnostic_dir / EVIDENCE_DIAGNOSTIC_FILENAME).exists()
+
+
 @pytest.mark.parametrize("extracted", [True, False])
 def test_sidecar_extraction_occurs_only_for_exact_opted_in_budget_failure_before_cleanup(
     tmp_path: Path,
@@ -2359,9 +2760,15 @@ def test_observe_live_rejects_invalid_diagnostic_dir_before_live_configuration(
 
 
 @pytest.mark.parametrize(
-    "filename", [DIAGNOSTIC_FILENAME, RUN_FAILURE_DIAGNOSTIC_FILENAME]
+    "filename",
+    [
+        DIAGNOSTIC_FILENAME,
+        RUN_FAILURE_DIAGNOSTIC_FILENAME,
+        CALL_BUDGET_DIAGNOSTIC_FILENAME,
+        EVIDENCE_DIAGNOSTIC_FILENAME,
+    ],
 )
-def test_observe_live_preflight_rejects_either_fixed_diagnostic_name(
+def test_observe_live_preflight_rejects_any_fixed_diagnostic_name(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     filename: str,
@@ -2401,8 +2808,13 @@ def test_observe_live_success_or_precise_failure_produces_no_generic_diagnostic(
         diagnostic_dir=diagnostic_dir,
     )
     assert invoke().status == "valid"
-    assert not (diagnostic_dir / DIAGNOSTIC_FILENAME).exists()
-    assert not (diagnostic_dir / RUN_FAILURE_DIAGNOSTIC_FILENAME).exists()
+    for filename in (
+        DIAGNOSTIC_FILENAME,
+        RUN_FAILURE_DIAGNOSTIC_FILENAME,
+        CALL_BUDGET_DIAGNOSTIC_FILENAME,
+        EVIDENCE_DIAGNOSTIC_FILENAME,
+    ):
+        assert not (diagnostic_dir / filename).exists()
 
     second_root = tmp_path / "second"
     second_root.mkdir()
@@ -2417,8 +2829,13 @@ def test_observe_live_success_or_precise_failure_produces_no_generic_diagnostic(
     )
     with pytest.raises(EvaluationError, match="artifact_invalid"):
         invoke()
-    assert not (second_diagnostic / DIAGNOSTIC_FILENAME).exists()
-    assert not (second_diagnostic / RUN_FAILURE_DIAGNOSTIC_FILENAME).exists()
+    for filename in (
+        DIAGNOSTIC_FILENAME,
+        RUN_FAILURE_DIAGNOSTIC_FILENAME,
+        CALL_BUDGET_DIAGNOSTIC_FILENAME,
+        EVIDENCE_DIAGNOSTIC_FILENAME,
+    ):
+        assert not (second_diagnostic / filename).exists()
 
 
 def test_diagnostic_publication_failure_preserves_primary_and_cleanup(

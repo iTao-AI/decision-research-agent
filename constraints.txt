@@ -43,6 +43,7 @@ langchain-anthropic==1.4.7
 langchain-classic==1.0.8
 langchain-community==0.4.2
 langchain-core==1.4.8
+langchain-deepseek==1.1.0
 langchain-google-genai==4.2.6
 langchain-openai==1.3.2
 langchain-protocol==0.0.18

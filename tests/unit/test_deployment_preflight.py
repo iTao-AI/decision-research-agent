@@ -8,6 +8,26 @@ import yaml
 PROJECT_ROOT = Path(__file__).parents[2]
 
 
+def _requirements_by_name(path: Path) -> dict[str, Requirement]:
+    requirements: dict[str, Requirement] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        requirement = Requirement(line)
+        requirements[requirement.name] = requirement
+    return requirements
+
+
+def test_official_deepseek_integration_is_declared_and_pinned():
+    declared = _requirements_by_name(PROJECT_ROOT / "requirements.txt")
+    locked = _requirements_by_name(PROJECT_ROOT / "constraints.txt")
+
+    assert "langchain-deepseek" in declared
+    assert ">=1.1.0" in str(declared["langchain-deepseek"].specifier)
+    assert str(locked["langchain-deepseek"].specifier) == "==1.1.0"
+
+
 def test_verified_constraints_are_used_by_docker_and_ci():
     constraints = (PROJECT_ROOT / "constraints.txt").read_text(encoding="utf-8")
     dockerfile = (PROJECT_ROOT / "Dockerfile.backend").read_text(encoding="utf-8")

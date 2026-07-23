@@ -17,6 +17,10 @@ from scripts.report_runtime_versions import RUNTIME_PACKAGES
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_official_deepseek_integration_is_reported():
+    assert "langchain-deepseek" in RUNTIME_PACKAGES
+
+
 def _applicable_constraints() -> dict[str, str]:
     constraints: dict[str, str] = {}
     environment = default_environment()

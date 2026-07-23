@@ -189,6 +189,10 @@ def test_changelog_preserves_published_release_boundary() -> None:
   `internet_search` calls through the existing Evidence extractor, with
   deterministic deduplication before freeze. Researcher summaries remain
   context for the coordinator rather than Evidence authority.
+- Recorded one timezone-aware UTC observation time for all Evidence rows from
+  each completed source-tool response. Successful generic finalization
+  recomputes `cited` or `uncited` from the canonical persisted artifact, while
+  failure, cancellation, timeout, and Talent paths retain frozen Evidence.
 - Added an opt-in, post-cleanup Evidence diagnostic receipt with closed
   structural stage/reason values; public errors, Evidence authority, raw
   content, and retry behavior remain unchanged.
@@ -331,6 +335,21 @@ def test_unreleased_records_deepseek_provider_protocol_closure() -> None:
     assert "remote tracing disabled" in unreleased
     assert "No live provider result" in unreleased
     assert "## [0.1.5]" not in unreleased
+
+
+def test_unreleased_records_evidence_finalization_contract_closure() -> None:
+    changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split(
+        "## [0.1.5]",
+        1,
+    )[0]
+    normalized = _collapsed(unreleased)
+
+    assert "one timezone-aware UTC observation time" in normalized
+    assert "each completed source-tool response" in normalized
+    assert "canonical persisted artifact" in normalized
+    assert "recomputes `cited` or `uncited`" in normalized
+    assert "failure, cancellation, timeout, and Talent paths" in normalized
 
 
 def test_security_policy_matches_current_release_surface() -> None:

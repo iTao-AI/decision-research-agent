@@ -26,6 +26,7 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from agent.main_agent import run_deep_agent
+from agent.research import mark_cited_evidence
 from agent.run_result import OutcomeBox
 from agent.telemetry import collector
 from api.monitor import monitor, manager
@@ -485,8 +486,14 @@ async def _run_started_v2_with_persistence(
         review_bundle = None
         review_workflow = None
         artifacts = []
+        completed_evidence_entries = result.evidence_entries
         if execution_status == "completed" and profile_id == "generic":
-            artifacts = [build_generic_result_artifact(result)]
+            artifact = build_generic_result_artifact(result)
+            artifacts = [artifact]
+            completed_evidence_entries = mark_cited_evidence(
+                result.evidence_entries,
+                artifact["content"],
+            )
         if execution_status == "completed" and profile_id == "talent-hiring-signal":
             review_bundle, _, artifacts = build_talent_artifacts(
                 run_id=run_id,
@@ -545,7 +552,7 @@ async def _run_started_v2_with_persistence(
     terminal_execution_status = execution_status
     terminal_delivery_status = delivery_status
     terminal_review_status = review_status
-    terminal_evidence_entries = result.evidence_entries
+    terminal_evidence_entries = completed_evidence_entries
     terminal_research_packets = result.research_packets
     terminal_review_bundle = review_bundle
     terminal_artifacts = artifacts
@@ -558,6 +565,7 @@ async def _run_started_v2_with_persistence(
         terminal_execution_status = "failed"
         terminal_delivery_status = "failed"
         terminal_review_status = "not_required"
+        terminal_evidence_entries = result.evidence_entries
         terminal_research_packets = []
         terminal_review_bundle = None
         terminal_artifacts = []

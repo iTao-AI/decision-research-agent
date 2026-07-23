@@ -222,9 +222,15 @@ def _evidence_fail(reason: EvidenceContractReason) -> NoReturn:
 def _evidence_rejections_fail(
     reasons: list[EvidenceContractReason | None],
 ) -> NoReturn:
+    recognized = {
+        reason
+        for reason in reasons
+        if type(reason) is EvidenceContractReason
+    }
     reason = (
-        reasons[0]
-        if len(reasons) == 1 and type(reasons[0]) is EvidenceContractReason
+        next(iter(recognized))
+        if len(recognized) == 1
+        and all(type(item) is EvidenceContractReason for item in reasons)
         else None
     )
     raise ContractValidationError(

@@ -490,10 +490,18 @@ def project_live_observation(
     except (KeyError, TypeError) as exc:
         raise _error(FailureCode.EVIDENCE_INVALID, FailurePhase.EVIDENCE) from exc
     if evidence_rejections:
+        recognized_reasons = {
+            reason
+            for reason in evidence_rejections
+            if type(reason) is EvidenceDiagnosticReason
+        }
         reason = (
-            evidence_rejections[0]
-            if len(evidence_rejections) == 1
-            and type(evidence_rejections[0]) is EvidenceDiagnosticReason
+            next(iter(recognized_reasons))
+            if len(recognized_reasons) == 1
+            and all(
+                type(item) is EvidenceDiagnosticReason
+                for item in evidence_rejections
+            )
             else None
         )
         diagnostic = (

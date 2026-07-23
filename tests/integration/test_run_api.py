@@ -602,6 +602,7 @@ async def test_run_v2_maps_only_bounded_execution_failure_kinds(
     expected_code,
 ):
     import api.server as server
+    from agent.research import EvidenceEntry
     from agent.run_result import AgentRunResult
     from api.run_repository import create_run, get_run
 
@@ -609,6 +610,16 @@ async def test_run_v2_maps_only_bounded_execution_failure_kinds(
     created = create_run(
         thread_id=f"mapper-{expected_code}-{failure_kind}",
         query="query containing /private/path and sk-not-a-real-secret",
+    )
+    evidence = EvidenceEntry(
+        thread_id=created["thread_id"],
+        query_text="query",
+        subagent_name="network_search",
+        tool_name="internet_search",
+        source_url="https://example.com/frozen-failure",
+        snippet="frozen failure evidence",
+        retrieved_at="2026-07-23T00:00:00+00:00",
+        citation_status="cited",
     )
 
     async def bounded_failure(*_args, **_kwargs):
@@ -618,11 +629,19 @@ async def test_run_v2_maps_only_bounded_execution_failure_kinds(
             segment_id=created["segment_id"],
             query="query",
             session_dir=tmp_path,
+            evidence_entries=[evidence],
             failure_kind=failure_kind,
             error_message="provider traceback /private/path sk-not-a-real-secret",
         )
 
     monkeypatch.setattr(server, "run_deep_agent", bounded_failure)
+    monkeypatch.setattr(
+        server,
+        "mark_cited_evidence",
+        lambda *_args, **_kwargs: pytest.fail(
+            "failed runs must not invoke generic citation finalization"
+        ),
+    )
     await _run_v2_with_dispatch(
         server,
         query="query",
@@ -640,6 +659,7 @@ async def test_run_v2_maps_only_bounded_execution_failure_kinds(
     assert run["failure_cause"]["code"] == expected_code
     assert "private" not in str(run["failure_cause"]).lower()
     assert "secret" not in str(run["failure_cause"]).lower()
+    assert run["evidence"][0]["citation_status"] == "cited"
 
 
 @pytest.mark.asyncio
@@ -1020,6 +1040,7 @@ async def test_external_cancellation_during_execution_freezes_partial_evidence(
         source_identity="https://example.com/cancel",
         snippet="partial before cancellation",
         evidence_fingerprint="partial-cancel-evidence",
+        citation_status="cited",
     )
 
     async def wait_for_cancel(*_args, **kwargs):
@@ -1037,6 +1058,13 @@ async def test_external_cancellation_during_execution_freezes_partial_evidence(
         await asyncio.Event().wait()
 
     monkeypatch.setattr(server, "run_deep_agent", wait_for_cancel)
+    monkeypatch.setattr(
+        server,
+        "mark_cited_evidence",
+        lambda *_args, **_kwargs: pytest.fail(
+            "cancelled runs must not invoke generic citation finalization"
+        ),
+    )
     task, stage, origin, _ = await _start_run_v2_with_dispatch(
         server,
         query="query",
@@ -1058,6 +1086,7 @@ async def test_external_cancellation_during_execution_freezes_partial_evidence(
     assert [item["evidence_fingerprint"] for item in run["evidence"]] == [
         "partial-cancel-evidence"
     ]
+    assert run["evidence"][0]["citation_status"] == "cited"
 
 
 @pytest.mark.asyncio
@@ -1693,6 +1722,7 @@ async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch
 @pytest.mark.asyncio
 async def test_talent_run_persists_review_and_canonical_artifacts(tmp_path, monkeypatch):
     import api.server as server
+    from agent.research import EvidenceEntry
     from agent.run_result import AgentRunResult
     from agent.talent_contracts import ResearchPacket
     from api.run_repository import create_run, get_run
@@ -1736,15 +1766,33 @@ async def test_talent_run_persists_review_and_canonical_artifacts(tmp_path, monk
             "conflict_status": "none",
         }],
     )
+    frozen_evidence = EvidenceEntry(
+        thread_id="talent-thread",
+        query_text="query",
+        subagent_name="network_search",
+        tool_name="internet_search",
+        source_url="https://example.com/talent-frozen",
+        snippet="talent frozen evidence",
+        retrieved_at="2026-07-23T00:00:00+00:00",
+        citation_status="cited",
+    )
 
     async def capture_agent(*args, **kwargs):
         return AgentRunResult(
             thread_id="talent-thread", query="query", session_dir=tmp_path,
             profile_id="talent-hiring-signal", run_id=created["run_id"],
             segment_id=created["segment_id"], research_packets=[packet],
+            evidence_entries=[frozen_evidence],
         )
 
     monkeypatch.setattr(server, "run_deep_agent", capture_agent)
+    monkeypatch.setattr(
+        server,
+        "mark_cited_evidence",
+        lambda *_args, **_kwargs: pytest.fail(
+            "Talent runs must not invoke generic citation finalization"
+        ),
+    )
     await _run_v2_with_dispatch(server,
         query="query", thread_id="talent-thread", run_id=created["run_id"],
         segment_id=created["segment_id"], profile_id="talent-hiring-signal",
@@ -1759,12 +1807,14 @@ async def test_talent_run_persists_review_and_canonical_artifacts(tmp_path, monk
         "decision-brief.json", "decision-brief.md",
     }
     assert run["review_workflow"] is None
+    assert run["evidence"][0]["citation_status"] == "cited"
 
 
 @pytest.mark.asyncio
 async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypatch):
     import api.server as server
     from agent.harness_contracts import ReportCandidate
+    from agent.research import EvidenceEntry
     from agent.run_result import AgentRunResult
     from api.run_repository import create_run, get_artifact, get_run
     from pathlib import PurePosixPath
@@ -1775,9 +1825,35 @@ async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypa
         query="query",
         profile_id="generic",
     )
+    cited_url = "https://docs.python.org/3/howto/free-threading-python.html"
+    uncited_url = "https://example.com/not-in-report"
+    evidence_entries = [
+        EvidenceEntry(
+            thread_id="generic-thread",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="internet_search",
+            source_url=cited_url,
+            snippet="Python documentation.",
+            retrieved_at="2026-07-23T00:00:00+00:00",
+        ),
+        EvidenceEntry(
+            thread_id="generic-thread",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="internet_search",
+            source_url=uncited_url,
+            snippet="Uncited source.",
+            retrieved_at="2026-07-23T00:00:00+00:00",
+            citation_status="cited",
+            verification_status="verified",
+        ),
+    ]
+    captured_result = None
 
     async def capture_agent(*args, **kwargs):
-        return AgentRunResult(
+        nonlocal captured_result
+        captured_result = AgentRunResult(
             thread_id="generic-thread",
             query="query",
             session_dir=tmp_path,
@@ -1786,9 +1862,11 @@ async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypa
             segment_id=created["segment_id"],
             report_candidate=ReportCandidate(
                 path=PurePosixPath("/workspace/research-report.md"),
-                content="# Generic Report",
+                content=f"# Generic Report\n\nSource: {cited_url}",
             ),
+            evidence_entries=evidence_entries,
         )
+        return captured_result
 
     monkeypatch.setattr(server, "run_deep_agent", capture_agent)
 
@@ -1815,7 +1893,23 @@ async def test_generic_run_persists_canonical_result_artifact(tmp_path, monkeypa
     )
     assert artifact["kind"] == "research_report_markdown"
     assert artifact["media_type"] == "text/markdown"
-    assert artifact["content"] == "# Generic Report"
+    assert artifact["content"] == f"# Generic Report\n\nSource: {cited_url}"
+    assert {
+        item["source_url"]: item["citation_status"] for item in run["evidence"]
+    } == {
+        cited_url: "cited",
+        uncited_url: "uncited",
+    }
+    assert {
+        item["source_url"]: item["verification_status"] for item in run["evidence"]
+    } == {
+        cited_url: "unverified",
+        uncited_url: "verified",
+    }
+    assert captured_result is not None
+    assert [
+        item.citation_status for item in captured_result.evidence_entries
+    ] == ["uncited", "cited"]
 
 
 def test_run_projection_exposes_current_publication_and_artifacts(
@@ -1894,6 +1988,7 @@ async def test_mark_run_timeout_finalizes_nonterminal_run_with_frozen_evidence(
         source_identity="https://example.com/source",
         snippet="partial evidence",
         evidence_fingerprint="timeout-evidence",
+        citation_status="cited",
     )
     outcome_box = server.OutcomeBox()
     outcome_box.publish(
@@ -1905,6 +2000,13 @@ async def test_mark_run_timeout_finalizes_nonterminal_run_with_frozen_evidence(
             session_dir=tmp_path,
             evidence_entries=[evidence],
         )
+    )
+    monkeypatch.setattr(
+        server,
+        "mark_cited_evidence",
+        lambda *_args, **_kwargs: pytest.fail(
+            "timed-out runs must not invoke generic citation finalization"
+        ),
     )
 
     await server._mark_run_timeout(
@@ -1920,6 +2022,7 @@ async def test_mark_run_timeout_finalizes_nonterminal_run_with_frozen_evidence(
     assert [item["evidence_fingerprint"] for item in run["evidence"]] == [
         "timeout-evidence"
     ]
+    assert run["evidence"][0]["citation_status"] == "cited"
     assert run["artifacts"] == []
     assert events[0][0][0] == "run_timeout"
     assert events[0][1]["thread_id"] == "timeout-thread"

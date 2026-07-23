@@ -2153,7 +2153,7 @@ def _assert_evidence_diagnostic_receipt_contract() -> None:
         "`cleanup_status` is exactly `succeeded` or `failed`",
         "`row_count_exceeded` exposes no count",
         "all other reasons expose no rejected value",
-        "unknown, missing, multiple, or cross-stage reason publishes no Evidence receipt",
+        "unknown, missing, multiple distinct recognized reasons, or cross-stage reason publishes no Evidence receipt",
         "contains no IDs, URLs, timestamps, counts, field lengths, content, exception text, paths, credentials, raw input, logs, or traces",
         "non-authoritative operator diagnostic",
         "does not authorize a retry",
@@ -2207,6 +2207,39 @@ def _assert_evidence_diagnostic_receipt_contract() -> None:
 
 def test_evidence_diagnostic_receipt_contract_is_closed_and_non_authoritative() -> None:
     _assert_evidence_diagnostic_receipt_contract()
+
+
+def test_evidence_finalization_contract_is_documented() -> None:
+    data_models = (
+        PROJECT_ROOT / "docs/reference/data-models.md"
+    ).read_text(encoding="utf-8")
+    state_machines = (
+        PROJECT_ROOT / "docs/reference/state-machines.md"
+    ).read_text(encoding="utf-8")
+    bounded_reference = (
+        PROJECT_ROOT / "docs/reference/bounded-live-producer-evaluation.md"
+    ).read_text(encoding="utf-8")
+    collapsed_data_models = _collapsed(data_models)
+    collapsed_state_machines = _collapsed(state_machines)
+    collapsed_bounded_reference = _collapsed(bounded_reference)
+
+    assert "one timezone-aware UTC `retrieved_at`" in collapsed_data_models
+    assert (
+        "all Evidence rows extracted from that response share it"
+        in collapsed_data_models
+    )
+    assert "not source publication or source-as-of time" in collapsed_data_models
+    assert "application-owned citation finalization" in collapsed_state_machines
+    assert (
+        "does not mutate the frozen Execution Outcome"
+        in collapsed_state_machines
+    )
+    assert "failure, cancellation, and timeout paths" in collapsed_state_machines
+    assert (
+        "Repeated instances of one recognized reason remain eligible"
+        in collapsed_bounded_reference
+    )
+    assert "multiple distinct recognized reasons" in collapsed_bounded_reference
 
 
 @pytest.mark.parametrize(

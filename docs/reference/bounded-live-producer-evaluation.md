@@ -166,8 +166,9 @@ error bytes remain unchanged. `cleanup_status` is exactly `succeeded` or
 | `receipt_contract` | `source_url_required`, `source_url_policy_invalid`, `source_identity_too_long`, `retrieved_at_too_long` |
 
 `row_count_exceeded` exposes no count, and all other reasons expose no rejected
-value. An unknown, missing, multiple, or cross-stage reason publishes no Evidence
-receipt.
+value. Repeated instances of one recognized reason remain eligible for that
+single closed reason. An unknown, missing, multiple distinct recognized
+reasons, or cross-stage reason publishes no Evidence receipt.
 The Evidence receipt contains no IDs, URLs, timestamps, counts, field lengths, content, exception text, paths, credentials, raw input, logs, or traces.
 The Evidence receipt remains a non-authoritative operator diagnostic.
 The Evidence receipt does not authorize a retry.

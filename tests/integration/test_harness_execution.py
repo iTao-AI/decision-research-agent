@@ -1,5 +1,6 @@
 import asyncio
 from copy import deepcopy
+from datetime import datetime
 import json
 from pathlib import PurePosixPath
 from typing import Any, Sequence
@@ -905,6 +906,10 @@ async def test_locked_deepagents_captures_nested_search_evidence_without_summary
     assert evidence.tool_name == "internet_search"
     assert evidence.source_url == "https://example.com/nested-source"
     assert evidence.snippet == "Nested source content."
+    assert evidence.retrieved_at is not None
+    observed_at = datetime.fromisoformat(evidence.retrieved_at)
+    assert observed_at.tzinfo is not None
+    assert observed_at.utcoffset() is not None
     assert outcome.report_candidate == ReportCandidate(
         path=PurePosixPath("/workspace/research-report.md"),
         content=(

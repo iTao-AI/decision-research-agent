@@ -70,7 +70,10 @@ def test_filter_publishable_search_response_copies_and_preserves_admitted_rows()
     from agent.source_url_policy import filter_publishable_search_response
 
     payload = {
-        "answer": "bounded answer",
+        "answer": "Rejected source: http://localhost/private",
+        "images": ["http://localhost/private.png"],
+        "provider_debug": {"raw_url": "http://127.0.0.1/private"},
+        "future_field": {"raw_results": ["http://example.com/rejected"]},
         "results": [
             {
                 "title": "First",
@@ -96,7 +99,6 @@ def test_filter_publishable_search_response_copies_and_preserves_admitted_rows()
     filtered = filter_publishable_search_response(payload)
 
     assert filtered == {
-        "answer": "bounded answer",
         "results": [
             payload["results"][0],
             payload["results"][2],
@@ -114,14 +116,17 @@ def test_filter_publishable_search_response_returns_empty_results_when_all_inval
 
     assert filter_publishable_search_response(
         {
-            "answer": "bounded answer",
+            "answer": "Rejected source: http://localhost/private",
+            "images": ["http://localhost/private.png"],
+            "provider_debug": {"raw_url": "http://127.0.0.1/private"},
+            "future_field": {"raw_results": ["http://example.com/source"]},
             "results": [
                 {"url": "http://example.com/source"},
                 {"url": "https://localhost/source"},
                 {"title": "missing URL"},
             ],
         }
-    ) == {"answer": "bounded answer", "results": []}
+    ) == {"results": []}
 
 
 @pytest.mark.parametrize(

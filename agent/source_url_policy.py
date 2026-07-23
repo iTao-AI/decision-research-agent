@@ -86,20 +86,18 @@ def is_publishable_source_url(value: object) -> bool:
 
 
 def filter_publishable_search_response(payload: object) -> dict[str, object]:
-    """Return a copied Tavily response containing only admitted result rows."""
+    """Return a fresh bounded response containing only admitted result rows."""
     if not isinstance(payload, Mapping):
         return {"results": []}
     results = payload.get("results")
     if type(results) is not list or len(results) > MAX_SEARCH_RESULTS:
         return {"results": []}
 
-    try:
-        filtered = dict(payload)
-    except (TypeError, ValueError):
-        return {"results": []}
-    filtered["results"] = [
-        dict(row)
-        for row in results
-        if isinstance(row, Mapping) and is_publishable_source_url(row.get("url"))
-    ]
-    return filtered
+    return {
+        "results": [
+            dict(row)
+            for row in results
+            if isinstance(row, Mapping)
+            and is_publishable_source_url(row.get("url"))
+        ]
+    }

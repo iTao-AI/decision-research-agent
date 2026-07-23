@@ -10,7 +10,10 @@ def test_internet_search_returns_results(monkeypatch):
 
     monkeypatch.setenv("TAVILY_API_KEY", "test-key")
     provider_payload = {
-        "answer": "bounded answer",
+        "answer": "Rejected source: http://localhost/private",
+        "images": ["http://localhost/private.png"],
+        "provider_debug": {"raw_url": "http://127.0.0.1/private"},
+        "future_field": {"raw_results": ["http://example.com/source"]},
         "results": [
             {
                 "title": "Test",
@@ -39,7 +42,6 @@ def test_internet_search_returns_results(monkeypatch):
     )
 
     expected = {
-        "answer": "bounded answer",
         "results": [provider_payload["results"][0]],
     }
     assert result == expected
@@ -134,7 +136,10 @@ async def test_search_boundary_returns_empty_results_when_all_provider_rows_inva
     from tools import tavily_tools
 
     provider_payload = {
-        "answer": "bounded answer",
+        "answer": "Rejected source: http://localhost/private",
+        "images": ["http://localhost/private.png"],
+        "provider_debug": {"raw_url": "http://127.0.0.1/private"},
+        "future_field": {"raw_results": ["http://example.com/source"]},
         "results": [
             {"url": "http://example.com/source", "content": "http"},
             {"url": "https://localhost/source", "content": "local"},
@@ -150,5 +155,5 @@ async def test_search_boundary_returns_empty_results_when_all_provider_rows_inva
         False,
     )
 
-    assert result == {"answer": "bounded answer", "results": []}
+    assert result == {"results": []}
     search.assert_awaited_once()

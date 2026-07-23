@@ -46,6 +46,10 @@ All notable changes to this project are documented in this file.
 - The generic researcher global tool limit 16 and model limit 20 remain
   fail-closed ceilings. This policy does not claim research quality, provider
   cost, business acceptance, or a successful live proof.
+- Captured validated nested subgraph source-tool results from completed
+  `internet_search` calls through the existing Evidence extractor, with
+  deterministic deduplication before freeze. Researcher summaries remain
+  context for the coordinator rather than Evidence authority.
 - Added an opt-in, post-cleanup Evidence diagnostic receipt with closed
   structural stage/reason values; public errors, Evidence authority, raw
   content, and retry behavior remain unchanged.

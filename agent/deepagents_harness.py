@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
 from types import MappingProxyType
 from typing import Any, Literal, Mapping
 
@@ -36,6 +37,11 @@ _REQUIRED_SKILLS = (
     "research-planning",
     "evidence-synthesis-and-reporting",
 )
+_STREAM_NAMESPACE_PART_RE = re.compile(
+    r"^[A-Za-z0-9_.-]{1,128}:[A-Za-z0-9_-]{1,128}$"
+)
+_MAX_STREAM_NAMESPACE_DEPTH = 8
+_MAX_STREAM_PAYLOAD_NODES = 64
 
 GENERIC_COORDINATOR_PROMPT = """
 Coordinate bounded research using only the named researchers and server-owned
@@ -124,8 +130,22 @@ class DeepAgentsHarness:
                 {"messages": [{"role": "user", "content": content}]},
                 config=config,
                 context=runtime_context,
+                subgraphs=True,
             ):
-                observer.on_stream_chunk(chunk)
+                normalized = _normalize_classic_stream_chunk(chunk)
+                if normalized is None:
+                    continue
+                namespace, payload = normalized
+                if namespace:
+                    nested_handler = getattr(
+                        observer,
+                        "on_nested_stream_chunk",
+                        None,
+                    )
+                    if callable(nested_handler):
+                        nested_handler(namespace, payload)
+                else:
+                    observer.on_stream_chunk(payload)
         except (
             ModelCallLimitExceededError,
             ToolCallLimitExceededError,
@@ -141,6 +161,46 @@ class DeepAgentsHarness:
                 message=str(exc),
             ) from exc
         return observer.snapshot_outcome()
+
+
+def _normalize_classic_stream_chunk(
+    chunk: Any,
+) -> tuple[tuple[str, ...], dict[str, Mapping[str, Any] | None]] | None:
+    """Normalize the locked LangGraph v1 outer/nested stream shapes."""
+    namespace: tuple[str, ...]
+    payload: Any
+    if isinstance(chunk, Mapping):
+        namespace = ()
+        payload = chunk
+    elif type(chunk) is tuple and len(chunk) == 2:
+        namespace, payload = chunk
+        if type(namespace) is not tuple:
+            return None
+        if (
+            len(namespace) > _MAX_STREAM_NAMESPACE_DEPTH
+            or any(
+                type(part) is not str
+                or _STREAM_NAMESPACE_PART_RE.fullmatch(part) is None
+                for part in namespace
+            )
+        ):
+            return None
+    else:
+        return None
+
+    if not isinstance(payload, Mapping) or len(payload) > _MAX_STREAM_PAYLOAD_NODES:
+        return None
+
+    normalized_payload: dict[str, Mapping[str, Any] | None] = {}
+    for node_name, state in payload.items():
+        if type(node_name) is not str:
+            return None
+        if state is not None and not isinstance(state, Mapping):
+            return None
+        normalized_payload[node_name] = (
+            None if state is None else dict(state)
+        )
+    return namespace, normalized_payload
 
 
 def _call_budget_diagnostic(

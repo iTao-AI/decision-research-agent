@@ -1,5 +1,6 @@
 import asyncio
 from copy import deepcopy
+import json
 from pathlib import PurePosixPath
 from typing import Any, Sequence
 
@@ -384,6 +385,99 @@ class ScriptedSingleTaskThenFinishModel(ScriptedCanonicalWriteModel):
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
+class ScriptedNestedSearchResearcherModel(ScriptedCanonicalWriteModel):
+    include_url_in_summary: bool = False
+    queries: tuple[str, ...] = ("bounded nested evidence",)
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        self.call_count += 1
+        if self.call_count == 1:
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "internet_search",
+                        "args": {"query": query},
+                        "id": f"call-nested-search-{index}",
+                        "type": "tool_call",
+                    }
+                    for index, query in enumerate(self.queries, start=1)
+                ],
+            )
+        else:
+            summary = "Nested search completed."
+            if self.include_url_in_summary:
+                summary += " Source: https://example.com/nested-source"
+            message = AIMessage(content=summary)
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class ScriptedNestedSearchCoordinatorModel(ScriptedCanonicalWriteModel):
+    observed_subagent_result: str = ""
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del stop, run_manager, kwargs
+        self.call_count += 1
+        if self.call_count == 1:
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "task",
+                        "args": {
+                            "description": "Run one bounded network search.",
+                            "subagent_type": "network_search",
+                        },
+                        "id": "call-nested-task",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        elif self.call_count == 2:
+            task_results = [
+                str(item.content)
+                for item in messages
+                if isinstance(item, ToolMessage) and item.name == "task"
+            ]
+            self.observed_subagent_result = task_results[-1]
+            report_source = (
+                "https://example.com/nested-source"
+                if "https://example.com/nested-source"
+                in self.observed_subagent_result
+                else "No source URL was returned by the researcher."
+            )
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "write_file",
+                        "args": {
+                            "file_path": "/workspace/research-report.md",
+                            "content": f"# Nested report\n\n{report_source}\n",
+                        },
+                        "id": "call-write-nested-report",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        else:
+            message = AIMessage(content="Nested report written.")
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
 class RecordingHarness:
     def __init__(self):
         self.request = None
@@ -420,6 +514,82 @@ class RecordingHarness:
                             "encoding": "utf-8",
                         }
                     },
+                }
+            }
+        )
+        return observer.snapshot_outcome()
+
+
+class DuplicateNestedAndOuterEvidenceHarness:
+    async def execute(self, request, *, runtime_context, observer):
+        del request, runtime_context
+        namespace = ("tools:task-nested-evidence",)
+        observer.on_nested_stream_chunk(
+            namespace,
+            {
+                "model": {
+                    "messages": [
+                        AIMessage(
+                            content="",
+                            name="network_search",
+                        )
+                    ]
+                }
+            },
+        )
+        first_source = json.dumps(
+            {
+                "results": [
+                    {
+                        "url": "https://example.com/first",
+                        "content": "First source.",
+                    }
+                ]
+            }
+        )
+        observer.on_nested_stream_chunk(
+            namespace,
+            {
+                "tools": {
+                    "messages": [
+                        ToolMessage(
+                            content=first_source,
+                            tool_call_id="call-first",
+                            name="internet_search",
+                        ),
+                        ToolMessage(
+                            content=json.dumps(
+                                {
+                                    "results": [
+                                        {
+                                            "url": "https://example.com/second",
+                                            "content": "Second source.",
+                                        }
+                                    ]
+                                }
+                            ),
+                            tool_call_id="call-second",
+                            name="internet_search",
+                        ),
+                        ToolMessage(
+                            content="https://example.com/not-source-evidence",
+                            tool_call_id="call-non-source",
+                            name="write_file",
+                        ),
+                    ]
+                }
+            },
+        )
+        observer.on_stream_chunk(
+            {
+                "tools": {
+                    "messages": [
+                        ToolMessage(
+                            content=first_source,
+                            tool_call_id="call-task",
+                            name="task",
+                        )
+                    ]
                 }
             }
         )
@@ -507,6 +677,84 @@ def _network_search_limit_graph(
             role="network_search",
         ),
         name="network-search-runtime-cap",
+    )
+
+
+def _nested_search_harness(
+    *,
+    include_url_in_summary: bool,
+    queries: tuple[str, ...] = ("bounded nested evidence",),
+):
+    researcher_model = ScriptedNestedSearchResearcherModel(
+        include_url_in_summary=include_url_in_summary,
+        queries=queries,
+    )
+    executed_queries: list[str] = []
+
+    def internet_search(query: str) -> str:
+        executed_queries.append(query)
+        source_slug = {
+            "bounded nested evidence": "nested-source",
+            "parallel alpha": "parallel-alpha",
+            "parallel beta": "parallel-beta",
+        }[query]
+        source_content = {
+            "bounded nested evidence": "Nested source content.",
+            "parallel alpha": "parallel-alpha content.",
+            "parallel beta": "parallel-beta content.",
+        }[query]
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "url": f"https://example.com/{source_slug}",
+                        "content": source_content,
+                    }
+                ]
+            }
+        )
+
+    search_tool = StructuredTool.from_function(
+        internet_search,
+        name="internet_search",
+        description="Return one deterministic public source.",
+    )
+    researcher = create_agent(
+        model=researcher_model,
+        tools=[search_tool],
+        name="network_search",
+    )
+    coordinator = ScriptedNestedSearchCoordinatorModel()
+    backend = CompositeBackend(default=StateBackend(), routes={})
+    permissions = tuple(build_filesystem_permissions())
+    graph = create_deep_agent(
+        model=coordinator,
+        tools=[],
+        system_prompt="Delegate once and write the canonical report.",
+        middleware=[],
+        subagents=[
+            {
+                "name": "network_search",
+                "description": "Run one deterministic network search.",
+                "runnable": researcher,
+            }
+        ],
+        permissions=list(permissions),
+        backend=backend,
+        context_schema=ResearchRuntimeContext,
+        name="nested-evidence-integration",
+    )
+    return (
+        DeepAgentsHarness(
+            graph=graph,
+            backend=backend,
+            permissions=permissions,
+            skills=(),
+            profile_graphs={"generic": graph},
+        ),
+        researcher_model,
+        coordinator,
+        executed_queries,
     )
 
 
@@ -628,6 +876,148 @@ async def test_locked_deepagents_network_search_subagent_finishes_after_named_ca
     assert executed_calls == [1, 2, 3, 4, 5]
     assert researcher_model.observed_limit_feedback is True
     assert result["messages"][-1].content == "Coordinator finished."
+
+
+@pytest.mark.asyncio
+async def test_locked_deepagents_captures_nested_search_evidence_without_summary_url(
+    tmp_path,
+):
+    harness, researcher, coordinator, executed_queries = _nested_search_harness(
+        include_url_in_summary=False
+    )
+    service = ResearchExecutionService(harness=harness, project_root=tmp_path)
+
+    outcome = await service.execute(
+        "Capture the nested source.",
+        "thread-nested-evidence-1",
+        run_id="run-nested-evidence-1",
+        segment_id="segment-nested-evidence-1",
+        profile_id="generic",
+    )
+
+    assert executed_queries == ["bounded nested evidence"]
+    assert researcher.call_count == 2
+    assert coordinator.call_count == 3
+    assert "https://" not in coordinator.observed_subagent_result
+    assert len(outcome.evidence_entries) == 1
+    evidence = outcome.evidence_entries[0]
+    assert evidence.subagent_name == "network_search"
+    assert evidence.tool_name == "internet_search"
+    assert evidence.source_url == "https://example.com/nested-source"
+    assert evidence.snippet == "Nested source content."
+    assert outcome.report_candidate == ReportCandidate(
+        path=PurePosixPath("/workspace/research-report.md"),
+        content=(
+            "# Nested report\n\n"
+            "No source URL was returned by the researcher.\n"
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_nested_researcher_source_url_reaches_coordinator_report(tmp_path):
+    harness, _, coordinator, _ = _nested_search_harness(
+        include_url_in_summary=True
+    )
+    service = ResearchExecutionService(harness=harness, project_root=tmp_path)
+
+    outcome = await service.execute(
+        "Carry the nested source into the report.",
+        "thread-nested-evidence-2",
+        run_id="run-nested-evidence-2",
+        segment_id="segment-nested-evidence-2",
+        profile_id="generic",
+    )
+
+    assert (
+        "https://example.com/nested-source"
+        in coordinator.observed_subagent_result
+    )
+    assert outcome.report_candidate == ReportCandidate(
+        path=PurePosixPath("/workspace/research-report.md"),
+        content=(
+            "# Nested report\n\n"
+            "https://example.com/nested-source\n"
+        ),
+    )
+    assert len(outcome.evidence_entries) == 1
+
+
+@pytest.mark.asyncio
+async def test_locked_deepagents_parallel_nested_sources_are_deterministic(
+    tmp_path,
+):
+    harness, researcher, _, executed_queries = _nested_search_harness(
+        include_url_in_summary=False,
+        queries=("parallel alpha", "parallel alpha", "parallel beta"),
+    )
+    service = ResearchExecutionService(harness=harness, project_root=tmp_path)
+
+    outcome = await service.execute(
+        "Capture parallel nested sources.",
+        "thread-nested-evidence-parallel",
+        run_id="run-nested-evidence-parallel",
+        segment_id="segment-nested-evidence-parallel",
+        profile_id="generic",
+    )
+
+    assert researcher.call_count == 2
+    assert sorted(executed_queries) == [
+        "parallel alpha",
+        "parallel alpha",
+        "parallel beta",
+    ]
+    assert [
+        (item.source_url, item.snippet)
+        for item in outcome.evidence_entries
+    ] == [
+        (
+            "https://example.com/parallel-alpha",
+            "parallel-alpha content.",
+        ),
+        (
+            "https://example.com/parallel-beta",
+            "parallel-beta content.",
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_nested_parallel_sources_are_ordered_deduped_and_source_only(
+    tmp_path,
+):
+    service = ResearchExecutionService(
+        harness=DuplicateNestedAndOuterEvidenceHarness(),
+        project_root=tmp_path,
+    )
+
+    outcome = await service.execute(
+        "Capture bounded nested sources.",
+        "thread-nested-evidence-3",
+        run_id="run-nested-evidence-3",
+        segment_id="segment-nested-evidence-3",
+        profile_id="generic",
+    )
+
+    assert [
+        (
+            item.subagent_name,
+            item.tool_name,
+            item.source_url,
+        )
+        for item in outcome.evidence_entries
+    ] == [
+        (
+            "network_search",
+            "internet_search",
+            "https://example.com/first",
+        ),
+        (
+            "network_search",
+            "internet_search",
+            "https://example.com/second",
+        ),
+    ]
 
 
 @pytest.mark.asyncio

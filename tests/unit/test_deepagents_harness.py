@@ -274,10 +274,12 @@ async def test_runtime_config_is_owned_by_adapter(monkeypatch):
     class CapturingGraph:
         def __init__(self):
             self.config = None
+            self.subgraphs = None
 
-        async def astream(self, _input, *, config, context):
+        async def astream(self, _input, *, config, context, subgraphs=False):
             self.config = config
             self.context = context
+            self.subgraphs = subgraphs
             if False:
                 yield {}
 
@@ -328,6 +330,7 @@ async def test_runtime_config_is_owned_by_adapter(monkeypatch):
         "callbacks": ["callback"],
         "metadata": {"profile_id": "generic"},
     }
+    assert generic_graph.subgraphs is True
 
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_TALENT_RECURSION_LIMIT", "37")
     await harness.execute(
@@ -344,6 +347,79 @@ async def test_runtime_config_is_owned_by_adapter(monkeypatch):
         observer=Observer(),
     )
     assert talent_graph.config["recursion_limit"] == 37
+    assert talent_graph.subgraphs is True
+
+
+@pytest.mark.asyncio
+async def test_v1_stream_normalizer_routes_only_valid_nested_payloads():
+    from agent.deepagents_harness import DeepAgentsHarness
+    from agent.harness_contracts import HarnessRequest
+    from agent.runtime_context import ResearchRuntimeContext
+
+    outer = {"agent": {"messages": []}}
+    nested = {"tools": {"messages": []}}
+
+    class MixedShapeGraph:
+        async def astream(self, _input, *, config, context, subgraphs=False):
+            del config, context
+            assert subgraphs is True
+            yield outer
+            yield (("tools:task-1",), nested)
+            yield (("tools:task-1",), ["not-a-mapping"])
+            yield (("missing-task-id",), nested)
+            yield ("not-a-namespace", nested)
+            yield (("tools:task-1",), nested, "extra")
+
+    class Observer:
+        def __init__(self):
+            self.outer = []
+            self.nested = []
+
+        def callbacks(self):
+            return []
+
+        def on_stream_chunk(self, chunk):
+            self.outer.append(chunk)
+
+        def on_nested_stream_chunk(self, namespace, chunk):
+            self.nested.append((namespace, chunk))
+
+        def snapshot_outcome(self):
+            return "outcome"
+
+    graph = MixedShapeGraph()
+    observer = Observer()
+    harness = DeepAgentsHarness(
+        graph=graph,
+        backend=object(),
+        permissions=(),
+        skills=(),
+        profile_graphs={"generic": graph},
+    )
+    context = ResearchRuntimeContext(
+        thread_id="thread-1",
+        run_id="run-1",
+        segment_id="segment-1",
+        profile_id="generic",
+    )
+
+    outcome = await harness.execute(
+        HarnessRequest(
+            query="query",
+            thread_id=context.thread_id,
+            run_id=context.run_id,
+            segment_id=context.segment_id,
+            profile_id=context.profile_id,
+            scope={},
+            trace_metadata={},
+        ),
+        runtime_context=context,
+        observer=observer,
+    )
+
+    assert outcome == "outcome"
+    assert observer.outer == [outer]
+    assert observer.nested == [(("tools:task-1",), nested)]
 
 
 @pytest.mark.asyncio
@@ -431,8 +507,15 @@ async def test_installed_native_limit_signals_reach_bounded_harness_mapping(
     from agent.runtime_context import ResearchRuntimeContext
 
     class RaisingGraph:
-        async def astream(self, _input, *, config, context):
-            del config, context
+        async def astream(
+            self,
+            _input,
+            *,
+            config,
+            context,
+            subgraphs=False,
+        ):
+            del config, context, subgraphs
             if False:
                 yield {}
             raise native_exception
@@ -523,8 +606,15 @@ async def test_native_call_limit_projection_never_infers_agent_role(
     from agent.runtime_context import ResearchRuntimeContext
 
     class PropagatingGraph:
-        async def astream(self, _input, *, config, context):
-            del config, context
+        async def astream(
+            self,
+            _input,
+            *,
+            config,
+            context,
+            subgraphs=False,
+        ):
+            del config, context, subgraphs
             if False:
                 yield {}
             raise native_exception
@@ -614,8 +704,15 @@ async def test_malformed_native_call_limit_keeps_public_kind_without_projection(
     from agent.runtime_context import ResearchRuntimeContext
 
     class RaisingGraph:
-        async def astream(self, _input, *, config, context):
-            del config, context
+        async def astream(
+            self,
+            _input,
+            *,
+            config,
+            context,
+            subgraphs=False,
+        ):
+            del config, context, subgraphs
             if False:
                 yield {}
             raise native_exception

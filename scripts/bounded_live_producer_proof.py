@@ -72,6 +72,7 @@ from scripts.bounded_live_producer_diagnostics import (
     DiagnosticSink,
     preflight_diagnostic_dir,
     publish_call_budget_diagnostic,
+    publish_evidence_diagnostic,
     publish_result_diagnostic,
     publish_run_failure_diagnostic,
 )
@@ -1252,6 +1253,13 @@ def _publish_diagnostic_best_effort(
         and error.phase is FailurePhase.OBSERVE
     ):
         publisher = publish_run_failure_diagnostic
+        arguments = (sink, error)
+    elif (
+        type(error.diagnostic) is EvidenceBoundaryDiagnostic
+        and error.code is FailureCode.EVIDENCE_INVALID
+        and error.phase is FailurePhase.EVIDENCE
+    ):
+        publisher = publish_evidence_diagnostic
         arguments = (sink, error)
     else:
         return

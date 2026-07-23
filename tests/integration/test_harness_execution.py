@@ -577,6 +577,20 @@ class DuplicateNestedAndOuterEvidenceHarness:
                             tool_call_id="call-non-source",
                             name="write_file",
                         ),
+                        ToolMessage(
+                            content=json.dumps(
+                                {
+                                    "results": [
+                                        {
+                                            "url": "http://example.com/rejected",
+                                            "content": "Unpublishable source.",
+                                        }
+                                    ]
+                                }
+                            ),
+                            tool_call_id="call-unpublishable",
+                            name="internet_search",
+                        ),
                     ]
                 }
             },
@@ -594,6 +608,52 @@ class DuplicateNestedAndOuterEvidenceHarness:
                 }
             }
         )
+        for tool_name, source_url in (
+            ("task", "https://example.com/different-task-summary"),
+            ("write_file", "https://example.com/file-output"),
+        ):
+            observer.on_stream_chunk(
+                {
+                    "tools": {
+                        "messages": [
+                            ToolMessage(
+                                content=json.dumps(
+                                    {
+                                        "results": [
+                                            {
+                                                "url": source_url,
+                                                "content": "Outer non-source output.",
+                                            }
+                                        ]
+                                    }
+                                ),
+                                tool_call_id=f"call-{tool_name}",
+                                name=tool_name,
+                            )
+                        ]
+                    }
+                }
+            )
+        for node_name, tool_name in (
+            ("database_query", "database_query"),
+            ("knowledge_base", "knowledge_base_search"),
+        ):
+            observer.on_stream_chunk(
+                {
+                    node_name: {
+                        "messages": [
+                            ToolMessage(
+                                content=(
+                                    "https://example.com/"
+                                    f"{node_name}-not-source"
+                                ),
+                                tool_call_id=f"call-{node_name}",
+                                name=tool_name,
+                            )
+                        ]
+                    }
+                }
+            )
         return observer.snapshot_outcome()
 
 

@@ -376,6 +376,12 @@ def process_stream_chunk(
                         _invalid_research_packet_diagnostic(exc)
                     )
                 continue
+            if (
+                accumulator.profile_id != "generic"
+                or node_name != "network_search"
+                or tool_name != "internet_search"
+            ):
+                continue
             accumulator.evidence_entries.extend(
                 extract_evidence_entries(
                     thread_id=accumulator.thread_id,

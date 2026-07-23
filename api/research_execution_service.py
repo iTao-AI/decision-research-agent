@@ -20,7 +20,6 @@ from agent.harness_contracts import (
     ReportCandidate,
 )
 from agent.research import (
-    EvidenceEntry,
     extract_evidence_entries,
     merge_evidence_entries,
 )
@@ -123,24 +122,6 @@ def _mark_declared_fixture_evidence(
         in verified_evidence_ids
         else entry
         for entry in entries
-    ]
-
-
-def _dedupe_nested_source_evidence(
-    entries: Sequence[EvidenceEntry],
-) -> list[EvidenceEntry]:
-    merged = merge_evidence_entries(list(entries))
-    nested_source_identities = {
-        entry.source_identity
-        for entry in merged
-        if entry.subagent_name == "network_search"
-        and entry.tool_name == "internet_search"
-    }
-    return [
-        entry
-        for entry in merged
-        if entry.source_identity not in nested_source_identities
-        or entry.tool_name != "task"
     ]
 
 
@@ -364,9 +345,7 @@ class ResearchExecutionService:
     ) -> ExecutionOutcome:
         accumulator = observer.accumulator
         execution_id = accumulator.run_id or accumulator.thread_id
-        evidence_entries = _dedupe_nested_source_evidence(
-            accumulator.evidence_entries
-        )
+        evidence_entries = merge_evidence_entries(accumulator.evidence_entries)
         evidence_entries = _mark_declared_fixture_evidence(
             evidence_entries,
             execution_id=execution_id,

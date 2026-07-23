@@ -1,4 +1,5 @@
 """Tests for research run evidence and quality contracts."""
+import pytest
 
 
 class TestResearchEvidence:
@@ -157,6 +158,41 @@ class TestResearchEvidence:
             subagent_name="database",
             tool_name="sql_query",
             content={"row_count": 3, "status": "ok"},
+        )
+
+        assert entries == []
+
+    @pytest.mark.parametrize(
+        "source_url",
+        [
+            "http://example.com/source",
+            "https://localhost/source",
+            "https://127.0.0.1/source",
+            "https://8.8.8.8/source",
+            "https://example.com/source?query=1",
+            "https://example.com/source#fragment",
+            "https://example.com:8443/source",
+            "https://example.com./source",
+        ],
+    )
+    def test_extract_evidence_rejects_unpublishable_source_urls(
+        self, source_url
+    ):
+        from agent.research import extract_evidence_entries
+
+        entries = extract_evidence_entries(
+            thread_id="thread-001",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="internet_search",
+            content={
+                "results": [
+                    {
+                        "url": source_url,
+                        "content": "must not become Evidence",
+                    }
+                ]
+            },
         )
 
         assert entries == []

@@ -131,6 +131,15 @@ coordinator can retain citations; this does not replace tool-result Evidence
 authority. Other nested tools and arbitrary subagent text do not create
 Evidence, and this capture path does not change delivery readiness.
 
+Search responses are filtered to bounded canonical public HTTPS result rows
+before the model, monitor, or Evidence observer can consume them. Only the
+exact `network_search` / `internet_search` pair creates generic source
+Evidence. Outer `task` summaries, file tools, database tools, knowledge-base
+tools, and arbitrary text have no generic source authority. The declared
+`provided_aggregate` preload remains a separate application-owned fixture
+path. Rejected result rows are dropped without URL rewriting or public
+rejection detail.
+
 Successful generic finalization performs application-owned citation
 finalization against the canonical artifact content that will be persisted.
 Only an exact captured source URL present in that content changes the derived

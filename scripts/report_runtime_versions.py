@@ -9,6 +9,7 @@ RUNTIME_PACKAGES = (
     "deepagents",
     "langchain",
     "langchain-core",
+    "langchain-deepseek",
     "langgraph",
     "langgraph-checkpoint-sqlite",
     "langsmith",

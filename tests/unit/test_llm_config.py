@@ -6,11 +6,16 @@ from unittest.mock import patch
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import RunnableLambda
 import pytest
-from pydantic import Field
+from pydantic import BaseModel, Field
+
+from agent.deepseek_chat_model import (
+    DeepSeekReasoningProtocolError,
+    DeepSeekThinkingChatModel,
+)
 
 
 class FakeChatModel(BaseChatModel):
@@ -54,10 +59,16 @@ class ToolBindingChatModel(FakeChatModel):
         return RunnableLambda(_run)
 
 
+class StructuredAnswer(BaseModel):
+    answer: str
+
+
 def _reload_llm(monkeypatch, env: dict[str, str]):
     for key in [
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_API_BASE",
         "LLM_MODEL",
         "LLM_FALLBACK_MODEL",
         "LLM_QWEN_MAX",
@@ -68,51 +79,159 @@ def _reload_llm(monkeypatch, env: dict[str, str]):
     for key, value in env.items():
         monkeypatch.setenv(key, value)
 
-    calls = []
+    deepseek_calls = []
+    openai_calls = []
+
+    def fake_deepseek_model(**kwargs):
+        deepseek_calls.append(kwargs)
+        return FakeChatModel(
+            model_name=kwargs["model"],
+            extra_body=kwargs.get("extra_body"),
+        )
 
     def fake_init_chat_model(**kwargs):
-        calls.append(kwargs)
+        openai_calls.append(kwargs)
         return FakeChatModel(model_name=kwargs["model"])
 
     with (
         patch("dotenv.find_dotenv", return_value=""),
         patch("dotenv.load_dotenv", return_value=False),
         patch("langchain.chat_models.init_chat_model", side_effect=fake_init_chat_model),
+        patch(
+            "agent.deepseek_chat_model.DeepSeekThinkingChatModel",
+            side_effect=fake_deepseek_model,
+        ),
     ):
         if "agent.llm" in sys.modules:
             llm = importlib.reload(sys.modules["agent.llm"])
         else:
             llm = importlib.import_module("agent.llm")
 
-    return llm, calls
+    return llm, deepseek_calls, openai_calls
 
 
-def test_default_model_uses_deepseek_v4_pro_with_flash_fallback(monkeypatch):
-    llm, calls = _reload_llm(
+def test_default_models_use_official_deepseek_provider(monkeypatch):
+    llm, deepseek_calls, openai_calls = _reload_llm(
         monkeypatch,
         {
-            "OPENAI_API_KEY": "test-key",
+            "OPENAI_API_KEY": "legacy-test-key",
             "OPENAI_BASE_URL": "https://api.deepseek.com",
         },
     )
 
-    assert [call["model"] for call in calls] == ["deepseek-v4-pro", "deepseek-v4-flash"]
-    for call in calls:
-        assert call["model_provider"] == "openai"
-        assert call["api_key"] == "test-key"
+    assert [call["model"] for call in deepseek_calls] == [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
+    ]
+    assert [call["model_role"] for call in deepseek_calls] == [
+        "primary",
+        "fallback",
+    ]
+    assert openai_calls == []
+    for call in deepseek_calls:
+        assert "model_provider" not in call
+        assert call["api_key"] == "legacy-test-key"
         assert call["base_url"] == "https://api.deepseek.com"
         assert call["reasoning_effort"] == "max"
         assert call["extra_body"] == {"thinking": {"type": "enabled"}}
 
-    assert isinstance(llm.model, BaseChatModel)
-    assert llm.model.primary.model_name == "deepseek-v4-pro"
-    assert llm.model.fallback.model_name == "deepseek-v4-flash"
+    assert isinstance(llm.model, llm.FallbackChatModel)
     assert isinstance(llm.model.primary, llm.CapabilityAwareChatModel)
     assert isinstance(llm.model.fallback, llm.CapabilityAwareChatModel)
 
 
+def test_deepseek_specific_configuration_wins(monkeypatch):
+    _, deepseek_calls, openai_calls = _reload_llm(
+        monkeypatch,
+        {
+            "DEEPSEEK_API_KEY": "deepseek-test-key",
+            "DEEPSEEK_API_BASE": "https://deepseek.example/v1",
+            "OPENAI_API_KEY": "legacy-test-key",
+            "OPENAI_BASE_URL": "https://legacy.example/v1",
+        },
+    )
+
+    assert openai_calls == []
+    assert {
+        (call["api_key"], call["base_url"])
+        for call in deepseek_calls
+    } == {("deepseek-test-key", "https://deepseek.example/v1")}
+
+
+def test_non_deepseek_model_keeps_openai_compatible_path(monkeypatch):
+    _, deepseek_calls, openai_calls = _reload_llm(
+        monkeypatch,
+        {
+            "LLM_MODEL": "gpt-4.1-mini",
+            "LLM_FALLBACK_MODEL": "none",
+            "OPENAI_API_KEY": "openai-test-key",
+            "OPENAI_BASE_URL": "https://api.openai.com/v1",
+        },
+    )
+
+    assert deepseek_calls == []
+    assert len(openai_calls) == 1
+    assert openai_calls[0]["model"] == "gpt-4.1-mini"
+    assert openai_calls[0]["model_provider"] == "openai"
+
+
+def test_deepseek_initialization_failure_does_not_fall_back_to_openai(
+    monkeypatch,
+):
+    llm, _, openai_calls = _reload_llm(
+        monkeypatch,
+        {
+            "LLM_MODEL": "gpt-4.1-mini",
+            "LLM_FALLBACK_MODEL": "none",
+            "OPENAI_API_KEY": "openai-test-key",
+        },
+    )
+
+    with (
+        patch.object(
+            llm,
+            "DeepSeekThinkingChatModel",
+            side_effect=ImportError("integration unavailable"),
+        ),
+        pytest.raises(ImportError, match="integration unavailable"),
+    ):
+        llm._create_leaf_model("deepseek-v4-pro", "primary", [])
+
+    assert len(openai_calls) == 1
+
+
+def test_primary_and_fallback_receive_the_same_provider_policy(monkeypatch):
+    llm, deepseek_calls, _ = _reload_llm(
+        monkeypatch,
+        {
+            "DEEPSEEK_API_KEY": "deepseek-test-key",
+            "DEEPSEEK_API_BASE": "https://deepseek.example/v1",
+        },
+    )
+
+    assert isinstance(llm.model, llm.FallbackChatModel)
+    assert [call["model"] for call in deepseek_calls] == [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
+    ]
+    assert {
+        (
+            call["api_key"],
+            call["base_url"],
+            call["extra_body"]["thinking"]["type"],
+        )
+        for call in deepseek_calls
+    } == {
+        (
+            "deepseek-test-key",
+            "https://deepseek.example/v1",
+            "enabled",
+        )
+    }
+
+
 def test_callbacks_are_attached_to_primary_and_fallback(monkeypatch):
-    llm, calls = _reload_llm(
+    llm, calls, _ = _reload_llm(
         monkeypatch,
         {
             "OPENAI_API_KEY": "test-key",
@@ -132,7 +251,7 @@ def test_callbacks_are_attached_to_primary_and_fallback(monkeypatch):
 
 
 def test_llm_model_overrides_legacy_qwen_env(monkeypatch):
-    _, calls = _reload_llm(
+    _, calls, _ = _reload_llm(
         monkeypatch,
         {
             "OPENAI_API_KEY": "test-key",
@@ -145,7 +264,7 @@ def test_llm_model_overrides_legacy_qwen_env(monkeypatch):
 
 
 def test_legacy_qwen_env_is_still_supported_when_llm_model_missing(monkeypatch):
-    _, calls = _reload_llm(
+    _, calls, _ = _reload_llm(
         monkeypatch,
         {
             "OPENAI_API_KEY": "test-key",
@@ -161,7 +280,7 @@ def test_legacy_qwen_env_is_still_supported_when_llm_model_missing(monkeypatch):
 
 
 def test_fallback_chat_model_invokes_fallback_after_primary_failure(monkeypatch):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     model = llm.FallbackChatModel(
         primary=FailingChatModel(model_name="primary"),
         fallback=FakeChatModel(model_name="fallback"),
@@ -173,7 +292,7 @@ def test_fallback_chat_model_invokes_fallback_after_primary_failure(monkeypatch)
 
 
 def test_fallback_chat_model_logs_primary_failure(monkeypatch, caplog):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     model = llm.FallbackChatModel(
         primary=FailingChatModel(model_name="primary"),
         fallback=FakeChatModel(model_name="fallback"),
@@ -187,7 +306,7 @@ def test_fallback_chat_model_logs_primary_failure(monkeypatch, caplog):
 
 
 def test_bind_tools_preserves_logged_fallback_path(monkeypatch, caplog):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     model = llm.FallbackChatModel(
         primary=ToolBindingChatModel(model_name="primary", fail_bound=True),
         fallback=ToolBindingChatModel(model_name="fallback"),
@@ -207,7 +326,7 @@ def test_bind_tools_preserves_logged_fallback_path(monkeypatch, caplog):
     [True, "any", "required", "submit_packet", {"type": "function", "function": {"name": "submit_packet"}}],
 )
 def test_forced_tool_choice_disables_thinking_on_independent_copy(monkeypatch, tool_choice):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     original_extra_body = {
         "thinking": {"type": "enabled"},
         "provider_option": {"nested": "preserved"},
@@ -241,7 +360,7 @@ def test_forced_tool_choice_disables_thinking_on_independent_copy(monkeypatch, t
 
 @pytest.mark.parametrize("tool_choice", [None, False, "none", "auto"])
 def test_non_forced_tool_choice_preserves_thinking_on_original_model(monkeypatch, tool_choice):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     leaf = ToolBindingChatModel(
         model_name="deepseek-v4-pro",
         extra_body={"thinking": {"type": "enabled"}},
@@ -259,7 +378,7 @@ def test_non_forced_tool_choice_preserves_thinking_on_original_model(monkeypatch
 
 
 def test_fallback_disabled_still_returns_capability_aware_model(monkeypatch):
-    llm, _ = _reload_llm(
+    llm, _, _ = _reload_llm(
         monkeypatch,
         {
             "OPENAI_API_KEY": "test-key",
@@ -274,7 +393,7 @@ def test_fallback_disabled_still_returns_capability_aware_model(monkeypatch):
 
 
 def test_matching_fallback_model_still_returns_capability_aware_model(monkeypatch):
-    llm, _ = _reload_llm(
+    llm, _, _ = _reload_llm(
         monkeypatch,
         {
             "OPENAI_API_KEY": "test-key",
@@ -289,7 +408,7 @@ def test_matching_fallback_model_still_returns_capability_aware_model(monkeypatc
 
 
 def test_fallback_chat_model_forwards_forced_tool_choice_to_compatible_models(monkeypatch):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     primary_leaf = ToolBindingChatModel(
         model_name="deepseek-v4-pro",
         extra_body={"thinking": {"type": "enabled"}},
@@ -313,7 +432,7 @@ def test_fallback_chat_model_forwards_forced_tool_choice_to_compatible_models(mo
 
 
 def test_thinking_disabled_model_binds_original_for_forced_tool_choice(monkeypatch):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     leaf = ToolBindingChatModel(
         model_name="deepseek-v4-pro",
         extra_body={"thinking": {"type": "disabled"}},
@@ -327,7 +446,7 @@ def test_thinking_disabled_model_binds_original_for_forced_tool_choice(monkeypat
 
 
 def test_non_deepseek_v4_model_binds_original_for_forced_tool_choice(monkeypatch):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     leaf = ToolBindingChatModel(
         model_name="deepseek-chat",
         extra_body={"thinking": {"type": "enabled"}},
@@ -341,7 +460,7 @@ def test_non_deepseek_v4_model_binds_original_for_forced_tool_choice(monkeypatch
 
 
 def test_capability_wrapper_exposes_wrapped_model_profile(monkeypatch):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     leaf = ToolBindingChatModel(
         model_name="deepseek-v4-pro",
         profile={"structured_output": False, "max_input_tokens": 1000},
@@ -352,7 +471,7 @@ def test_capability_wrapper_exposes_wrapped_model_profile(monkeypatch):
 
 
 def test_capability_adaptation_logs_only_allowlisted_fields(monkeypatch, caplog):
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     leaf = ToolBindingChatModel(
         model_name="deepseek-v4-pro",
         extra_body={"thinking": {"type": "enabled"}, "secret_payload": "do-not-log"},
@@ -375,7 +494,7 @@ def test_capability_adaptation_logs_only_allowlisted_fields(monkeypatch, caplog)
 
 def test_tool_choice_compatible_model_raises_when_model_copy_missing(monkeypatch):
     """_tool_choice_compatible_model must raise TypeError when model lacks model_copy."""
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     leaf = ToolBindingChatModel(
         model_name="deepseek-v4-pro",
         extra_body={"thinking": {"type": "enabled"}},
@@ -391,7 +510,7 @@ def test_tool_choice_compatible_model_raises_when_model_copy_missing(monkeypatch
 @pytest.mark.parametrize("tool_choice", [42, 3.14, [1, 2]])
 def test_unsupported_tool_choice_type_raises_typeerror(monkeypatch, tool_choice):
     """Unsupported tool_choice types must raise TypeError, not silently bypass adaptation."""
-    llm, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
+    llm, _, _ = _reload_llm(monkeypatch, {"OPENAI_API_KEY": "test-key"})
     leaf = ToolBindingChatModel(
         model_name="deepseek-v4-pro",
         extra_body={"thinking": {"type": "enabled"}},
@@ -400,3 +519,110 @@ def test_unsupported_tool_choice_type_raises_typeerror(monkeypatch, tool_choice)
 
     with pytest.raises(TypeError, match="Unsupported tool_choice type"):
         model.bind_tools(["tool"], tool_choice=tool_choice)
+
+
+def test_fallback_keeps_protocol_validation_strict_and_bounded(
+    monkeypatch,
+    caplog,
+):
+    llm, _, _ = _reload_llm(
+        monkeypatch,
+        {
+            "LLM_MODEL": "gpt-4.1-mini",
+            "LLM_FALLBACK_MODEL": "none",
+            "OPENAI_API_KEY": "openai-test-key",
+        },
+    )
+
+    def strict_leaf(model_name: str) -> DeepSeekThinkingChatModel:
+        return DeepSeekThinkingChatModel(
+            model=model_name,
+            api_key="provider-test-key",
+            base_url="https://api.deepseek.com",
+            max_retries=0,
+            extra_body={"thinking": {"type": "enabled"}},
+        )
+
+    model = llm.FallbackChatModel(
+        primary=llm.CapabilityAwareChatModel(
+            wrapped=strict_leaf("deepseek-v4-pro"),
+            model_role="primary",
+        ),
+        fallback=llm.CapabilityAwareChatModel(
+            wrapped=strict_leaf("deepseek-v4-flash"),
+            model_role="fallback",
+        ),
+    )
+    messages = [
+        HumanMessage(content="sensitive-user-content"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "internet_search",
+                    "args": {"query": "sensitive-query"},
+                    "id": "call-1",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        ToolMessage(
+            content="sensitive-tool-result",
+            tool_call_id="call-1",
+            name="internet_search",
+        ),
+    ]
+
+    with (
+        caplog.at_level("WARNING"),
+        pytest.raises(DeepSeekReasoningProtocolError) as raised,
+    ):
+        model.invoke(messages)
+
+    assert raised.value.code == "deepseek_reasoning_content_missing"
+    assert "sensitive-user-content" not in caplog.text
+    assert "sensitive-query" not in caplog.text
+    assert "sensitive-tool-result" not in caplog.text
+
+
+def test_structured_output_composition_remains_available(monkeypatch):
+    llm, _, _ = _reload_llm(
+        monkeypatch,
+        {
+            "LLM_MODEL": "gpt-4.1-mini",
+            "LLM_FALLBACK_MODEL": "none",
+            "OPENAI_API_KEY": "openai-test-key",
+        },
+    )
+    primary_leaf = ToolBindingChatModel(
+        model_name="deepseek-v4-pro",
+        extra_body={"thinking": {"type": "enabled"}},
+    )
+    fallback_leaf = ToolBindingChatModel(
+        model_name="deepseek-v4-flash",
+        extra_body={"thinking": {"type": "enabled"}},
+    )
+    primary = llm.CapabilityAwareChatModel(
+        wrapped=primary_leaf,
+        model_role="primary",
+    )
+    fallback = llm.CapabilityAwareChatModel(
+        wrapped=fallback_leaf,
+        model_role="fallback",
+    )
+    model = llm.FallbackChatModel(
+        primary=primary,
+        fallback=fallback,
+    )
+
+    structured = model.with_structured_output(StructuredAnswer)
+
+    assert structured is not None
+    assert primary.last_bound_model is not primary_leaf
+    assert fallback.last_bound_model is not fallback_leaf
+    assert primary.last_bound_model.extra_body == {
+        "thinking": {"type": "disabled"}
+    }
+    assert fallback.last_bound_model.extra_body == {
+        "thinking": {"type": "disabled"}
+    }

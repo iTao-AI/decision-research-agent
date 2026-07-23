@@ -12,6 +12,8 @@ from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatResult
 from langchain_core.runnables import Runnable
 
+from agent.deepseek_chat_model import DeepSeekThinkingChatModel
+
 load_dotenv(find_dotenv())
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,7 @@ DEFAULT_THINKING_MODE = "enabled"
 
 _DEEPSEEK_V4_PREFIX = "deepseek-v4-"
 _DEEPSEEK_V4_FAMILY = "deepseek-v4"
+_DEEPSEEK_PREFIX = "deepseek-"
 
 
 def _model_name(model: BaseChatModel) -> str:
@@ -292,6 +295,10 @@ def _is_deepseek_v4_model(model_name: str) -> bool:
     return model_name.startswith(_DEEPSEEK_V4_PREFIX)
 
 
+def _is_deepseek_model(model_name: str) -> bool:
+    return model_name.lower().startswith(_DEEPSEEK_PREFIX)
+
+
 def _reasoning_effort(model_name: str) -> str | None:
     configured = _env_value("LLM_REASONING_EFFORT")
     if configured is not None:
@@ -310,37 +317,73 @@ def _thinking_mode(model_name: str) -> str | None:
     return None
 
 
-def _model_kwargs(model_name: str, callbacks: list[BaseCallbackHandler] | None = None) -> dict:
-    kwargs = {
+def _model_kwargs(
+    model_name: str,
+    callbacks: list[BaseCallbackHandler] | None = None,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
         "model": model_name,
-        "model_provider": "openai",
         "callbacks": callbacks or [],
     }
 
-    base_url = _env_value("OPENAI_BASE_URL")
+    if _is_deepseek_model(model_name):
+        base_url = (
+            _env_value("DEEPSEEK_API_BASE")
+            or _env_value("OPENAI_BASE_URL")
+        )
+        api_key = (
+            _env_value("DEEPSEEK_API_KEY")
+            or _env_value("OPENAI_API_KEY")
+        )
+    else:
+        kwargs["model_provider"] = "openai"
+        base_url = _env_value("OPENAI_BASE_URL")
+        api_key = _env_value("OPENAI_API_KEY")
+
     if base_url:
         kwargs["base_url"] = base_url
 
-    api_key = _env_value("OPENAI_API_KEY")
     if api_key:
         kwargs["api_key"] = api_key
 
     reasoning_effort = _reasoning_effort(model_name)
-    if reasoning_effort and reasoning_effort.lower() not in {"none", "off", "disabled", "false"}:
+    if (
+        reasoning_effort
+        and reasoning_effort.lower()
+        not in {"none", "off", "disabled", "false"}
+    ):
         kwargs["reasoning_effort"] = reasoning_effort
 
     thinking_mode = _thinking_mode(model_name)
-    if thinking_mode and thinking_mode.lower() not in {"none", "off", "disabled", "false"}:
+    if (
+        thinking_mode
+        and thinking_mode.lower()
+        not in {"none", "off", "disabled", "false"}
+    ):
         kwargs["extra_body"] = {"thinking": {"type": thinking_mode}}
 
     return kwargs
+
+
+def _create_leaf_model(
+    model_name: str,
+    model_role: str,
+    callbacks: list[BaseCallbackHandler] | None = None,
+) -> BaseChatModel:
+    kwargs = _model_kwargs(model_name, callbacks)
+    if _is_deepseek_model(model_name):
+        return DeepSeekThinkingChatModel(
+            **kwargs,
+            model_role=model_role,
+        )
+    return init_chat_model(**kwargs)
 
 
 def create_llm_model(callbacks: list[BaseCallbackHandler] | None = None):
     """Create and return an LLM model with optional callbacks."""
     primary_model = _primary_model_name()
     model = CapabilityAwareChatModel(
-        wrapped=init_chat_model(**_model_kwargs(primary_model, callbacks)),
+        wrapped=_create_leaf_model(primary_model, "primary", callbacks),
         model_role="primary",
         callbacks=callbacks or [],
     )
@@ -348,7 +391,11 @@ def create_llm_model(callbacks: list[BaseCallbackHandler] | None = None):
     fallback_model = _fallback_model_name(primary_model)
     if fallback_model and hasattr(model, "with_fallbacks"):
         fallback = CapabilityAwareChatModel(
-            wrapped=init_chat_model(**_model_kwargs(fallback_model, callbacks)),
+            wrapped=_create_leaf_model(
+                fallback_model,
+                "fallback",
+                callbacks,
+            ),
             model_role="fallback",
             callbacks=callbacks or [],
         )

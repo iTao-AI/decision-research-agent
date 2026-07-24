@@ -28,6 +28,14 @@ HISTORICAL_RELEASE_NOTE_SHA256 = {
 V015_AND_EARLIER_CHANGELOG_SHA256 = (
     "8f9dae3993209cb9669ea2fe98b53450260eb7d902b14371107a3d41823c897d"
 )
+V016_PUBLIC_RELEASE_CORPUS = (
+    PROJECT_ROOT / "CHANGELOG.md",
+    PROJECT_ROOT / "README.md",
+    PROJECT_ROOT / "README_CN.md",
+    PROJECT_ROOT / "SECURITY.md",
+    PROJECT_ROOT / "docs" / "README.md",
+    V016_RELEASE_NOTES,
+)
 
 
 def _read(path: Path) -> str:
@@ -183,3 +191,49 @@ def test_v0_1_6_release_notes_cover_truth_verification_and_non_claims() -> None:
         "immutable v0.1.6 release",
     ):
         assert phrase in known_limits
+
+
+def test_v0_1_6_release_discovery_and_security_truth_are_current() -> None:
+    readme = _read(PROJECT_ROOT / "README.md")
+    readme_cn = _read(PROJECT_ROOT / "README_CN.md")
+    docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
+    security = _read(PROJECT_ROOT / "SECURITY.md")
+    normalized_security = _collapsed(security)
+
+    assert "[v0.1.6 Release Notes](docs/releases/v0.1.6.md)" in readme
+    assert "[v0.1.6 Release Notes](docs/releases/v0.1.6.md)" in readme_cn
+    assert "[v0.1.6 Release Notes](releases/v0.1.6.md)" in docs_index
+    assert (
+        "- [v0.1.6 Release Notes](releases/v0.1.6.md) — current supported surface,"
+        in docs_index
+    )
+    assert (
+        "- [v0.1.5 Release Notes](releases/v0.1.5.md) — historical secure local"
+        in docs_index
+    )
+    assert docs_index.count("current supported surface") == 1
+
+    for phrase in (
+        "Decision Research Agent v0.1.6 ships",
+        "bounded live producer evaluation",
+        "official DeepSeek provider protocol",
+        "provider-free",
+        "canonical public HTTPS",
+        "source admission",
+        "does not certify source truth",
+        "not part of v0.1.6",
+    ):
+        assert phrase in normalized_security
+    assert "not part of v0.1.5" not in normalized_security
+
+    corpus = "\n".join(_read(path) for path in V016_PUBLIC_RELEASE_CORPUS).lower()
+    for pattern in (
+        r"\bv0\.1\.6 is published\b",
+        r"\bv0\.1\.6 tag (?:has been |was )?(?:created|published)\b",
+        r"\bgithub release (?:has been |was )?published\b",
+        r"\barchive smoke (?:has |was )?(?:passed|completed)\b",
+        r"\bdeployment (?:has been |was )?completed\b",
+        r"\bnight voyager live integration (?:has been |was )?completed\b",
+        r"\bcross-project business closure (?:has been |was )?completed\b",
+    ):
+        assert re.search(pattern, corpus) is None

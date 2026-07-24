@@ -624,7 +624,8 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
         assert phrase in normalized_notes
 
     assert "v0.1.5 Release Notes" in current_discovery
-    assert "Decision Research Agent v0.1.5" in current_discovery
+    assert "v0.1.6 Release Notes" in current_discovery
+    assert "Decision Research Agent v0.1.6" in current_discovery
 
 
 @pytest.mark.parametrize(
@@ -641,17 +642,8 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
                 ),
             ),
         ),
-        (
-            PROJECT_ROOT / "SECURITY.md",
-            (
-                (
-                    "that are not part of v0.1.5.",
-                    "that are not part of v0.1.5.\n\nGitHub Release published.",
-                ),
-            ),
-        ),
     ),
-    ids=("positive-provider-claim", "security-publication-claim"),
+    ids=("positive-provider-claim",),
 )
 def test_v0_1_5_documentation_contract_rejects_claim_mutation(
     monkeypatch: pytest.MonkeyPatch,

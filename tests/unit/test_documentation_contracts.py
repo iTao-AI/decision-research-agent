@@ -1680,8 +1680,10 @@ def test_bounded_live_producer_reference_and_reviewed_evidence_are_discoverable(
         assert "completed / not_required / ready" in normalized_document
         assert "supported / accept_draft" in normalized_document
         assert "59" in normalized_document
-        assert "docs.python.org" in normalized_document
-        assert "peps.python.org" in normalized_document
+        code_literals = set(
+            re.findall(r"(?<!`)`([^`\n]+)`(?!`)", document)
+        )
+        assert {"docs.python.org", "peps.python.org"} <= code_literals
         assert "not_observed" in normalized_document
     for phrase in (
         "source truth",

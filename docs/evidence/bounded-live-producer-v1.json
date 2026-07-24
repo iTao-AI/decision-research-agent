@@ -1,0 +1,593 @@
+{
+  "boundaries": {
+    "downstream_business_acceptance": "not_claimed",
+    "durable_usage_or_provider_billing": "not_claimed",
+    "exactly_once_execution_or_provider_side_effects": "not_claimed",
+    "hosted_production_or_sla": "not_claimed",
+    "multi_instance_high_availability": "not_claimed",
+    "producer_observation": "bounded",
+    "running_execution_recovery": "not_claimed",
+    "source_truth_or_independent_verification": "not_claimed"
+  },
+  "cleanup": {
+    "attempted": true,
+    "succeeded": true,
+    "zero_container_residue": true,
+    "zero_network_residue": true,
+    "zero_temp_residue": true,
+    "zero_volume_residue": true
+  },
+  "evidence": [
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_e5be36e5441f40ec1f268b492ee3c7d45758bc845c392c096da97f47c1c4c1f6",
+      "retrieved_at": "2026-07-23T19:50:20.164559+00:00",
+      "source_identity": "https://docs.python.org/3/howto/free-threading-python.html",
+      "source_url": "https://docs.python.org/3/howto/free-threading-python.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_67d4c697d22c4a5cac2543d69ba2fc74d7e7e55af753db3f697b14a5033bf9dc",
+      "retrieved_at": "2026-07-23T19:50:20.164559+00:00",
+      "source_identity": "https://dev.to/zackch/python-313-no-gil-what-you-need-to-know-352i",
+      "source_url": "https://dev.to/zackch/python-313-no-gil-what-you-need-to-know-352i",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_2c1595ff905ca65cf5ed9396c8bf6113795876964ae7205ab77d495a7c0d1fed",
+      "retrieved_at": "2026-07-23T19:50:20.164559+00:00",
+      "source_identity": "https://docs.python.org/3/whatsnew/3.13.html",
+      "source_url": "https://docs.python.org/3/whatsnew/3.13.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_9d5327fcc0f4710e94fb345824f29779a24597ab0e79f7adf3662d37d7a59fdc",
+      "retrieved_at": "2026-07-23T19:50:20.164559+00:00",
+      "source_identity": "https://medium.com/@mitesh.singh.jat/gil-becomes-optional-in-python-3-13-a-game-changer-for-multithreading-4c5d28856803",
+      "source_url": "https://medium.com/@mitesh.singh.jat/gil-becomes-optional-in-python-3-13-a-game-changer-for-multithreading-4c5d28856803",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_19d84ba332ecb9437a8e1a638dfe3de1400d7da503c1ea5d7d54ee6273cc2e18",
+      "retrieved_at": "2026-07-23T19:50:20.164559+00:00",
+      "source_identity": "https://blog.jetbrains.com/pycharm/2025/07/faster-python-unlocking-the-python-global-interpreter-lock",
+      "source_url": "https://blog.jetbrains.com/pycharm/2025/07/faster-python-unlocking-the-python-global-interpreter-lock",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_bd9d0281e400ad2098a840a9158972357d77d88dc1d1c739a500a030eec7eaf3",
+      "retrieved_at": "2026-07-23T19:50:20.164559+00:00",
+      "source_identity": "https://flyaps.com/blog/update-python-3-13",
+      "source_url": "https://flyaps.com/blog/update-python-3-13",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_167bdcf94c1e613abecb1fb9001ef83808e3a1a35bcd6db6b4053a3924dba552",
+      "retrieved_at": "2026-07-23T19:50:20.164559+00:00",
+      "source_identity": "https://www.reddit.com/r/programming/comments/1eq4vzd/gil_become_optional_in_python_313",
+      "source_url": "https://www.reddit.com/r/programming/comments/1eq4vzd/gil_become_optional_in_python_313",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_09c08655bacf424df4ce01c1dd12057ab1a203f32cc10f33d7c369c1f2910ade",
+      "retrieved_at": "2026-07-23T19:50:20.275531+00:00",
+      "source_identity": "https://docs.python.org/zh-tw/3.13/howto/free-threading-python.html",
+      "source_url": "https://docs.python.org/zh-tw/3.13/howto/free-threading-python.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_1b6d931395a87eb478b2878b68689ac9689a60e68f87dca9880206ec40d1b283",
+      "retrieved_at": "2026-07-23T19:50:20.275531+00:00",
+      "source_identity": "https://docs.python.org/zh-cn/dev/howto/free-threading-python.html",
+      "source_url": "https://docs.python.org/zh-cn/dev/howto/free-threading-python.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_00d9ff73ffae321bdf78bccf7e74c99eea18288772c541ecd4ac1493ea5f25ea",
+      "retrieved_at": "2026-07-23T19:50:20.275531+00:00",
+      "source_identity": "https://docs.python.org/3/howto/free-threading-extensions.html",
+      "source_url": "https://docs.python.org/3/howto/free-threading-extensions.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_0d858b8cf42e74b13f6125a013c2c46135b9bc7efdf4f1dcec26be870f2e9ff5",
+      "retrieved_at": "2026-07-23T19:50:20.275531+00:00",
+      "source_identity": "https://docs.python.org/3/c-api/threads.html",
+      "source_url": "https://docs.python.org/3/c-api/threads.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_ac6b2c57c037046fe018b3efb131d970971e96be26522f0bc9820413fef43324",
+      "retrieved_at": "2026-07-23T19:50:20.275531+00:00",
+      "source_identity": "https://docs.python.org/3/library/threadsafety.html",
+      "source_url": "https://docs.python.org/3/library/threadsafety.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_4873b4088551eecbf5833f1f828d53142238897e5850eff1feb8f580ffb69a82",
+      "retrieved_at": "2026-07-23T19:50:20.275531+00:00",
+      "source_identity": "https://docs.python.org/3.13/c-api/init.html",
+      "source_url": "https://docs.python.org/3.13/c-api/init.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_2003feee3cef8e44a3de3452bdbaa8918f324a0464c4bb89cf9a93a2a22782f1",
+      "retrieved_at": "2026-07-23T19:50:20.275531+00:00",
+      "source_identity": "https://docs.python.org/3/library/threading.html",
+      "source_url": "https://docs.python.org/3/library/threading.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_068c23a213bb92bfe1e3571089cc36b132435bbc57c5cb68ab9fe1ad0d27753f",
+      "retrieved_at": "2026-07-23T19:50:20.275531+00:00",
+      "source_identity": "https://docs.python.org/3/whatsnew/3.14.html",
+      "source_url": "https://docs.python.org/3/whatsnew/3.14.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_a3b200b90bc7482a0f986b817a8d8623598a8bf49b975a5a0eab63bd09b07572",
+      "retrieved_at": "2026-07-23T19:50:20.311566+00:00",
+      "source_identity": "https://peps.python.org/pep-0703",
+      "source_url": "https://peps.python.org/pep-0703",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_76c2f99178d6eae1643c7c255efcd127bc5596d3a11256c9ef0715b4fc8b8aad",
+      "retrieved_at": "2026-07-23T19:50:20.311566+00:00",
+      "source_identity": "https://peps.python.org/pep-0809",
+      "source_url": "https://peps.python.org/pep-0809",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_ced9379eaee0590c59d4c61fc1f114ef14f5dec40f004661519e0de2bd4f02c2",
+      "retrieved_at": "2026-07-23T19:50:20.311566+00:00",
+      "source_identity": "https://peps.python.org/pep-0803",
+      "source_url": "https://peps.python.org/pep-0803",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_1a197b38db0914121326d718cf170682f73dadef201bd3dbe9eff3f2d256766f",
+      "retrieved_at": "2026-07-23T19:50:20.311566+00:00",
+      "source_identity": "https://peps.python.org/pep-0780",
+      "source_url": "https://peps.python.org/pep-0780",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_87e797feece545044969af6f18d3846eb98bf1647bd20b3f44c46654a621d648",
+      "retrieved_at": "2026-07-23T19:50:20.311566+00:00",
+      "source_identity": "https://peps.python.org",
+      "source_url": "https://peps.python.org",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_befc880679c9cb89ec66618f5021168d2d966188a548fab5663f054509fa6b75",
+      "retrieved_at": "2026-07-23T19:50:20.723532+00:00",
+      "source_identity": "https://lwn.net/Articles/919563",
+      "source_url": "https://lwn.net/Articles/919563",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_92c14ace2a567319ec8bca3ef9fd3640f3b5aa766191fa9b0651ace350cd59a8",
+      "retrieved_at": "2026-07-23T19:50:20.723532+00:00",
+      "source_identity": "https://pydevtools.com/handbook/explanation/what-is-pep-703",
+      "source_url": "https://pydevtools.com/handbook/explanation/what-is-pep-703",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_c57d2ed49fa413d690c749e3418c450c4b19ae36b9043e25cf33b86afd8dcbc6",
+      "retrieved_at": "2026-07-23T19:50:20.723532+00:00",
+      "source_identity": "https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075",
+      "source_url": "https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_25f6a9fb758b9e02b3182d975765def075d93936a6b12ba22bb47abb925f384d",
+      "retrieved_at": "2026-07-23T19:50:20.723532+00:00",
+      "source_identity": "https://www.reddit.com/r/Python/comments/14534lk/pep_703_making_the_global_interpreter_lock",
+      "source_url": "https://www.reddit.com/r/Python/comments/14534lk/pep_703_making_the_global_interpreter_lock",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_b5d48097d31688aa30f3d9a05c093fa19537616f14e1437d97af047e0f4c03b5",
+      "retrieved_at": "2026-07-23T19:50:21.128398+00:00",
+      "source_identity": "https://peps.python.org/pep-0779",
+      "source_url": "https://peps.python.org/pep-0779",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_5f3da9b5bcab403a4644930a93481359508c7249301ab116f49c0c71673fc829",
+      "retrieved_at": "2026-07-23T19:50:21.128398+00:00",
+      "source_identity": "https://peps.python.org/pep-0780",
+      "source_url": "https://peps.python.org/pep-0780",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_e61c98d42a39aaf80cd9788cc63b0124c9a749c2e77a3ad004af5ba8276551dd",
+      "retrieved_at": "2026-07-23T19:50:21.128398+00:00",
+      "source_identity": "https://peps.python.org/pep-0814",
+      "source_url": "https://peps.python.org/pep-0814",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_45f1dec3106d809569cf298fc0741a1e151247885c18dea5b83745f52e65339e",
+      "retrieved_at": "2026-07-23T19:50:21.128398+00:00",
+      "source_identity": "https://peps.python.org/pep-0836",
+      "source_url": "https://peps.python.org/pep-0836",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_e493cb2527e07de57ec74984fb9f23f3065fb07146c590dfca35dc879eede15f",
+      "retrieved_at": "2026-07-23T19:50:21.128398+00:00",
+      "source_identity": "https://peps.python.org/pep-0703",
+      "source_url": "https://peps.python.org/pep-0703",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_e74fedecdc8c868f158eceb111183f5b918ba5ab21a2119531229848d11fedb9",
+      "retrieved_at": "2026-07-23T19:50:21.552635+00:00",
+      "source_identity": "https://docs.python.org/pt-br/3.13/howto/free-threading-python.html",
+      "source_url": "https://docs.python.org/pt-br/3.13/howto/free-threading-python.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_3035e475be45994166039bf20c7ac791e529eb9333b12add9c776d0df8441036",
+      "retrieved_at": "2026-07-23T19:50:21.552635+00:00",
+      "source_identity": "https://docs.python.org/es/3.13/howto/free-threading-python.html",
+      "source_url": "https://docs.python.org/es/3.13/howto/free-threading-python.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_9a73eb539799bcf3cacd9382fd0f64b86016f140d02c355e892d05516c3b8146",
+      "retrieved_at": "2026-07-23T19:50:21.552635+00:00",
+      "source_identity": "https://docs.python.org/zh-cn/3.13/howto/free-threading-python.html",
+      "source_url": "https://docs.python.org/zh-cn/3.13/howto/free-threading-python.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_b663dba93920739e21cb0aedb919a9aad71b4bd4a676ef40040e3dc46d1b0f0e",
+      "retrieved_at": "2026-07-23T19:50:21.552635+00:00",
+      "source_identity": "https://docs.python.org/pt-br/3/howto/free-threading-python.html",
+      "source_url": "https://docs.python.org/pt-br/3/howto/free-threading-python.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_03395df2bd9f7b07ac2dff9ac09bb8026d504b52275727079ba64aa88d375b83",
+      "retrieved_at": "2026-07-23T19:50:26.522880+00:00",
+      "source_identity": "https://github.com/PyO3/maturin/issues/3064",
+      "source_url": "https://github.com/PyO3/maturin/issues/3064",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_9fb1c20a0666369a716735cff8894b585e17fb2ac53a090ad255aacc64387da2",
+      "retrieved_at": "2026-07-23T19:50:26.522880+00:00",
+      "source_identity": "https://github.com/python/steering-council/issues/333",
+      "source_url": "https://github.com/python/steering-council/issues/333",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_efa6449d927712a267a2b22d796c4dcf5fb50818d66ed372ef25829e9a903fcc",
+      "retrieved_at": "2026-07-23T19:50:26.522880+00:00",
+      "source_identity": "https://discuss.python.org/t/pep-803-stable-abi-for-free-threaded-builds/103628",
+      "source_url": "https://discuss.python.org/t/pep-803-stable-abi-for-free-threaded-builds/103628",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_94a5b022e596f9699c2ada911c509aaec3755fd45fe8e2764fa6332f4d32e4cb",
+      "retrieved_at": "2026-07-23T19:50:26.522880+00:00",
+      "source_identity": "https://github.com/capi-workgroup/decisions/issues/98",
+      "source_url": "https://github.com/capi-workgroup/decisions/issues/98",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_268fa0625f75c41e339cfca18f56b398bdb45dbbc79a495ef2b8525a20d86ab5",
+      "retrieved_at": "2026-07-23T19:50:27.066917+00:00",
+      "source_identity": "https://peps.python.org/pep-0779",
+      "source_url": "https://peps.python.org/pep-0779",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_d1424eafbc8e8671f8e26273237d6184c8c6717a97260b4fa5fcdb5af25c8816",
+      "retrieved_at": "2026-07-23T19:50:27.066917+00:00",
+      "source_identity": "https://py-free-threading.github.io",
+      "source_url": "https://py-free-threading.github.io",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_de7aed1e0b5acf9bad93ce757475571b00ca17b4784a5a3d596219be731d2fb8",
+      "retrieved_at": "2026-07-23T19:50:27.066917+00:00",
+      "source_identity": "https://tomaszs2.medium.com/python-is-going-free-threaded-the-end-of-the-gil-is-near-in-python-3-14-5f835ba5466f",
+      "source_url": "https://tomaszs2.medium.com/python-is-going-free-threaded-the-end-of-the-gil-is-near-in-python-3-14-5f835ba5466f",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_4320e223c4dba17763ea79f9dea4df0c6194ba58ec3402bbec3e48782ca55437",
+      "retrieved_at": "2026-07-23T19:50:27.066917+00:00",
+      "source_identity": "https://discuss.python.org/t/pep-779-criteria-for-supported-status-for-free-threaded-python/84319",
+      "source_url": "https://discuss.python.org/t/pep-779-criteria-for-supported-status-for-free-threaded-python/84319",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_a756c4d004d6e12ed4e24378919c635acf8284bb638e48aadcbc286a996a26e7",
+      "retrieved_at": "2026-07-23T19:50:27.066917+00:00",
+      "source_identity": "https://www.facebook.com/LearnRealPython/posts/pep-779-criteria-for-supported-status-for-free-threaded-python-python/970948348586882",
+      "source_url": "https://www.facebook.com/LearnRealPython/posts/pep-779-criteria-for-supported-status-for-free-threaded-python-python/970948348586882",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_60b66de720c1bc5d8bf5033b6f44e53d49f8ee917709f6548124c03a3e557af8",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/3/_sources/using/configure.rst.txt",
+      "source_url": "https://docs.python.org/3/_sources/using/configure.rst.txt",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_0bf06fe57959d234cb445f4ec8e1accdda00ec14197b26bfc44a76ccc66ed888",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/3/using/configure.html",
+      "source_url": "https://docs.python.org/3/using/configure.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_959905666126d0a31452f90f464e32f1f8cb59a7d748f06bfc16111048dbd2ca",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/zh-tw/3.13/using/configure.html",
+      "source_url": "https://docs.python.org/zh-tw/3.13/using/configure.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_461c5a32229cb8f405dc6532554dd2ec4ffcdddd717180703fa77d41a3bf93b7",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/3/glossary.html",
+      "source_url": "https://docs.python.org/3/glossary.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_1425f11b1ec902f08b30b62a9c087631849293c363001acb63265da805a63180",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/es/3.13/howto/free-threading-python.html",
+      "source_url": "https://docs.python.org/es/3.13/howto/free-threading-python.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_f485cff63e8a8d0d085f106a6cceeb71ee82af7df9aceb0dc1535f1db91551c3",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/3/howto/free-threading-python.html",
+      "source_url": "https://docs.python.org/3/howto/free-threading-python.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_e8f182156a624dc0a0e5c0ae1c9794a1c927243885bc535cccf269d7d9e283a6",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/3/whatsnew/3.13.html",
+      "source_url": "https://docs.python.org/3/whatsnew/3.13.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_49e93099d8883a5f68287c832c4e927b57d3c39c8ea71ef5da66fdc48c5522e1",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/3/whatsnew/3.14.html",
+      "source_url": "https://docs.python.org/3/whatsnew/3.14.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_71e1180c041c2f285b2443f8ce3734afbc1edafb009cc027164e744c4325c399",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/3.13/whatsnew/changelog.html",
+      "source_url": "https://docs.python.org/3.13/whatsnew/changelog.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "cited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_91a7ac5046dde0d0701c24e409c279dd3ae1fa3aa3b1fd809c4ab739f2d9a904",
+      "retrieved_at": "2026-07-23T19:50:28.490951+00:00",
+      "source_identity": "https://docs.python.org/3/c-api/memory.html",
+      "source_url": "https://docs.python.org/3/c-api/memory.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_88a0dbec103e296a4f221834682a6e0e94985bcee3ea4fc803ccfe46152dd8d5",
+      "retrieved_at": "2026-07-23T19:50:28.873703+00:00",
+      "source_identity": "https://docs.python.org/ja/3/reference/datamodel.html",
+      "source_url": "https://docs.python.org/ja/3/reference/datamodel.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_799f35e35c895a092fc7ae0cc7e08df42e9ddc0eb24e0ed153e377984c394994",
+      "retrieved_at": "2026-07-23T19:50:28.873703+00:00",
+      "source_identity": "https://docs.python.org/uk/3/reference/datamodel.html",
+      "source_url": "https://docs.python.org/uk/3/reference/datamodel.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_3c2bc0dcee8b59abff94ecf90f2c36dc5156048ef19f221e6307a57534c1ab88",
+      "retrieved_at": "2026-07-23T19:50:28.873703+00:00",
+      "source_identity": "https://docs.python.org/ko/3.15/reference/datamodel.html",
+      "source_url": "https://docs.python.org/ko/3.15/reference/datamodel.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_32df35fd68efd197f1e2fe41a1e1e73a1276654888e1bcb0449eb52af596a5eb",
+      "retrieved_at": "2026-07-23T19:50:28.873703+00:00",
+      "source_identity": "https://docs.python.org/fr/3/reference/datamodel.html",
+      "source_url": "https://docs.python.org/fr/3/reference/datamodel.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_37506ab8513904b98341a6abb613377e06cf3139c5fe03176fc2edb1c421b135",
+      "retrieved_at": "2026-07-23T19:50:28.873703+00:00",
+      "source_identity": "https://docs.python.org/3/reference/datamodel.html",
+      "source_url": "https://docs.python.org/3/reference/datamodel.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_f64b2b7ac3ae79c168c6480e02c208c86b43c410730c67e8bf39c639f09b7f3f",
+      "retrieved_at": "2026-07-23T19:50:28.873703+00:00",
+      "source_identity": "https://docs.python.org/3/library/concurrent.futures.html",
+      "source_url": "https://docs.python.org/3/library/concurrent.futures.html",
+      "verification_status": "unverified"
+    },
+    {
+      "citation_status": "uncited",
+      "evidence_id": "ev_run_e6efb8d7b9794aa6be32fefa9dc179fd_288b4cc95ab1370d17f1a87e2dbe7abb900a59d24bbd955d8a3b04f0bddf3fe0",
+      "retrieved_at": "2026-07-23T19:50:28.873703+00:00",
+      "source_identity": "https://docs.python.org/3.15/whatsnew/3.15.html",
+      "source_url": "https://docs.python.org/3.15/whatsnew/3.15.html",
+      "verification_status": "unverified"
+    }
+  ],
+  "lifecycle": {
+    "active_ms": 189081,
+    "build_start_ms": 11952,
+    "cleanup_ms": 2827,
+    "docker_probe_ms": 77,
+    "health_identity_observed": true,
+    "loopback_binding_observed": true,
+    "research_ms": 174637,
+    "restart_replay_ms": 2166,
+    "total_ms": 191985
+  },
+  "limits": [
+    "A valid report is one bounded producer observation, not a downstream business decision.",
+    "Recorded or cited Evidence is not independently verified source truth.",
+    "Idempotent create reconciliation does not prove exactly-once execution or provider side effects.",
+    "Client observation timeout does not cancel or recover a running server execution.",
+    "Token and cost observations are process-local estimates, not durable usage or provider billing.",
+    "The loopback Compose proof is not hosted production, multi-instance availability, or an SLA."
+  ],
+  "replay": {
+    "idempotent_replay": true,
+    "same_run_identity": true,
+    "same_segment_identity": true,
+    "same_thread_identity": true,
+    "unchanged_terminal_projection": true
+  },
+  "restart": {
+    "same_artifact": true,
+    "same_consumer_disposition": true,
+    "same_evidence": true,
+    "same_run_identity": true,
+    "same_segment_identity": true,
+    "same_terminal_state": true,
+    "same_thread_identity": true,
+    "state_version_non_regressing": true
+  },
+  "result": {
+    "artifact_id": "research-report.md",
+    "consumer_disposition": "accept_draft",
+    "consumer_support": "supported",
+    "kind": "research_report_markdown",
+    "media_type": "text/markdown",
+    "sha256": "947b7bc5f46c980a8b68867b6e66c6436b2012cfbb9b720b1e626da3a6bd65a5",
+    "utf8_bytes": 13892
+  },
+  "run": {
+    "delivery_status": "ready",
+    "execution_status": "completed",
+    "failure_cause": null,
+    "profile_id": "generic",
+    "review_status": "not_required",
+    "run_id": "run_e6efb8d7b9794aa6be32fefa9dc179fd",
+    "segment_id": "run_e6efb8d7b9794aa6be32fefa9dc179fd_seg_000",
+    "state_version": 2,
+    "thread_id": "proof-thread-8cb6cfaaafa62239e71fc91bc48ffcbb"
+  },
+  "scenario": {
+    "fallback_model_id": "deepseek-v4-flash",
+    "manifest_sha256": "3d4f9aeaea30607eb8b1107862f346be42ff73b77830ab087d8c4e70dcb5cfe7",
+    "primary_model_id": "deepseek-v4-pro",
+    "profile_id": "generic",
+    "provider_id": "deepseek",
+    "request_sha256": "857ca3ad75b946fd128c87ce8076571c0a786276f82f251d154b46c006f7d8da",
+    "required_cited_domains": [
+      "docs.python.org",
+      "peps.python.org"
+    ],
+    "scenario_id": "cpython-313-free-threaded-pilot"
+  },
+  "schema_version": "dra.bounded-live-producer-evaluation.v1",
+  "source": {
+    "archive_sha256": "66fd738794bb8efe7c7483f92587f635660dd671b5b529ae59e565f8be3b41b5",
+    "backend_image_id": "sha256:c820f9b736431a76d5db78fbd3809406fe039e96a00e20c069f6b6a5aa80f9d2",
+    "build_context": "tracked_archive",
+    "compose_version": "5.0.2",
+    "docker_version": "29.2.1",
+    "manifest_sha256": "3d4f9aeaea30607eb8b1107862f346be42ff73b77830ab087d8c4e70dcb5cfe7",
+    "repository_name": "decision-research-agent",
+    "sanitized_compose_sha256": "16969c83d39212417a73deca54ddbdcf842c38c8197fa46fd434954c514af312",
+    "service_name": "decision-research-agent",
+    "source_clean": true,
+    "source_commit": "eb2be018cc97e7133b850a001521e292b752c9cd",
+    "source_tree": "a34ad60ce516ade5f70deac5ff2b21803eca6764",
+    "version": "0.1.5"
+  },
+  "status": "valid",
+  "usage": {
+    "call_count": 17,
+    "completion_tokens": 18107,
+    "cost_estimate": {
+      "status": "not_observed"
+    },
+    "prompt_tokens": 198885,
+    "search_cost": {
+      "status": "not_observed"
+    },
+    "status": "observed",
+    "total_tokens": 216992
+  }
+}

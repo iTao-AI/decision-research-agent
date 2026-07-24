@@ -2631,16 +2631,31 @@ def test_main_projects_unknown_primary_with_cleanup_failure_as_internal_failed(
 
 
 def test_main_maps_malformed_live_declaration_to_credential_input_error(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    module = importlib.import_module("scripts.bounded_live_producer_proof")
     lifecycle = importlib.import_module("scripts.bounded_live_producer_lifecycle")
+    repository = tmp_path / "repository"
+    manifest_path = (
+        repository / "benchmarks/bounded-live-producer-v1/manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_bytes(MANIFEST_PATH.read_bytes())
+    evidence_dir = repository / "docs/evidence"
+    evidence_dir.mkdir(parents=True)
+    real_observe_live = module.observe_live
 
     def forbidden_probe(*_args, **_kwargs):
         raise AssertionError("Docker probe must not run")
 
+    def observe_live_in_repository(**kwargs):
+        return real_observe_live(**kwargs, repository_root=repository)
+
     monkeypatch.setattr(lifecycle, "run_bounded_subprocess", forbidden_probe)
-    result = main(
+    monkeypatch.setattr(module, "observe_live", observe_live_in_repository)
+    result = module.main(
         [
             "observe-live",
             "--env-file",
@@ -2665,6 +2680,8 @@ def test_main_maps_malformed_live_declaration_to_credential_input_error(
         "retryable": False,
         "cleanup_status": "not_started",
     }
+    assert not (evidence_dir / "bounded-live-producer-v1.json").exists()
+    assert not (evidence_dir / "bounded-live-producer-v1.md").exists()
 
 
 def test_observe_live_runs_real_orchestrator_through_provider_free_fake_boundaries(

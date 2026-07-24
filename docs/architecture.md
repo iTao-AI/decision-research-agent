@@ -238,8 +238,11 @@ contracts without Docker, credentials, network, or Agent runtime imports. The
 required Docker lane separately builds an exact tracked archive and verifies
 protected create, application-owned persistence, dynamic loopback rebinding
 after backend restart, same-key replay, privilege isolation, and exact cleanup
-through a provider-free fixture. `observe-live` remains a separately authorized
-operator action; no live report is committed, and the harness does not move
+through a provider-free fixture. One separately authorized and reviewed bounded
+DeepSeek observation is retained as a historical record. Required CI and current
+release authority remain provider-free; the record does not prove source truth,
+provider or research quality, downstream business acceptance, provider billing,
+exactly-once execution, production readiness, or an SLA. It does not move
 business authority into LangGraph, LangSmith, the frontend, or an external
 consumer.
 

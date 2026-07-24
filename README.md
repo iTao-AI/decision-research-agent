@@ -284,7 +284,14 @@ authority is
 
 The bounded live producer `check` is provider-free and Docker-free. Its
 separately authorized `observe-live` command is documented without being run by
-tests or CI. No live report is committed by this implementation change.
+tests or CI. One reviewed bounded DeepSeek producer observation is retained as
+a [historical record](docs/evidence/bounded-live-producer-v1.md): terminal
+`completed / not_required / ready`, result `supported / accept_draft`, 59
+Evidence rows, cited sources from both `docs.python.org` and `peps.python.org`,
+and cost/search cost `not_observed`. It is not a required CI or current release
+baseline and does not establish source truth, research/provider quality,
+downstream business acceptance, provider billing, exactly-once execution,
+production readiness, or an SLA.
 
 ## Documentation
 
@@ -320,9 +327,10 @@ tests or CI. No live report is committed by this implementation change.
   `dra.downstream-consumer.v1` fixture remain unchanged; the bounded proof is
   not a provider diagnosis, billing record, or exactly-once execution claim.
 - The bounded live producer harness proves deterministic contracts and one
-  provider-free Docker lifecycle. Provider/model execution, live evidence
-  publication, provider quality, research truth, billing, hosted deployment,
-  and SLA claims remain separately authorized and outside this implementation.
+  provider-free Docker lifecycle. Its separately reviewed historical observation
+  records one bounded provider execution without upgrading that record to
+  required CI/release authority, provider or research quality, research truth,
+  billing, downstream acceptance, hosted deployment, or an SLA.
 - The source launcher supports credential-free use only on the direct-loopback
   boundary. Compose is authenticated, publishes backend/MySQL only on
   `127.0.0.1`, and uses required secrets, health declarations, warning-level

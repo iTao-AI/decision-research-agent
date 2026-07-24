@@ -36,6 +36,44 @@ def _assert_talent_public_truth(agents: str) -> None:
     assert "fixed-sample Talent benchmark whose value gate passed" not in agents
 
 
+def _assert_bounded_live_historical_classification(evidence: str) -> None:
+    headings = (
+        "## Required Deterministic CI/Release Baseline",
+        "## Optional Operator/Workflow Proof",
+        "## Historical Reviewed Record",
+        "## Absent Future Evidence",
+    )
+    required = _section(evidence, headings[0], headings[1])
+    optional = _section(evidence, headings[1], headings[2])
+    historical = " ".join(_section(evidence, headings[2], headings[3]).split())
+    absent = _section(evidence, headings[3])
+    for filename in (
+        "bounded-live-producer-v1.json",
+        "bounded-live-producer-v1.md",
+    ):
+        link = f"]({filename})"
+        assert link in historical
+        assert all(link not in section for section in (required, optional, absent))
+    for phrase in (
+        "one bounded DeepSeek producer observation",
+        "`completed / not_required / ready`",
+        "`supported / accept_draft`",
+        "59 Evidence rows",
+        "`docs.python.org`",
+        "`peps.python.org`",
+        "cost and search cost remain `not_observed`",
+        "not a required CI or current release baseline",
+        "does not prove source truth",
+        "research or provider quality",
+        "downstream business acceptance",
+        "provider billing",
+        "exactly-once",
+        "production readiness",
+        "SLA",
+    ):
+        assert phrase in historical
+
+
 def test_talent_claim_matches_executable_fixed_value() -> None:
     producer = _read("scripts/talent_value_gate_runner.py")
     benchmark = _read("benchmarks/talent-hiring-signal-v1/README.md")
@@ -115,13 +153,7 @@ def test_evidence_index_classifies_each_retained_artifact_once() -> None:
     ):
         assert phrase in historical
 
-    for filename in (
-        "bounded-live-producer-v1.json",
-        "bounded-live-producer-v1.md",
-    ):
-        assert filename in absent
-        assert all(filename not in section for section in classes[:3])
-    assert "No live report is committed" in absent
+    _assert_bounded_live_historical_classification(evidence)
 
     assert (
         "Directory presence does not confer verification or current release authority"
@@ -142,6 +174,27 @@ def test_evidence_index_classifies_each_retained_artifact_once() -> None:
     }
     assert set(indexed_targets) & retained == retained
     assert all(indexed_targets[filename] == 1 for filename in retained)
+
+
+def test_bounded_live_evidence_rejects_required_or_absent_reclassification() -> None:
+    evidence = _read("docs/evidence/README.md")
+    historical_start = evidence.index("## Historical Reviewed Record")
+    absent_start = evidence.index("## Absent Future Evidence")
+    bounded_rows = "\n".join(
+        line
+        for line in evidence[historical_start:absent_start].splitlines()
+        if "bounded-live-producer-v1." in line
+    )
+    assert bounded_rows
+
+    for destination in (
+        "## Required Deterministic CI/Release Baseline",
+        "## Absent Future Evidence",
+    ):
+        mutated = evidence.replace(bounded_rows + "\n", "", 1)
+        mutated = mutated.replace(destination, destination + "\n" + bounded_rows, 1)
+        with pytest.raises(AssertionError):
+            _assert_bounded_live_historical_classification(mutated)
 
 
 def test_readmes_distinguish_selected_local_checks_from_required_ci_proofs() -> None:

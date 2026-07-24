@@ -1,0 +1,8 @@
+services:
+  backend:
+    command:
+      - python
+      - scripts/evidence_verification_container_fixture.py
+      - serve
+    environment:
+      DECISION_RESEARCH_AGENT_EVIDENCE_VERIFICATION_FIXTURE: "true"

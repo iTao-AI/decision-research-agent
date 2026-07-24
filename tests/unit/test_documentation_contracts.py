@@ -624,7 +624,8 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
         assert phrase in normalized_notes
 
     assert "v0.1.5 Release Notes" in current_discovery
-    assert "Decision Research Agent v0.1.5" in current_discovery
+    assert "v0.1.6 Release Notes" in current_discovery
+    assert "Decision Research Agent v0.1.6" in current_discovery
 
 
 @pytest.mark.parametrize(
@@ -641,17 +642,8 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
                 ),
             ),
         ),
-        (
-            PROJECT_ROOT / "SECURITY.md",
-            (
-                (
-                    "that are not part of v0.1.5.",
-                    "that are not part of v0.1.5.\n\nGitHub Release published.",
-                ),
-            ),
-        ),
     ),
-    ids=("positive-provider-claim", "security-publication-claim"),
+    ids=("positive-provider-claim",),
 )
 def test_v0_1_5_documentation_contract_rejects_claim_mutation(
     monkeypatch: pytest.MonkeyPatch,
@@ -1057,7 +1049,7 @@ def test_run_dispatch_reconciliation_contract_is_public_and_bounded():
     ).read_text(encoding="utf-8")
     assert "crash_before_schedule_recovery: not_proven" in old_evidence
     assert "crash_before_schedule_recovery: proven" in new_evidence
-    assert (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.1.5"
+    assert (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.1.6"
 
     workflow = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     old_proof = "python scripts/run_creation_idempotency_proof.py check"

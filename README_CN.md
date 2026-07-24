@@ -284,6 +284,7 @@ business acceptance、provider billing、exactly-once、production readiness
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
 - [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.6 Release Notes](docs/releases/v0.1.6.md)
 - [v0.1.5 Release Notes](docs/releases/v0.1.5.md)
 - [v0.1.4 Release Notes](docs/releases/v0.1.4.md)
 - [v0.1.3 Release Notes](docs/releases/v0.1.3.md)

@@ -91,7 +91,10 @@ external evaluation of the public contract surface.
 
 ## Release
 
-- [v0.1.5 Release Notes](releases/v0.1.5.md) — current supported surface,
+- [v0.1.6 Release Notes](releases/v0.1.6.md) — current supported surface,
+  including bounded live producer evaluation, the official DeepSeek provider
+  protocol, artifact and Evidence closures, verification, and explicit limits.
+- [v0.1.5 Release Notes](releases/v0.1.5.md) — historical secure local runtime surface,
   including secure local runtime access and container delivery, compatibility,
   rollback, verification, and explicit limits.
 - [v0.1.4 Release Notes](releases/v0.1.4.md) — historical durable failure

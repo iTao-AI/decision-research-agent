@@ -49,6 +49,29 @@ def _collapsed(text: str) -> str:
     return " ".join(text.split())
 
 
+def _assert_bounded_live_architecture_truth(architecture: str) -> None:
+    normalized = _collapsed(architecture)
+    for phrase in (
+        "required `check` validates deterministic manifest, report, error, and lifecycle "
+        "contracts without Docker, credentials, network, or Agent runtime imports",
+        "required Docker lane separately builds an exact tracked archive",
+        "One separately authorized and reviewed bounded DeepSeek observation is retained "
+        "as a historical record",
+        "Required CI and current release authority remain provider-free",
+        "does not prove source truth",
+        "provider or research quality",
+        "downstream business acceptance",
+        "provider billing",
+        "exactly-once execution",
+        "production readiness",
+        "an SLA",
+        "does not move business authority into LangGraph, LangSmith, the frontend, or an "
+        "external consumer",
+    ):
+        assert phrase in normalized
+    assert "no live report is committed" not in normalized
+
+
 def test_deepseek_provider_protocol_documentation_matches_runtime():
     env_example = (
         PROJECT_ROOT / ".env.example"
@@ -1580,6 +1603,8 @@ def test_bounded_live_producer_reference_and_reviewed_evidence_are_discoverable(
         "No live provider observation or JSON/Markdown evidence report is committed"
         not in changelog
     )
+    architecture = (PROJECT_ROOT / "docs/architecture.md").read_text(encoding="utf-8")
+    _assert_bounded_live_architecture_truth(architecture)
 
     plan = (
         PROJECT_ROOT
@@ -1706,6 +1731,23 @@ def test_bounded_live_producer_design_rejects_precheck_order_mutation(
         ),
         contract=test_bounded_live_producer_reference_and_reviewed_evidence_are_discoverable,
     )
+
+
+def test_bounded_live_architecture_rejects_stale_absence_mutation() -> None:
+    architecture = (PROJECT_ROOT / "docs/architecture.md").read_text(encoding="utf-8")
+    reviewed_truth = (
+        "One separately authorized and reviewed bounded DeepSeek observation is retained "
+        "as a historical record."
+    )
+    assert reviewed_truth in _collapsed(architecture)
+    mutated = _collapsed(architecture).replace(
+        reviewed_truth,
+        "`observe-live` remains a separately authorized operator action; "
+        "no live report is committed.",
+        1,
+    )
+    with pytest.raises(AssertionError):
+        _assert_bounded_live_architecture_truth(mutated)
 
 
 def test_bounded_result_diagnostic_receipt_is_scoped_and_discoverable() -> None:

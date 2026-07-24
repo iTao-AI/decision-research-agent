@@ -1,3 +1,5 @@
+"""Provider-free fixture for the Evidence verification Docker authority lane."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -5,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from typing import Sequence
 
 
 project_root = Path(__file__).resolve().parents[1]
@@ -18,8 +21,39 @@ from api.review_models import (
     post_review_segment_id,
     review_workflow_id,
 )
+from api.run_dispatch_worker import RunDispatchWorker
 from api.run_repository import create_run, finalize_run_transaction
 from api.talent_artifacts import build_talent_artifacts
+
+
+FIXTURE_FLAG = "DECISION_RESEARCH_AGENT_EVIDENCE_VERIFICATION_FIXTURE"
+
+
+def _enabled() -> bool:
+    return os.environ.get(FIXTURE_FLAG) == "true"
+
+
+class _IdleRunDispatchWorker(RunDispatchWorker):
+    async def run_once(self, *, run_id: str | None = None) -> bool:
+        self._wake.clear()
+        return False
+
+
+def _forbid_dispatch(_claim: object) -> None:
+    raise RuntimeError("fixture_dispatch_forbidden")
+
+
+def create_fixture_worker(db_path: str | Path) -> RunDispatchWorker:
+    if not _enabled():
+        raise RuntimeError("fixture_disabled")
+    return _IdleRunDispatchWorker(
+        db_path=str(db_path),
+        scheduler=_forbid_dispatch,
+    )
+
+
+async def _forbid_agent_path(*_args: object, **_kwargs: object) -> None:
+    raise RuntimeError("fixture_agent_path_forbidden")
 
 
 def _scope() -> dict:
@@ -134,5 +168,46 @@ def seed() -> dict:
     }
 
 
+def serve() -> int:
+    if not _enabled():
+        return 1
+    import api.server as server
+    import uvicorn
+
+    server.create_run_dispatch_worker = create_fixture_worker
+    server.run_deep_agent = _forbid_agent_path
+    uvicorn.run(
+        server.app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="warning",
+        access_log=False,
+    )
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if len(arguments) != 1 or arguments[0] not in {"serve", "seed"}:
+        sys.stderr.write('{"code":"fixture_command_invalid"}\n')
+        return 1
+    if not _enabled():
+        sys.stderr.write('{"code":"fixture_disabled"}\n')
+        return 1
+    try:
+        if arguments[0] == "serve":
+            return serve()
+        print(json.dumps(seed(), sort_keys=True))
+        return 0
+    except Exception:
+        code = (
+            "fixture_start_failed"
+            if arguments[0] == "serve"
+            else "fixture_seed_failed"
+        )
+        sys.stderr.write(json.dumps({"code": code}, sort_keys=True) + "\n")
+        return 1
+
+
 if __name__ == "__main__":
-    print(json.dumps(seed(), sort_keys=True))
+    raise SystemExit(main())

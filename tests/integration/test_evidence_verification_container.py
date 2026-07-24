@@ -18,6 +18,13 @@ from tests.integration.test_durable_review_container import (
 
 
 pytestmark = pytest.mark.docker
+FIXTURE_OVERRIDE = (
+    Path(__file__).resolve().parents[2]
+    / "tests"
+    / "fixtures"
+    / "evidence-verification-v1"
+    / "docker-compose.fixture.yml"
+)
 
 
 @pytest.fixture
@@ -42,7 +49,11 @@ def verification_docker_project(tmp_path):
             "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL": "true",
             "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION": "true",
         },
-        compose_files=(root / "docker-compose.yml", bootstrap.compose_path),
+        compose_files=(
+            root / "docker-compose.yml",
+            bootstrap.compose_path,
+            FIXTURE_OVERRIDE,
+        ),
     )
     if not _docker_daemon_available(project.env):
         if required:
@@ -97,6 +108,7 @@ def test_verification_to_approval_survives_container_restart(
         [
             "python",
             "scripts/evidence_verification_container_fixture.py",
+            "seed",
         ]
     )
     listed = _tool(

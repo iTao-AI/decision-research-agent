@@ -18,6 +18,7 @@ V012_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.2.md"
 V013_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.3.md"
 V014_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.4.md"
 V015_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
+V016_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.6.md"
 V015_RELEASE_NOTES_SHA256 = (
     "61cbac951a6513a3eb8f160647b9f16b95ca6ed96a4cca8bea80786462a90b6b"
 )
@@ -128,10 +129,11 @@ def test_current_release_version_is_consistent() -> None:
     package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
     lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
 
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.5"
-    assert package["version"] == "0.1.5"
-    assert lock["version"] == "0.1.5"
-    assert lock["packages"][""]["version"] == "0.1.5"
+    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.6"
+    assert package["version"] == "0.1.6"
+    assert lock["version"] == "0.1.6"
+    assert lock["packages"][""]["version"] == "0.1.6"
+    assert V016_RELEASE_NOTES.exists()
     assert V015_RELEASE_NOTES.exists()
     assert sha256(V015_RELEASE_NOTES.read_bytes()).hexdigest() == V015_RELEASE_NOTES_SHA256
 
@@ -139,6 +141,7 @@ def test_current_release_version_is_consistent() -> None:
 def test_changelog_preserves_published_release_boundary() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     unreleased_heading = "## [Unreleased]"
+    v0_1_6_heading = "## [0.1.6] - 2026-07-24"
     v0_1_5_match = re.search(
         r"^## \[0\.1\.5\] - (\d{4}-\d{2}-\d{2})$",
         changelog,
@@ -153,19 +156,26 @@ def test_changelog_preserves_published_release_boundary() -> None:
     v0_1_0_heading = "## [0.1.0] - 2026-06-28"
 
     assert unreleased_heading in changelog
+    assert v0_1_6_heading in changelog
     assert v0_1_5_heading in changelog
     assert v0_1_4_heading in changelog
     assert v0_1_3_heading in changelog
     assert v0_1_2_heading in changelog
     assert v0_1_1_heading in changelog
     assert v0_1_0_heading in changelog
-    assert changelog.index(unreleased_heading) < changelog.index(v0_1_5_heading)
+    assert changelog.index(unreleased_heading) < changelog.index(v0_1_6_heading)
+    assert changelog.index(v0_1_6_heading) < changelog.index(v0_1_5_heading)
     assert changelog.index(v0_1_5_heading) < changelog.index(v0_1_4_heading)
     assert changelog.index(v0_1_4_heading) < changelog.index(v0_1_3_heading)
     assert changelog.index(v0_1_3_heading) < changelog.index(v0_1_2_heading)
     assert changelog.index(v0_1_2_heading) < changelog.index(v0_1_1_heading)
     assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
-    unreleased = changelog.split(unreleased_heading, 1)[1].split(v0_1_5_heading, 1)[0]
+    unreleased = changelog.split(unreleased_heading, 1)[1].split(
+        v0_1_6_heading,
+        1,
+    )[0]
+    assert unreleased.strip() == ""
+    v0_1_6 = changelog.split(v0_1_6_heading, 1)[1].split(v0_1_5_heading, 1)[0]
     bounded_producer_subsection = """### Bounded live producer evaluation
 
 - Added a deterministic provider-free contract check and a separately
@@ -205,12 +215,11 @@ def test_changelog_preserves_published_release_boundary() -> None:
   request hash bind the same effective query, and acceptance still requires
   cited admitted sources from every required domain.
 - Required CI remains provider-free. The reviewed observation remains historical
-  evidence rather than a required CI baseline; `VERSION` and the v0.1.5 release
-  record remain unchanged."""
-    assert unreleased.count("### Bounded live producer evaluation") == 1
+  evidence rather than a required CI baseline."""
+    assert v0_1_6.count("### Bounded live producer evaluation") == 1
     bounded_actual = (
         "### Bounded live producer evaluation"
-        + unreleased.split(
+        + v0_1_6.split(
             "### Bounded live producer evaluation",
             1,
         )[1]
@@ -330,29 +339,29 @@ def test_changelog_contains_v0_1_0_release_entry() -> None:
     assert "Pre-v0.1.0 compatibility aliases and task/thread routes were removed" in changelog
 
 
-def test_unreleased_records_deepseek_provider_protocol_closure() -> None:
+def test_v0_1_6_records_deepseek_provider_protocol_closure() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
-    unreleased = changelog.split("## [Unreleased]", 1)[1].split(
+    v0_1_6 = changelog.split("## [0.1.6] - 2026-07-24", 1)[1].split(
         "## [0.1.5]",
         1,
     )[0]
 
-    assert "### DeepSeek provider protocol" in unreleased
-    assert "langchain-deepseek==1.1.0" in unreleased
-    assert "reasoning_content" in unreleased
-    assert "bounded local provider-protocol telemetry" in unreleased
-    assert "remote tracing disabled" in unreleased
-    assert "No live provider result" in unreleased
-    assert "## [0.1.5]" not in unreleased
+    assert "### DeepSeek provider protocol" in v0_1_6
+    assert "langchain-deepseek==1.1.0" in v0_1_6
+    assert "reasoning_content" in v0_1_6
+    assert "bounded local provider-protocol telemetry" in v0_1_6
+    assert "remote tracing disabled" in v0_1_6
+    assert "No live provider result" in v0_1_6
+    assert "## [0.1.5]" not in v0_1_6
 
 
-def test_unreleased_records_evidence_finalization_contract_closure() -> None:
+def test_v0_1_6_records_evidence_finalization_contract_closure() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
-    unreleased = changelog.split("## [Unreleased]", 1)[1].split(
+    v0_1_6 = changelog.split("## [0.1.6] - 2026-07-24", 1)[1].split(
         "## [0.1.5]",
         1,
     )[0]
-    normalized = _collapsed(unreleased)
+    normalized = _collapsed(v0_1_6)
 
     assert "one timezone-aware UTC observation time" in normalized
     assert "each completed source-tool response" in normalized

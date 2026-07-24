@@ -1057,7 +1057,7 @@ def test_run_dispatch_reconciliation_contract_is_public_and_bounded():
     ).read_text(encoding="utf-8")
     assert "crash_before_schedule_recovery: not_proven" in old_evidence
     assert "crash_before_schedule_recovery: proven" in new_evidence
-    assert (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.1.5"
+    assert (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.1.6"
 
     workflow = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     old_proof = "python scripts/run_creation_idempotency_proof.py check"

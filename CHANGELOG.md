@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-07-24
+
 ### DeepSeek provider protocol
 
 - Routed `deepseek-*` primary and fallback models through the official
@@ -36,7 +38,7 @@ All notable changes to this project are documented in this file.
 - The observation is not a required CI or current release baseline and does not
   claim source truth, research/provider quality, downstream business
   acceptance, provider billing, exactly-once execution, production readiness,
-  or an SLA; `VERSION` and the v0.1.5 release record remain unchanged.
+  or an SLA.
 
 ### Bounded live producer evaluation
 
@@ -77,8 +79,7 @@ All notable changes to this project are documented in this file.
   request hash bind the same effective query, and acceptance still requires
   cited admitted sources from every required domain.
 - Required CI remains provider-free. The reviewed observation remains historical
-  evidence rather than a required CI baseline; `VERSION` and the v0.1.5 release
-  record remain unchanged.
+  evidence rather than a required CI baseline.
 
 ## [0.1.5] - 2026-07-18
 

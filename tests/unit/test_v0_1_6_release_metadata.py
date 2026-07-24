@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import re
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_DATE = "2026-07-24"
@@ -59,6 +61,32 @@ def _h2_sections(notes: str) -> dict[str, str]:
     }
 
 
+def _assert_deepseek_alias_retirement_contract(text: str) -> None:
+    normalized = _collapsed(text)
+    for phrase in (
+        "Only `deepseek-v4-pro` and `deepseek-v4-flash` are durable supported model IDs",
+        "`deepseek-chat` and `deepseek-reasoner` retain local fixed-mode compatibility semantics only through 2026-07-24 15:59 UTC",
+        "not a post-retirement provider-availability claim",
+    ):
+        assert phrase in normalized
+    assert (
+        "Provider configuration continues to use the documented existing model "
+        "and credential aliases"
+    ) not in normalized
+
+
+def _assert_frontend_ci_maintenance_contract(text: str) -> None:
+    normalized = _collapsed(text)
+    for phrase in (
+        "`actions/setup-node` full commit SHA pin from `6.4.0` to `7.0.0`",
+        "`Vite` from `8.1.4` to `8.1.5`",
+        "locked `TypeScript` from `6.0.3` to `7.0.2`",
+        "contributor/CI toolchain only",
+        "no runtime API or business-authority change",
+    ):
+        assert phrase in normalized
+
+
 def test_v0_1_6_version_identity_is_consistent() -> None:
     package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
     lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
@@ -88,6 +116,7 @@ def test_v0_1_6_changelog_freezes_unreleased_and_preserves_history() -> None:
     v0_1_6 = changelog.split(v0_1_6_heading, 1)[1].split(v0_1_5_heading, 1)[0]
     for heading in (
         "### DeepSeek provider protocol",
+        "### Frontend and CI maintenance",
         "### Bounded live observation evidence",
         "### Bounded live producer evaluation",
     ):
@@ -109,6 +138,28 @@ def test_v0_1_6_changelog_freezes_unreleased_and_preserves_history() -> None:
     for filename, expected_sha256 in HISTORICAL_RELEASE_NOTE_SHA256.items():
         path = PROJECT_ROOT / "docs" / "releases" / filename
         assert sha256(path.read_bytes()).hexdigest() == expected_sha256
+
+
+def test_v0_1_6_records_deepseek_alias_retirement_and_maintenance_truth() -> None:
+    changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
+    notes = _read(V016_RELEASE_NOTES)
+
+    for text in (changelog, notes):
+        _assert_deepseek_alias_retirement_contract(text)
+        _assert_frontend_ci_maintenance_contract(text)
+
+
+def test_v0_1_6_alias_retirement_contract_rejects_durable_alias_mutation() -> None:
+    notes = _collapsed(_read(V016_RELEASE_NOTES))
+    mutated = notes.replace(
+        "Only `deepseek-v4-pro` and `deepseek-v4-flash` are durable supported model IDs",
+        "All documented DeepSeek model aliases remain supported",
+        1,
+    )
+    assert mutated != notes
+
+    with pytest.raises(AssertionError):
+        _assert_deepseek_alias_retirement_contract(mutated)
 
 
 def test_v0_1_6_release_notes_cover_truth_verification_and_non_claims() -> None:

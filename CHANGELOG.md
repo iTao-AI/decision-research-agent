@@ -16,9 +16,11 @@ All notable changes to this project are documented in this file.
 - Canonicalized every DeepSeek request to an explicit `enabled` or `disabled`
   thinking mode, omitted automatic `tool_choice` in thinking mode, and bound
   the documented 120-second client request timeout on primary and fallback.
-- Preserved the temporary `deepseek-chat` non-thinking and
-  `deepseek-reasoner` thinking alias identities, while rejecting conflicting
-  mode or semantic tool-choice configuration before provider transport.
+- Only `deepseek-v4-pro` and `deepseek-v4-flash` are durable supported model
+  IDs. `deepseek-chat` and `deepseek-reasoner` retain local fixed-mode
+  compatibility semantics only through 2026-07-24 15:59 UTC; this is not a
+  post-retirement provider-availability claim. Conflicting mode or semantic
+  tool-choice configuration still fails before provider transport.
 - Preserved the OpenAI-compatible path for non-DeepSeek models, existing
   credential aliases, forced-tool-choice compatibility, call budgets, and
   application-owned Evidence and delivery authority.
@@ -28,6 +30,14 @@ All notable changes to this project are documented in this file.
 - No live provider result, research-quality result, cost result, consumer
   acceptance, deployment, or release claim is made by this provider-free
   change.
+
+### Frontend and CI maintenance
+
+- Updated the `actions/setup-node` full commit SHA pin from `6.4.0` to `7.0.0`.
+- Updated `Vite` from `8.1.4` to `8.1.5` and locked `TypeScript` from `6.0.3`
+  to `7.0.2`.
+- These changes affect the contributor/CI toolchain only and introduce no
+  runtime API or business-authority change.
 
 ### Bounded live observation evidence
 

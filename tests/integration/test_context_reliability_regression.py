@@ -36,6 +36,19 @@ SECOND_TASK_RESULT = "Post-summary duplicate search complete."
 CONTROL_MAX_INPUT_TOKENS = 32768
 FORCED_MAX_INPUT_TOKENS = 16384
 WORKER_ID = "dispatch_worker_0000000000000000000000000000000c"
+FORCED_EVENT_ORDER = (
+    "pre_search_tool_emission",
+    "large_task_result",
+    "summary_1",
+    "coordinator_after_summary_1",
+    "post_search_tool_emission_1",
+    "post_search_tool_emission_2",
+    "post_summary_provider_once_observed",
+    "second_task_result",
+    "summary_2",
+    "coordinator_after_summary_2",
+    "write_file",
+)
 
 
 @dataclass
@@ -368,24 +381,11 @@ async def test_control_and_forced_lanes_observe_native_summary_only_when_forced(
     )
     assert control_recorder.search_payloads == forced_recorder.search_payloads
     assert control_calls == forced_calls == expected_search_calls
-    required_forced_order = [
-        "pre_search_tool_emission",
-        "large_task_result",
-        "summary_1",
-        "coordinator_after_summary_1",
-        "post_search_tool_emission_1",
-        "post_search_tool_emission_2",
-        "post_summary_provider_once_observed",
-        "second_task_result",
-        "summary_2",
-        "coordinator_after_summary_2",
-        "write_file",
-    ]
     assert [
         event
         for event in forced_recorder.events
-        if event in required_forced_order
-    ] == required_forced_order
+        if event in FORCED_EVENT_ORDER
+    ] == list(FORCED_EVENT_ORDER)
     assert not any(
         event.startswith("summary_")
         or event.startswith("coordinator_after_summary_")
@@ -528,6 +528,17 @@ async def test_paired_persisted_application_outcomes_remain_equivalent(
         assert [item["artifact_id"] for item in persisted["artifacts"]] == [
             "research-report.md"
         ]
+        assert len(persisted["evidence"]) == 1
+        evidence = persisted["evidence"][0]
+        assert evidence["evidence_id"] == (
+            f"ev_{created['run_id']}_{evidence['evidence_fingerprint']}"
+        )
+        assert evidence["subagent_name"] == "network_search"
+        assert evidence["tool_name"] == "internet_search"
+        assert evidence["source_url"] == SOURCE_URL
+        assert evidence["snippet"] == SOURCE_CONTENT
+        assert evidence["citation_status"] == "cited"
+        assert evidence["verification_status"] == "unverified"
         lane_results[forced] = project_context_reliability_outcome(
             run=persisted,
             resolution=resolved,
@@ -540,3 +551,74 @@ async def test_paired_persisted_application_outcomes_remain_equivalent(
         lane_results[False],
         lane_results[True],
     ) == []
+
+
+@pytest.mark.asyncio
+async def test_forced_lane_preserves_nested_evidence_and_clears_exact_search_cache(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from tools.tavily_tools import _search_cache
+
+    db_path = str(tmp_path / "forced-evidence.db")
+    harness, recorder, search_calls = _build_lane_harness(
+        monkeypatch,
+        forced=True,
+    )
+    created, persisted, _ = await _run_persisted_lane(
+        db_path=db_path,
+        thread_id="thread-forced-evidence",
+        harness=harness,
+        monkeypatch=monkeypatch,
+        project_root=tmp_path / "forced-evidence",
+    )
+
+    assert [
+        event
+        for event in recorder.events
+        if event in FORCED_EVENT_ORDER
+    ] == list(FORCED_EVENT_ORDER)
+    assert recorder.summary_calls == 2
+    assert recorder.consumed_summary_calls == 2
+    assert (
+        recorder.search_tool_emissions.count(
+            POST_SUMMARY_SEARCH_QUERY
+        )
+        == 2
+    )
+    assert search_calls == [
+        (
+            PRE_SUMMARY_SEARCH_QUERY,
+            {
+                "max_results": 5,
+                "topic": "general",
+                "include_raw_content": False,
+            },
+        ),
+        (
+            POST_SUMMARY_SEARCH_QUERY,
+            {
+                "max_results": 5,
+                "topic": "general",
+                "include_raw_content": False,
+            },
+        ),
+    ]
+    assert (
+        [query for query, _ in search_calls].count(
+            POST_SUMMARY_SEARCH_QUERY
+        )
+        == 1
+    )
+    assert len(persisted["evidence"]) == 1
+    evidence = persisted["evidence"][0]
+    assert evidence["evidence_id"] == (
+        f"ev_{created['run_id']}_{evidence['evidence_fingerprint']}"
+    )
+    assert evidence["subagent_name"] == "network_search"
+    assert evidence["tool_name"] == "internet_search"
+    assert evidence["source_url"] == SOURCE_URL
+    assert evidence["snippet"] == SOURCE_CONTENT
+    assert evidence["citation_status"] == "cited"
+    assert evidence["verification_status"] == "unverified"
+    assert created["run_id"] not in _search_cache

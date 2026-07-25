@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Privacy-safe observation contract
+
+- Hardened project-owned WebSocket, existing LangGraph `stream_writer`,
+  console, and retained telemetry/API observations to closed descriptors,
+  stable error codes, registered aliases, and fixed messages.
+- Raw observation `args`, `result`, and `error` semantics intentionally change
+  in place; consumers must use canonical tool input, result/artifact, or
+  terminal result for content.
+- Application-owned run, Evidence, result, review, and delivery authority,
+  `dra.downstream-consumer.v1`, immutable `v0.1.6`, and Night Voyager's pinned
+  consumption boundary remain unchanged.
+
 ## [0.1.6] - 2026-07-24
 
 ### DeepSeek provider protocol

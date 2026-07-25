@@ -179,21 +179,65 @@ hash-mismatched content.
 
 ## Telemetry 数据结构
 
-Telemetry is run-scoped and returned by `GET /api/telemetry/runs/{run_id}`:
+Telemetry is closed, process-local diagnostic state returned by
+`GET /api/telemetry/runs/{run_id}`. Success:
 
 ```json
 {
-  "thread_id": "caller-session",
-  "run_id": "run_...",
-  "segment_id": "run_..._seg_...",
-  "agent_name": "researcher",
-  "tool_name": "talent_public_search",
-  "duration_ms": 1500,
+  "schema": "dra.telemetry-record.v1",
+  "thread_id": "thread-a",
+  "run_id": "run-a",
+  "segment_id": "run-a-seg-000",
+  "agent_name": "main",
+  "tool_name": "tavily_search",
+  "duration_ms": 12.4,
   "status": "success",
   "error": null,
-  "timestamp": "2026-06-26T10:00:00Z"
+  "error_type": null,
+  "timestamp": "2026-07-26T00:00:00+00:00"
 }
 ```
+
+Error:
+
+```json
+{
+  "schema": "dra.telemetry-record.v1",
+  "thread_id": "thread-a",
+  "run_id": "run-a",
+  "segment_id": "run-a-seg-000",
+  "agent_name": "main",
+  "tool_name": "tavily_search",
+  "duration_ms": 12.4,
+  "status": "error",
+  "error": "timeout",
+  "error_type": "TimeoutError",
+  "timestamp": "2026-07-26T00:00:00+00:00"
+}
+```
+
+Invalid direct-construction fields use closed sentinels:
+
+```json
+{
+  "schema": "dra.telemetry-record.v1",
+  "thread_id": "thread-a",
+  "run_id": "run-a",
+  "segment_id": "run-a-seg-000",
+  "agent_name": "unknown_agent",
+  "tool_name": "unknown_tool",
+  "duration_ms": 0.0,
+  "status": "error",
+  "error": "execution_failed",
+  "error_type": null,
+  "timestamp": "1970-01-01T00:00:00+00:00"
+}
+```
+
+Retention is 500 records per execution, FIFO. Records are lost on process
+restart with no replay or backfill. Telemetry does not own failure, Evidence,
+result, review, delivery, or business authority. See the
+[Observation Contract](observation-contract.md).
 
 ## Durable Review 数据模型
 

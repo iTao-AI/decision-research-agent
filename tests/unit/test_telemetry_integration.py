@@ -60,9 +60,9 @@ class TestMonitorToCollectorIntegration:
         set_thread_context("integration-thread-1")
 
         with patch.object(monitor, '_emit'):
-            monitor.report_start("slow_tool")
+            monitor.report_start("tavily_search")
             time.sleep(0.05)  # Sleep 50ms
-            monitor.report_end("slow_tool")
+            monitor.report_end("tavily_search")
 
         records = collector.get_by_thread("integration-thread-1")
         assert len(records) == 1
@@ -76,13 +76,13 @@ class TestMonitorToCollectorIntegration:
         set_thread_context("integration-thread-1")
 
         with patch.object(monitor, '_emit'):
-            monitor.report_start("failing_tool")
-            monitor.report_end("failing_tool", error="Something went wrong")
+            monitor.report_start("tavily_search")
+            monitor.report_end("tavily_search", error="Something went wrong")
 
         records = collector.get_by_thread("integration-thread-1")
         assert len(records) == 1
         assert records[0].status == "error"
-        assert records[0].error == "Something went wrong"
+        assert records[0].error == "execution_failed"
 
     def test_thread_id_isolation(self):
         """Two different thread_ids don't mix their telemetry records."""
@@ -91,24 +91,24 @@ class TestMonitorToCollectorIntegration:
         # Thread 1
         set_thread_context("integration-thread-1")
         with patch.object(monitor, '_emit'):
-            monitor.report_start("tool_a")
-            monitor.report_end("tool_a")
+            monitor.report_start("tavily_search")
+            monitor.report_end("tavily_search")
 
         # Thread 2
         set_thread_context("integration-thread-2")
         with patch.object(monitor, '_emit'):
-            monitor.report_start("tool_b")
-            monitor.report_end("tool_b")
+            monitor.report_start("mysql_query")
+            monitor.report_end("mysql_query")
 
         records_t1 = collector.get_by_thread("integration-thread-1")
         records_t2 = collector.get_by_thread("integration-thread-2")
 
         assert len(records_t1) == 1
-        assert records_t1[0].tool_name == "tool_a"
+        assert records_t1[0].tool_name == "tavily_search"
         assert records_t1[0].thread_id == "integration-thread-1"
 
         assert len(records_t2) == 1
-        assert records_t2[0].tool_name == "tool_b"
+        assert records_t2[0].tool_name == "mysql_query"
         assert records_t2[0].thread_id == "integration-thread-2"
 
         # Verify no cross-contamination
@@ -135,8 +135,8 @@ class TestCollectorClearIntegration:
 
         set_thread_context("clear-test-thread")
         with patch.object(monitor, '_emit'):
-            monitor.report_start("test_tool")
-            monitor.report_end("test_tool")
+            monitor.report_start("tavily_search")
+            monitor.report_end("tavily_search")
 
         assert len(collector.get_by_thread("clear-test-thread")) == 1
 

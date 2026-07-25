@@ -34,8 +34,8 @@ class TestAgentRunAccumulator:
                             {
                                 "name": "task",
                                 "args": {
-                                    "subagent_type": "network_search",
-                                    "description": "搜索公开资料",
+                                    "subagent_type": "private_model_OBS_MARKER",
+                                    "description": "private model description OBS_MARKER",
                                 },
                                 "id": "call-1",
                             }
@@ -49,7 +49,10 @@ class TestAgentRunAccumulator:
 
         assert accumulator.assistant_calls == 1
         assert monitor.assistant_calls == [
-            ("network_search", {"desc": "搜索公开资料"})
+            (
+                "task_subagent",
+                {"desc": "private model description OBS_MARKER"},
+            )
         ]
 
     def test_records_last_non_empty_ai_text(self, tmp_path):

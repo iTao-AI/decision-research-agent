@@ -6,6 +6,11 @@ from api.monitor import monitor
 from tools.db_connection import MySQLConnectionManager
 
 
+MYSQL_LIST_TABLES = "mysql_list_tables"
+MYSQL_TABLE_DATA = "mysql_table_data"
+MYSQL_QUERY = "mysql_query"
+
+
 def get_db_config():
     """获取数据库配置文件"""
     return {
@@ -37,45 +42,71 @@ def _ensure_pool():
     return ""
 
 
-def _validate_sql_type(query: str) -> str:
+def _validate_sql_type_with_category(
+    query: str,
+) -> tuple[str, str | None]:
     """校验 SQL 语句类型，只允许纯 SELECT 查询。"""
     if not query or not query.strip():
-        return "错误：SQL 语句不能为空"
+        return "错误：SQL 语句不能为空", "input_invalid"
 
     normalized = query.strip().upper()
 
     if not normalized.startswith("SELECT"):
-        return "错误：只允许 SELECT 查询，拒绝写入操作"
+        return "错误：只允许 SELECT 查询，拒绝写入操作", "input_invalid"
 
     if re.search(r'\bINTO\b', normalized):
-        return "错误：SELECT INTO 不被允许"
+        return "错误：SELECT INTO 不被允许", "input_invalid"
 
     write_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
     for keyword in write_keywords:
         if re.search(r'\b' + keyword + r'\b', normalized):
-            return f"错误：只允许 SELECT 查询，检测到写入关键字 {keyword}"
+            return (
+                f"错误：只允许 SELECT 查询，检测到写入关键字 {keyword}",
+                "input_invalid",
+            )
 
-    return ""
+    return "", None
 
 
-def _validate_table_name(table_name: str) -> str:
+def _validate_sql_type(query: str) -> str:
+    """Return the existing model-visible SQL validation string."""
+    return _validate_sql_type_with_category(query)[0]
+
+
+def _validate_table_name_with_category(
+    table_name: str,
+) -> tuple[str, str | None]:
     """校验表名合法性。"""
     if not table_name or not table_name.strip():
-        return "错误：表名不能为空"
+        return "错误：表名不能为空", "input_invalid"
 
     if re.search(r'\b(UNION|SELECT|DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE)\b', table_name.upper()):
-        return "错误：无效的表名"
+        return "错误：无效的表名", "input_invalid"
 
     if re.search(r'[;\'\"\\/\s]', table_name):
-        return "错误：无效的表名"
+        return "错误：无效的表名", "input_invalid"
 
     whitelist, error = _get_table_whitelist()
     if error and not whitelist:
-        return error
+        return error, "service_unavailable"
     if table_name not in whitelist:
-        return f"错误：无效的表名 '{table_name}'"
+        return f"错误：无效的表名 '{table_name}'", "input_invalid"
 
-    return ""
+    return "", None
+
+
+def _validate_table_name(table_name: str) -> str:
+    """Return the existing model-visible table validation string."""
+    return _validate_table_name_with_category(table_name)[0]
+
+
+def _exception_observation(exc: Exception) -> tuple[str, str]:
+    """Classify a caught exception without reading its message."""
+    if isinstance(exc, TimeoutError):
+        return "timeout", type(exc).__name__
+    if isinstance(exc, (ConnectionError, OSError)):
+        return "service_unavailable", type(exc).__name__
+    return "execution_failed", type(exc).__name__
 
 
 def _get_table_whitelist() -> tuple:
@@ -101,31 +132,36 @@ def _get_table_whitelist() -> tuple:
 @tool
 def list_sql_tables() -> str:
     """Query all available tables in the database."""
-    monitor.report_tool("数据库获取表名工具！")
+    monitor.report_tool(MYSQL_LIST_TABLES)
 
     error = _ensure_pool()
     if error:
-        monitor.report_end("数据库获取表名工具！", error=error)
+        monitor.report_end(MYSQL_LIST_TABLES, error="service_unavailable")
         return error
 
     conn = None
     try:
         conn = _connection_manager.get_connection()
         if isinstance(conn, str):
-            monitor.report_end("数据库获取表名工具！", error=conn)
+            monitor.report_end(MYSQL_LIST_TABLES, error="service_unavailable")
             return conn
         with conn.cursor() as cursor:
             cursor.execute("show tables;")
             tables = cursor.fetchall()
             if not tables:
-                monitor.report_end("数据库获取表名工具！", "数据库没有查询到任何表！")
+                monitor.report_end(MYSQL_LIST_TABLES, "数据库没有查询到任何表！")
                 return "数据库没有查询到任何表！"
             table_names = [table[0] for table in tables]
             result = f"可用数据表:{','.join(table_names)}"
-            monitor.report_end("数据库获取表名工具！", result)
+            monitor.report_end(MYSQL_LIST_TABLES, result)
             return result
     except Exception as e:
-        monitor.report_end("数据库获取表名工具！", error=str(e))
+        error_code, error_type = _exception_observation(e)
+        monitor.report_end(
+            MYSQL_LIST_TABLES,
+            error=error_code,
+            error_type=error_type,
+        )
         return f"查询可用表名失败:{e}"
     finally:
         if conn is not None and not isinstance(conn, str):
@@ -135,39 +171,47 @@ def list_sql_tables() -> str:
 @tool
 def get_table_data(table_name: str) -> str:
     """Query first 100 rows of a table, returned as CSV."""
-    monitor.report_tool("数据库内容浏览工具", {"读取读取的表": table_name})
+    monitor.report_tool(MYSQL_TABLE_DATA, {"table_name": table_name})
 
-    error = _validate_table_name(table_name)
+    error, error_code = _validate_table_name_with_category(table_name)
     if error:
-        monitor.report_end("数据库内容浏览工具", error=error)
+        monitor.report_end(MYSQL_TABLE_DATA, error=error_code)
         return error
 
     error = _ensure_pool()
     if error:
-        monitor.report_end("数据库内容浏览工具", error=error)
+        monitor.report_end(MYSQL_TABLE_DATA, error="service_unavailable")
         return error
 
     conn = None
     try:
         conn = _connection_manager.get_connection()
         if isinstance(conn, str):
-            monitor.report_end("数据库内容浏览工具", error=conn)
+            monitor.report_end(MYSQL_TABLE_DATA, error="service_unavailable")
             return conn
         with conn.cursor() as cursor:
             safe_table_name = table_name.replace("`", "").replace(";", "").split()[0]
             cursor.execute(f"select * from {safe_table_name} limit 100")
             if not cursor.description:
-                monitor.report_end("数据库内容浏览工具", f"数据表 {table_name}为空或者表名无效！")
+                monitor.report_end(
+                    MYSQL_TABLE_DATA,
+                    f"数据表 {table_name}为空或者表名无效！",
+                )
                 return f"数据表 {table_name}为空或者表名无效！"
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
             result = [",".join(map(str, row)) for row in rows]
             header = ",".join(columns)
             output = f"{header}\n" + "\n".join(result)
-            monitor.report_end("数据库内容浏览工具", output)
+            monitor.report_end(MYSQL_TABLE_DATA, output)
             return output
     except Exception as e:
-        monitor.report_end("数据库内容浏览工具", error=f"读取数据表：{table_name} 失败!{str(e)}")
+        error_code, error_type = _exception_observation(e)
+        monitor.report_end(
+            MYSQL_TABLE_DATA,
+            error=error_code,
+            error_type=error_type,
+        )
         return f"读取数据表：{table_name} 失败!{str(e)}"
     finally:
         if conn is not None and not isinstance(conn, str):
@@ -177,43 +221,48 @@ def get_table_data(table_name: str) -> str:
 @tool
 def execute_sql_query(query: str) -> str:
     """Execute a custom SQL query."""
-    monitor.report_tool("数据库查询工具")
+    monitor.report_tool(MYSQL_QUERY)
 
-    error = _validate_sql_type(query)
+    error, error_code = _validate_sql_type_with_category(query)
     if error:
-        monitor.report_end("数据库查询工具", error=error)
+        monitor.report_end(MYSQL_QUERY, error=error_code)
         return error
 
     error = _ensure_pool()
     if error:
-        monitor.report_end("数据库查询工具", error=error)
+        monitor.report_end(MYSQL_QUERY, error="service_unavailable")
         return error
 
     conn = None
     try:
         conn = _connection_manager.get_connection()
         if isinstance(conn, str):
-            monitor.report_end("数据库查询工具", error=conn)
+            monitor.report_end(MYSQL_QUERY, error="service_unavailable")
             return conn
         with conn.cursor() as cursor:
             cursor.execute(query)
             if not cursor.description:
                 result = f"SQL 执行成功，受影响行数：{cursor.rowcount}"
-                monitor.report_end("数据库查询工具", result)
+                monitor.report_end(MYSQL_QUERY, result)
                 return result
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
             if not rows:
                 result = f"查询执行成功，无数据返回。涉及列名：{', '.join(columns)}"
-                monitor.report_end("数据库查询工具", result)
+                monitor.report_end(MYSQL_QUERY, result)
                 return result
             rows_t = [",".join(map(str, row)) for row in rows]
             header_str = ",".join(columns)
             output = f"{header_str}\n" + "\n".join(rows_t)
-            monitor.report_end("数据库查询工具", output)
+            monitor.report_end(MYSQL_QUERY, output)
             return output
     except Exception as e:
-        monitor.report_end("数据库查询工具", error=f"执行自定义语句{query}失败，错误!{str(e)}")
+        error_code, error_type = _exception_observation(e)
+        monitor.report_end(
+            MYSQL_QUERY,
+            error=error_code,
+            error_type=error_type,
+        )
         return f"执行自定义语句{query}失败，错误!{str(e)}"
     finally:
         if conn is not None and not isinstance(conn, str):

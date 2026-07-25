@@ -2572,3 +2572,200 @@ def test_context_reliability_pytest_pack_is_documented_and_indexed() -> None:
     assert "(reference/context-reliability-regression.md)" in docs_index
     assert "fixed test count" not in reference
     assert "seconds to pass" not in reference
+
+
+OBSERVATION_REFERENCE = PROJECT_ROOT / "docs/reference/observation-contract.md"
+EXPECTED_OBSERVATION_EVENT_KEYS = {
+    "session_created": {"workspace_created"},
+    "tool_start": {"tool_name", "args"},
+    "tool_end": {
+        "tool_name", "status", "duration_ms", "result", "error", "error_type"
+    },
+    "assistant_call": {"assistant_name", "args"},
+    "task_result": {"result"},
+    "task_finalized": {"status", "fallback_used", "output_present", "error"},
+    "retry_event": {
+        "service_name", "attempt", "max_retries", "error", "error_type"
+    },
+    "cache_hit": {"tool_name", "cached"},
+    "cache_miss": {"tool_name", "cached"},
+    "run_timeout": {
+        "timeout_seconds", "previous_status", "finalized_by_callback"
+    },
+    "error": {"error", "error_type"},
+}
+EXPECTED_OBSERVATION_MESSAGES = {
+    "session_created": "Workspace created",
+    "tool_start": "Tool execution started",
+    "tool_end": "Tool execution completed",
+    "assistant_call": "Assistant call started",
+    "task_result": "Task result available",
+    "task_finalized": "Task finalized",
+    "retry_event": "Retry scheduled",
+    "cache_hit": "Tool cache hit",
+    "cache_miss": "Tool cache miss",
+    "run_timeout": "Research run timed out",
+    "error": "Observation error",
+}
+EXPECTED_DESCRIPTOR_ROWS = [
+    ["None", "present=False, kind=none"],
+    ["exact str", "present=True, kind=string, character_count, count_capped"],
+    ["exact bytes", "present=True, kind=bytes, byte_count, count_capped"],
+    ["exact dict", "present=True, kind=mapping, top_level_item_count, count_capped"],
+    ["exact list or tuple", "present=True, kind=sequence, top_level_item_count, count_capped"],
+    ["exact bool, int, float, or complex", "present=True, kind=scalar"],
+    ["subclass or other object", "present=True, kind=opaque"],
+]
+EXPECTED_OBSERVATION_ERROR_CODES = {
+    "configuration_missing", "input_invalid", "resource_not_found", "timeout",
+    "service_unavailable", "execution_failed", "retryable_failure",
+}
+EXPECTED_OBSERVATION_ALIASES = {
+    "agent_name": ({"main"}, "unknown_agent"),
+    "assistant_name": ({"task_subagent"}, "unknown_assistant"),
+    "tool_name": ({
+        "mysql_list_tables", "mysql_table_data", "mysql_query",
+        "ragflow_assistant_list", "ragflow_question", "tavily_search",
+        "tavily_search_dedup",
+    }, "unknown_tool"),
+    "service_name": ({"tavily"}, "unknown_service"),
+    "tool_status": ({"success", "error"}, "error"),
+    "run_status": ({
+        "pending", "running", "completed", "completed_with_fallback", "failed",
+    }, "failed"),
+}
+TELEMETRY_RECORD_KEYS = {
+    "schema", "thread_id", "run_id", "segment_id", "agent_name",
+    "tool_name", "duration_ms", "status", "error", "error_type", "timestamp",
+}
+
+
+def _parse_observation_table(document: str, heading: str) -> list[list[str]]:
+    section = document.split(heading, 1)[1].split("\n## ", 1)[0]
+    rows = [
+        [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        for line in section.splitlines()
+        if line.startswith("|")
+    ]
+    return rows[2:]
+
+
+def _assert_observation_reference_contract(reference: str) -> None:
+    json_blocks = [
+        json.loads(block)
+        for block in re.findall(r"```json\n(.*?)\n```", reference, re.S)
+    ]
+    monitor_blocks = [
+        item for item in json_blocks
+        if item.get("schema") == "dra.monitor-event.v1"
+    ]
+    assert len(monitor_blocks) == 1
+    event_rows = _parse_observation_table(reference, "## Event data matrix")
+    assert len(event_rows) == len(EXPECTED_OBSERVATION_EVENT_KEYS)
+    assert {
+        row[0]: set(filter(None, row[1].split(", "))) for row in event_rows
+    } == EXPECTED_OBSERVATION_EVENT_KEYS
+    assert {row[0]: row[2] for row in event_rows} == EXPECTED_OBSERVATION_MESSAGES
+    assert _parse_observation_table(reference, "## Descriptor matrix") == (
+        EXPECTED_DESCRIPTOR_ROWS
+    )
+    error_code_rows = _parse_observation_table(reference, "## Stable error codes")
+    assert len(error_code_rows) == len(EXPECTED_OBSERVATION_ERROR_CODES)
+    assert {row[0] for row in error_code_rows} == EXPECTED_OBSERVATION_ERROR_CODES
+    alias_rows = _parse_observation_table(reference, "## Alias matrix")
+    assert len(alias_rows) == len(EXPECTED_OBSERVATION_ALIASES)
+    assert {
+        row[0]: (set(filter(None, row[1].split(", "))), row[2])
+        for row in alias_rows
+    } == EXPECTED_OBSERVATION_ALIASES
+    telemetry_blocks = [
+        item for item in json_blocks
+        if item.get("schema") == "dra.telemetry-record.v1"
+    ]
+    assert len(telemetry_blocks) == 3
+    assert all(set(item) == TELEMETRY_RECORD_KEYS for item in telemetry_blocks)
+    assert _parse_observation_table(reference, "## Coherent error matrix") == [
+        ["success + no error", "success", "null", "null"],
+        ["error + no error", "error", "execution_failed", "null"],
+        ["allowed error", "error", "exact stable code", "valid type or null"],
+        ["raw or unknown error", "error", "execution_failed", "valid type or null"],
+    ]
+    assert _parse_observation_table(reference, "## Field migration") == [
+        ["args", "closed descriptor", "canonical tool input"],
+        ["result", "closed descriptor", "canonical result or artifact"],
+        ["error", "stable code or null", "canonical terminal result"],
+    ]
+    assert "1970-01-01T00:00:00+00:00" in reference
+    assert "500 records per execution, FIFO" in reference
+    assert "no replay or backfill" in reference
+
+
+def test_privacy_safe_observation_contract_is_exact_and_indexed() -> None:
+    reference = OBSERVATION_REFERENCE.read_text(encoding="utf-8")
+    api_contract = (
+        PROJECT_ROOT / "docs/reference/api-contract.md"
+    ).read_text(encoding="utf-8")
+    data_models = (
+        PROJECT_ROOT / "docs/reference/data-models.md"
+    ).read_text(encoding="utf-8")
+    observability = (
+        PROJECT_ROOT / "docs/observability.md"
+    ).read_text(encoding="utf-8")
+    _assert_observation_reference_contract(reference)
+    api_rows = _parse_observation_table(api_contract, "## Monitor event matrix")
+    assert len(api_rows) == len(EXPECTED_OBSERVATION_EVENT_KEYS)
+    assert {
+        row[0]: set(filter(None, row[1].split(", "))) for row in api_rows
+    } == EXPECTED_OBSERVATION_EVENT_KEYS
+    assert {row[0]: row[2] for row in api_rows} == EXPECTED_OBSERVATION_MESSAGES
+    data_model_records = [
+        json.loads(block)
+        for block in re.findall(r"```json\n(.*?)\n```", data_models, re.S)
+        if "dra.telemetry-record.v1" in block
+    ]
+    assert len(data_model_records) == 3
+    assert all(set(item) == TELEMETRY_RECORD_KEYS for item in data_model_records)
+    assert "X-API-Key" in reference
+    assert "docs/observability.md" in reference
+    assert "docs/reference/observation-contract.md" in observability
+    assert "not a fallback" in observability
+    assert "5-minute provider-free proof" in reference
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("dra.monitor-event.v1", "dra.monitor-event.v2"),
+        ("500 records per execution, FIFO", "durable retention"),
+        ("args | closed descriptor", "args | raw value"),
+        ("1970-01-01T00:00:00+00:00", "1970-01-01T00:00:00"),
+        (
+            "error + no error | error | execution_failed | null",
+            "error + no error | error | null | RuntimeError",
+        ),
+    ],
+)
+def test_observation_reference_rejects_contract_mutations(
+    old: str,
+    new: str,
+) -> None:
+    reference = OBSERVATION_REFERENCE.read_text(encoding="utf-8")
+    assert old in reference
+    with pytest.raises(AssertionError):
+        _assert_observation_reference_contract(reference.replace(old, new))
+
+
+def test_observation_reference_rejects_raw_fallback_and_scope_expansion():
+    reference = OBSERVATION_REFERENCE.read_text(encoding="utf-8")
+    prohibited = {
+        "raw compatibility endpoint",
+        "raw observation environment variable",
+        "unsafe compatibility flag",
+        "legacy raw fallback",
+        "new UI or dashboard",
+        "hosted tracing implementation",
+        "framework business authority",
+        "Night Voyager change",
+    }
+    for item in prohibited:
+        assert f"Do not add: {item}" in reference

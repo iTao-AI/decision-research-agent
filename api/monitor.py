@@ -1,215 +1,372 @@
-import datetime
+"""Best-effort delivery for the closed application observation contract."""
+
+from __future__ import annotations
+
 import asyncio
-import time
+import builtins
+from concurrent.futures import Future
+from datetime import datetime, timezone
 from threading import RLock
-from typing import Any, Dict, Optional
+import time
+from typing import Callable
+
 from fastapi import WebSocket
+
+from agent.telemetry import TelemetryRecord, collector
 from api.context import get_run_context, get_segment_context, get_thread_context
-from agent.telemetry import collector, TelemetryRecord
-
-# Exact match for known sensitive field names (case-insensitive)
-# Includes common variants: api_key, secret_key, access_token, auth_token, etc.
-_SENSITIVE_FIELDS = {
-    "api_key", "secret_key", "access_key", "secret", "password", "passwd",
-    "token", "access_token", "refresh_token", "auth_token", "jwt",
-    "api_secret", "client_secret", "private_key",
-    "authorization", "auth", "credential",
-}
-# Suffix patterns for fields that end with these (e.g. "my_api_key")
-_SENSITIVE_SUFFIXES = ["_key", "_secret", "_token", "_password", "_auth"]
-_MAX_VALUE_LENGTH = 200
-_REDACTED = "***REDACTED***"
+from api.observation_contract import projector
 
 
-def sanitize_args(args: dict | None) -> dict | None:
-    """Sanitize tool arguments before logging. Redact sensitive fields, truncate long strings."""
-    if args is None:
+def _safe_console(fixed_message: str) -> None:
+    """Emit only a caller-owned fixed message and never affect execution."""
+    try:
+        print(f"\n[Monitor] {fixed_message}")
+    except Exception:
+        pass
+
+
+def sanitize_args(args: object) -> dict[str, object]:
+    """Return the closed descriptor used by compatibility monitor callers."""
+    return projector.descriptor(args)
+
+
+def _explicit_or_context(
+    explicit: object,
+    getter: Callable[[], object],
+) -> str | None:
+    """Select an explicit built-in string or a built-in-string context value."""
+    if explicit is not None:
+        return explicit if type(explicit) is str else None
+    try:
+        contextual = getter()
+    except Exception:
         return None
-    result = {}
-    for k, v in args.items():
-        k_lower = k.lower()
-        # Exact match or ends-with sensitive suffix
-        if k_lower in _SENSITIVE_FIELDS or any(k_lower.endswith(suffix) for suffix in _SENSITIVE_SUFFIXES):
-            result[k] = _REDACTED
-        elif isinstance(v, str) and len(v) > _MAX_VALUE_LENGTH:
-            result[k] = v[:_MAX_VALUE_LENGTH] + f"... (truncated, {len(v)} chars total)"
-        else:
-            result[k] = v
-    return result
+    return contextual if type(contextual) is str else None
 
 
-# 尝试导入全局运行时（用于脚本模式下的流式输出）
-try:
-    import builtins
-except ImportError:
-    builtins = None
+def _copy_event_payload(payload: dict[str, object]) -> dict[str, object]:
+    """Make one independent fixed-depth built-in copy for an observation sink."""
+    source_data = payload["data"]
+    copied_data = {
+        key: dict(value) if type(value) is dict else value
+        for key, value in source_data.items()
+    }
+    return {
+        "type": payload["type"],
+        "schema": payload["schema"],
+        "event": payload["event"],
+        "message": payload["message"],
+        "data": copied_data,
+        "thread_id": payload["thread_id"],
+        "run_id": payload["run_id"],
+        "segment_id": payload["segment_id"],
+        "timestamp": payload["timestamp"],
+    }
+
+
+async def _protected_websocket_send(
+    manager: object,
+    payload: dict[str, object],
+    run_id: str | None,
+    thread_id: str | None,
+) -> None:
+    """Create and await the manager send inside one exception-consuming task."""
+    try:
+        if run_id is not None:
+            await manager.send_to_run(payload, run_id)
+        elif thread_id is not None:
+            await manager.send_to_thread(payload, thread_id)
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        _safe_console("WebSocket delivery failed")
 
 
 class ToolMonitor:
-    """
-    工具监控类，用于在工具执行过程中上报进度和状态。
-    设计为单例模式，可在任何工具中直接导入使用。
-    兼容 FastAPI WebSocket 和 脚本运行时的 stream_writer。
+    """Deliver safe tool observations without changing tool execution.
 
-    使用示例:
-    from api.monitor import monitor
-
-    def my_tool(arg1):
-        monitor.report_start("my_tool", {"arg1": arg1})
-        ...
-        monitor.report_running("my_tool", "正在处理数据...", progress=0.5)
-        ...
-        monitor.report_end("my_tool", result)
+    Reporter inputs are untrusted. Registered aliases such as ``tavily_search``
+    remain exact; other labels become closed sentinels. ``args`` and ``result``
+    keep their compatibility field positions but contain descriptors only.
     """
+
     _instance = None
 
     def __new__(cls):
         if cls._instance is None or not isinstance(cls._instance, cls):
-            instance = super(ToolMonitor, cls).__new__(cls)
+            instance = super().__new__(cls)
             instance.websocket_manager = None
             instance._start_times: dict[tuple[str, str], list[float]] = {}
             instance._start_times_lock = RLock()
+            instance._pending_lock = RLock()
+            instance._pending_tasks: set[asyncio.Task[None]] = set()
+            instance._pending_futures: set[Future[None]] = set()
             cls._instance = instance
         return cls._instance
 
-    def set_websocket_manager(self, manager):
-        """设置 FastAPI 的 WebSocket 管理器"""
+    def set_websocket_manager(self, manager: object) -> None:
+        """Set the FastAPI WebSocket manager."""
         self.websocket_manager = manager
 
-    def _schedule_websocket_send(self, payload: dict, run_id: str | None, thread_id: str | None):
-        """Schedule one WebSocket send without leaking a coroutine on loop failure."""
-        manager_loop = self.websocket_manager.get_loop()
-        if not manager_loop or not manager_loop.is_running():
+    def _pending_snapshot(
+        self,
+    ) -> tuple[tuple[asyncio.Task[None], ...], tuple[Future[None], ...]]:
+        """Return a thread-safe immutable snapshot for deterministic settlement."""
+        with self._pending_lock:
+            return tuple(self._pending_tasks), tuple(self._pending_futures)
+
+    def _consume_done(
+        self,
+        kind: str,
+        completed: asyncio.Task[None] | Future[None],
+    ) -> None:
+        try:
+            if not completed.cancelled():
+                completed.exception()
+        except Exception:
+            _safe_console("WebSocket delivery failed")
+        finally:
+            with self._pending_lock:
+                if kind == "task":
+                    self._pending_tasks.discard(completed)
+                else:
+                    self._pending_futures.discard(completed)
+
+    def _register_pending(
+        self,
+        kind: str,
+        scheduled: asyncio.Task[None] | Future[None],
+    ) -> None:
+        pending = (
+            self._pending_tasks
+            if kind == "task"
+            else self._pending_futures
+        )
+        try:
+            with self._pending_lock:
+                pending.add(scheduled)
+                try:
+                    scheduled.add_done_callback(
+                        lambda completed: self._consume_done(kind, completed)
+                    )
+                except Exception:
+                    pending.discard(scheduled)
+                    raise
+        except Exception:
+            _safe_console("WebSocket delivery failed")
+
+    def _schedule_websocket_send(
+        self,
+        payload: dict[str, object],
+        run_id: str | None,
+        thread_id: str | None,
+    ) -> None:
+        """Schedule one protected send and retain it until completion."""
+        manager = self.websocket_manager
+        if manager is None:
+            return
+        try:
+            manager_loop = manager.get_loop()
+        except Exception:
+            _safe_console("WebSocket delivery failed")
+            return
+        if (
+            manager_loop is None
+            or manager_loop.is_closed()
+            or not manager_loop.is_running()
+        ):
             return
 
-        send = (
-            self.websocket_manager.send_to_run(payload, run_id)
-            if run_id
-            else self.websocket_manager.send_to_thread(payload, thread_id)
-        )
         try:
             current_loop = asyncio.get_running_loop()
         except RuntimeError:
             current_loop = None
+        except Exception:
+            current_loop = None
+
+        protected = _protected_websocket_send(
+            manager,
+            payload,
+            run_id,
+            thread_id,
+        )
+        if current_loop is manager_loop:
+            try:
+                task = current_loop.create_task(protected)
+            except Exception:
+                protected.close()
+                _safe_console("WebSocket delivery failed")
+                return
+            self._register_pending("task", task)
+            return
 
         try:
-            if current_loop is manager_loop:
-                current_loop.create_task(send)
-            else:
-                asyncio.run_coroutine_threadsafe(send, manager_loop)
+            future = asyncio.run_coroutine_threadsafe(protected, manager_loop)
         except Exception:
-            send.close()
-            raise
+            protected.close()
+            _safe_console("WebSocket delivery failed")
+            return
+        self._register_pending("future", future)
 
     def _emit(
         self,
-        event_type: str,
-        message: str,
-        data: Optional[Dict[str, Any]] = None,
-        thread_id: str | None = None,
-        run_id: str | None = None,
-        segment_id: str | None = None,
-    ):
-        """内部发送方法"""
-        target_thread_id = thread_id or get_thread_context()
-        target_run_id = run_id or get_run_context()
-        target_segment_id = segment_id or get_segment_context()
-        payload = {
-            "type": "monitor_event",
-            "event": event_type,
-            "message": message,
-            "data": data or {},
-            "thread_id": target_thread_id,
-            "run_id": target_run_id,
-            "segment_id": target_segment_id,
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-
-        # 1. 优先尝试通过 FastAPI WebSocket 发送 (定向推送)
-        if self.websocket_manager:
-            try:
-                if target_run_id or target_thread_id:
-                    self._schedule_websocket_send(payload, target_run_id, target_thread_id)
-            except Exception as e:
-                print(f"[Monitor] WebSocket send failed: {e}")
-
-        # 2. 尝试通过全局 runtime 输出 (DeepAgents 脚本模式)
-        # 这使得 simple_agents.py 中的 MockRuntime 能接收到数据
-        if builtins and hasattr(builtins, 'runtime') and hasattr(builtins.runtime, 'stream_writer'):
-            try:
-                builtins.runtime.stream_writer(payload)
-            except Exception:
-                pass
-
-        # 3. 控制台保底输出 (方便调试)
-        # 加上特殊前缀，方便肉眼识别
-        print(f"\n[Monitor:{event_type}] {message}")
-
-    def report_start(self, tool_name: str, args: Dict[str, Any] = None):
-        """报告工具开始执行"""
-        execution_id = get_run_context() or get_thread_context() or "default"
-        with self._start_times_lock:
-            self._start_times.setdefault((execution_id, tool_name), []).append(
-                time.monotonic()
+        event_type: object,
+        message: object,
+        data: object = None,
+        thread_id: object = None,
+        run_id: object = None,
+        segment_id: object = None,
+    ) -> None:
+        """Project once, then independently deliver closed built-in copies."""
+        del message
+        target_thread_id = _explicit_or_context(thread_id, get_thread_context)
+        target_run_id = _explicit_or_context(run_id, get_run_context)
+        target_segment_id = _explicit_or_context(
+            segment_id,
+            get_segment_context,
+        )
+        try:
+            payload = projector.monitor_event(
+                event_type=event_type,
+                data=data,
+                thread_id=target_thread_id,
+                run_id=target_run_id,
+                segment_id=target_segment_id,
+                timestamp=datetime.now(timezone.utc).isoformat(),
             )
-        sanitized = sanitize_args(args)
-        self._emit("tool_start", f"开始执行工具: {tool_name}", {"tool_name": tool_name, "args": sanitized})
+        except Exception:
+            _safe_console("Observation projection rejected")
+            return
+        if payload is None:
+            _safe_console("Observation projection rejected")
+            return
 
-    def report_tool(self, tool_name: str, args: Dict[str, Any] = None):
+        projected_run_id = payload["run_id"]
+        projected_thread_id = payload["thread_id"]
+        if (
+            self.websocket_manager is not None
+            and (
+                projected_run_id is not None
+                or projected_thread_id is not None
+            )
+        ):
+            self._schedule_websocket_send(
+                _copy_event_payload(payload),
+                projected_run_id,
+                projected_thread_id,
+            )
+
+        try:
+            runtime = getattr(builtins, "runtime", None)
+            writer = getattr(runtime, "stream_writer", None)
+            if callable(writer):
+                writer(_copy_event_payload(payload))
+        except Exception:
+            _safe_console("stream_writer delivery failed")
+
+        _safe_console(payload["message"])
+
+    @staticmethod
+    def _context_string(getter: Callable[[], object], fallback: str | None) -> str | None:
+        try:
+            value = getter()
+        except Exception:
+            return fallback
+        return value if type(value) is str else fallback
+
+    def _timing_key(self, tool_name: object) -> tuple[str, str]:
+        run_id = self._context_string(get_run_context, None)
+        thread_id = self._context_string(get_thread_context, "default")
+        execution_id = run_id if run_id is not None else thread_id
+        safe_tool_name = tool_name if type(tool_name) is str else "unknown_tool"
+        return execution_id or "default", safe_tool_name
+
+    def report_start(self, tool_name: str, args: object = None) -> None:
+        """Report tool start without retaining argument content."""
+        timing_key = self._timing_key(tool_name)
+        with self._start_times_lock:
+            self._start_times.setdefault(timing_key, []).append(time.monotonic())
+        self._emit(
+            "tool_start",
+            "Tool execution started",
+            {"tool_name": tool_name, "args": args},
+        )
+
+    def report_tool(self, tool_name: str, args: object = None) -> None:
         """Backward-compatible alias for report_start."""
         self.report_start(tool_name, args)
 
-    def report_end(self, tool_name: str, result: Any = None, error: str | None = None):
-        """报告工具执行结束，生成 TelemetryRecord。"""
-        thread_id = get_thread_context() or "default"
-        run_id = get_run_context()
-        segment_id = get_segment_context()
-        execution_id = run_id or thread_id
+    def report_end(
+        self,
+        tool_name: str,
+        result: object = None,
+        error: object = None,
+        error_type: object = None,
+    ) -> None:
+        """Report tool completion without retaining result or exception content."""
+        timing_key = self._timing_key(tool_name)
         with self._start_times_lock:
-            starts = self._start_times.get((execution_id, tool_name), [])
+            starts = self._start_times.get(timing_key, [])
             start = starts.pop() if starts else None
             if not starts:
-                self._start_times.pop((execution_id, tool_name), None)
-        duration_ms = 0.0
-        if start is not None:
-            duration_ms = (time.monotonic() - start) * 1000.0
+                self._start_times.pop(timing_key, None)
+        duration_ms = (
+            (time.monotonic() - start) * 1000.0
+            if start is not None
+            else 0.0
+        )
+        status = (
+            "success"
+            if error is None or (type(error) is str and error == "")
+            else "error"
+        )
+        thread_id = self._context_string(get_thread_context, "default")
+        run_id = self._context_string(get_run_context, None)
+        segment_id = self._context_string(get_segment_context, None)
+        try:
+            collector.record(
+                TelemetryRecord(
+                    thread_id=thread_id,
+                    run_id=run_id,
+                    segment_id=segment_id,
+                    agent_name="main",
+                    tool_name=tool_name,
+                    duration_ms=duration_ms,
+                    status=status,
+                    error=error,
+                    error_type=error_type,
+                )
+            )
+        except Exception:
+            _safe_console("Telemetry delivery failed")
+        self._emit(
+            "tool_end",
+            "Tool execution completed",
+            {
+                "tool_name": tool_name,
+                "status": status,
+                "result": result,
+                "error": error,
+                "error_type": error_type,
+                "duration_ms": duration_ms,
+            },
+        )
 
-        status = "error" if error else "success"
+    def report_assistant(self, assistant_name: str, args: object = None) -> None:
+        """Report an assistant call using only registered observation aliases."""
+        self._emit(
+            "assistant_call",
+            "Assistant call started",
+            {"assistant_name": assistant_name, "args": args},
+        )
 
-        collector.record(TelemetryRecord(
-            thread_id=thread_id,
-            run_id=run_id,
-            segment_id=segment_id,
-            agent_name="main",
-            tool_name=tool_name,
-            duration_ms=duration_ms,
-            status=status,
-            error=error,
-        ))
-
-        self._emit("tool_end", f"工具执行完成: {tool_name}", {
-            "tool_name": tool_name,
-            "result": result,
-            "error": error,
-            "duration_ms": duration_ms,
-        })
-
-    def report_assistant(self, assistant_name: str, args: Dict[str, Any] = None):
-        """报告正在调用的子智能体进度"""
-        sanitized = sanitize_args(args)
-        self._emit("assistant_call", f"正在调用助手: {assistant_name}",
-                   {"assistant_name": assistant_name, "args": sanitized})
-
-    def report_task_result(self, result: str):
-        """报告任务最终结果"""
-        if isinstance(result, dict):
-            sanitized = sanitize_args(result)
-            self._emit("task_result", "任务执行完成", {"result": sanitized})
-        elif isinstance(result, str) and len(result) > _MAX_VALUE_LENGTH:
-            truncated = result[:_MAX_VALUE_LENGTH] + f"... (truncated, {len(result)} chars total)"
-            self._emit("task_result", "任务执行完成", {"result": truncated})
-        else:
-            self._emit("task_result", "任务执行完成", {"result": result})
+    def report_task_result(self, result: object) -> None:
+        """Report only that the canonical task result is available."""
+        self._emit(
+            "task_result",
+            "Task result available",
+            {"result": result},
+        )
 
     def report_task_finalized(
         self,
@@ -217,97 +374,118 @@ class ToolMonitor:
         status: str,
         fallback_used: bool = False,
         output_path: str | None = None,
-        error_message: str | None = None,
-    ):
-        """Report terminal task persistence state."""
+        error_message: object = None,
+    ) -> None:
+        """Report closed terminal task persistence state."""
         self._emit(
             "task_finalized",
-            f"任务状态已完成: {status}",
+            "Task finalized",
             {
-                "thread_id": thread_id,
                 "status": status,
                 "fallback_used": fallback_used,
                 "output_path": output_path,
-                "error_message": error_message,
+                "error": error_message,
             },
             thread_id=thread_id,
         )
 
-    def report_session_dir(self, path: str):
-        """报告任务工作目录"""
-        self._emit("session_created", f"工作目录已创建: {path}", {"path": path})
+    def report_session_dir(self, path: str) -> None:
+        """Report workspace presence without exposing its path."""
+        self._emit(
+            "session_created",
+            "Workspace created",
+            {"path": path},
+        )
 
-    def report_retry(self, service_name: str, attempt: int, max_retries: int, error: str = ""):
-        """报告服务调用重试事件（供 @retry 装饰器使用）"""
-        message = f"Retry {attempt}/{max_retries} for {service_name}"
-        if error:
-            message += f": {error}"
-        self._emit("retry_event", message, {
-            "service_name": service_name,
-            "attempt": attempt,
-            "max_retries": max_retries,
-            "error": error,
-        })
+    def report_retry(
+        self,
+        service_name: str,
+        attempt: int,
+        max_retries: int,
+        error: object = None,
+        error_type: object = None,
+    ) -> None:
+        """Report a retry while discarding legacy raw error input."""
+        del error
+        self._emit(
+            "retry_event",
+            "Retry scheduled",
+            {
+                "service_name": service_name,
+                "attempt": attempt,
+                "max_retries": max_retries,
+                "error": "retryable_failure",
+                "error_type": error_type,
+            },
+        )
 
-    def report_cache_hit(self, tool_name: str, cached: bool = True):
-        """报告缓存命中/未命中事件（供 @cached_tool 装饰器使用）"""
+    def report_cache_hit(self, tool_name: str, cached: bool = True) -> None:
+        """Report cache presence for a registered tool alias."""
         event = "cache_hit" if cached else "cache_miss"
-        self._emit(event, f"Cache {event} for {tool_name}", {
-            "tool_name": tool_name,
-            "cached": cached,
-        })
+        self._emit(
+            event,
+            "Tool cache result",
+            {"tool_name": tool_name, "cached": cached},
+        )
 
 
-# 全局单例实例
 monitor = ToolMonitor()
 
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
-        self.active_run_connections: Dict[str, WebSocket] = {}
-        self.run_threads: Dict[str, str] = {}
-        # 延迟绑定 loop，防止初始化时 loop 不一致
+        self.active_connections: dict[str, WebSocket] = {}
+        self.active_run_connections: dict[str, WebSocket] = {}
+        self.run_threads: dict[str, str] = {}
         self.loop = None
 
     def get_loop(self):
-        """懒加载获取当前运行的事件循环"""
+        """Lazily bind the current running event loop."""
         try:
             current_loop = asyncio.get_running_loop()
-            if self.loop is None or self.loop.is_closed() or not self.loop.is_running():
+            if (
+                self.loop is None
+                or self.loop.is_closed()
+                or not self.loop.is_running()
+            ):
                 self.loop = current_loop
-                # 同时设置 monitor 的 manager (确保双向绑定)
                 monitor.set_websocket_manager(self)
-                print(f"[Monitor] ConnectionManager auto-bound to loop: {id(self.loop)}")
+                _safe_console("Connection manager bound")
         except RuntimeError:
-            print("[Monitor] Warning: No running event loop found yet.")
+            _safe_console("No running event loop")
+        except Exception:
+            _safe_console("Event loop lookup failed")
         return self.loop
 
     async def connect(self, websocket: WebSocket, thread_id: str):
-        # 每次连接时尝试获取/更新 loop
         self.get_loop()
-
         await websocket.accept()
         self.active_connections[thread_id] = websocket
-        print(f"Client connected: {thread_id}")
+        _safe_console("Client connected")
 
-    async def connect_run(self, websocket: WebSocket, run_id: str, thread_id: str):
+    async def connect_run(
+        self,
+        websocket: WebSocket,
+        run_id: str,
+        thread_id: str,
+    ):
         self.get_loop()
         await websocket.accept()
         self.active_run_connections[run_id] = websocket
         self.run_threads[run_id] = thread_id
-        print(f"Client connected: {thread_id}/{run_id}")
+        _safe_console("Run client connected")
 
     def disconnect(self, websocket: WebSocket, thread_id: str):
+        del websocket
         if thread_id in self.active_connections:
             del self.active_connections[thread_id]
-        print(f"Client disconnected: {thread_id}")
+        _safe_console("Client disconnected")
 
     def disconnect_run(self, websocket: WebSocket, run_id: str):
         if self.active_run_connections.get(run_id) is websocket:
             del self.active_run_connections[run_id]
             self.run_threads.pop(run_id, None)
-        print(f"Client disconnected: {run_id}")
+        _safe_console("Run client disconnected")
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
         await websocket.send_text(message)

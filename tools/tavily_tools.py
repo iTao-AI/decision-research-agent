@@ -107,24 +107,41 @@ def _internet_search_impl(
     include_domains: tuple[str, ...] = (),
 ):
     """Execute Tavily search without per-thread de-duplication."""
+    tool_name = "tavily_search"
+    monitor.report_tool(tool_name, {"query": query})
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
+        monitor.report_end(tool_name, error="configuration_missing")
         return "Error: TAVILY_API_KEY is not configured."
 
-    monitor.report_tool("网络搜索工具", {"网络搜索工具": query})
     try:
         results = asyncio.run(
             _cached_search_with_resilience(
                 query, max_results, topic, include_raw_content, include_domains
             )
         )
-        monitor.report_end("网络搜索工具", results)
+        monitor.report_end(tool_name, results)
         return results
     except (TimeoutError, asyncio.TimeoutError) as e:
-        monitor.report_end("网络搜索工具", error="internet search timed out after 3 retries")
+        monitor.report_end(
+            tool_name,
+            error="timeout",
+            error_type=type(e).__name__,
+        )
         return "Error: internet search timed out after 3 retries"
+    except (ConnectionError, OSError) as e:
+        monitor.report_end(
+            tool_name,
+            error="service_unavailable",
+            error_type=type(e).__name__,
+        )
+        return f"Error: internet search failed after retries — {e}"
     except Exception as e:
-        monitor.report_end("网络搜索工具", error=str(e))
+        monitor.report_end(
+            tool_name,
+            error="execution_failed",
+            error_type=type(e).__name__,
+        )
         return f"Error: internet search failed after retries — {e}"
 
 

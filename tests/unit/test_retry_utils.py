@@ -91,7 +91,13 @@ class TestRetryDecorator:
         assert result == "recovered"
         assert call_count == 2
         # 1 retry event recorded (attempt 1/3)
-        assert mock_monitor.report_retry.call_count == 1
+        mock_monitor.report_retry.assert_called_once_with(
+            "test_svc",
+            attempt=1,
+            max_retries=3,
+            error="retryable_failure",
+            error_type="TimeoutError",
+        )
 
     @pytest.mark.asyncio
     async def test_max_retries_exhausted(self, _reset_monitor):
@@ -280,7 +286,13 @@ class TestRetryAsyncFunction:
         )
         assert result == "ok"
         assert call_count == 2
-        assert mock_monitor.report_retry.call_count == 1
+        mock_monitor.report_retry.assert_called_once_with(
+            "unknown",
+            attempt=1,
+            max_retries=3,
+            error="retryable_failure",
+            error_type="OSError",
+        )
 
     @pytest.mark.asyncio
     async def test_rejects_pre_created_coroutine(self, _reset_monitor):

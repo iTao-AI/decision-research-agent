@@ -174,8 +174,12 @@ def test_changelog_preserves_published_release_boundary() -> None:
         v0_1_6_heading,
         1,
     )[0]
-    assert unreleased.strip() == ""
     v0_1_6 = changelog.split(v0_1_6_heading, 1)[1].split(v0_1_5_heading, 1)[0]
+    privacy_safe_observation_heading = (
+        "### Privacy-safe observation contract"
+    )
+    assert privacy_safe_observation_heading in unreleased
+    assert privacy_safe_observation_heading not in v0_1_6
     bounded_producer_subsection = """### Bounded live producer evaluation
 
 - Added a deterministic provider-free contract check and a separately

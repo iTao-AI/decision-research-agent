@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
@@ -18,6 +19,10 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from agent.harness_contracts import ReportCandidate
 from api.research_execution_service import ResearchExecutionService
+from scripts.agent_evaluation_context import (
+    compare_context_reliability_outcomes,
+    project_context_reliability_outcome,
+)
 
 
 FIXED_QUERY = "Compare the fixed synthetic context reliability scenario."
@@ -398,3 +403,140 @@ async def test_control_and_forced_lanes_observe_native_summary_only_when_forced(
             content=REPORT_CONTENT,
         )
     )
+
+
+async def _run_persisted_lane(
+    *,
+    db_path: str,
+    thread_id: str,
+    harness,
+    monkeypatch,
+    project_root,
+):
+    import api.server as server
+    from api.run_dispatch_repository import claim_run_dispatch
+    from api.run_repository import create_run, get_run
+    from api.run_result_service import resolve_run_result
+
+    service = ResearchExecutionService(
+        harness=harness,
+        project_root=project_root,
+    )
+
+    async def test_adapter(
+        query: str,
+        persisted_thread_id: str,
+        **kwargs,
+    ):
+        return await service.execute(
+            query,
+            persisted_thread_id,
+            run_id=kwargs["run_id"],
+            segment_id=kwargs["segment_id"],
+            outcome_box=kwargs["outcome_box"],
+            profile_id=kwargs["profile_id"],
+            scope=kwargs["scope"],
+        )
+
+    monkeypatch.setattr(server, "run_deep_agent", test_adapter)
+    created = create_run(
+        db_path=db_path,
+        thread_id=thread_id,
+        query=FIXED_QUERY,
+    )
+    claim = claim_run_dispatch(
+        db_path=db_path,
+        worker_id=WORKER_ID,
+        lease_seconds=30,
+        run_id=created["run_id"],
+    )
+    assert claim is not None
+    stage = server._RunStage()
+    origin = server.TerminationOrigin()
+    checkpoint = server.FinalizationCheckpoint()
+    task = server.create_tracked_task(
+        server._run_dispatched_with_persistence(
+            claim,
+            db_path=db_path,
+            outcome_box=server.OutcomeBox(),
+            stage=stage,
+            termination_origin=origin,
+            finalization_checkpoint=checkpoint,
+        ),
+        f"{claim.run_id}:context-reliability:{claim.attempt_count}",
+        timeout_seconds=30,
+        termination_origin=origin,
+        finalization_checkpoint=checkpoint,
+    )
+    await task
+    persisted = get_run(db_path=db_path, run_id=created["run_id"])
+    assert persisted is not None
+    resolved = resolve_run_result(
+        db_path=db_path,
+        run_id=created["run_id"],
+    )
+    return created, persisted, resolved
+
+
+def _dispatch_status(db_path: str, run_id: str) -> str:
+    connection = sqlite3.connect(db_path)
+    try:
+        row = connection.execute(
+            "SELECT status FROM run_dispatches_v1 WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+    assert row is not None
+    return row[0]
+
+
+@pytest.mark.asyncio
+async def test_paired_persisted_application_outcomes_remain_equivalent(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from tools.tavily_tools import _search_cache
+
+    lane_results = {}
+    lane_recorders = {}
+    for forced in (False, True):
+        lane_name = "forced" if forced else "control"
+        lane_db_path = str(tmp_path / f"{lane_name}.db")
+        harness, recorder, _ = _build_lane_harness(
+            monkeypatch,
+            forced=forced,
+        )
+        created, persisted, resolved = await _run_persisted_lane(
+            db_path=lane_db_path,
+            thread_id=f"thread-{lane_name}",
+            harness=harness,
+            monkeypatch=monkeypatch,
+            project_root=tmp_path / lane_name,
+        )
+        lane_recorders[forced] = recorder
+        assert persisted["state_version"] == 2
+        assert persisted["segments"][0]["status"] == "completed"
+        assert persisted["failure_cause"] is None
+        assert persisted["execution_status"] == "completed"
+        assert persisted["review_status"] == "not_required"
+        assert persisted["delivery_status"] == "ready"
+        assert _dispatch_status(
+            lane_db_path,
+            created["run_id"],
+        ) == "started"
+        assert [item["artifact_id"] for item in persisted["artifacts"]] == [
+            "research-report.md"
+        ]
+        lane_results[forced] = project_context_reliability_outcome(
+            run=persisted,
+            resolution=resolved,
+        )
+        assert created["run_id"] not in _search_cache
+
+    assert lane_recorders[False].summary_calls == 0
+    assert lane_recorders[True].summary_calls == 2
+    assert compare_context_reliability_outcomes(
+        lane_results[False],
+        lane_results[True],
+    ) == []

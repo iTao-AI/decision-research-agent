@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -49,6 +50,7 @@ FORCED_EVENT_ORDER = (
     "coordinator_after_summary_2",
     "write_file",
 )
+_SUMMARY_MARKER_RE = re.compile(r"\[(summary_[1-9][0-9]*)\]")
 
 
 @dataclass
@@ -57,6 +59,7 @@ class ContextCallRecorder:
     researcher_calls: int = 0
     summary_calls: int = 0
     consumed_summary_calls: int = 0
+    consumed_summary_markers: list[str] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
     effective_message_sources: list[list[str | None]] = field(
         default_factory=list
@@ -157,17 +160,32 @@ class ScriptedContextReliabilityModel(BaseChatModel):
                 if isinstance(message, HumanMessage)
             ]
         )
-        receives_summary = any(
-            isinstance(item, HumanMessage)
-            and item.additional_kwargs.get("lc_source") == "summarization"
+        expected_summary_marker = (
+            f"summary_{self.recorder.consumed_summary_calls + 1}"
+        )
+        received_summary_markers = [
+            marker
             for item in messages
+            if (
+                isinstance(item, HumanMessage)
+                and item.additional_kwargs.get("lc_source")
+                == "summarization"
+                and isinstance(item.content, str)
+            )
+            for marker in _SUMMARY_MARKER_RE.findall(item.content)
+        ]
+        receives_expected_summary = (
+            expected_summary_marker in received_summary_markers
         )
         if (
-            receives_summary
+            receives_expected_summary
             and self.recorder.consumed_summary_calls
             < self.recorder.summary_calls
         ):
             self.recorder.consumed_summary_calls += 1
+            self.recorder.consumed_summary_markers.append(
+                expected_summary_marker
+            )
             self.recorder.events.append(
                 "coordinator_after_summary_"
                 f"{self.recorder.consumed_summary_calls}"
@@ -243,10 +261,11 @@ class ScriptedContextReliabilityModel(BaseChatModel):
         del stop, kwargs
         if self._is_summary_call(run_manager):
             self.recorder.summary_calls += 1
-            self.recorder.events.append(
-                f"summary_{self.recorder.summary_calls}"
+            marker = f"summary_{self.recorder.summary_calls}"
+            self.recorder.events.append(marker)
+            message = AIMessage(
+                content=f"Bounded native summary [{marker}]."
             )
-            message = AIMessage(content="Bounded native summary.")
         elif (
             "internet_search" in self.bound_tool_names
             and "task" not in self.bound_tool_names
@@ -255,6 +274,31 @@ class ScriptedContextReliabilityModel(BaseChatModel):
         else:
             message = self._coordinator_response(messages)
         return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+def test_stale_summary_message_cannot_satisfy_next_consumption_boundary() -> None:
+    recorder = ContextCallRecorder(
+        coordinator_calls=1,
+        summary_calls=2,
+        consumed_summary_calls=1,
+    )
+    model = ScriptedContextReliabilityModel(recorder=recorder)
+
+    model._coordinator_response(
+        [
+            HumanMessage(
+                content=(
+                    "Here is a summary of the conversation to date:\n\n"
+                    "Bounded native summary [summary_1]."
+                ),
+                additional_kwargs={"lc_source": "summarization"},
+            )
+        ]
+    )
+
+    assert recorder.consumed_summary_calls == 1
+    assert recorder.consumed_summary_markers == []
+    assert "coordinator_after_summary_2" not in recorder.events
 
 
 def _build_lane_harness(monkeypatch, *, forced: bool):
@@ -332,6 +376,10 @@ async def test_control_and_forced_lanes_observe_native_summary_only_when_forced(
     assert control_recorder.summary_calls == 0
     assert forced_recorder.summary_calls == 2, forced_recorder.events
     assert forced_recorder.consumed_summary_calls == 2
+    assert forced_recorder.consumed_summary_markers == [
+        "summary_1",
+        "summary_2",
+    ]
     expected_task_args = [
         {
             "description": "Run the pre-summary fixed synthetic search.",
@@ -580,6 +628,10 @@ async def test_forced_lane_preserves_nested_evidence_and_clears_exact_search_cac
     ] == list(FORCED_EVENT_ORDER)
     assert recorder.summary_calls == 2
     assert recorder.consumed_summary_calls == 2
+    assert recorder.consumed_summary_markers == [
+        "summary_1",
+        "summary_2",
+    ]
     assert (
         recorder.search_tool_emissions.count(
             POST_SUMMARY_SEARCH_QUERY

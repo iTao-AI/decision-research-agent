@@ -7,18 +7,32 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from agent.research import evidence_fingerprint_for
 from api.run_result_service import ResolvedRunResult, RunResultUnavailable
 
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
-CONTEXT_RELIABILITY_FINDING_CODES = (
-    "context.query_changed",
-    "context.evidence_changed",
-    "context.citation_state_changed",
-    "context.verification_state_changed",
-    "context.artifact_changed",
-    "context.terminal_state_changed",
-    "context.result_resolution_changed",
+_CONTEXT_RELIABILITY_COMPARISONS = (
+    ("query_sha256", "context.query_changed"),
+    ("evidence", "context.evidence_changed"),
+    ("citation_states", "context.citation_state_changed"),
+    ("verification_states", "context.verification_state_changed"),
+    ("artifacts", "context.artifact_changed"),
+    ("terminal", "context.terminal_state_changed"),
+    ("resolver", "context.result_resolution_changed"),
+)
+CONTEXT_RELIABILITY_FINDING_CODES = tuple(
+    code for _, code in _CONTEXT_RELIABILITY_COMPARISONS
+)
+_RUN_RESULT_ERROR_PAIRS = frozenset(
+    {
+        (404, "run_not_found"),
+        (409, "run_not_terminal"),
+        (409, "run_failed"),
+        (409, "run_review_required"),
+        (409, "run_delivery_blocked"),
+        (409, "run_result_unavailable"),
+    }
 )
 
 
@@ -70,7 +84,13 @@ def _project_evidence(
     projected = []
     seen: set[str] = set()
     for row in rows:
+        if _text(row.get("run_id")) != run_id:
+            _fail()
         fingerprint = _hash64(row.get("evidence_fingerprint"))
+        source_identity = _text(row.get("source_identity"))
+        snippet = _text(row.get("snippet"))
+        if fingerprint != evidence_fingerprint_for(source_identity, snippet):
+            _fail()
         if fingerprint in seen:
             _fail()
         seen.add(fingerprint)
@@ -79,10 +99,8 @@ def _project_evidence(
         projected.append(
             {
                 "evidence_fingerprint": fingerprint,
-                "source_identity_sha256": _hash_value(
-                    row.get("source_identity")
-                ),
-                "snippet_sha256": _hash_value(row.get("snippet")),
+                "source_identity_sha256": _sha256(source_identity),
+                "snippet_sha256": _sha256(snippet),
                 "query_text_sha256": _hash_value(row.get("query_text")),
                 "subagent_name": _text(row.get("subagent_name")),
                 "tool_name": _text(row.get("tool_name")),
@@ -135,29 +153,39 @@ def _project_resolver(
     resolution: ResolvedRunResult | RunResultUnavailable,
     *,
     run_id: str,
+    terminal: Mapping[str, str],
+    artifacts: list[dict[str, str]],
 ) -> dict[str, Any]:
     if type(resolution) is ResolvedRunResult:
-        if resolution.run_id != run_id:
+        if (
+            resolution.run_id != run_id
+            or resolution.execution_status != terminal["execution_status"]
+            or resolution.delivery_status != terminal["delivery_status"]
+        ):
             _fail()
         artifact = resolution.artifact
         if not isinstance(artifact, Mapping):
+            _fail()
+        selected_artifact = {
+            "artifact_id": _text(artifact.get("artifact_id")),
+            "kind": _text(artifact.get("kind")),
+            "media_type": _text(artifact.get("media_type")),
+            "content_hash": _hash64(artifact.get("content_hash")),
+        }
+        if selected_artifact not in artifacts:
             _fail()
         return {
             "kind": "success",
             "execution_status": _text(resolution.execution_status),
             "delivery_status": _text(resolution.delivery_status),
-            "artifact_id": _text(artifact.get("artifact_id")),
-            "artifact_kind": _text(artifact.get("kind")),
-            "artifact_media_type": _text(artifact.get("media_type")),
-            "artifact_content_hash": _hash64(
-                artifact.get("content_hash")
-            ),
+            "artifact_id": selected_artifact["artifact_id"],
+            "artifact_kind": selected_artifact["kind"],
+            "artifact_media_type": selected_artifact["media_type"],
+            "artifact_content_hash": selected_artifact["content_hash"],
         }
     if type(resolution) is RunResultUnavailable:
-        if (
-            type(resolution.status_code) is not int
-            or type(resolution.code) is not str
-            or not resolution.code
+        if (resolution.status_code, resolution.code) not in (
+            _RUN_RESULT_ERROR_PAIRS
         ):
             _fail()
         return {
@@ -181,6 +209,12 @@ def project_context_reliability_outcome(
     run_id = _text(run.get("run_id"))
     query_sha256 = _hash_value(run.get("query"))
     evidence = _rows(run.get("evidence"))
+    artifacts = _project_artifacts(_rows(run.get("artifacts")))
+    terminal = {
+        "execution_status": _text(run.get("execution_status")),
+        "review_status": _text(run.get("review_status")),
+        "delivery_status": _text(run.get("delivery_status")),
+    }
     projection = {
         "query_sha256": query_sha256,
         "evidence": _project_evidence(run_id, evidence),
@@ -189,13 +223,14 @@ def project_context_reliability_outcome(
             evidence,
             "verification_status",
         ),
-        "artifacts": _project_artifacts(_rows(run.get("artifacts"))),
-        "terminal": {
-            "execution_status": _text(run.get("execution_status")),
-            "review_status": _text(run.get("review_status")),
-            "delivery_status": _text(run.get("delivery_status")),
-        },
-        "resolver": _project_resolver(resolution, run_id=run_id),
+        "artifacts": artifacts,
+        "terminal": terminal,
+        "resolver": _project_resolver(
+            resolution,
+            run_id=run_id,
+            terminal=terminal,
+            artifacts=artifacts,
+        ),
     }
     if any(
         row["query_text_sha256"] != query_sha256
@@ -213,20 +248,13 @@ def compare_context_reliability_outcomes(
 
     if not isinstance(control, Mapping) or not isinstance(forced, Mapping):
         _fail()
-    comparisons = (
-        ("query_sha256", "context.query_changed"),
-        ("evidence", "context.evidence_changed"),
-        ("citation_states", "context.citation_state_changed"),
-        ("verification_states", "context.verification_state_changed"),
-        ("artifacts", "context.artifact_changed"),
-        ("terminal", "context.terminal_state_changed"),
-        ("resolver", "context.result_resolution_changed"),
-    )
-    expected_fields = {item[0] for item in comparisons}
+    expected_fields = {
+        field for field, _ in _CONTEXT_RELIABILITY_COMPARISONS
+    }
     if set(control) != expected_fields or set(forced) != expected_fields:
         _fail()
     return [
         code
-        for field, code in comparisons
+        for field, code in _CONTEXT_RELIABILITY_COMPARISONS
         if control[field] != forced[field]
     ]

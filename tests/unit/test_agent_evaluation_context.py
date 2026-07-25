@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 
@@ -14,7 +15,9 @@ from scripts.agent_evaluation_context import (
 
 
 RUN_ID = "run_control"
-FINGERPRINT = "a" * 64
+FINGERPRINT = (
+    "40f93b0c021425040f401a69108df754d0f6f39e4ecc3a7b46dd3d29fa51bb40"
+)
 
 
 def _persisted_run(run_id: str = RUN_ID) -> dict:
@@ -218,6 +221,32 @@ def test_projection_rejects_mismatched_resolver_run_id() -> None:
         )
 
 
+def test_projection_rejects_foreign_evidence_row_run_id() -> None:
+    run = _persisted_run()
+    run["evidence"][0]["run_id"] = "run_foreign"
+
+    with pytest.raises(ContextProjectionError, match="context.projection_invalid"):
+        project_context_reliability_outcome(
+            run=run,
+            resolution=_resolved(),
+        )
+
+
+def test_projection_rejects_semantic_evidence_fingerprint_mismatch() -> None:
+    run = _persisted_run()
+    forged_fingerprint = "c" * 64
+    run["evidence"][0]["evidence_fingerprint"] = forged_fingerprint
+    run["evidence"][0]["evidence_id"] = (
+        f"ev_{RUN_ID}_{forged_fingerprint}"
+    )
+
+    with pytest.raises(ContextProjectionError, match="context.projection_invalid"):
+        project_context_reliability_outcome(
+            run=run,
+            resolution=_resolved(),
+        )
+
+
 def test_projection_rejects_raw_mapping_as_resolution() -> None:
     with pytest.raises(ContextProjectionError, match="context.projection_invalid"):
         project_context_reliability_outcome(
@@ -227,6 +256,48 @@ def test_projection_rejects_raw_mapping_as_resolution() -> None:
                 "execution_status": "completed",
                 "delivery_status": "ready",
             },
+        )
+
+
+def test_projection_rejects_success_resolver_terminal_mismatch() -> None:
+    resolution = replace(_resolved(), execution_status="failed")
+
+    with pytest.raises(ContextProjectionError, match="context.projection_invalid"):
+        project_context_reliability_outcome(
+            run=_persisted_run(),
+            resolution=resolution,
+        )
+
+
+def test_projection_rejects_success_resolver_artifact_mismatch() -> None:
+    resolution = replace(
+        _resolved(),
+        artifact={
+            **_resolved().artifact,
+            "content_hash": "c" * 64,
+        },
+    )
+
+    with pytest.raises(ContextProjectionError, match="context.projection_invalid"):
+        project_context_reliability_outcome(
+            run=_persisted_run(),
+            resolution=resolution,
+        )
+
+
+def test_projection_rejects_unstable_resolver_error_code() -> None:
+    unsafe_code = "/" + "Users/private/token"
+    error = RunResultUnavailable(
+        status_code=409,
+        code=unsafe_code,
+        problem="private diagnostic",
+        fix="private recovery",
+    )
+
+    with pytest.raises(ContextProjectionError, match="context.projection_invalid"):
+        project_context_reliability_outcome(
+            run=_persisted_run(),
+            resolution=error,
         )
 
 
@@ -320,11 +391,19 @@ def test_comparison_uses_stable_finding_order() -> None:
     )
     forced = deepcopy(control)
     forced["query_sha256"] = "c" * 64
+    forced["evidence"][0]["evidence_fingerprint"] = "c" * 64
+    forced["citation_states"][0]["citation_status"] = "uncited"
+    forced["verification_states"][0]["verification_status"] = "verified"
+    forced["artifacts"][0]["content_hash"] = "c" * 64
     forced["terminal"]["delivery_status"] = "blocked"
     forced["resolver"]["artifact_content_hash"] = "d" * 64
 
     assert compare_context_reliability_outcomes(control, forced) == [
         "context.query_changed",
+        "context.evidence_changed",
+        "context.citation_state_changed",
+        "context.verification_state_changed",
+        "context.artifact_changed",
         "context.terminal_state_changed",
         "context.result_resolution_changed",
     ]

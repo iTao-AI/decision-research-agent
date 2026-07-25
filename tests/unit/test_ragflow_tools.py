@@ -4,7 +4,7 @@ import os
 import time
 import pytest
 import sys
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch, AsyncMock, call
 
 
 @pytest.fixture(autouse=True)
@@ -80,6 +80,19 @@ class TestRAGFlowTools:
             mock_chat.delete_sessions.assert_called_once_with(ids=["session_123"])
             assert "Test answer" in result
 
+            from tools import ragflow_tools
+
+            assert ragflow_tools.monitor.report_tool.call_args_list == [
+                call("ragflow_question", {
+                    "助手名称": "TestBot",
+                    "查询问题": "Hello",
+                })
+            ]
+            ragflow_tools.monitor.report_end.assert_called_once_with(
+                "ragflow_question",
+                "Test answer",
+            )
+
     def test_create_ask_delete_session_cleanup_on_exception(self):
         """异常流程也应删除 session"""
         mock_rag = MagicMock()
@@ -136,7 +149,6 @@ class TestRAGFlowTimeoutAndRetry:
             from tools.ragflow_tools import get_assistant_list
             result = get_assistant_list.invoke({"dummy_arg": ""})
             assert "unavailable after retries" in result
-
     def test_ask_timeout_raises_without_retry(self):
         """提问 helper 超时后应抛出 TimeoutError（不返回错误字符串）"""
         from tools import ragflow_tools
@@ -278,3 +290,32 @@ class TestRealBlockingTimeout:
 
         # Should return within ~0.2s timeout, NOT wait for 10s sleep
         assert elapsed < 2.0, f"Waited {elapsed:.1f}s instead of returning within timeout"
+
+
+def test_only_observed_tool_aliases_and_no_duplicate_answer_event():
+    mock_rag = MagicMock()
+    mock_chat = MagicMock()
+    mock_chat.name = "TestBot"
+    mock_chat.description = "desc"
+    mock_chat.datasets = []
+    mock_session = MagicMock()
+    mock_session.id = "session_alias"
+    mock_session.ask.return_value = [MagicMock(content="OBS_MARKER answer")]
+    mock_chat.create_session.return_value = mock_session
+    mock_rag.list_chats.return_value = [mock_chat]
+
+    with patch("tools.ragflow_tools.RAGFlow", return_value=mock_rag):
+        from tools import ragflow_tools
+
+        assert "TestBot" in ragflow_tools.get_assistant_list.invoke(
+            {"dummy_arg": ""}
+        )
+        assert ragflow_tools.create_ask_delete.invoke(
+            {"assistant_name": "TestBot", "question": "OBS_MARKER question"}
+        ) == "OBS_MARKER answer"
+
+        aliases = [
+            observed.args[0]
+            for observed in ragflow_tools.monitor.report_tool.call_args_list
+        ]
+        assert aliases == ["ragflow_assistant_list", "ragflow_question"]

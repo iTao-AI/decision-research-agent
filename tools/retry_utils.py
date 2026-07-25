@@ -44,7 +44,7 @@ def retry_async(
         backoff_factor: Multiplier for exponential backoff (default 2).
         max_wait: Maximum seconds to wait between retries (default 30).
         retryable_exceptions: Tuple of exception types that should trigger retry.
-        service_name: Human-readable service name for monitor logging.
+        service_name: Registered stable observation alias.
         **kwargs: Keyword arguments passed to coro_factory.
 
     Returns:
@@ -77,7 +77,12 @@ def retry_async(
                 service_name,
                 attempt=attempt + 1,
                 max_retries=max_retries,
-                error=str(last_exception) if last_exception else "",
+                error="retryable_failure",
+                error_type=(
+                    type(last_exception).__name__
+                    if last_exception is not None
+                    else None
+                ),
             )
             await asyncio.sleep(wait_time)
 
@@ -112,7 +117,7 @@ def retry(
         backoff_factor: Multiplier for exponential backoff (default 2).
         max_wait: Maximum seconds to wait between retries (default 30).
         retryable_exceptions: Tuple of exception types that should trigger retry.
-        service_name: Human-readable service name for monitor logging.
+        service_name: Registered stable observation alias.
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)

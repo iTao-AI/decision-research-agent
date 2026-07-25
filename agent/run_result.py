@@ -344,7 +344,7 @@ def process_stream_chunk(
                     args = _tool_value(tool, "args", {}) or {}
                     accumulator.assistant_calls += 1
                     monitor.report_assistant(
-                        args.get("subagent_type", "Agent"),
+                        "task_subagent",
                         {"desc": args.get("description")},
                     )
             elif last_msg.content:

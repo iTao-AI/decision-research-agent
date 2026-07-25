@@ -1,5 +1,6 @@
 """Phase 7b: RAGFlow 工具重构测试 — 超时、重试和 session 清理"""
 import asyncio
+import importlib
 import os
 import time
 import pytest
@@ -50,9 +51,33 @@ class TestRAGFlowTools:
         """配置缺失应返回错误字符串"""
         os.environ.pop("RAGFLOW_API_KEY", None)
 
-        from tools.ragflow_tools import get_assistant_list
-        result = get_assistant_list.invoke({"dummy_arg": ""})
+        ragflow_tools = importlib.import_module("tools.ragflow_tools")
+
+        result = ragflow_tools.get_assistant_list.invoke({"dummy_arg": ""})
         assert "错误" in result
+        ragflow_tools.monitor.report_end.assert_called_once_with(
+            "ragflow_assistant_list",
+            error="configuration_missing",
+        )
+
+    def test_create_ask_delete_reports_resource_not_found(self):
+        ragflow_tools = importlib.import_module("tools.ragflow_tools")
+
+        with patch.object(
+            ragflow_tools,
+            "_retry_with_timeout",
+            return_value=None,
+        ):
+            result = ragflow_tools.create_ask_delete.invoke({
+                "assistant_name": "missing",
+                "question": "question",
+            })
+
+        assert result == "没有找到name:missing的聊天助手！"
+        ragflow_tools.monitor.report_end.assert_called_once_with(
+            "ragflow_question",
+            error="resource_not_found",
+        )
 
     def test_create_ask_delete_session_cleanup_on_success(self):
         """正常流程应删除 session"""
@@ -319,3 +344,55 @@ def test_only_observed_tool_aliases_and_no_duplicate_answer_event():
             for observed in ragflow_tools.monitor.report_tool.call_args_list
         ]
         assert aliases == ["ragflow_assistant_list", "ragflow_question"]
+
+
+@pytest.mark.parametrize(
+    ("raised", "expected_code", "expected_type", "return_fragment"),
+    [
+        (
+            TimeoutError("same message"),
+            "timeout",
+            "TimeoutError",
+            "timed out",
+        ),
+        (
+            ConnectionError("same message"),
+            "service_unavailable",
+            "ConnectionError",
+            "unavailable",
+        ),
+        (
+            OSError("same message"),
+            "service_unavailable",
+            "OSError",
+            "unavailable",
+        ),
+        (
+            ValueError("same message"),
+            "execution_failed",
+            "ValueError",
+            "获取助手列表失败",
+        ),
+    ],
+)
+def test_observation_reporter_error_mappings_are_exact(
+    raised,
+    expected_code,
+    expected_type,
+    return_fragment,
+):
+    ragflow_tools = importlib.import_module("tools.ragflow_tools")
+
+    with patch.object(
+        ragflow_tools,
+        "_retry_with_timeout",
+        side_effect=raised,
+    ):
+        result = ragflow_tools.get_assistant_list.invoke({"dummy_arg": ""})
+
+    assert return_fragment in result
+    ragflow_tools.monitor.report_end.assert_called_once_with(
+        "ragflow_assistant_list",
+        error=expected_code,
+        error_type=expected_type,
+    )

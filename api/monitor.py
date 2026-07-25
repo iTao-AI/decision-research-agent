@@ -225,14 +225,18 @@ class ToolMonitor:
             segment_id,
             get_segment_context,
         )
-        payload = projector.monitor_event(
-            event_type=event_type,
-            data=data,
-            thread_id=target_thread_id,
-            run_id=target_run_id,
-            segment_id=target_segment_id,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        )
+        try:
+            payload = projector.monitor_event(
+                event_type=event_type,
+                data=data,
+                thread_id=target_thread_id,
+                run_id=target_run_id,
+                segment_id=target_segment_id,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        except Exception:
+            _safe_console("Observation projection rejected")
+            return
         if payload is None:
             _safe_console("Observation projection rejected")
             return

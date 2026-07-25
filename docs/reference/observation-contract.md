@@ -3,10 +3,11 @@
 This reference defines the implemented, provider-free contract for every
 in-scope project-owned observation sink: the run WebSocket, the existing
 LangGraph `stream_writer`, console output, and retained in-process
-telemetry/API. The application projects untrusted inputs once, then sends
-independent fixed-depth built-in copies to each sink. No sink receives the
-canonical projected object or shares mutable `data` identity with another
-sink.
+telemetry/API. Each logical monitor event is projected once; the WebSocket and
+`stream_writer` receive independent fixed-depth built-in copies and share no
+mutable envelope or `data` identity. Console receives only the fixed projected
+message. Retained telemetry is separately projected through
+`telemetry_fields` and reconstructed as a closed `TelemetryRecord`.
 
 Observation is diagnostic only. `ResearchRun`, Evidence, canonical results,
 artifacts, review, and delivery remain application-owned authority. Framework

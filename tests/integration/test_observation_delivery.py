@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import threading
 import uuid
+from unittest.mock import patch
 import warnings
 
 from langchain_core.messages import AIMessage
@@ -446,28 +447,103 @@ async def test_manager_loop_scheduling_failure_closes_protected_coroutine(
 async def test_observation_failures_do_not_change_exact_returns_or_canonical_result(
     monkeypatch,
     tmp_path,
+    capsys,
 ):
     import api.monitor as monitor_module
+    from agent.telemetry import collector
     from agent.run_result import AgentRunAccumulator, process_stream_chunk
+    from api.context import (
+        reset_execution_context,
+        set_run_context,
+        set_segment_context,
+        set_thread_context,
+    )
 
     monitor = monitor_module.monitor
     await _settle_monitor_pending(monitor)
     monkeypatch.setattr(monitor, "websocket_manager", None)
-    for value in ("text", {"key": "value"}, b"raw-bytes"):
-        original = value.copy() if type(value) is dict else value
-        monitor.report_end("tavily_search", result=value)
-        assert value == original
+    thread_token = set_thread_context("thread-result")
+    run_token = set_run_context("run-result")
+    segment_token = set_segment_context("run-result-seg-000")
+    try:
+        monitor.report_start("tavily_search", {"query": "safe"})
+        with patch.object(
+            monitor_module.projector,
+            "monitor_event",
+            side_effect=RuntimeError("OBS_MARKER projector"),
+        ):
+            for value in ("text", {"key": "value"}, b"raw-bytes"):
+                original = value.copy() if type(value) is dict else value
+                monitor.report_end("tavily_search", result=value)
+                assert value == original
 
-    accumulator = AgentRunAccumulator(
-        thread_id="thread-result",
-        query="query",
-        session_dir=Path(tmp_path),
-    )
-    process_stream_chunk(
-        {"agent": {"messages": [AIMessage(content="canonical result")]}},
-        accumulator,
-        monitor,
-    )
-    outcome = accumulator.to_outcome()
-    assert outcome.last_agent_text == "canonical result"
-    assert outcome.evidence_entries == []
+            accumulator = AgentRunAccumulator(
+                thread_id="thread-result",
+                query="query",
+                session_dir=Path(tmp_path),
+            )
+            process_stream_chunk(
+                {
+                    "agent": {
+                        "messages": [
+                            AIMessage(content="canonical result")
+                        ]
+                    }
+                },
+                accumulator,
+                monitor,
+            )
+
+        assert ("run-result", "tavily_search") not in monitor._start_times
+        records = collector.get_by_run("run-result")
+        assert len(records) == 3
+        assert all(record.status == "success" for record in records)
+        outcome = accumulator.to_outcome()
+        assert outcome.last_agent_text == "canonical result"
+        assert outcome.evidence_entries == []
+
+        with patch.object(
+            monitor_module.collector,
+            "record",
+            side_effect=RuntimeError("OBS_MARKER collector"),
+        ):
+            monitor.report_end("tavily_search", result="collector-safe")
+
+        class FailingRuntime:
+            def stream_writer(self, _payload):
+                raise RuntimeError("OBS_MARKER stream")
+
+        monkeypatch.setattr(
+            builtins,
+            "runtime",
+            FailingRuntime(),
+            raising=False,
+        )
+        monitor.report_end("tavily_search", result="stream-safe")
+
+        class FailingManager:
+            def get_loop(self):
+                return asyncio.get_running_loop()
+
+            async def send_to_run(self, _payload, _run_id):
+                raise RuntimeError("OBS_MARKER websocket")
+
+        monkeypatch.setattr(monitor, "websocket_manager", FailingManager())
+        monitor.report_end("tavily_search", result="websocket-safe")
+        await _settle_monitor_pending(monitor)
+
+        monkeypatch.setattr(
+            builtins,
+            "print",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("OBS_MARKER console")
+            ),
+        )
+        monitor.report_end("tavily_search", result="console-safe")
+    finally:
+        reset_execution_context(run_token, thread_token, segment_token)
+        collector.clear_run("run-result")
+        await _settle_monitor_pending(monitor)
+
+    output = capsys.readouterr()
+    assert "OBS_MARKER" not in output.out + output.err

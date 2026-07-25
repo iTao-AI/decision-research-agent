@@ -3,13 +3,22 @@ from datetime import datetime, timezone
 from threading import RLock
 from typing import TYPE_CHECKING
 
+from api.observation_contract import projector
+
 if TYPE_CHECKING:
     from agent.token_tracking import TokenUsageData
 
 
-@dataclass
+def _safe_rejection_diagnostic() -> None:
+    try:
+        print("[Telemetry] Record rejected")
+    except Exception:
+        pass
+
+
+@dataclass(frozen=True)
 class TelemetryRecord:
-    thread_id: str
+    thread_id: str | None
     agent_name: str
     tool_name: str
     duration_ms: float
@@ -17,8 +26,27 @@ class TelemetryRecord:
     run_id: str | None = None
     segment_id: str | None = None
     error: str | None = None
+    error_type: str | None = None
     token_usage: "TokenUsageData | None" = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    schema: str = field(init=False, default="dra.telemetry-record.v1")
+
+    def __post_init__(self) -> None:
+        safe = projector.telemetry_fields(
+            thread_id=self.thread_id,
+            run_id=self.run_id,
+            segment_id=self.segment_id,
+            agent_name=self.agent_name,
+            tool_name=self.tool_name,
+            duration_ms=self.duration_ms,
+            status=self.status,
+            error=self.error,
+            error_type=self.error_type,
+            timestamp=self.timestamp,
+            token_usage=self.token_usage,
+        )
+        for name, value in safe.items():
+            object.__setattr__(self, name, value)
 
 
 class TelemetryCollector:
@@ -27,11 +55,33 @@ class TelemetryCollector:
         self._lock = RLock()
 
     def record(self, record: TelemetryRecord) -> None:
-        execution_id = record.run_id or record.thread_id
+        if type(record) is not TelemetryRecord:
+            return
+        safe_record = TelemetryRecord(
+            thread_id=record.thread_id,
+            run_id=record.run_id,
+            segment_id=record.segment_id,
+            agent_name=record.agent_name,
+            tool_name=record.tool_name,
+            duration_ms=record.duration_ms,
+            status=record.status,
+            error=record.error,
+            error_type=record.error_type,
+            token_usage=record.token_usage,
+            timestamp=record.timestamp,
+        )
+        execution_id = (
+            safe_record.run_id
+            if safe_record.run_id is not None
+            else safe_record.thread_id
+        )
+        if execution_id is None:
+            _safe_rejection_diagnostic()
+            return
         with self._lock:
             if execution_id not in self._records:
                 self._records[execution_id] = []
-            self._records[execution_id].append(record)
+            self._records[execution_id].append(safe_record)
 
             if len(self._records[execution_id]) > 500:
                 self._records[execution_id].pop(0)

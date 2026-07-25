@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import subprocess
@@ -83,9 +84,11 @@ def test_telemetry_api_isolates_two_runs_in_same_thread():
             run_id="run-a",
             segment_id="run-a-seg-000",
             agent_name="main",
-            tool_name="search-a",
-            duration_ms=1,
-            status="success",
+            tool_name="tavily_search",
+            duration_ms=1.0,
+            status="error",
+            error="raw OBS_MARKER",
+            error_type="RuntimeError",
         )
     )
     collector.record(
@@ -94,8 +97,8 @@ def test_telemetry_api_isolates_two_runs_in_same_thread():
             run_id="run-b",
             segment_id="run-b-seg-000",
             agent_name="main",
-            tool_name="search-b",
-            duration_ms=2,
+            tool_name="tavily_search",
+            duration_ms=2.0,
             status="success",
         )
     )
@@ -104,13 +107,111 @@ def test_telemetry_api_isolates_two_runs_in_same_thread():
     run_a = client.get("/api/telemetry/runs/run-a", headers=AUTH_HEADERS)
     run_b = client.get("/api/telemetry/runs/run-b", headers=AUTH_HEADERS)
 
-    assert [item["tool_name"] for item in run_a.json()] == ["search-a"]
-    assert [item["tool_name"] for item in run_b.json()] == ["search-b"]
+    assert run_a.json()[0] == {
+        "schema": "dra.telemetry-record.v1",
+        "thread_id": "shared-thread",
+        "run_id": "run-a",
+        "segment_id": "run-a-seg-000",
+        "agent_name": "main",
+        "tool_name": "tavily_search",
+        "duration_ms": 1.0,
+        "status": "error",
+        "error": "execution_failed",
+        "error_type": "RuntimeError",
+        "timestamp": run_a.json()[0]["timestamp"],
+    }
+    assert [item["tool_name"] for item in run_b.json()] == ["tavily_search"]
     assert run_a.json()[0]["thread_id"] == run_b.json()[0]["thread_id"]
     assert run_a.json()[0]["run_id"] != run_b.json()[0]["run_id"]
+    assert "OBS_MARKER" not in run_a.text
 
     collector.clear_run("run-a")
     collector.clear_run("run-b")
+
+
+def test_telemetry_api_serializes_success_error_and_invalid_timestamp_sentinel():
+    from agent.telemetry import TelemetryRecord, collector
+
+    os.environ["API_SECRET"] = "test-integration-key"
+    records = [
+        TelemetryRecord(
+            thread_id="shared-thread",
+            run_id="run-contract",
+            segment_id="run-contract-seg-000",
+            agent_name="main",
+            tool_name="tavily_search",
+            duration_ms=1.0,
+            status="success",
+            timestamp=datetime(2026, 7, 26, tzinfo=timezone.utc),
+        ),
+        TelemetryRecord(
+            thread_id="shared-thread",
+            run_id="run-contract",
+            segment_id="run-contract-seg-001",
+            agent_name="main",
+            tool_name="mysql_query",
+            duration_ms=2.0,
+            status="error",
+            error="timeout",
+            error_type="TimeoutError",
+            timestamp=datetime(2026, 7, 26, 0, 0, 1, tzinfo=timezone.utc),
+        ),
+        TelemetryRecord(
+            thread_id="shared-thread",
+            run_id="run-contract",
+            segment_id="run-contract-seg-002",
+            agent_name="main",
+            tool_name="tavily_search",
+            duration_ms=3.0,
+            status="error",
+            error=None,
+            error_type="RuntimeError",
+            timestamp=object(),
+        ),
+    ]
+    for record in records:
+        collector.record(record)
+
+    try:
+        response = TestClient(app).get(
+            "/api/telemetry/runs/run-contract",
+            headers=AUTH_HEADERS,
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        expected_keys = {
+            "schema",
+            "thread_id",
+            "run_id",
+            "segment_id",
+            "agent_name",
+            "tool_name",
+            "duration_ms",
+            "status",
+            "error",
+            "error_type",
+            "timestamp",
+        }
+        assert len(payload) == 3
+        assert all(set(item) == expected_keys for item in payload)
+        assert (payload[0]["status"], payload[0]["error"], payload[0]["error_type"]) == (
+            "success",
+            None,
+            None,
+        )
+        assert (payload[1]["status"], payload[1]["error"], payload[1]["error_type"]) == (
+            "error",
+            "timeout",
+            "TimeoutError",
+        )
+        assert (payload[2]["status"], payload[2]["error"], payload[2]["error_type"]) == (
+            "error",
+            "execution_failed",
+            None,
+        )
+        assert payload[2]["timestamp"] == "1970-01-01T00:00:00+00:00"
+    finally:
+        collector.clear_run("run-contract")
 
 
 def test_token_usage_api_isolates_two_runs_in_same_thread():

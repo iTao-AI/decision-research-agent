@@ -191,6 +191,9 @@ def test_projection_fails_closed_without_raw_details(mutate) -> None:
 
 
 def test_projects_resolver_error_without_problem_or_fix() -> None:
+    run = _persisted_run()
+    run["execution_status"] = "pending"
+    run["delivery_status"] = "pending"
     error = RunResultUnavailable(
         status_code=409,
         code="run_not_terminal",
@@ -199,7 +202,7 @@ def test_projects_resolver_error_without_problem_or_fix() -> None:
     )
 
     projection = project_context_reliability_outcome(
-        run=_persisted_run(),
+        run=run,
         resolution=error,
     )
 
@@ -211,6 +214,173 @@ def test_projects_resolver_error_without_problem_or_fix() -> None:
     }
     assert "private diagnostic" not in repr(projection)
     assert "private recovery" not in repr(projection)
+
+
+@pytest.mark.parametrize(
+    ("code", "execution_status", "delivery_status"),
+    [
+        pytest.param(
+            "run_not_terminal",
+            "pending",
+            "pending",
+            id="pending",
+        ),
+        pytest.param(
+            "run_not_terminal",
+            "running",
+            "pending",
+            id="running",
+        ),
+        pytest.param(
+            "run_failed",
+            "failed",
+            "failed",
+            id="failed",
+        ),
+        pytest.param(
+            "run_review_required",
+            "completed",
+            "review_required",
+            id="review-required",
+        ),
+        pytest.param(
+            "run_delivery_blocked",
+            "completed",
+            "blocked",
+            id="delivery-blocked",
+        ),
+        pytest.param(
+            "run_result_unavailable",
+            "completed",
+            "pending",
+            id="delivery-pending",
+        ),
+        pytest.param(
+            "run_result_unavailable",
+            "completed",
+            "ready",
+            id="ready-artifact-validation-failed",
+        ),
+    ],
+)
+def test_projects_production_coherent_resolver_errors(
+    code: str,
+    execution_status: str,
+    delivery_status: str,
+) -> None:
+    run = _persisted_run()
+    run["execution_status"] = execution_status
+    run["delivery_status"] = delivery_status
+    error = RunResultUnavailable(
+        status_code=409,
+        code=code,
+        problem="private diagnostic",
+        fix="private recovery",
+    )
+
+    projection = project_context_reliability_outcome(
+        run=run,
+        resolution=error,
+    )
+
+    assert projection["resolver"]["code"] == code
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param("execution_status", "unknown", id="execution-status"),
+        pytest.param("review_status", "unknown", id="review-status"),
+        pytest.param("delivery_status", "unknown", id="delivery-status"),
+    ],
+)
+def test_projection_rejects_unknown_persisted_terminal_status(
+    field: str,
+    value: str,
+) -> None:
+    run = _persisted_run()
+    run[field] = value
+    error = RunResultUnavailable(
+        status_code=409,
+        code="run_result_unavailable",
+        problem="private diagnostic",
+        fix="private recovery",
+    )
+
+    with pytest.raises(ContextProjectionError, match="context.projection_invalid"):
+        project_context_reliability_outcome(run=run, resolution=error)
+
+
+@pytest.mark.parametrize(
+    (
+        "status_code",
+        "code",
+        "execution_status",
+        "delivery_status",
+    ),
+    [
+        pytest.param(
+            404,
+            "run_not_found",
+            "pending",
+            "pending",
+            id="supplied-run-cannot-be-not-found",
+        ),
+        pytest.param(
+            409,
+            "run_not_terminal",
+            "completed",
+            "ready",
+            id="completed-run-cannot-be-not-terminal",
+        ),
+        pytest.param(
+            409,
+            "run_failed",
+            "completed",
+            "ready",
+            id="completed-run-cannot-be-failed",
+        ),
+        pytest.param(
+            409,
+            "run_review_required",
+            "pending",
+            "review_required",
+            id="non-terminal-branch-precedes-review",
+        ),
+        pytest.param(
+            409,
+            "run_delivery_blocked",
+            "failed",
+            "blocked",
+            id="failed-branch-precedes-delivery",
+        ),
+        pytest.param(
+            409,
+            "run_result_unavailable",
+            "completed",
+            "review_required",
+            id="review-branch-precedes-unavailable",
+        ),
+    ],
+)
+def test_projection_rejects_resolver_error_incompatible_with_persisted_state(
+    status_code: int,
+    code: str,
+    execution_status: str,
+    delivery_status: str,
+) -> None:
+    run = _persisted_run()
+    run["execution_status"] = execution_status
+    run["delivery_status"] = delivery_status
+    error = RunResultUnavailable(
+        status_code=status_code,
+        code=code,
+        problem="private diagnostic",
+        fix="private recovery",
+    )
+
+    with pytest.raises(ContextProjectionError, match="context.projection_invalid"):
+        project_context_reliability_outcome(run=run, resolution=error)
 
 
 def test_projection_rejects_mismatched_resolver_run_id() -> None:

@@ -8,6 +8,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent.research import evidence_fingerprint_for
+from api.run_repository import (
+    DELIVERY_STATUSES,
+    EXECUTION_STATUSES,
+    REVIEW_STATUSES,
+)
 from api.run_result_service import ResolvedRunResult, RunResultUnavailable
 
 
@@ -149,6 +154,20 @@ def _project_artifacts(
     return sorted(projected, key=lambda item: item["artifact_id"])
 
 
+def _expected_resolver_error_code(terminal: Mapping[str, str]) -> str:
+    execution_status = terminal["execution_status"]
+    delivery_status = terminal["delivery_status"]
+    if execution_status in {"pending", "running"}:
+        return "run_not_terminal"
+    if execution_status == "failed":
+        return "run_failed"
+    if delivery_status == "review_required":
+        return "run_review_required"
+    if delivery_status == "blocked":
+        return "run_delivery_blocked"
+    return "run_result_unavailable"
+
+
 def _project_resolver(
     resolution: ResolvedRunResult | RunResultUnavailable,
     *,
@@ -188,6 +207,8 @@ def _project_resolver(
             _RUN_RESULT_ERROR_PAIRS
         ):
             _fail()
+        if resolution.code != _expected_resolver_error_code(terminal):
+            _fail()
         return {
             "kind": "error",
             "status_code": resolution.status_code,
@@ -215,6 +236,12 @@ def project_context_reliability_outcome(
         "review_status": _text(run.get("review_status")),
         "delivery_status": _text(run.get("delivery_status")),
     }
+    if (
+        terminal["execution_status"] not in EXECUTION_STATUSES
+        or terminal["review_status"] not in REVIEW_STATUSES
+        or terminal["delivery_status"] not in DELIVERY_STATUSES
+    ):
+        _fail()
     projection = {
         "query_sha256": query_sha256,
         "evidence": _project_evidence(run_id, evidence),

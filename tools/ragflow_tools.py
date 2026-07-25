@@ -24,6 +24,8 @@ from api.monitor import monitor
 from tools.retry_utils import TIMEOUTS
 
 logger = logging.getLogger(__name__)
+RAGFLOW_ASSISTANT_LIST = "ragflow_assistant_list"
+RAGFLOW_QUESTION = "ragflow_question"
 
 
 def _load_ragflow_env() -> Tuple[Optional[str], Optional[str]]:
@@ -88,11 +90,14 @@ def _retry_with_timeout(func, max_retries: int = 3, service_name: str = "ragflow
 @tool
 def get_assistant_list(dummy_arg: str = "") -> str:
     """Get info for all RAGFlow chat assistants."""
-    monitor.report_tool("RAGFlow助手列表查询")
+    monitor.report_tool(RAGFLOW_ASSISTANT_LIST)
     api_key, base_url = _load_ragflow_env()
 
     if not api_key or not base_url:
-        monitor.report_end("RAGFlow助手列表查询", error="RAGFlow 环境变量未配置")
+        monitor.report_end(
+            RAGFLOW_ASSISTANT_LIST,
+            error="configuration_missing",
+        )
         return "错误：RAGFlow 环境变量未配置（需设置 RAGFLOW_API_URL 与 RAGFLOW_API_KEY）"
 
     try:
@@ -113,17 +118,29 @@ def get_assistant_list(dummy_arg: str = "") -> str:
             result += f"助手名称：{assistant.name}； 功能介绍：{assistant.description}； 关联知识库：{kb_names_str}\n"
 
         output = result.rstrip("\n") if result else "未找到任何聊天助手"
-        monitor.report_end("RAGFlow助手列表查询", output)
+        monitor.report_end(RAGFLOW_ASSISTANT_LIST, output)
         return output
 
-    except TimeoutError:
-        monitor.report_end("RAGFlow助手列表查询", error="knowledge base query timed out after retries")
+    except TimeoutError as e:
+        monitor.report_end(
+            RAGFLOW_ASSISTANT_LIST,
+            error="timeout",
+            error_type=type(e).__name__,
+        )
         return "Error: knowledge base query timed out after retries"
     except (ConnectionError, OSError) as e:
-        monitor.report_end("RAGFlow助手列表查询", error="knowledge base service unavailable after retries")
+        monitor.report_end(
+            RAGFLOW_ASSISTANT_LIST,
+            error="service_unavailable",
+            error_type=type(e).__name__,
+        )
         return f"Error: knowledge base service unavailable after retries"
     except Exception as e:
-        monitor.report_end("RAGFlow助手列表查询", error=str(e))
+        monitor.report_end(
+            RAGFLOW_ASSISTANT_LIST,
+            error="execution_failed",
+            error_type=type(e).__name__,
+        )
         return f"获取助手列表失败：{str(e)}"
 
 
@@ -131,13 +148,16 @@ def get_assistant_list(dummy_arg: str = "") -> str:
 def create_ask_delete(assistant_name: str, question: str) -> str:
     """Ask a RAGFlow assistant a question (temporary session, deleted after use)."""
     monitor.report_tool(
-        "RAGFlow助手提问工具",
+        RAGFLOW_QUESTION,
         {"助手名称": assistant_name, "查询问题": question}
     )
     api_key, base_url = _load_ragflow_env()
 
     if not api_key or not base_url:
-        monitor.report_end("RAGFlow助手提问工具", error="RAGFlow 环境变量未配置")
+        monitor.report_end(
+            RAGFLOW_QUESTION,
+            error="configuration_missing",
+        )
         return "错误：RAGFlow 环境变量未配置（需设置 RAGFLOW_API_URL 与 RAGFLOW_API_KEY）"
 
     session = None
@@ -151,7 +171,10 @@ def create_ask_delete(assistant_name: str, question: str) -> str:
 
         chat = _retry_with_timeout(_find_chat, service_name="ragflow-find-chat")
         if chat is None:
-            monitor.report_end("RAGFlow助手提问工具", error=f"未找到助手: {assistant_name}")
+            monitor.report_end(
+                RAGFLOW_QUESTION,
+                error="resource_not_found",
+            )
             return f"没有找到name:{assistant_name}的聊天助手！"
 
         # Step 2: Create a temporary session
@@ -171,21 +194,29 @@ def create_ask_delete(assistant_name: str, question: str) -> str:
 
         full_answer = _retry_with_timeout(_consume_stream, service_name="ragflow-ask")
 
-        monitor.report_tool(
-            "RAGFlow助手回答记录",
-            {"助手名称": assistant_name, "问题": question, "答案": full_answer}
-        )
-        monitor.report_end("RAGFlow助手提问工具", full_answer)
+        monitor.report_end(RAGFLOW_QUESTION, full_answer)
         return full_answer
 
-    except TimeoutError:
-        monitor.report_end("RAGFlow助手提问工具", error="knowledge base query timed out after retries")
+    except TimeoutError as e:
+        monitor.report_end(
+            RAGFLOW_QUESTION,
+            error="timeout",
+            error_type=type(e).__name__,
+        )
         return "Error: knowledge base query timed out after retries"
     except (ConnectionError, OSError) as e:
-        monitor.report_end("RAGFlow助手提问工具", error="knowledge base service unavailable after retries")
+        monitor.report_end(
+            RAGFLOW_QUESTION,
+            error="service_unavailable",
+            error_type=type(e).__name__,
+        )
         return f"Error: knowledge base service unavailable after retries"
     except Exception as e:
-        monitor.report_end("RAGFlow助手提问工具", error=str(e))
+        monitor.report_end(
+            RAGFLOW_QUESTION,
+            error="execution_failed",
+            error_type=type(e).__name__,
+        )
         return f"提问过程失败：{str(e)}"
     finally:
         if session and hasattr(session, "id") and chat is not None:

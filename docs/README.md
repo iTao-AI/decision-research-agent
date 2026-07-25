@@ -32,6 +32,8 @@ external evaluation of the public contract surface.
 
 ## Reference
 
+- [Observation Contract](reference/observation-contract.md) — closed,
+  provider-free WebSocket, `stream_writer`, console, and telemetry metadata.
 - [API Contract](reference/api-contract.md) — REST, WebSocket, authentication,
   errors, and the additive durable run failure-cause status projection.
 - [Downstream Consumer Contract](reference/downstream-consumer-contract.md) — deterministic status, result, Evidence, fallback, and failure-handling proof.

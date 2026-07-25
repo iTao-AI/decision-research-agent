@@ -111,9 +111,13 @@ def test_v0_1_6_changelog_freezes_unreleased_and_preserves_history() -> None:
         v0_1_6_heading,
         1,
     )[0]
-    assert unreleased.strip() == ""
 
     v0_1_6 = changelog.split(v0_1_6_heading, 1)[1].split(v0_1_5_heading, 1)[0]
+    privacy_safe_observation_heading = (
+        "### Privacy-safe observation contract"
+    )
+    assert privacy_safe_observation_heading in unreleased
+    assert privacy_safe_observation_heading not in v0_1_6
     for heading in (
         "### DeepSeek provider protocol",
         "### Frontend and CI maintenance",

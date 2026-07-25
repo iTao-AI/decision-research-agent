@@ -46,7 +46,7 @@ def test_internet_search_returns_results(monkeypatch):
     }
     assert result == expected
     assert result["results"][0] is not provider_payload["results"][0]
-    report_end.assert_called_once_with("网络搜索工具", expected)
+    report_end.assert_called_once_with("tavily_search", expected)
     assert "Rejected" not in repr(report_end.call_args)
 
 
@@ -81,12 +81,57 @@ def test_search_timeout_and_domain_scope_passed_to_sdk(monkeypatch):
 
 
 def test_internet_search_without_api_key_returns_error(monkeypatch):
-    from tools.tavily_tools import clear_search_cache, internet_search
+    from tools import tavily_tools
 
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
-    clear_search_cache()
+    tavily_tools.clear_search_cache()
+    report_end = MagicMock()
+    monkeypatch.setattr(tavily_tools.monitor, "report_end", report_end)
+    monkeypatch.setattr(tavily_tools.monitor, "report_tool", MagicMock())
 
-    assert "Error" in internet_search.invoke({"query": "test"})
+    result = tavily_tools.internet_search.invoke({"query": "test"})
+    assert result == "Error: TAVILY_API_KEY is not configured."
+    report_end.assert_called_once_with(
+        "tavily_search",
+        error="configuration_missing",
+    )
+
+
+@pytest.mark.parametrize(
+    ("raised", "expected_code", "expected_type"),
+    [
+        (TimeoutError("same message"), "timeout", "TimeoutError"),
+        (ConnectionError("same message"), "service_unavailable", "ConnectionError"),
+        (OSError("same message"), "service_unavailable", "OSError"),
+        (ValueError("same message"), "execution_failed", "ValueError"),
+    ],
+)
+def test_observation_error_mapping_uses_ordered_exception_classes(
+    monkeypatch,
+    raised,
+    expected_code,
+    expected_type,
+):
+    from tools import tavily_tools
+
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setattr(
+        tavily_tools,
+        "_cached_search_with_resilience",
+        AsyncMock(side_effect=raised),
+    )
+    report_end = MagicMock()
+    monkeypatch.setattr(tavily_tools.monitor, "report_end", report_end)
+    monkeypatch.setattr(tavily_tools.monitor, "report_tool", MagicMock())
+
+    result = tavily_tools._internet_search_impl("OBS_MARKER")
+
+    assert type(result) is str
+    report_end.assert_called_once_with(
+        "tavily_search",
+        error=expected_code,
+        error_type=expected_type,
+    )
 
 
 @pytest.mark.asyncio

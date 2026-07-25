@@ -36,6 +36,9 @@ external evaluation of the public contract surface.
   errors, and the additive durable run failure-cause status projection.
 - [Downstream Consumer Contract](reference/downstream-consumer-contract.md) — deterministic status, result, Evidence, fallback, and failure-handling proof.
 - [Agent Evaluation Regression Gate](reference/agent-evaluation-regression-gate.md) — deterministic eight-case, six-evaluator release gate and baseline workflow.
+- [Context Reliability Pytest Regression Pack](reference/context-reliability-regression.md)
+  — provider-free paired native-summary regression over application-owned
+  persisted projections.
 - [Bounded Live Producer Evaluation](reference/bounded-live-producer-evaluation.md)
   — provider-free contract check, separately authorized live command, bounded
   loopback lifecycle, stable output, and explicit non-claims.

@@ -2481,3 +2481,94 @@ def test_evidence_diagnostic_receipt_rejects_documentation_mutation(
         replacements=((old, new),),
         contract=_assert_evidence_diagnostic_receipt_contract,
     )
+
+
+def test_context_reliability_pytest_pack_is_documented_and_indexed() -> None:
+    reference = (
+        PROJECT_ROOT / "docs/reference/context-reliability-regression.md"
+    ).read_text(encoding="utf-8")
+    docs_index = (PROJECT_ROOT / "docs/README.md").read_text(encoding="utf-8")
+    collapsed = _collapsed(reference)
+
+    assert reference.startswith(
+        "# Context Reliability Pytest Regression Pack\n"
+    )
+    for phrase in (
+        "pytest-collected regression pack",
+        "not a standalone gate",
+        "no CLI",
+        "no committed output artifact or baseline",
+        "no independent CI job or required-check name",
+        "Pytest assertions are the executable authority",
+        "Python 3.11",
+        "CONTRIBUTING.md",
+        "Backend Tests",
+        "control lane",
+        "forced lane",
+        "lc_source=summarization",
+        "application-owned persisted projections",
+        "context.projection_invalid",
+        "context.*_changed",
+        "named pytest assertion failure",
+        "Application projection evaluator",
+        "Projection input validation",
+        "Framework or application traversal assertion",
+        (
+            "scripts/agent_evaluation_context.py::"
+            "project_context_reliability_outcome"
+        ),
+        (
+            "scripts/agent_evaluation_context.py::"
+            "compare_context_reliability_outcomes"
+        ),
+        "agent/deepagents_harness.py::build_generic_harness",
+        (
+            "api/research_execution_service.py::"
+            "ResearchExecutionService.execute"
+        ),
+        "api/server.py::_run_dispatched_with_persistence",
+        "api/run_repository.py::finalize_run_transaction",
+        "api/run_repository.py::get_run",
+        "api/run_result_service.py::resolve_run_result",
+        "tools/tavily_tools.py::search_with_dedup",
+        "tools/tavily_tools.py::clear_search_cache",
+        (
+            "tests/unit/test_deepagents_harness.py::"
+            "test_locked_native_summarizer_profile_forces_coordinator_summary"
+        ),
+        (
+            "tests/integration/test_context_reliability_regression.py::"
+            "test_control_and_forced_lanes_observe_native_summary_only_when_forced"
+        ),
+        (
+            "tests/integration/test_context_reliability_regression.py::"
+            "test_paired_persisted_application_outcomes_remain_equivalent"
+        ),
+        (
+            "tests/integration/test_context_reliability_regression.py::"
+            "test_forced_lane_preserves_nested_evidence_and_clears_exact_search_cache"
+        ),
+        "Do not delete a projected dimension or loosen equality.",
+        "Do not create or update a baseline.",
+        "Do not patch or replace native middleware.",
+        "Do not change production behavior to make the pack pass.",
+    ):
+        assert phrase in collapsed
+    for operation in ("`build`", "`check`", "`accept`", "`regenerate`"):
+        assert f"no {operation} operation" in collapsed
+    for command in (
+        "python -m pytest -q tests/unit/test_agent_evaluation_context.py",
+        (
+            "tests/unit/test_deepagents_harness.py::"
+            "test_locked_native_summarizer_profile_forces_coordinator_summary"
+        ),
+        "tests/integration/test_context_reliability_regression.py",
+        'python -m pytest -q -m "not docker"',
+        "python scripts/final_presentation_audit.py --root .",
+        "git diff --check",
+    ):
+        assert command in reference
+    assert "Context Reliability Pytest Regression Pack" in docs_index
+    assert "(reference/context-reliability-regression.md)" in docs_index
+    assert "fixed test count" not in reference
+    assert "seconds to pass" not in reference

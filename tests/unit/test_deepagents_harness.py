@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any, Sequence
 
 import pytest
 from langchain.agents.middleware.model_call_limit import (
@@ -7,12 +8,55 @@ from langchain.agents.middleware.model_call_limit import (
 from langchain.agents.middleware.tool_call_limit import (
     ToolCallLimitExceededError,
 )
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.errors import GraphRecursionError
+from pydantic import Field
 
 
 class FakeGraph:
     def with_config(self, _config):
         return self
+
+
+class ProfiledHarnessModel(BaseChatModel):
+    profile: dict[str, Any] | None = {"max_input_tokens": 256}
+    bound_tool_names: list[str] = Field(default_factory=list)
+
+    @property
+    def _llm_type(self) -> str:
+        return "profiled-context-harness-model"
+
+    def bind_tools(
+        self,
+        tools: Sequence,
+        *,
+        tool_choice: dict | str | bool | None = None,
+        **kwargs: Any,
+    ):
+        del tool_choice, kwargs
+        self.bound_tool_names = [
+            (
+                getattr(tool, "name", "")
+                if not isinstance(tool, dict)
+                else str(tool.get("name", ""))
+            )
+            for tool in tools
+        ]
+        return self
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager=None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content="done"))]
+        )
 
 
 def _capture_framework_assembly(monkeypatch):
@@ -263,6 +307,50 @@ def test_pinned_deepagents_middleware_stack_and_subagents(monkeypatch):
         "knowledge_base",
     }
     assert "general-purpose" not in subagent_middleware.subagent_names
+
+
+def test_locked_native_summarizer_profile_forces_coordinator_summary(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-test-key")
+
+    from deepagents.middleware.summarization import SummarizationMiddleware
+    from langchain_core.language_models.fake_chat_models import (
+        FakeListChatModel,
+    )
+
+    from agent.deepagents_harness import build_generic_harness
+    from agent.llm import FallbackChatModel
+
+    captured = _capture_framework_assembly(monkeypatch)
+    profiled = ProfiledHarnessModel()
+    build_generic_harness(model=profiled)
+    summarizers = [
+        item
+        for item in captured["middleware"]
+        if isinstance(item, SummarizationMiddleware)
+    ]
+
+    assert len(summarizers) == 1
+    assert summarizers[0].model is profiled
+    assert summarizers[0]._lc_helper.trigger == ("fraction", 0.85)
+    assert summarizers[0]._lc_helper.keep == ("fraction", 0.10)
+
+    production_wrapper = FallbackChatModel(
+        primary=FakeListChatModel(responses=["primary"]),
+        fallback=FakeListChatModel(responses=["fallback"]),
+    )
+    assert getattr(production_wrapper, "profile", None) is None
+
+    captured.clear()
+    build_generic_harness(model=production_wrapper)
+    production_summarizer = next(
+        item
+        for item in captured["middleware"]
+        if isinstance(item, SummarizationMiddleware)
+    )
+    assert production_summarizer._lc_helper.trigger == ("tokens", 170000)
+    assert production_summarizer._lc_helper.keep == ("messages", 6)
 
 
 @pytest.mark.asyncio

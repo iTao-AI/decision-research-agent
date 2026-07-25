@@ -268,7 +268,15 @@ async def test_monitor_isolates_same_tool_timing_and_routes_by_run(monkeypatch):
         emit("run-a", "run-a-seg-000"),
         emit("run-b", "run-b-seg-000"),
     )
-    await asyncio.sleep(0)
+    tasks, futures = monitor_module.monitor._pending_snapshot()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    if futures:
+        await asyncio.gather(
+            *(asyncio.wrap_future(future) for future in futures),
+            return_exceptions=True,
+        )
+    assert monitor_module.monitor._pending_snapshot() == ((), ())
 
     assert len(collector.get_by_run("run-a")) == 1
     assert len(collector.get_by_run("run-b")) == 1

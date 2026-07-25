@@ -78,7 +78,10 @@ class TestMySQLToolsWithConnectionManager:
 
         with patch("tools.mysql_tools._connection_manager") as mock_cm:
             _setup_pool_mock(mock_cm, mock_conn, mock_cursor)
-            with patch("tools.mysql_tools._validate_table_name", return_value=""):
+            with patch(
+                "tools.mysql_tools._validate_table_name_with_category",
+                return_value=("", None),
+            ):
                 from tools.mysql_tools import get_table_data
                 result = get_table_data.invoke({"table_name": "users"})
 

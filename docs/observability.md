@@ -56,3 +56,10 @@ LANGSMITH_HIDE_OUTPUTS=false
 - LangSmith 是调试与评估工具，不替代 ResearchRun、EvidenceLedger 或服务端审计记录。
 - 隐藏 inputs/outputs 后，无法直接在 LangSmith 中检查 Prompt、工具参数和报告正文。
 - 没有有效 `LANGSMITH_API_KEY` 时，Tracing 配置不会形成可查询的 LangSmith 项目。
+
+项目自有 WebSocket、现有 LangGraph `stream_writer`、console 和 retained
+telemetry/API 采用 [closed observation contract](reference/observation-contract.md)。
+Public source: `docs/reference/observation-contract.md`.
+Raw LangSmith inputs/outputs are not a fallback for missing closed telemetry.
+该边界不实现 hosted tracing，也不声称第三方 SDK 或通用 process logs 具备
+generic DLP、PII 或 secret-scanning 保证。

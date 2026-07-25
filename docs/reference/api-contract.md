@@ -178,8 +178,10 @@ An unknown profile returns `404` with detail code `unknown_profile`.
 
 ### GET /api/telemetry/runs/{run_id}
 
-Return run-scoped telemetry records. Records carry `thread_id`, `run_id`, and
-`segment_id` for correlation.
+Return closed run-scoped telemetry records. The protected local route uses the
+same `X-API-Key` authentication contract as other protected HTTP endpoints.
+Records carry `thread_id`, `run_id`, and `segment_id` for correlation; see the
+[Observation Contract](observation-contract.md).
 
 ### GET /api/token-usage/runs/{run_id}
 
@@ -190,8 +192,24 @@ Return run-scoped token usage.
 Stream run-scoped monitor events. Same-thread concurrent runs use separate
 channels.
 
-Events include `session_created`, `tool_start`, `assistant_call`,
-`task_result`, `run_timeout`, and `error`.
+## Monitor event matrix
+
+Every event uses `schema=dra.monitor-event.v1`, a fixed message, closed event
+data, and the existing run WebSocket route.
+
+| Event | Allowed data fields | Fixed message |
+| --- | --- | --- |
+| session_created | workspace_created | Workspace created |
+| tool_start | tool_name, args | Tool execution started |
+| tool_end | tool_name, status, duration_ms, result, error, error_type | Tool execution completed |
+| assistant_call | assistant_name, args | Assistant call started |
+| task_result | result | Task result available |
+| task_finalized | status, fallback_used, output_present, error | Task finalized |
+| retry_event | service_name, attempt, max_retries, error, error_type | Retry scheduled |
+| cache_hit | tool_name, cached | Tool cache hit |
+| cache_miss | tool_name, cached | Tool cache miss |
+| run_timeout | timeout_seconds, previous_status, finalized_by_callback | Research run timed out |
+| error | error, error_type | Observation error |
 
 ## Controlled Durable Review
 

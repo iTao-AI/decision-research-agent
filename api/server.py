@@ -1124,6 +1124,7 @@ async def get_profile_manifest(profile_id: str):
 def _serialize_telemetry(records):
     return [
         {
+            "schema": r.schema,
             "thread_id": r.thread_id,
             "run_id": r.run_id,
             "segment_id": r.segment_id,
@@ -1132,6 +1133,7 @@ def _serialize_telemetry(records):
             "duration_ms": r.duration_ms,
             "status": r.status,
             "error": r.error,
+            "error_type": r.error_type,
             "timestamp": r.timestamp.isoformat(),
         }
         for r in records

@@ -1,14 +1,15 @@
 """Bounded application-owned strict citation preparation and finalization."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import re
 from typing import Any, Mapping
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from agent.profile_registry import (
@@ -377,3 +378,150 @@ def prepare_strict_citation(
         messages=messages,
         config=config,
     )
+
+
+def _response_invalid() -> StrictCitationFinalizationError:
+    return StrictCitationFinalizationError(
+        "strict_citation_response_invalid"
+    )
+
+
+def _parse_placements(
+    content: str,
+    targets: tuple[CitationTarget, ...],
+    sources: tuple[CitationSource, ...],
+) -> tuple[CitationPlacement, ...]:
+    if type(content) is not str or not content:
+        raise _response_invalid()
+    if len(content.encode("utf-8")) > MAX_RESPONSE_BYTES:
+        raise _response_invalid()
+    try:
+        payload = json.loads(content)
+    except (json.JSONDecodeError, UnicodeError, ValueError, TypeError):
+        raise _response_invalid() from None
+    if type(payload) is not dict or set(payload) != {"placements"}:
+        raise _response_invalid()
+    rows = payload["placements"]
+    if (
+        type(rows) is not list
+        or not 1 <= len(rows) <= min(MAX_TARGETS, len(targets))
+    ):
+        raise _response_invalid()
+    target_ids = {target.target_id for target in targets}
+    source_ids = {source.source_id for source in sources}
+    seen_targets: set[str] = set()
+    seen_pairs: set[tuple[str, str]] = set()
+    placements: list[CitationPlacement] = []
+    for row in rows:
+        if type(row) is not dict or set(row) != {"target_id", "source_id"}:
+            raise _response_invalid()
+        target_id = row["target_id"]
+        source_id = row["source_id"]
+        if (
+            type(target_id) is not str
+            or type(source_id) is not str
+            or not target_id
+            or not source_id
+            or target_id not in target_ids
+            or source_id not in source_ids
+            or target_id in seen_targets
+            or (target_id, source_id) in seen_pairs
+        ):
+            raise _response_invalid()
+        seen_targets.add(target_id)
+        seen_pairs.add((target_id, source_id))
+        placements.append(CitationPlacement(target_id, source_id))
+    return tuple(placements)
+
+
+def _render_placements(
+    prepared: PreparedStrictCitation,
+    placements: tuple[CitationPlacement, ...],
+) -> str:
+    content = prepared.initial_artifact["content"]
+    target_by_id = {
+        target.target_id: target for target in prepared.targets
+    }
+    source_by_id = {
+        source.source_id: source for source in prepared.sources
+    }
+    canonical = sorted(
+        placements,
+        key=lambda placement: target_by_id[placement.target_id].start,
+    )
+    insertions: list[tuple[int, str]] = []
+    for placement in canonical:
+        target = target_by_id[placement.target_id]
+        source = source_by_id[placement.source_id]
+        basis = content[target.start : target.end]
+        if hashlib.sha256(basis.encode("utf-8")).hexdigest() != target.basis_sha256:
+            raise StrictCitationFinalizationError(
+                "strict_citation_target_stale"
+            )
+        insertions.append(
+            (
+                target.end,
+                f"{CANONICAL_LINK_PREFIX}{source.source_url}{CANONICAL_LINK_SUFFIX}",
+            )
+        )
+    corrected = content
+    for offset, insertion in reversed(insertions):
+        corrected = corrected[:offset] + insertion + corrected[offset:]
+    if len(corrected.encode("utf-8")) > MAX_RESULT_BYTES:
+        raise StrictCitationFinalizationError(
+            "strict_citation_artifact_invalid"
+        )
+    return corrected
+
+
+async def invoke_prepared_strict_citation(
+    *,
+    prepared: PreparedStrictCitation,
+    chat_model: BaseChatModel,
+) -> StrictCitationResult:
+    try:
+        response = await chat_model.ainvoke(
+            prepared.messages,
+            config=prepared.config,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        raise StrictCitationFinalizationError(
+            "strict_citation_model_failed"
+        ) from None
+
+    if not isinstance(response, AIMessage) or type(response.content) is not str:
+        raise _response_invalid()
+    try:
+        placements = _parse_placements(
+            response.content,
+            prepared.targets,
+            prepared.sources,
+        )
+    except StrictCitationFinalizationError:
+        raise _response_invalid() from None
+    corrected_content = _render_placements(prepared, placements)
+    candidate = prepared.outcome.report_candidate
+    if candidate is None:
+        raise StrictCitationFinalizationError(
+            "strict_citation_artifact_invalid"
+        )
+    corrected_outcome = replace(
+        prepared.outcome,
+        report_candidate=replace(candidate, content=corrected_content),
+    )
+    artifact = build_generic_result_artifact(corrected_outcome)
+    if artifact["kind"] != "research_report_markdown":
+        raise StrictCitationFinalizationError(
+            "strict_citation_artifact_invalid"
+        )
+    evidence_entries = mark_cited_evidence(
+        prepared.outcome.evidence_entries,
+        artifact["content"],
+    )
+    if not any(entry.citation_status == "cited" for entry in evidence_entries):
+        raise StrictCitationFinalizationError(
+            "strict_citation_invariant_failed"
+        )
+    return StrictCitationResult(artifact, evidence_entries)

@@ -1,7 +1,13 @@
 import json
 from pathlib import PurePosixPath
+import traceback
+from typing import Any
 
 import pytest
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from pydantic import Field
 
 from agent.harness_contracts import ReportCandidate
 from agent.research import EvidenceEntry
@@ -38,6 +44,39 @@ def _evidence(url="https://example.com/source", *, snippet="Source context"):
         source_url=url,
         snippet=snippet,
     )
+
+
+class ScriptedChatModel(BaseChatModel):
+    response: Any = AIMessage(
+        content='{"placements":[{"target_id":"t001","source_id":"s001"}]}'
+    )
+    error_text: str | None = None
+    call_count: int = 0
+    captured_input: Any = None
+    captured_config: Any = None
+
+    @property
+    def _llm_type(self) -> str:
+        return "scripted-strict-citation"
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop=None,
+        run_manager=None,
+        **kwargs,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        return ChatResult(generations=[ChatGeneration(message=self.response)])
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        del kwargs
+        self.call_count += 1
+        self.captured_input = input
+        self.captured_config = config
+        if self.error_text:
+            raise RuntimeError(self.error_text)
+        return self.response
 
 
 def test_target_scanner_is_deterministic_and_conservative():
@@ -156,3 +195,126 @@ def test_prepare_fails_closed_before_invocation(report, evidence, code):
             outcome=outcome,
             initial_artifact=build_generic_result_artifact(outcome),
         )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "",
+        "not json",
+        "[]",
+        '{"placements":[]}',
+        '{"placements":[{"target_id":"unknown","source_id":"s001"}]}',
+        '{"placements":[{"target_id":"t001","source_id":"s001","url":"x"}]}',
+        '{"placements":[{"target_id":"t001","source_id":"s001"},{"target_id":"t001","source_id":"s001"}]}',
+    ],
+)
+def test_parser_rejects_every_non_exact_response(content):
+    from api.strict_citation_finalization import (
+        StrictCitationFinalizationError,
+        _parse_placements,
+    )
+
+    prepared = prepare_for_call()
+    with pytest.raises(
+        StrictCitationFinalizationError,
+        match="strict_citation_response_invalid",
+    ):
+        _parse_placements(content, prepared.targets, prepared.sources)
+
+
+def prepare_for_call(report="Supported first.\n\nSupported second."):
+    from api.strict_citation_finalization import prepare_strict_citation
+
+    outcome = _outcome(report=report, evidence=[_evidence()])
+    return prepare_strict_citation(
+        outcome=outcome,
+        initial_artifact=build_generic_result_artifact(outcome),
+    )
+
+
+def test_prepare_zero_call_when_initial_artifact_is_already_cited():
+    from api.strict_citation_finalization import (
+        StrictCitationResult,
+        prepare_strict_citation,
+    )
+
+    outcome = _outcome(
+        report="Supported https://example.com/source.",
+        evidence=[_evidence()],
+    )
+    model = ScriptedChatModel()
+
+    result = prepare_strict_citation(
+        outcome=outcome,
+        initial_artifact=build_generic_result_artifact(outcome),
+    )
+
+    assert isinstance(result, StrictCitationResult)
+    assert result.evidence_entries[0].citation_status == "cited"
+    assert model.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_invoke_calls_once_and_renders_exact_url_in_target_order():
+    from api.strict_citation_finalization import invoke_prepared_strict_citation
+
+    prepared = prepare_for_call()
+    model = ScriptedChatModel(
+        response=AIMessage(
+            content=json.dumps(
+                {
+                    "placements": [
+                        {"target_id": "t002", "source_id": "s001"},
+                        {"target_id": "t001", "source_id": "s001"},
+                    ]
+                }
+            )
+        )
+    )
+
+    result = await invoke_prepared_strict_citation(
+        prepared=prepared,
+        chat_model=model,
+    )
+
+    assert model.call_count == 1
+    assert result.artifact["content"] == (
+        "Supported first. [Source](<https://example.com/source>)\n\n"
+        "Supported second. [Source](<https://example.com/source>)"
+    )
+    assert result.evidence_entries[0].citation_status == "cited"
+    assert model.captured_input == prepared.messages
+    assert model.captured_config == prepared.config
+
+
+@pytest.mark.asyncio
+async def test_invoke_maps_provider_and_parser_errors_without_context():
+    from api.strict_citation_finalization import (
+        StrictCitationFinalizationError,
+        invoke_prepared_strict_citation,
+    )
+
+    prepared = prepare_for_call()
+    provider_model = ScriptedChatModel(error_text="provider-secret-detail")
+    with pytest.raises(
+        StrictCitationFinalizationError,
+        match="strict_citation_model_failed",
+    ):
+        await invoke_prepared_strict_citation(
+            prepared=prepared,
+            chat_model=provider_model,
+        )
+    assert "provider-secret-detail" not in traceback.format_exc()
+    assert provider_model.call_count == 1
+
+    parser_model = ScriptedChatModel(response=AIMessage(content="malformed"))
+    with pytest.raises(
+        StrictCitationFinalizationError,
+        match="strict_citation_response_invalid",
+    ):
+        await invoke_prepared_strict_citation(
+            prepared=prepared,
+            chat_model=parser_model,
+        )
+    assert parser_model.call_count == 1

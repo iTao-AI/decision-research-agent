@@ -120,13 +120,15 @@ Existing timeout and cancellation classifications take precedence:
 
 The correction branch sends bounded target excerpts, admitted public URLs, and
 bounded source snippets to the run's configured model. Report excerpts and
-snippets are treated as untrusted data. No credentials, host paths, provider
-diagnostics, or unrelated Evidence bodies are included.
+snippets are treated as untrusted data. Paragraphs or snippets matching the
+documented obvious credential, diagnostic, or host-path markers are omitted
+or replaced with `[context omitted]`.
 
-This boundary is not a data-loss-prevention system and makes no local-only
-processing claim. Configured tracing, retry, fallback, and provider transport
-remain operator/runtime concerns. Provider-free tests prove deterministic
-application behavior; they do not prove live-provider reliability.
+This bounded marker filter is not credential scanning or a
+data-loss-prevention system and makes no local-only processing claim.
+Configured tracing, retry, fallback, and provider transport remain
+operator/runtime concerns. Provider-free tests prove deterministic application
+behavior; they do not prove live-provider reliability.
 
 ## Pin Intentionally
 

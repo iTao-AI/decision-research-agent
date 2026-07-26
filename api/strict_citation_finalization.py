@@ -63,6 +63,9 @@ _THEMATIC_RE = re.compile(r" {0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
 _LINK_DEFINITION_RE = re.compile(r" {0,3}\[[^\]]+\]:")
 _TASK_LIST_RE = re.compile(r" {0,3}(?:[-+*]|\d+[.)])\s+\[[ xX]\]\s+")
 _LIST_OR_QUOTE_RE = re.compile(r" {0,3}(?:>|[-+*]|\d+[.)])\s+")
+_STRUCTURAL_ONLY_RE = re.compile(
+    r" {0,3}(?:>|[-+*]|\d+[.)])\s*$"
+)
 _FENCE_RE = re.compile(r"(`{3,}|~{3,})")
 
 
@@ -121,20 +124,29 @@ def _utf8_prefix(value: str, limit: int = MAX_CONTEXT_BYTES) -> str:
     return encoded[:limit].decode("utf-8", errors="ignore")
 
 
-def _structural_view(line: str) -> str:
+def _container_views(line: str) -> tuple[str, ...]:
+    views = [line]
     view = line
     for _ in range(8):
+        changed = False
         updated = re.sub(r"^ {0,3}>\s?", "", view, count=1)
+        if updated != view:
+            views.append(updated)
+            view = updated
+            changed = True
         updated = re.sub(
             r"^ {0,3}(?:[-+*]|\d+[.)])\s+",
             "",
-            updated,
+            view,
             count=1,
         )
-        if updated == view:
+        if updated != view:
+            views.append(updated)
+            view = updated
+            changed = True
+        if not changed:
             break
-        view = updated
-    return view
+    return tuple(views)
 
 
 def _extract_targets(report: str) -> tuple[CitationTarget, ...]:
@@ -161,13 +173,20 @@ def _extract_targets(report: str) -> tuple[CitationTarget, ...]:
         offset += len(raw)
         line = raw.rstrip("\r\n")
         line_end = line_start + len(line)
-        structural = _structural_view(line)
-        fence_match = _FENCE_RE.match(structural.lstrip(" "))
+        container_views = _container_views(line)
+        structural = container_views[-1]
+        fence_view = structural.lstrip(" ")
+        fence_match = _FENCE_RE.match(fence_view)
 
         if fence is not None:
             if fence_match:
                 marker = fence_match.group(1)
-                if marker[0] == fence[0] and len(marker) >= fence[1]:
+                remainder = fence_view[len(marker) :]
+                if (
+                    marker[0] == fence[0]
+                    and len(marker) >= fence[1]
+                    and not remainder.strip()
+                ):
                     fence = None
             flush()
             continue
@@ -176,7 +195,7 @@ def _extract_targets(report: str) -> tuple[CitationTarget, ...]:
             marker = fence_match.group(1)
             fence = (marker[0], len(marker))
             continue
-        if not line.strip():
+        if not structural.strip():
             flush()
             html_until_blank = False
             definition_until_blank = False
@@ -192,28 +211,32 @@ def _extract_targets(report: str) -> tuple[CitationTarget, ...]:
             flush()
             html_until_blank = True
             continue
-        if _LINK_DEFINITION_RE.match(line):
+        if _LINK_DEFINITION_RE.match(structural):
             flush()
             definition_until_blank = True
             continue
-        if _SETEXT_RE.fullmatch(line):
+        if _SETEXT_RE.fullmatch(structural):
             pending = []
             continue
+        trailing_backslashes = len(structural) - len(
+            structural.rstrip("\\")
+        )
         if (
-            line.startswith(("    ", "\t"))
-            or _ATX_RE.match(line)
-            or _THEMATIC_RE.fullmatch(line)
-            or _TASK_LIST_RE.match(line)
-            or "|" in line
-            or line.endswith("  ")
-            or (line.endswith("\\") and not line.endswith("\\\\"))
+            structural.startswith(("    ", "\t"))
+            or _ATX_RE.match(structural)
+            or _THEMATIC_RE.fullmatch(structural)
+            or any(_TASK_LIST_RE.match(view) for view in container_views)
+            or _STRUCTURAL_ONLY_RE.fullmatch(line)
+            or _STRUCTURAL_ONLY_RE.fullmatch(structural)
+            or "|" in structural
+            or structural.endswith("  ")
+            or trailing_backslashes % 2 == 1
         ):
             flush()
             continue
-        if _LIST_OR_QUOTE_RE.match(line):
+        if _LIST_OR_QUOTE_RE.match(line) or structural != line:
             flush()
-            if not _SENSITIVE_RE.search(line):
-                candidates.append((line_start, line_end, line))
+            pending.append((line_start, line_end, line))
             continue
         pending.append((line_start, line_end, line))
     flush()
@@ -393,12 +416,17 @@ def _parse_placements(
 ) -> tuple[CitationPlacement, ...]:
     if type(content) is not str or not content:
         raise _response_invalid()
-    if len(content.encode("utf-8")) > MAX_RESPONSE_BYTES:
-        raise _response_invalid()
+    invalid_payload = object()
     try:
+        if len(content.encode("utf-8")) > MAX_RESPONSE_BYTES:
+            raise _response_invalid()
         payload = json.loads(content)
-    except (json.JSONDecodeError, UnicodeError, ValueError, TypeError):
-        raise _response_invalid() from None
+    except StrictCitationFinalizationError:
+        raise
+    except Exception:
+        payload = invalid_payload
+    if payload is invalid_payload:
+        raise _response_invalid()
     if type(payload) is not dict or set(payload) != {"placements"}:
         raise _response_invalid()
     rows = payload["placements"]
@@ -413,7 +441,10 @@ def _parse_placements(
     seen_pairs: set[tuple[str, str]] = set()
     placements: list[CitationPlacement] = []
     for row in rows:
-        if type(row) is not dict or set(row) != {"target_id", "source_id"}:
+        if (
+            type(row) is not dict
+            or set(row) != {"target_id", "source_id"}
+        ):
             raise _response_invalid()
         target_id = row["target_id"]
         source_id = row["source_id"]

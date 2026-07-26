@@ -1118,7 +1118,8 @@ def get_run_delivery_snapshot(
         conn.execute("BEGIN")
         run = conn.execute(
             """
-            SELECT run_id, profile_id, execution_status, delivery_status
+            SELECT run_id, profile_id, profile_version,
+                   execution_status, delivery_status
             FROM research_runs_v2
             WHERE run_id = ?
             """,
@@ -1171,10 +1172,33 @@ def get_run_delivery_snapshot(
             (run_id,),
         ).fetchall()
         snapshot = {
-            **dict(run),
+            "run_id": run["run_id"],
+            "profile_id": run["profile_id"],
+            "execution_status": run["execution_status"],
+            "delivery_status": run["delivery_status"],
             "current_artifact_ids": current_ids,
             "artifacts": tuple(dict(row) for row in rows),
         }
+        if run["profile_id"] == "generic-strict-citation":
+            cited_rows = conn.execute(
+                """
+                SELECT source_url
+                FROM evidence_entries_v2
+                WHERE run_id = ?
+                  AND citation_status = 'cited'
+                  AND source_url IS NOT NULL
+                ORDER BY created_at ASC, evidence_id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+            snapshot.update(
+                {
+                    "profile_version": run["profile_version"],
+                    "cited_source_urls": tuple(
+                        row["source_url"] for row in cited_rows
+                    ),
+                }
+            )
         conn.commit()
         return snapshot
     except (json.JSONDecodeError, sqlite3.Error, TypeError, ValueError) as exc:
@@ -1182,6 +1206,42 @@ def get_run_delivery_snapshot(
         raise RunDeliverySnapshotConflict(
             "run_delivery_snapshot_corrupt"
         ) from exc
+    finally:
+        conn.close()
+
+
+def run_finalization_fence_is_current(
+    *,
+    run_id: str,
+    segment_id: str,
+    expected_state_version: int,
+    db_path: str | None = None,
+) -> bool:
+    """Return whether the exact running run/segment finalization fence is current."""
+    init_run_schema(db_path)
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM research_runs_v2 AS run
+            JOIN run_segments AS segment
+              ON segment.run_id = run.run_id
+            WHERE run.run_id = ?
+              AND segment.segment_id = ?
+              AND run.execution_status = 'running'
+              AND run.state_version = ?
+              AND segment.status = 'running'
+              AND segment.run_id = ?
+            """,
+            (
+                run_id,
+                segment_id,
+                expected_state_version,
+                run_id,
+            ),
+        ).fetchone()
+        return row is not None
     finally:
         conn.close()
 

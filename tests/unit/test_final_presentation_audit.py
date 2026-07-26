@@ -137,6 +137,90 @@ globals()["result"](run_id, config)
     ]
 
 
+def test_relative_markdown_link_ignores_matched_inline_code_span(
+    tmp_path: Path,
+) -> None:
+    from scripts.final_presentation_audit import relative_markdown_link_violations
+
+    (tmp_path / "README.md").write_text(
+        "Example: ``[inline](ignored.md)`` and [real](missing.md).\n",
+        encoding="utf-8",
+    )
+
+    assert relative_markdown_link_violations(tmp_path) == [
+        {
+            "path": "README.md",
+            "rule": "missing-relative-link",
+            "target": "missing.md",
+        }
+    ]
+
+
+def test_unmatched_inline_code_delimiter_does_not_hide_later_real_link(
+    tmp_path: Path,
+) -> None:
+    from scripts.final_presentation_audit import relative_markdown_link_violations
+
+    (tmp_path / "README.md").write_text(
+        "Unmatched `` delimiter before [real](missing.md).\n",
+        encoding="utf-8",
+    )
+
+    assert relative_markdown_link_violations(tmp_path) == [
+        {
+            "path": "README.md",
+            "rule": "missing-relative-link",
+            "target": "missing.md",
+        }
+    ]
+
+
+@pytest.mark.parametrize("prefix", ["\\", "\\\\\\"])
+def test_odd_backslashes_escape_inline_code_delimiter_and_keep_real_link(
+    tmp_path: Path,
+    prefix: str,
+) -> None:
+    from scripts.final_presentation_audit import relative_markdown_link_violations
+
+    (tmp_path / "README.md").write_text(
+        f"{prefix}`[real](missing.md){prefix}`\n",
+        encoding="utf-8",
+    )
+
+    assert relative_markdown_link_violations(tmp_path) == [
+        {
+            "path": "README.md",
+            "rule": "missing-relative-link",
+            "target": "missing.md",
+        }
+    ]
+
+
+@pytest.mark.parametrize("prefix", [r"\\", r"\\\\"])
+def test_even_backslashes_allow_inline_code_span_and_preserve_outside_link(
+    tmp_path: Path,
+    prefix: str,
+) -> None:
+    from scripts.final_presentation_audit import relative_markdown_link_violations
+
+    (tmp_path / "README.md").write_text(
+        (
+            f"{prefix}`[inline](ignored.md)`\r\n"
+            "[real](missing.md)\r\n"
+        ),
+        encoding="utf-8",
+        newline="",
+    )
+
+    assert relative_markdown_link_violations(tmp_path) == [
+        {
+            "path": "README.md",
+            "rule": "missing-relative-link",
+            "target": "missing.md",
+        }
+    ]
+
+
 def test_markdown_audit_does_not_read_tracked_symlink_outside_root(
     tmp_path: Path,
     monkeypatch,

@@ -36,6 +36,9 @@ external evaluation of the public contract surface.
   provider-free WebSocket, `stream_writer`, console, and telemetry metadata.
 - [API Contract](reference/api-contract.md) — REST, WebSocket, authentication,
   errors, and the additive durable run failure-cause status projection.
+- [Strict Citation Profile](reference/strict-citation-profile.md) — opt-in
+  exact-source ready invariant, bounded correction, producer pinning, and
+  non-claims.
 - [Downstream Consumer Contract](reference/downstream-consumer-contract.md) — deterministic status, result, Evidence, fallback, and failure-handling proof.
 - [Agent Evaluation Regression Gate](reference/agent-evaluation-regression-gate.md) — deterministic eight-case, six-evaluator release gate and baseline workflow.
 - [Agent Evaluation Sensitivity Gate v2](reference/agent-evaluation-sensitivity-gate.md)

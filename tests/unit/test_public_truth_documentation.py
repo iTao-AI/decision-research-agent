@@ -29,6 +29,56 @@ def _workflow_step_names(workflow: str) -> tuple[str, ...]:
     )
 
 
+def test_strict_citation_public_docs_preserve_compatibility_and_nonclaims() -> None:
+    reference = _read("docs/reference/strict-citation-profile.md")
+    readme = _read("README.md")
+    readme_cn = _read("README_CN.md")
+    docs_index = _read("docs/README.md")
+    api_contract = _read("docs/reference/api-contract.md")
+    state_machines = _read("docs/reference/state-machines.md")
+    architecture = _read("docs/architecture.md")
+    framework = _read("docs/decisions/framework-runtime-boundaries.md")
+    integration = _read("docs/AGENT_INTEGRATION.md")
+    downstream = _read("docs/reference/downstream-consumer-contract.md")
+    changelog = _read("CHANGELOG.md")
+
+    for document in (readme, readme_cn, docs_index):
+        assert "strict-citation-profile.md" in document
+    assert "`profile_id`" in api_contract
+    assert "`generic-strict-citation`" in api_contract
+    assert "zero exact citations remain warning-only" in api_contract
+    assert "failed / not_required / failed" in state_machines
+    assert "configured chat model" in architecture
+    assert "one application-level invocation" in framework
+    assert "--profile generic-strict-citation" in integration
+    assert "dra.strict-citation-profile.v1" in downstream
+    assert "generic-strict-citation" in changelog
+
+    combined = "\n".join(
+        (
+            reference,
+            api_contract,
+            state_machines,
+            architecture,
+            framework,
+            integration,
+            downstream,
+        )
+    )
+    for nonclaim in (
+        "citation correctness",
+        "citation completeness",
+        "source quality",
+        "entailment",
+        "live-provider reliability",
+        "hosted observability",
+        "downstream adoption",
+    ):
+        assert nonclaim in combined
+    assert "v0.1.6 fixture remains unchanged" in downstream
+    assert "Release remains a separate decision" in reference
+
+
 def _assert_talent_public_truth(agents: str) -> None:
     purpose = _section(agents, "## Project Purpose", "## Source Of Truth")
     assert "ready for separate human value review" in purpose

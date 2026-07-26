@@ -171,6 +171,52 @@ def _markdown_without_fenced_code(text: str) -> str:
     return "".join(visible_lines)
 
 
+def _markdown_without_inline_code(text: str) -> str:
+    masked = list(text)
+    index = 0
+    while index < len(text):
+        if text[index] != "`":
+            index += 1
+            continue
+        run_end = index
+        while run_end < len(text) and text[run_end] == "`":
+            run_end += 1
+        backslashes = 0
+        cursor = index - 1
+        while cursor >= 0 and text[cursor] == "\\":
+            backslashes += 1
+            cursor -= 1
+        if backslashes % 2 == 1:
+            index = run_end
+            continue
+
+        delimiter_length = run_end - index
+        closing_start = run_end
+        while closing_start < len(text):
+            closing_start = text.find("`", closing_start)
+            if closing_start < 0:
+                break
+            closing_end = closing_start
+            while (
+                closing_end < len(text)
+                and text[closing_end] == "`"
+            ):
+                closing_end += 1
+            if closing_end - closing_start == delimiter_length:
+                for position in range(index, closing_end):
+                    if masked[position] not in "\r\n":
+                        masked[position] = " "
+                index = closing_end
+                break
+            closing_start = closing_end
+        else:
+            index = run_end
+            continue
+        if closing_start < 0:
+            index = run_end
+    return "".join(masked)
+
+
 def relative_markdown_link_violations(root: Path) -> list[dict[str, str]]:
     violations: list[dict[str, str]] = []
     resolved_root = root.resolve()
@@ -184,7 +230,9 @@ def relative_markdown_link_violations(root: Path) -> list[dict[str, str]]:
                 {"path": relative_path, "rule": "tracked-markdown-outside-root"}
             )
             continue
-        text = _markdown_without_fenced_code(source.read_text(encoding="utf-8"))
+        text = _markdown_without_inline_code(
+            _markdown_without_fenced_code(source.read_text(encoding="utf-8"))
+        )
         for match in _MARKDOWN_LINK.finditer(text):
             target = _link_target(match.group(1))
             parsed = urlsplit(target)

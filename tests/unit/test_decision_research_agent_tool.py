@@ -502,6 +502,48 @@ def test_cli_run_wait_result_prints_only_canonical_result(monkeypatch, capsys):
     }
 
 
+def test_cli_existing_profile_option_runs_strict_and_prints_only_result(
+    monkeypatch,
+    capsys,
+):
+    captured = {}
+
+    def fake_start_run(**kwargs):
+        captured.update(kwargs)
+        return {"run_id": "run_strict"}
+
+    monkeypatch.setattr(tool, "start_run", fake_start_run)
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda *args, **kwargs: {
+            "run_id": "run_strict",
+            "execution_status": "completed",
+            "delivery_status": "ready",
+        },
+    )
+    canonical = {
+        "run_id": "run_strict",
+        "artifact": {"content": "# Strict report"},
+    }
+    monkeypatch.setattr(tool, "result", lambda *args, **kwargs: canonical)
+
+    assert tool.main(
+        [
+            "run",
+            "--query",
+            "Research question",
+            "--profile",
+            "generic-strict-citation",
+            "--wait",
+            "--result",
+        ]
+    ) == 0
+
+    assert captured["profile_id"] == "generic-strict-citation"
+    assert json.loads(capsys.readouterr().out) == canonical
+
+
 def test_cli_run_result_error_retains_service_code_and_safe_run_id(
     monkeypatch, capsys
 ):

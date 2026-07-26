@@ -147,6 +147,23 @@ persisted row from `uncited` to `cited`; unmatched rows remain `uncited`. This
 does not mutate the frozen Execution Outcome, and failure, cancellation, and
 timeout paths retain their existing frozen-Evidence semantics.
 
+The opt-in `generic-strict-citation@1` profile reuses this generic execution
+path but adds a final delivery invariant:
+
+```mermaid
+stateDiagram-v2
+    canonical_candidate --> ready: exact admitted current-run URL already present
+    canonical_candidate --> correction: zero exact citations
+    correction --> ready: one validated placement and recomputation succeeds
+    correction --> failed: bounded correction or invariant fails
+```
+
+Strict ready is still `completed / not_required / ready`. Ordinary strict
+finalization failure is `failed / not_required / failed` with
+`finalization/run_finalization_failed`, retained Evidence, and no artifact.
+Timeout and cancellation keep their existing classifications. Literal
+`generic` and Talent transitions are unchanged.
+
 ## Talent Review And Publication
 
 ```mermaid

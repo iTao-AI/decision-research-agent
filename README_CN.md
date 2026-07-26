@@ -182,6 +182,12 @@ python tools/decision_research_agent_tool.py run \
   --wait \
   --result
 
+python tools/decision_research_agent_tool.py run \
+  --profile generic-strict-citation \
+  --query "Research question" \
+  --wait \
+  --result
+
 python tools/decision_research_agent_tool.py result \
   --run-id "$RUN_ID"
 ```
@@ -284,6 +290,7 @@ business acceptance、provider billing、exactly-once、production readiness
 - [Contributing](CONTRIBUTING.md)
 - [Agent Integration](docs/AGENT_INTEGRATION.md)
 - [API Contract](docs/reference/api-contract.md)
+- [Strict Citation Profile](docs/reference/strict-citation-profile.md)
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
 - [Agent Evaluation Sensitivity Gate v2](docs/reference/agent-evaluation-sensitivity-gate.md)

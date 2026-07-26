@@ -136,6 +136,18 @@ class TestResearchEvidence:
         assert marked[0].citation_status == "uncited"
         assert marked[0].verification_status == "verified"
 
+    def test_exact_source_url_citation_predicate_matches_only_exact_tokens(self):
+        from agent.research import is_exact_source_url_cited
+
+        assert is_exact_source_url_cited(
+            "https://example.com/source",
+            "See https://example.com/source.",
+        )
+        assert not is_exact_source_url_cited(
+            "https://example.com/source",
+            "See https://example.com/source-extra.",
+        )
+
     def test_extract_evidence_skips_untrusted_plain_text_without_url(self):
         from agent.research import extract_evidence_entries
 

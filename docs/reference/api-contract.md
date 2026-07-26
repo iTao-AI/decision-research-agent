@@ -174,6 +174,19 @@ request-specific runtime state.
 
 An unknown profile returns `404` with detail code `unknown_profile`.
 
+`generic-strict-citation` is selected through the existing `profile_id` field.
+Its manifest reports version `"1"` through this single-profile endpoint; there
+is no profile-list endpoint and the documented proof schema is not a manifest
+or result field. Ready strict delivery requires an exact current-run admitted
+source URL in the canonical non-fallback artifact after application
+recomputation. Strict finalization failure reuses
+`finalization/run_finalization_failed`, retains Evidence, and exposes no
+artifact. The literal `generic` profile is unchanged: zero exact citations
+remain warning-only. In other words, zero exact citations remain warning-only
+for literal `generic`. See
+[Strict Citation Profile](strict-citation-profile.md) for the correction,
+privacy, producer-pin, and non-claim boundaries.
+
 ## Observability
 
 ### GET /api/telemetry/runs/{run_id}

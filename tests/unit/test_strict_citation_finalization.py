@@ -198,6 +198,29 @@ def test_target_scanner_handles_fence_matrix(report, expected):
 
 
 @pytest.mark.parametrize(
+    "prefix",
+    [
+        "> " * 9,
+        ("> " * 5) + ("- " * 5),
+    ],
+)
+def test_target_scanner_excludes_fences_beyond_legacy_container_depth(prefix):
+    from api.strict_citation_finalization import _extract_targets
+
+    report = (
+        f"{prefix}```python\n"
+        f"{prefix}inside code\n"
+        f"{prefix}```\n"
+        "Safe prose."
+    )
+
+    targets = _extract_targets(report)
+
+    assert [target.excerpt for target in targets] == ["Safe prose."]
+    assert report[targets[0].start : targets[0].end] == "Safe prose."
+
+
+@pytest.mark.parametrize(
     "report",
     [
         "```python\ninside\n```not-a-close\ncode link target\n",

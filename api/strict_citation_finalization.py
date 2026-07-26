@@ -61,8 +61,11 @@ _ATX_RE = re.compile(r" {0,3}#{1,6}(?:\s|$)")
 _SETEXT_RE = re.compile(r" {0,3}(?:=+|-+)\s*$")
 _THEMATIC_RE = re.compile(r" {0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
 _LINK_DEFINITION_RE = re.compile(r" {0,3}\[[^\]]+\]:")
+_QUOTE_CONTAINER_RE = re.compile(r" {0,3}>\s?")
+_LIST_CONTAINER_RE = re.compile(
+    r" {0,3}(?:[-+*]|\d+[.)])\s+"
+)
 _TASK_LIST_RE = re.compile(r" {0,3}(?:[-+*]|\d+[.)])\s+\[[ xX]\]\s+")
-_LIST_OR_QUOTE_RE = re.compile(r" {0,3}(?:>|[-+*]|\d+[.)])\s+")
 _STRUCTURAL_ONLY_RE = re.compile(
     r" {0,3}(?:>|[-+*]|\d+[.)])\s*$"
 )
@@ -124,29 +127,23 @@ def _utf8_prefix(value: str, limit: int = MAX_CONTEXT_BYTES) -> str:
     return encoded[:limit].decode("utf-8", errors="ignore")
 
 
-def _container_views(line: str) -> tuple[str, ...]:
-    views = [line]
-    view = line
-    for _ in range(8):
-        changed = False
-        updated = re.sub(r"^ {0,3}>\s?", "", view, count=1)
-        if updated != view:
-            views.append(updated)
-            view = updated
-            changed = True
-        updated = re.sub(
-            r"^ {0,3}(?:[-+*]|\d+[.)])\s+",
-            "",
-            view,
-            count=1,
-        )
-        if updated != view:
-            views.append(updated)
-            view = updated
-            changed = True
-        if not changed:
+def _container_view(line: str) -> tuple[str, bool, bool]:
+    position = 0
+    task_list = False
+    while position < len(line):
+        task_list = task_list or bool(_TASK_LIST_RE.match(line, position))
+        quote = _QUOTE_CONTAINER_RE.match(line, position)
+        if quote is not None:
+            position = quote.end()
+            task_list = task_list or bool(
+                _TASK_LIST_RE.match(line, position)
+            )
+        list_item = _LIST_CONTAINER_RE.match(line, position)
+        if list_item is not None:
+            position = list_item.end()
+        if quote is None and list_item is None:
             break
-    return tuple(views)
+    return line[position:], position > 0, task_list
 
 
 def _extract_targets(report: str) -> tuple[CitationTarget, ...]:
@@ -173,8 +170,7 @@ def _extract_targets(report: str) -> tuple[CitationTarget, ...]:
         offset += len(raw)
         line = raw.rstrip("\r\n")
         line_end = line_start + len(line)
-        container_views = _container_views(line)
-        structural = container_views[-1]
+        structural, has_container, task_list = _container_view(line)
         fence_view = structural.lstrip(" ")
         fence_match = _FENCE_RE.match(fence_view)
 
@@ -225,7 +221,7 @@ def _extract_targets(report: str) -> tuple[CitationTarget, ...]:
             structural.startswith(("    ", "\t"))
             or _ATX_RE.match(structural)
             or _THEMATIC_RE.fullmatch(structural)
-            or any(_TASK_LIST_RE.match(view) for view in container_views)
+            or task_list
             or _STRUCTURAL_ONLY_RE.fullmatch(line)
             or _STRUCTURAL_ONLY_RE.fullmatch(structural)
             or "|" in structural
@@ -234,7 +230,7 @@ def _extract_targets(report: str) -> tuple[CitationTarget, ...]:
         ):
             flush()
             continue
-        if _LIST_OR_QUOTE_RE.match(line) or structural != line:
+        if has_container:
             flush()
             pending.append((line_start, line_end, line))
             continue

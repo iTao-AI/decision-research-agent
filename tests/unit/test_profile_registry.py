@@ -38,6 +38,57 @@ def test_generic_manifest_uses_deepagents_native_harness_policy():
     ]
 
 
+def test_strict_citation_profile_reuses_generic_policy_and_schema():
+    from agent.profile_registry import (
+        GENERIC_POLICY,
+        STRICT_CITATION_PROOF_SCHEMA,
+        is_generic_family,
+        is_strict_citation_profile,
+        profile_registry,
+    )
+
+    strict = profile_registry.get("generic-strict-citation")
+    generic = profile_registry.get("generic")
+
+    assert strict.version == "1"
+    assert strict.harness_policy_id == generic.harness_policy_id
+    assert profile_registry.policy_for(strict.profile_id) is GENERIC_POLICY
+    assert STRICT_CITATION_PROOF_SCHEMA == "dra.strict-citation-profile.v1"
+    assert is_generic_family("generic")
+    assert is_generic_family("generic-strict-citation")
+    assert not is_generic_family("talent-hiring-signal")
+    assert is_strict_citation_profile("generic-strict-citation")
+    assert not is_strict_citation_profile("generic")
+    manifest = profile_registry.manifest(strict.profile_id)
+    assert manifest["profile"]["profile_id"] == "generic-strict-citation"
+    assert "proof_schema" not in manifest["profile"]
+
+
+def test_generic_family_compiler_reuses_exact_graph_and_rejects_wrong_policy():
+    from agent.profile_agents import compile_profile_agent
+    from agent.profile_registry import profile_registry
+
+    generic_graph = object()
+    for profile_id in ("generic", "generic-strict-citation"):
+        assert (
+            compile_profile_agent(
+                profile_registry.get(profile_id),
+                profile_registry.policy_for(profile_id),
+                model=object(),
+                generic_agent=generic_graph,
+            )
+            is generic_graph
+        )
+
+    with pytest.raises(ValueError, match="unsupported harness policy"):
+        compile_profile_agent(
+            profile_registry.get("generic-strict-citation"),
+            profile_registry.policy_for("talent-hiring-signal"),
+            model=object(),
+            generic_agent=generic_graph,
+        )
+
+
 def test_generic_manifest_removes_host_tools_and_general_purpose():
     from agent.profile_registry import profile_registry
 

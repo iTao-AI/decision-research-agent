@@ -210,6 +210,7 @@ def test_generic_skills_are_real_and_talent_has_none():
         "research-planning",
         "evidence-synthesis-and-reporting",
     }
+    assert load_skill_names("generic-strict-citation") == load_skill_names("generic")
     assert load_skill_names("talent-hiring-signal") == set()
 
 

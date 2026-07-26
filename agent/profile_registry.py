@@ -1,7 +1,7 @@
 """Immutable server-side profile and Deep Agents harness policy registry."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from threading import Lock
 from types import MappingProxyType
 from typing import Any, Callable
@@ -74,6 +74,17 @@ GENERIC_PROFILE = ProfileSpec(
     renderer_version="legacy",
     canonicalization_version="legacy",
 )
+STRICT_CITATION_PROFILE_ID = "generic-strict-citation"
+STRICT_CITATION_PROFILE_VERSION = "1"
+STRICT_CITATION_PROOF_SCHEMA = "dra.strict-citation-profile.v1"
+GENERIC_FAMILY_PROFILE_IDS = frozenset(
+    {"generic", STRICT_CITATION_PROFILE_ID}
+)
+STRICT_CITATION_PROFILE = replace(
+    GENERIC_PROFILE,
+    profile_id=STRICT_CITATION_PROFILE_ID,
+    version=STRICT_CITATION_PROFILE_VERSION,
+)
 TALENT_PROFILE = ProfileSpec(
     profile_id="talent-hiring-signal",
     version="1",
@@ -86,6 +97,14 @@ TALENT_PROFILE = ProfileSpec(
     renderer_version="2",
     canonicalization_version="1",
 )
+
+
+def is_generic_family(profile_id: str) -> bool:
+    return profile_id in GENERIC_FAMILY_PROFILE_IDS
+
+
+def is_strict_citation_profile(profile_id: str) -> bool:
+    return profile_id == STRICT_CITATION_PROFILE_ID
 
 
 class ProfileRegistry:
@@ -146,6 +165,6 @@ class AgentFactory:
 
 
 profile_registry = ProfileRegistry(
-    profiles=(GENERIC_PROFILE, TALENT_PROFILE),
+    profiles=(GENERIC_PROFILE, STRICT_CITATION_PROFILE, TALENT_PROFILE),
     policies=(GENERIC_POLICY, TALENT_POLICY),
 )

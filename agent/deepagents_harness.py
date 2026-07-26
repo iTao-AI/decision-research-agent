@@ -26,7 +26,7 @@ from langgraph.errors import GraphRecursionError
 
 from agent.harness_contracts import CallBudgetDiagnostic, HarnessExecutionError
 from agent.profile_middleware import build_profile_middleware
-from agent.profile_registry import profile_registry
+from agent.profile_registry import is_generic_family, profile_registry
 from agent.research_agents import compile_generic_researchers
 from agent.runtime_context import ResearchRuntimeContext
 from agent.talent_runtime import talent_recursion_limit
@@ -291,7 +291,7 @@ def load_skill_names(
 ) -> set[str]:
     if profile_id == "talent-hiring-signal":
         return set()
-    if profile_id != "generic":
+    if not is_generic_family(profile_id):
         raise KeyError(f"unknown profile: {profile_id}")
     return set(_read_required_skills(skills_root or _DEFAULT_SKILLS_ROOT))
 

@@ -6,7 +6,12 @@ from typing import Any
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 
-from agent.profile_registry import AgentHarnessPolicy, ProfileSpec
+from agent.profile_registry import (
+    GENERIC_POLICY,
+    AgentHarnessPolicy,
+    ProfileSpec,
+    is_generic_family,
+)
 from agent.profile_middleware import build_profile_middleware
 from agent.runtime_context import ResearchRuntimeContext
 from agent.structured_output_recovery import pair_invalid_structured_tool_calls
@@ -44,7 +49,9 @@ def compile_profile_agent(
     generic_agent: Any,
 ) -> Any:
     """Compile one immutable profile graph, failing closed for unknown policies."""
-    if profile.profile_id == "generic":
+    if is_generic_family(profile.profile_id):
+        if policy.policy_id != GENERIC_POLICY.policy_id:
+            raise ValueError(f"unsupported harness policy: {policy.policy_id}")
         return generic_agent
     if profile.profile_id != "talent-hiring-signal":
         raise ValueError(f"unsupported profile compiler: {profile.profile_id}")

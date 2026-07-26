@@ -11,6 +11,8 @@ Directory presence does not confer verification or current release authority.
 |---|---|
 | [agent-evaluation-regression-v1.json](agent-evaluation-regression-v1.json) | Canonical deterministic Agent evaluation report for eight fixed cases and six evaluators; not runtime output or truth verification. |
 | [agent-evaluation-regression-v1.md](agent-evaluation-regression-v1.md) | Human-readable rendering derived only from the validated JSON report. |
+| [agent-evaluation-sensitivity-v2.json](agent-evaluation-sensitivity-v2.json) | Canonical provider-free sensitivity report for six healthy persisted anchors and three post-traversal synthetic evaluator-input controls; not a runtime incident or model-quality result. |
+| [agent-evaluation-sensitivity-v2.md](agent-evaluation-sensitivity-v2.md) | Human-readable rendering derived only from the validated v2 JSON report. |
 | [downstream-consumer-contract-v1.json](downstream-consumer-contract-v1.json) | Deterministic synthetic compatibility fixture for the versioned downstream status/result/Evidence boundary; it is not runtime output or independent verification. |
 | [run-failure-cause-v1.json](run-failure-cause-v1.json) | Machine-readable deterministic durable run failure-cause proof. |
 | [run-failure-cause-v1.md](run-failure-cause-v1.md) | Human-readable rendering derived from the validated failure-cause report. |
@@ -93,3 +95,6 @@ failure-handling boundary is documented in
 [`docs/reference/downstream-consumer-contract.md`](../reference/downstream-consumer-contract.md).
 The Agent evaluation artifacts and baseline review workflow are documented in
 [`docs/reference/agent-evaluation-regression-gate.md`](../reference/agent-evaluation-regression-gate.md).
+The v2 sensitivity artifacts, commands, diagnosis, and non-claims are
+documented in
+[`docs/reference/agent-evaluation-sensitivity-gate.md`](../reference/agent-evaluation-sensitivity-gate.md).

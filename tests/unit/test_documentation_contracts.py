@@ -2574,6 +2574,181 @@ def test_context_reliability_pytest_pack_is_documented_and_indexed() -> None:
     assert "seconds to pass" not in reference
 
 
+SENSITIVITY_REFERENCE = (
+    PROJECT_ROOT / "docs/reference/agent-evaluation-sensitivity-gate.md"
+)
+
+
+def _sensitivity_required_ci_commands(text: str, start: str) -> set[str]:
+    section = re.split(r"\n### ", text.split(start, 1)[1], maxsplit=1)[0]
+    return set(re.findall(r"`(python [^`]+)`", section))
+
+
+def _assert_sensitivity_nonclaims(text: str) -> None:
+    normalized = _collapsed(text).lower()
+    for phrase in (
+        "runtime incident detected",
+        "provider quality proven",
+        "included in v0.1.7",
+        "hosted api ready",
+        "ui ready",
+        "provides automatic failure capture",
+        "five-minute result available",
+    ):
+        assert phrase not in normalized
+    for phrase in (
+        "post-traversal synthetic evaluator input",
+        "provider-free",
+        "not a runtime incident",
+        "not a model-quality result",
+        "not failure capture",
+    ):
+        assert phrase in normalized
+
+
+def test_sensitivity_gate_reference_distinguishes_v1_context_and_v2_authorities():
+    reference = SENSITIVITY_REFERENCE.read_text(encoding="utf-8")
+    normalized = _collapsed(reference)
+    for phrase in (
+        "Agent Evaluation Regression Gate v1",
+        "Context Reliability Pytest Regression Pack",
+        "Agent Evaluation Sensitivity Gate v2",
+        "Model + Context + Tools",
+        "Harness",
+        "trajectory",
+        "durable application state",
+        "six independently persisted healthy anchors",
+        "post-traversal synthetic evaluator input",
+        "deterministic evaluators",
+        "no LLM judge",
+    ):
+        assert phrase in normalized
+
+
+def test_sensitivity_gate_reference_exposes_exact_commands_errors_and_code_navigation():
+    reference = SENSITIVITY_REFERENCE.read_text(encoding="utf-8")
+    for command in (
+        "PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_v2_gate.py check",
+        "PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_v2_gate.py build",
+        "test_declared_control_triggers_only_responsible_evaluator[trajectory-call-result-pairing]",
+    ):
+        assert command in reference
+    for code in (
+        "evaluation_v2_dataset_invalid",
+        "evaluation_v2_case_invalid",
+        "evaluation_v2_replay_invalid",
+        "evaluation_v2_control_invalid",
+        "evaluation_v2_report_invalid",
+        "evaluation_v2_baseline_invalid",
+        "evaluation_v2_output_invalid",
+        "evaluation_v2_cli_invalid",
+        "evaluation_v2_public_output_unsafe",
+        "evaluation_v2_internal_error",
+    ):
+        assert code in reference
+    for symbol in (
+        "scripts.agent_evaluation_v2_contracts.validate_dataset",
+        "scripts.agent_evaluation_replay.run_persisted_lane",
+        "scripts.agent_evaluation_v2_gate.evaluate_negative_control_sensitivity",
+        "api.server._run_dispatched_with_persistence",
+        "api.run_repository.finalize_run_transaction",
+        "scripts.agent_evaluation_evaluators.evaluate_observation",
+    ):
+        assert symbol in reference
+
+
+def test_sensitivity_gate_reference_states_healthy_anchor_and_post_traversal_control_boundary():
+    reference = SENSITIVITY_REFERENCE.read_text(encoding="utf-8")
+    normalized = _collapsed(reference)
+    assert (
+        "All six persisted lifecycle anchors are healthy and equivalent; "
+        "regressions below exist only in post-traversal synthetic evaluator inputs."
+    ) in normalized
+    for column in (
+        "healthy anchor",
+        "post-traversal synthetic control",
+        "application projection equal",
+        "responsible evaluator",
+        "expected control finding",
+    ):
+        assert column in reference
+    for path in ("30 seconds", "2 minutes", "Bounded proof path"):
+        assert path in reference
+
+
+def test_sensitivity_gate_markdown_leads_with_non_runtime_failure_boundary():
+    markdown = (
+        PROJECT_ROOT / "docs/evidence/agent-evaluation-sensitivity-v2.md"
+    ).read_text(encoding="utf-8")
+    assert markdown.splitlines()[2] == (
+        "All six persisted lifecycle anchors are healthy and equivalent; "
+        "regressions below exist only in post-traversal synthetic evaluator inputs."
+    )
+    assert "post-traversal synthetic control" in markdown
+
+
+def test_sensitivity_gate_required_ci_inventory_is_value_equal_in_english_and_chinese():
+    english = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    chinese = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")
+    english_commands = _sensitivity_required_ci_commands(
+        english, "### Required CI proof inventory"
+    )
+    chinese_commands = _sensitivity_required_ci_commands(
+        chinese, "### Required CI proof 清单"
+    )
+    assert english_commands == chinese_commands
+    assert "python scripts/agent_evaluation_v2_gate.py check" in english_commands
+    workflow = (
+        PROJECT_ROOT / ".github/workflows/ci.yml"
+    ).read_text(encoding="utf-8")
+    v1 = "python scripts/agent_evaluation_gate.py check"
+    v2 = "python scripts/agent_evaluation_v2_gate.py check"
+    pytest_command = 'python -m pytest -q -m "not docker"'
+    assert workflow.count(v2) == 1
+    assert workflow.index(v1) < workflow.index(v2) < workflow.index(pytest_command)
+
+
+def test_sensitivity_gate_readmes_are_value_equal_for_commands_boundary_and_non_claims():
+    english = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    chinese = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")
+    command = "PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_v2_gate.py check"
+    assert command in english and command in chinese
+    for text in (english, chinese):
+        normalized = _collapsed(text)
+        for token in (
+            "three pairs",
+            "independent healthy persistence replay",
+            "post-traversal synthetic evaluator-input control",
+            "provider-free",
+            "runtime incident",
+            "model-quality result",
+            "failure capture",
+        ):
+            assert token in normalized
+
+
+def test_sensitivity_gate_docs_reject_runtime_failure_provider_release_and_ui_overclaims():
+    paths = (
+        SENSITIVITY_REFERENCE,
+        PROJECT_ROOT / "README.md",
+        PROJECT_ROOT / "README_CN.md",
+        PROJECT_ROOT / "docs/evidence/agent-evaluation-sensitivity-v2.md",
+    )
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    _assert_sensitivity_nonclaims(combined)
+    for overclaim in (
+        "Runtime incident detected",
+        "Provider quality proven",
+        "Included in v0.1.7",
+        "Hosted API ready",
+        "UI ready",
+        "Provides automatic failure capture",
+        "Five-minute result available",
+    ):
+        with pytest.raises(AssertionError):
+            _assert_sensitivity_nonclaims(combined + "\n" + overclaim)
+
+
 OBSERVATION_REFERENCE = PROJECT_ROOT / "docs/reference/observation-contract.md"
 EXPECTED_OBSERVATION_EVENT_KEYS = {
     "session_created": {"workspace_created"},

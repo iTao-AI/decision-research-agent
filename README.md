@@ -260,6 +260,7 @@ selected local verification subset, not the full required CI proof inventory:
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_v2_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/secure_local_runtime_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/bounded_live_producer_proof.py check
@@ -271,6 +272,7 @@ python tools/decision_research_agent_tool.py doctor
 ### Required CI proof inventory
 
 - Agent evaluation regression gate: `python scripts/agent_evaluation_gate.py check`
+- Agent evaluation sensitivity gate v2: `python scripts/agent_evaluation_v2_gate.py check`
 - Run creation idempotency proof: `python scripts/run_creation_idempotency_proof.py check`
 - Run dispatch reconciliation proof: `python scripts/run_dispatch_reconciliation_proof.py check`
 - Run failure cause proof: `python scripts/run_failure_cause_proof.py check`
@@ -281,6 +283,11 @@ Required pytest covers downstream fixture/CLI behavior;
 it is not an independent top-level workflow step. The current required-gate
 authority is
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+Agent evaluation sensitivity v2: three pairs use independent healthy
+persistence replays followed by post-traversal synthetic evaluator-input
+controls. This provider-free evidence is not a runtime incident, not a
+model-quality result, and not failure capture.
 
 The bounded live producer `check` is provider-free and Docker-free. Its
 separately authorized `observe-live` command is documented without being run by
@@ -306,6 +313,7 @@ production readiness, or an SLA.
 - [API Contract](docs/reference/api-contract.md)
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
+- [Agent Evaluation Sensitivity Gate v2](docs/reference/agent-evaluation-sensitivity-gate.md)
 - [Bounded Live Producer Evaluation](docs/reference/bounded-live-producer-evaluation.md)
 - [Durable Run Failure Cause Proof](docs/evidence/run-failure-cause-v1.md)
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)

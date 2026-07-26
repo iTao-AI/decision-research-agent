@@ -38,6 +38,9 @@ external evaluation of the public contract surface.
   errors, and the additive durable run failure-cause status projection.
 - [Downstream Consumer Contract](reference/downstream-consumer-contract.md) — deterministic status, result, Evidence, fallback, and failure-handling proof.
 - [Agent Evaluation Regression Gate](reference/agent-evaluation-regression-gate.md) — deterministic eight-case, six-evaluator release gate and baseline workflow.
+- [Agent Evaluation Sensitivity Gate v2](reference/agent-evaluation-sensitivity-gate.md)
+  — provider-free six-anchor, three-control evaluator-sensitivity evidence and
+  explicit non-claims.
 - [Context Reliability Pytest Regression Pack](reference/context-reliability-regression.md)
   — provider-free paired native-summary regression over application-owned
   persisted projections.
@@ -90,6 +93,10 @@ external evaluation of the public contract surface.
 - [Agent Evaluation Report](evidence/agent-evaluation-regression-v1.md) and
   [JSON baseline](evidence/agent-evaluation-regression-v1.json) — deterministic
   contract regression evidence and limits.
+- [Agent Evaluation Sensitivity v2 Report](evidence/agent-evaluation-sensitivity-v2.md)
+  and [JSON baseline](evidence/agent-evaluation-sensitivity-v2.json) —
+  deterministic provider-free sensitivity evidence over three reviewed
+  post-traversal synthetic controls.
 - [Durable HITL Gate Report](evidence/durable-hitl-gate-report.json) — 13-gate result artifact.
 - [Real-Source Proof](evidence/real-source-proof.md) and
   [JSON report](evidence/real-source-proof.json) — bounded proof and limitations.

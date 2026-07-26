@@ -41,6 +41,7 @@ from scripts.agent_evaluation_context import (
 )
 from scripts.agent_evaluation_contracts import validate_observation
 from scripts.agent_evaluation_v2_contracts import (
+    CHECKPOINT_NAMES,
     SEMANTIC_COMPARISON_SCHEMA_VERSION,
     validate_dataset,
     validate_public_projection,
@@ -76,15 +77,6 @@ _run_dispatched_with_persistence = server._run_dispatched_with_persistence
 
 
 REPLAY_TIMEOUT_SECONDS = 30
-CHECKPOINTS: tuple[tuple[str, bool], ...] = (
-    ("create_run", True),
-    ("claim_run_dispatch", True),
-    ("create_tracked_task_dispatch_fence", True),
-    ("research_execution_service", True),
-    ("finalize_run_transaction", True),
-    ("get_run", True),
-    ("resolve_run_result", True),
-)
 _FEATURE_FLAGS = (
     "DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL",
     "DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION",
@@ -107,6 +99,26 @@ class EvaluationV2ReplayError(ValueError):
 
 def _fail() -> None:
     raise EvaluationV2ReplayError()
+
+
+class _LifecycleCheckpointRecorder:
+    def __init__(self) -> None:
+        self._records: list[tuple[str, bool]] = []
+
+    def observe(self, checkpoint: str, passed: bool) -> None:
+        next_index = len(self._records)
+        if (
+            next_index >= len(CHECKPOINT_NAMES)
+            or checkpoint != CHECKPOINT_NAMES[next_index]
+            or passed is not True
+        ):
+            _fail()
+        self._records.append((checkpoint, True))
+
+    def finish(self) -> tuple[tuple[str, bool], ...]:
+        if [name for name, _ in self._records] != list(CHECKPOINT_NAMES):
+            _fail()
+        return tuple(self._records)
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,6 +421,7 @@ async def run_persisted_lane(
         db_path.parent.mkdir(parents=True, exist_ok=True)
         project_root.mkdir(parents=True, exist_ok=False)
 
+        checkpoints = _LifecycleCheckpointRecorder()
         harness = ReplayHarness(case)
         cache_key = f"agent-evaluation-v2:{case['case_id']}:{lane_role}"
         with tavily_tools._search_cache_lock:
@@ -416,27 +429,32 @@ async def run_persisted_lane(
             previous_cache = tavily_tools._search_cache.get(cache_key)
             tavily_tools._search_cache[cache_key] = {"owned": True}
 
-        service = ResearchExecutionService(
-            harness=harness,
-            project_root=project_root,
-        )
-
-        async def replay_adapter(
-            query: str,
-            thread_id: str,
-            **kwargs: Any,
-        ) -> ExecutionOutcome:
-            return await service.execute(
-                query,
-                thread_id,
-                run_id=kwargs["run_id"],
-                segment_id=kwargs["segment_id"],
-                outcome_box=kwargs["outcome_box"],
-                profile_id=kwargs["profile_id"],
-                scope=kwargs["scope"],
+        try:
+            service = ResearchExecutionService(
+                harness=harness,
+                project_root=project_root,
             )
 
-        try:
+            async def replay_adapter(
+                query: str,
+                thread_id: str,
+                **kwargs: Any,
+            ) -> ExecutionOutcome:
+                outcome = await service.execute(
+                    query,
+                    thread_id,
+                    run_id=kwargs["run_id"],
+                    segment_id=kwargs["segment_id"],
+                    outcome_box=kwargs["outcome_box"],
+                    profile_id=kwargs["profile_id"],
+                    scope=kwargs["scope"],
+                )
+                checkpoints.observe(
+                    "research_execution_service",
+                    isinstance(outcome, ExecutionOutcome),
+                )
+                return outcome
+
             with ExitStack() as stack:
                 stack.enter_context(patch.object(server, "run_deep_agent", replay_adapter))
                 stack.enter_context(
@@ -451,6 +469,11 @@ async def run_persisted_lane(
                     query=case["synthetic_query"],
                     db_path=str(db_path),
                 )
+                checkpoints.observe(
+                    "create_run",
+                    isinstance(identity.get("run_id"), str)
+                    and isinstance(identity.get("segment_id"), str),
+                )
                 claim = claim_run_dispatch(
                     db_path=str(db_path),
                     worker_id=_WORKER_ID,
@@ -459,6 +482,11 @@ async def run_persisted_lane(
                 )
                 if claim is None:
                     _fail()
+                checkpoints.observe(
+                    "claim_run_dispatch",
+                    claim.run_id == identity["run_id"]
+                    and claim.segment_id == identity["segment_id"],
+                )
                 outcome_box = OutcomeBox()
                 stage = _RunStage()
                 termination_origin = TerminationOrigin()
@@ -477,18 +505,35 @@ async def run_persisted_lane(
                     termination_origin=termination_origin,
                     finalization_checkpoint=finalization_checkpoint,
                 )
+                checkpoints.observe(
+                    "create_tracked_task_dispatch_fence",
+                    identity["run_id"] in task_tracker.active_tasks
+                    and task_tracker.active_tasks[identity["run_id"]][0] is tracked,
+                )
                 await tracked
                 await asyncio.sleep(0)
                 if termination_origin.value == "timeout":
                     _fail()
                 if termination_origin.value != "unset":
                     _fail()
+                checkpoints.observe(
+                    "finalize_run_transaction",
+                    stage.value == "finalization",
+                )
                 run = get_run(run_id=identity["run_id"], db_path=str(db_path))
                 if run is None:
                     _fail()
+                checkpoints.observe(
+                    "get_run",
+                    run.get("run_id") == identity["run_id"],
+                )
                 resolution = resolve_run_result(
                     run_id=identity["run_id"],
                     db_path=str(db_path),
+                )
+                checkpoints.observe(
+                    "resolve_run_result",
+                    getattr(resolution, "run_id", None) == identity["run_id"],
                 )
                 application_projection = project_context_reliability_outcome(
                     run=run,
@@ -515,7 +560,7 @@ async def run_persisted_lane(
         projection = LaneProjection(
             case_id=case["case_id"],
             lane_role=lane_role,
-            checkpoints=CHECKPOINTS,
+            checkpoints=checkpoints.finish(),
             application_projection=application_projection,
             semantic_observation_projection=semantic_projection,
         )

@@ -32,11 +32,19 @@ from scripts.agent_evaluation_v2_contracts import (
     CASE_IDS,
     COMPARISON_SCHEMA_VERSION,
     DATASET_SCHEMA_VERSION,
+    EVALUATOR_REGISTRY_IDENTITY,
+    EvaluationV2BoundedReadError,
     EvaluationV2ValidationError,
+    LIMITS,
+    MAX_PUBLIC_BYTES,
+    NON_CLAIMS,
     REPORT_SCHEMA_VERSION,
+    RUNNER_IDENTITY,
+    SEMANTIC_COMPARISON_IDENTITY,
     canonical_json_bytes,
     dataset_hash,
     load_dataset,
+    read_bounded_bytes,
     validate_comparison,
     validate_public_projection,
     validate_report,
@@ -278,21 +286,23 @@ def evaluate_negative_control_sensitivity(
     current_by_id = {item["evaluator_id"]: item for item in current_evaluators}
     control_by_id = {item["evaluator_id"]: item for item in control_evaluators}
     synthetic_by_id = {item["evaluator_id"]: item for item in synthetic_evaluators}
-    if (
-        current_by_id.get(responsible)
-        != {
+    if current_by_id.get(responsible) != {
             "evaluator_id": responsible,
             "status": "pass",
             "finding_codes": [],
-        }
-        or control_by_id.get(responsible) != current_by_id[responsible]
-        or synthetic_by_id.get(responsible)
-        != {
-            "evaluator_id": responsible,
-            "status": "regression",
-            "finding_codes": [expected_finding],
-        }
-    ):
+        } or control_by_id.get(responsible) != current_by_id[responsible]:
+        _fail("evaluation_v2_control_invalid")
+    responsible_sensitive = synthetic_by_id.get(responsible) == {
+        "evaluator_id": responsible,
+        "status": "regression",
+        "finding_codes": [expected_finding],
+    }
+    responsible_false_green = synthetic_by_id.get(responsible) == {
+        "evaluator_id": responsible,
+        "status": "pass",
+        "finding_codes": [],
+    }
+    if not (responsible_sensitive or responsible_false_green):
         _fail("evaluation_v2_control_invalid")
     for evaluator_id, _, _ in EVALUATOR_REGISTRY:
         if evaluator_id == responsible:
@@ -317,10 +327,12 @@ def evaluate_negative_control_sensitivity(
         "control_mutation_stage": "post_traversal",
         "control_failure_source": "synthetic_evaluator_input",
         "checkpoints_current": [
-            [name, passed] for name, passed in current.projection.checkpoints
+            {"checkpoint": name, "passed": passed}
+            for name, passed in current.projection.checkpoints
         ],
         "checkpoints_control_anchor": [
-            [name, passed] for name, passed in control_anchor.projection.checkpoints
+            {"checkpoint": name, "passed": passed}
+            for name, passed in control_anchor.projection.checkpoints
         ],
         "application_projection": current.projection.application_projection,
         "application_projection_equal": True,
@@ -336,9 +348,11 @@ def evaluate_negative_control_sensitivity(
         "synthetic_control_evaluators": synthetic_evaluators,
         "responsible_evaluator": responsible,
         "expected_control_finding": expected_finding,
-        "observed_control_finding": expected_finding,
+        "observed_control_finding": (
+            expected_finding if responsible_sensitive else None
+        ),
         "non_responsible_evaluators_equal": True,
-        "negative_control_sensitivity": True,
+        "negative_control_sensitivity": responsible_sensitive,
         "unexpected_blocking_finding_codes": [],
     }
     validate_public_projection(pair)
@@ -392,6 +406,16 @@ async def build_report(
             "sha256": dataset_hash(dataset),
             "case_ids": list(CASE_IDS),
         },
+        "runner": copy.deepcopy(RUNNER_IDENTITY),
+        "evaluator_registry": {
+            "registry_id": EVALUATOR_REGISTRY_IDENTITY["registry_id"],
+            "version": EVALUATOR_REGISTRY_IDENTITY["version"],
+            "evaluators": [
+                {"evaluator_id": evaluator_id, "version": version}
+                for evaluator_id, version, _ in EVALUATOR_REGISTRY
+            ],
+        },
+        "semantic_comparison": copy.deepcopy(SEMANTIC_COMPARISON_IDENTITY),
         "pairs": pairs,
         "summary": {
             "pair_count": len(pairs),
@@ -402,14 +426,8 @@ async def build_report(
             "gate_passed": len(pairs) == 3
             and all(pair["negative_control_sensitivity"] for pair in pairs),
         },
-        "limits": [
-            "Exactly three reviewed public-safe synthetic controls.",
-            "Provider-free deterministic evaluator-sensitivity proof.",
-        ],
-        "non_claims": [
-            "No runtime incident, automatic failure capture, or provider-quality claim.",
-            "No answer-truth, production-scale, release, API, or UI claim.",
-        ],
+        "limits": list(LIMITS),
+        "non_claims": list(NON_CLAIMS),
     }
     try:
         return validate_report(report)
@@ -480,10 +498,15 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         ]
     )
     for pair in canonical["pairs"]:
-        lines.append(
-            f"- `{pair['case_id']}`: both anchors pass all six; "
+        conclusion = (
             f"`{pair['responsible_evaluator']}` detects "
             f"`{pair['expected_control_finding']}`."
+            if pair["negative_control_sensitivity"]
+            else f"`{pair['responsible_evaluator']}` returns a false green for "
+            f"`{pair['expected_control_finding']}`."
+        )
+        lines.append(
+            f"- `{pair['case_id']}`: both anchors pass all six; {conclusion}"
         )
     lines.extend(
         [
@@ -534,6 +557,7 @@ def _resolve_output(path: Path) -> Path:
 
 
 def _stage_file(path: Path, raw: bytes) -> Path:
+    temporary: Path | None = None
     try:
         handle = tempfile.NamedTemporaryFile(
             mode="wb",
@@ -549,6 +573,11 @@ def _stage_file(path: Path, raw: bytes) -> Path:
             os.fsync(handle.fileno())
         return temporary
     except OSError:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
         _fail("evaluation_v2_output_invalid")
 
 
@@ -567,11 +596,17 @@ def write_artifacts_atomically(
     if render_markdown(report) != markdown:
         _fail("evaluation_v2_report_invalid")
     markdown_raw = markdown.encode("utf-8")
-    json_temp: Path | None = _stage_file(json_path, json_raw)
+    json_temp: Path | None = None
     markdown_temp: Path | None = None
-    old_json = json_path.read_bytes() if json_path.exists() else None
+    restore_temp: Path | None = None
     try:
+        json_temp = _stage_file(json_path, json_raw)
         markdown_temp = _stage_file(markdown_path, markdown_raw)
+        old_json = (
+            read_bounded_bytes(json_path, limit=MAX_PUBLIC_BYTES)
+            if json_path.exists()
+            else None
+        )
         os.replace(json_temp, json_path)
         json_temp = None
         try:
@@ -581,11 +616,14 @@ def write_artifacts_atomically(
             if old_json is None:
                 json_path.unlink(missing_ok=True)
             else:
-                restore = _stage_file(json_path, old_json)
-                os.replace(restore, json_path)
+                restore_temp = _stage_file(json_path, old_json)
+                os.replace(restore_temp, json_path)
+                restore_temp = None
             raise
     except EvaluationV2GateError:
         raise
+    except EvaluationV2BoundedReadError:
+        _fail("evaluation_v2_output_invalid")
     except OSError:
         _fail("evaluation_v2_output_invalid")
     finally:
@@ -593,6 +631,8 @@ def write_artifacts_atomically(
             json_temp.unlink(missing_ok=True)
         if markdown_temp is not None and markdown_temp.exists():
             markdown_temp.unlink(missing_ok=True)
+        if restore_temp is not None and restore_temp.exists():
+            restore_temp.unlink(missing_ok=True)
 
 
 def compare_artifacts(
@@ -629,7 +669,9 @@ def compare_artifacts(
         if not pair["negative_control_sensitivity"]
     ]
     observed = [
-        pair["observed_control_finding"] for pair in candidate["pairs"]
+        pair["observed_control_finding"]
+        for pair in candidate["pairs"]
+        if pair["observed_control_finding"] is not None
     ]
     unexpected = [
         code
@@ -686,8 +728,8 @@ def _error(code: str) -> int:
 
 def _read_baseline(path: Path) -> bytes:
     try:
-        return path.read_bytes()
-    except OSError:
+        return read_bounded_bytes(path, limit=MAX_PUBLIC_BYTES)
+    except EvaluationV2BoundedReadError:
         _fail("evaluation_v2_baseline_invalid")
 
 

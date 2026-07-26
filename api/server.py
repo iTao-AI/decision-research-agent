@@ -25,6 +25,7 @@ project_root = current_dir.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
+from agent import main_agent as main_agent_module
 from agent.main_agent import run_deep_agent
 from agent.research import mark_cited_evidence
 from agent.run_result import OutcomeBox
@@ -53,6 +54,7 @@ from api.run_repository import (
     create_run,
     finalize_run_transaction,
     get_run,
+    run_finalization_fence_is_current,
 )
 from api.run_failure_cause_models import (
     RunFailureCauseConflict,
@@ -73,7 +75,17 @@ from api.run_result_service import (
     build_generic_result_artifact,
     resolve_run_result,
 )
-from agent.profile_registry import profile_registry
+from api.strict_citation_finalization import (
+    PreparedStrictCitation,
+    StrictCitationResult,
+    invoke_prepared_strict_citation,
+    prepare_strict_citation,
+)
+from agent.profile_registry import (
+    is_generic_family,
+    is_strict_citation_profile,
+    profile_registry,
+)
 from agent.talent_contracts import ResearchScope
 from api.talent_artifacts import build_talent_artifacts
 from api.review_api import router as review_router
@@ -95,6 +107,9 @@ from api.review_config import (
 )
 from api.review_worker import ReviewWorker
 from api.run_migrations import migrate_with_backup
+
+
+strict_citation_chat_model = getattr(main_agent_module, "model", None)
 
 
 def _is_review_api_path(path: str) -> bool:
@@ -487,13 +502,38 @@ async def _run_started_v2_with_persistence(
         review_workflow = None
         artifacts = []
         completed_evidence_entries = result.evidence_entries
-        if execution_status == "completed" and profile_id == "generic":
+        if execution_status == "completed" and is_generic_family(profile_id):
             artifact = build_generic_result_artifact(result)
             artifacts = [artifact]
-            completed_evidence_entries = mark_cited_evidence(
-                result.evidence_entries,
-                artifact["content"],
-            )
+            if is_strict_citation_profile(profile_id):
+                strict_result = prepare_strict_citation(
+                    outcome=result,
+                    initial_artifact=artifact,
+                )
+                if isinstance(strict_result, PreparedStrictCitation):
+                    fence_is_current = await asyncio.to_thread(
+                        run_finalization_fence_is_current,
+                        run_id=run_id,
+                        segment_id=segment_id,
+                        expected_state_version=state_version,
+                        db_path=db_path,
+                    )
+                    if not fence_is_current:
+                        return
+                    strict_result = await invoke_prepared_strict_citation(
+                        prepared=strict_result,
+                        chat_model=strict_citation_chat_model,
+                    )
+                if not isinstance(strict_result, StrictCitationResult):
+                    raise RuntimeError("strict_citation_result_invalid")
+                artifact = strict_result.artifact
+                artifacts = [artifact]
+                completed_evidence_entries = strict_result.evidence_entries
+            else:
+                completed_evidence_entries = mark_cited_evidence(
+                    result.evidence_entries,
+                    artifact["content"],
+                )
         if execution_status == "completed" and profile_id == "talent-hiring-signal":
             review_bundle, _, artifacts = build_talent_artifacts(
                 run_id=run_id,

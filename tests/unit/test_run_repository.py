@@ -1410,6 +1410,189 @@ def test_nonfailed_run_projects_null_failure_cause(tmp_path, execution_status):
     ] is None
 
 
+def test_finalization_fence_is_current_only_for_exact_running_identity(tmp_path):
+    from api.run_dispatch_repository import (
+        claim_run_dispatch,
+        start_run_dispatch,
+    )
+    from api.run_repository import (
+        create_run,
+        finalize_run_transaction,
+        run_finalization_fence_is_current,
+    )
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(
+        db_path=db_path,
+        thread_id="thread-1",
+        query="query",
+        profile_id="generic-strict-citation",
+    )
+    assert not run_finalization_fence_is_current(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=0,
+    )
+    claim = claim_run_dispatch(
+        db_path=db_path,
+        worker_id="dispatch_worker_11111111111111111111111111111111",
+        lease_seconds=60,
+        run_id=created["run_id"],
+    )
+    assert claim is not None
+    assert start_run_dispatch(db_path=db_path, claim=claim)
+
+    assert run_finalization_fence_is_current(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=1,
+    )
+    assert not run_finalization_fence_is_current(
+        db_path=db_path,
+        run_id="run_wrong111111111111111111111111111",
+        segment_id=created["segment_id"],
+        expected_state_version=1,
+    )
+    assert not run_finalization_fence_is_current(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id="wrong-segment",
+        expected_state_version=1,
+    )
+    assert not run_finalization_fence_is_current(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=0,
+    )
+    assert finalize_run_transaction(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=1,
+        allowed_previous_statuses={"running"},
+        execution_status="completed",
+        delivery_status="ready",
+        evidence_entries=[],
+    )
+    assert not run_finalization_fence_is_current(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=1,
+    )
+
+    failed = create_run(
+        db_path=db_path,
+        thread_id="thread-failed",
+        query="query",
+        profile_id="generic-strict-citation",
+    )
+    assert finalize_run_transaction(
+        db_path=db_path,
+        run_id=failed["run_id"],
+        segment_id=failed["segment_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="failed",
+        delivery_status="failed",
+        evidence_entries=[],
+        failure_cause=_execution_error_cause(),
+    )
+    assert not run_finalization_fence_is_current(
+        db_path=db_path,
+        run_id=failed["run_id"],
+        segment_id=failed["segment_id"],
+        expected_state_version=0,
+    )
+
+
+def test_delivery_snapshot_profile_version_and_cited_source_urls(tmp_path):
+    from agent.research import EvidenceEntry
+    from api.run_repository import (
+        create_run,
+        finalize_run_transaction,
+        get_run_delivery_snapshot,
+    )
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(
+        db_path=db_path,
+        thread_id="thread-1",
+        query="query",
+        profile_id="generic-strict-citation",
+    )
+    entries = [
+        EvidenceEntry(
+            thread_id="thread-1",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="internet_search",
+            source_url="https://example.com/cited",
+            snippet="cited",
+            citation_status="cited",
+        ),
+        EvidenceEntry(
+            thread_id="thread-1",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="internet_search",
+            source_url="https://example.com/cited",
+            snippet="duplicate cited row",
+            citation_status="cited",
+        ),
+        EvidenceEntry(
+            thread_id="thread-1",
+            query_text="query",
+            subagent_name="network_search",
+            tool_name="internet_search",
+            source_url="https://example.com/uncited",
+            snippet="uncited",
+        ),
+    ]
+    assert finalize_run_transaction(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="completed",
+        delivery_status="ready",
+        evidence_entries=entries,
+    )
+
+    snapshot = get_run_delivery_snapshot(
+        db_path=db_path,
+        run_id=created["run_id"],
+    )
+    assert snapshot["profile_version"] == "1"
+    assert snapshot["cited_source_urls"] == (
+        "https://example.com/cited",
+        "https://example.com/cited",
+    )
+    assert isinstance(snapshot["cited_source_urls"], tuple)
+
+    import sqlite3
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute(
+            """
+            UPDATE research_runs_v2
+            SET profile_version = ?
+            WHERE run_id = ?
+            """,
+            ("unexpected", created["run_id"]),
+        )
+    mismatched = get_run_delivery_snapshot(
+        db_path=db_path,
+        run_id=created["run_id"],
+    )
+    assert mismatched["profile_version"] == "unexpected"
+
+
 @pytest.mark.parametrize(
     ("mutation_sql", "ignore_constraints"),
     [

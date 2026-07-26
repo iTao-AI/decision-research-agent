@@ -61,6 +61,10 @@ FORBIDDEN_PUBLIC_STAGE_MARKERS = re.compile(
 )
 
 _MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+_INLINE_CODE_SPAN = re.compile(
+    r"(?<!`)(?P<delimiter>`+)(?!`).*?(?<!`)(?P=delimiter)(?!`)",
+    re.DOTALL,
+)
 
 
 def tracked_paths(root: Path) -> list[str]:
@@ -171,6 +175,16 @@ def _markdown_without_fenced_code(text: str) -> str:
     return "".join(visible_lines)
 
 
+def _markdown_without_inline_code(text: str) -> str:
+    def mask_span(match: re.Match[str]) -> str:
+        return "".join(
+            character if character in "\r\n" else " "
+            for character in match.group(0)
+        )
+
+    return _INLINE_CODE_SPAN.sub(mask_span, text)
+
+
 def relative_markdown_link_violations(root: Path) -> list[dict[str, str]]:
     violations: list[dict[str, str]] = []
     resolved_root = root.resolve()
@@ -184,7 +198,9 @@ def relative_markdown_link_violations(root: Path) -> list[dict[str, str]]:
                 {"path": relative_path, "rule": "tracked-markdown-outside-root"}
             )
             continue
-        text = _markdown_without_fenced_code(source.read_text(encoding="utf-8"))
+        text = _markdown_without_inline_code(
+            _markdown_without_fenced_code(source.read_text(encoding="utf-8"))
+        )
         for match in _MARKDOWN_LINK.finditer(text):
             target = _link_target(match.group(1))
             parsed = urlsplit(target)

@@ -811,7 +811,10 @@ def _nested_search_harness(
             backend=backend,
             permissions=permissions,
             skills=(),
-            profile_graphs={"generic": graph},
+            profile_graphs={
+                "generic": graph,
+                "generic-strict-citation": graph,
+            },
         ),
         researcher_model,
         coordinator,
@@ -977,6 +980,24 @@ async def test_locked_deepagents_captures_nested_search_evidence_without_summary
             "No source URL was returned by the researcher.\n"
         ),
     )
+
+
+@pytest.mark.asyncio
+async def test_strict_profile_captures_nested_search_evidence(tmp_path):
+    harness, _, _, _ = _nested_search_harness(include_url_in_summary=False)
+    service = ResearchExecutionService(harness=harness, project_root=tmp_path)
+
+    outcome = await service.execute(
+        "Capture strict nested source.",
+        "thread-strict-nested",
+        run_id="run-strict-nested",
+        segment_id="segment-strict-nested",
+        profile_id="generic-strict-citation",
+    )
+
+    assert [entry.source_url for entry in outcome.evidence_entries] == [
+        "https://example.com/nested-source"
+    ]
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,14 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from agent.run_result import ExecutionOutcome
+from agent.profile_registry import (
+    STRICT_CITATION_PROFILE_ID,
+    STRICT_CITATION_PROFILE_VERSION,
+    is_generic_family,
+    is_strict_citation_profile,
+)
+from agent.research import is_exact_source_url_cited
+from agent.source_url_policy import is_publishable_source_url
 from agent.talent_contracts import DecisionBrief
 from api.decision_brief import render_markdown, with_content_hash
 from api.run_repository import (
@@ -233,6 +241,8 @@ def resolve_run_result(
         artifacts_by_id=by_id,
         current_artifact_ids=run["current_artifact_ids"],
         profile_id=run["profile_id"],
+        profile_version=run.get("profile_version"),
+        cited_source_urls=run.get("cited_source_urls", ()),
         run_id=run_id,
     ):
         raise _unavailable()
@@ -252,7 +262,7 @@ def resolve_run_result(
 
 
 def _select_artifact_id(run: dict[str, Any]) -> str | None:
-    if run.get("profile_id") == "generic":
+    if is_generic_family(run.get("profile_id", "")):
         return CANONICAL_RESULT_ARTIFACT_ID
 
     artifact_ids = {
@@ -281,6 +291,8 @@ def _valid_artifact(
     artifacts_by_id: dict[str, dict[str, Any]],
     current_artifact_ids: tuple[str, ...],
     profile_id: str,
+    profile_version: Any,
+    cited_source_urls: tuple[str, ...],
     run_id: str,
 ) -> bool:
     if artifact is None:
@@ -291,6 +303,22 @@ def _valid_artifact(
         return _valid_generic_artifact(
             artifact,
             selected_artifact_id=selected_artifact_id,
+        )
+    if is_strict_citation_profile(profile_id):
+        return (
+            profile_id == STRICT_CITATION_PROFILE_ID
+            and profile_version == STRICT_CITATION_PROFILE_VERSION
+            and _valid_generic_artifact(
+                artifact,
+                selected_artifact_id=selected_artifact_id,
+            )
+            and artifact.get("kind") == "research_report_markdown"
+            and any(
+                is_publishable_source_url(url)
+                and is_exact_source_url_cited(url, artifact["content"])
+                for url in cited_source_urls
+                if isinstance(url, str)
+            )
         )
     if profile_id == "talent-hiring-signal":
         return _valid_talent_artifact(

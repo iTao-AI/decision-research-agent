@@ -108,8 +108,13 @@ class TestAgentRunAccumulator:
         assert accumulator.tool_starts == 1
         assert accumulator.diagnostics == ["tool:tavily_search"]
 
+    @pytest.mark.parametrize(
+        "profile_id",
+        ["generic", "generic-strict-citation"],
+        ids=["generic", "strict"],
+    )
     def test_collects_evidence_only_from_network_search_internet_search(
-        self, tmp_path
+        self, tmp_path, profile_id
     ):
         from agent.run_result import AgentRunAccumulator, process_stream_chunk
 
@@ -118,6 +123,7 @@ class TestAgentRunAccumulator:
             thread_id="thread-evidence",
             query="研究 AI 搜索趋势",
             session_dir=tmp_path,
+            profile_id=profile_id,
         )
 
         process_stream_chunk(

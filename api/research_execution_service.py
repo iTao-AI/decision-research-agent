@@ -19,6 +19,7 @@ from agent.harness_contracts import (
     HarnessExecutionError,
     ReportCandidate,
 )
+from agent.profile_registry import is_generic_family
 from agent.research import (
     extract_evidence_entries,
     merge_evidence_entries,
@@ -164,7 +165,7 @@ class AccumulatorExecutionObserver(ExecutionObserver):
     ) -> None:
         """Capture only trusted source ToolMessages from validated subgraphs."""
         if (
-            self.accumulator.profile_id != "generic"
+            not is_generic_family(self.accumulator.profile_id)
             or type(namespace) is not tuple
             or not namespace
             or any(

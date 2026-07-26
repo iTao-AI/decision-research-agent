@@ -2,6 +2,8 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
+import pytest
+
 from agent.harness_contracts import ReportCandidate
 from agent.run_result import ExecutionOutcome
 
@@ -186,3 +188,69 @@ def test_fallback_is_deterministic_for_fixed_generated_at():
 
     assert first == second
     assert generated_at.isoformat() in first["content"]
+
+
+def _strict_snapshot(*, version="1", content="# Report\n\nhttps://example.com/source"):
+    from api.run_result_service import build_generic_result_artifact
+
+    artifact = build_generic_result_artifact(
+        _outcome(
+            profile_id="generic-strict-citation",
+            report_candidate=ReportCandidate(
+                path=PurePosixPath("/workspace/research-report.md"),
+                content=content,
+            ),
+        )
+    )
+    return {
+        "run_id": "run_1",
+        "profile_id": "generic-strict-citation",
+        "profile_version": version,
+        "execution_status": "completed",
+        "delivery_status": "ready",
+        "current_artifact_ids": (),
+        "artifacts": (artifact,),
+        "cited_source_urls": ("https://example.com/source",),
+    }
+
+
+def test_strict_result_requires_exact_v1_and_still_matching_cited_url(monkeypatch):
+    import api.run_result_service as service
+
+    monkeypatch.setattr(
+        service,
+        "get_run_delivery_snapshot",
+        lambda **_kwargs: _strict_snapshot(),
+    )
+
+    result = service.resolve_run_result(run_id="run_1")
+
+    assert result.artifact["kind"] == "research_report_markdown"
+
+
+@pytest.mark.parametrize("version", [None, "", "2", 1])
+def test_strict_result_rejects_non_exact_profile_version(monkeypatch, version):
+    import api.run_result_service as service
+
+    monkeypatch.setattr(
+        service,
+        "get_run_delivery_snapshot",
+        lambda **_kwargs: _strict_snapshot(version=version),
+    )
+
+    with pytest.raises(service.RunResultUnavailable):
+        service.resolve_run_result(run_id="run_1")
+
+
+def test_strict_result_rejects_missing_or_nonmatching_cited_url(monkeypatch):
+    import api.run_result_service as service
+
+    snapshot = _strict_snapshot(content="# Report\n\nNo exact source.")
+    monkeypatch.setattr(
+        service,
+        "get_run_delivery_snapshot",
+        lambda **_kwargs: snapshot,
+    )
+
+    with pytest.raises(service.RunResultUnavailable):
+        service.resolve_run_result(run_id="run_1")

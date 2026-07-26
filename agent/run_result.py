@@ -10,6 +10,7 @@ from threading import Lock
 from typing import Any, Sequence
 
 from agent.harness_contracts import ReportCandidate
+from agent.profile_registry import is_generic_family
 from agent.research import EvidenceEntry, extract_evidence_entries
 from agent.talent_contracts import ResearchPacket
 from langchain_core.messages import AIMessage, ToolMessage
@@ -377,7 +378,7 @@ def process_stream_chunk(
                     )
                 continue
             if (
-                accumulator.profile_id != "generic"
+                not is_generic_family(accumulator.profile_id)
                 or node_name != "network_search"
                 or tool_name != "internet_search"
             ):

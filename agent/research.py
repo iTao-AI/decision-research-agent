@@ -218,7 +218,8 @@ def extract_evidence_entries(
     return []
 
 
-def _url_is_cited(source_url: str, report_text: str) -> bool:
+def is_exact_source_url_cited(source_url: str, report_text: str) -> bool:
+    """Return whether report text contains the exact normalized source URL."""
     for match in _URL_RE.finditer(report_text):
         if _normalize_url(match.group(0)) == source_url:
             return True
@@ -233,7 +234,8 @@ def mark_cited_evidence(
     for entry in entries:
         citation_status = (
             "cited"
-            if entry.source_url and _url_is_cited(entry.source_url, report_text)
+            if entry.source_url
+            and is_exact_source_url_cited(entry.source_url, report_text)
             else "uncited"
         )
         marked.append(replace(entry, citation_status=citation_status))

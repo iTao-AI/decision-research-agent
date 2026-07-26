@@ -81,6 +81,12 @@ python tools/decision_research_agent_tool.py run \
   --wait \
   --result
 
+python tools/decision_research_agent_tool.py run \
+  --profile generic-strict-citation \
+  --query "Research question" \
+  --wait \
+  --result
+
 python tools/decision_research_agent_tool.py result \
   --run-id "$RUN_ID"
 ```
@@ -104,6 +110,15 @@ The raw terminal status projection printed by `run --wait` may carry
 `failure_cause`. `result --run-id` and `run --wait --result` remain on the
 unchanged result contract, including the existing `409 run_failed` envelope
 without a cause. No new Tool Client command or model is required.
+
+`--profile generic-strict-citation` uses the existing profile option. Ready
+then requires at least one exact admitted current-run URL in the canonical
+non-fallback artifact. The initial already-cited path makes zero correction
+calls; the eligible correction path makes at most one application-level
+placement invocation and fails closed without an artifact. Inspect
+`GET /api/runs/{run_id}` for the existing bounded failure cause. See
+[Strict Citation Profile](reference/strict-citation-profile.md) for data,
+cost, pinning, and non-claim boundaries.
 
 `run_wait_timeout` is a client polling deadline; it does not cancel the
 server-side run. Its structured error includes `run_id` so callers can inspect

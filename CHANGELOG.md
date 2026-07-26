@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Strict exact-source citation profile
+
+- Added opt-in `generic-strict-citation@1`, reusing generic research while
+  requiring at least one exact admitted current-run source URL before ready
+  delivery.
+- Added a zero-call already-cited path and at most one bounded semantic
+  placement invocation with application-owned URL insertion, recomputation,
+  fencing, persistence, and fail-closed terminal behavior.
+- Literal `generic`, Talent, `dra.downstream-consumer.v1`, the immutable
+  v0.1.6 fixture, and Release status remain unchanged.
+
 ### Agent evaluation sensitivity evidence
 
 - Added a provider-free v2 gate proving that all six independently persisted

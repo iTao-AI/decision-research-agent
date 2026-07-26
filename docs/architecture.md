@@ -110,6 +110,16 @@ boundaries; arbitrary nested output and subagent summaries do not become
 Evidence. Exact source URLs in a researcher summary preserve citations for the
 coordinator, but are not subagent summaries elevated to business authority.
 
+The opt-in strict citation profile uses the same generic graph and configured
+chat model; this is the configured chat model already owned by the runtime.
+Application finalization first recomputes exact citations. If none
+exist, it prepares bounded report targets and admitted source candidates,
+checks the live repository fence, and performs at most one direct semantic
+placement invocation. The model returns opaque IDs only; application code owns
+the exact URL bytes, rendering, artifact bounds, recomputation, persistence,
+and terminal state. A failed strict correction retains Evidence and exposes no
+artifact.
+
 ## Interface Consistency
 
 Web, CLI, REST, WebSocket, and first-party automation all consume canonical
@@ -125,6 +135,7 @@ deterministic bundled snapshot for explanation, not a replacement for the API.
 Reference contracts:
 
 - [API Contract](reference/api-contract.md)
+- [Strict Citation Profile](reference/strict-citation-profile.md)
 - [Data Models](reference/data-models.md)
 - [State Machines](reference/state-machines.md)
 - [Tool Registry](reference/tool-registry.md)

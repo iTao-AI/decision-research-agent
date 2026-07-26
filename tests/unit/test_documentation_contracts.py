@@ -34,9 +34,46 @@ CURRENT_DOCS = [
     PROJECT_ROOT / "docs" / "reference" / "state-machines.md",
     PROJECT_ROOT / "docs" / "reference" / "tool-registry.md",
 ]
+STRICT_CITATION_REFERENCE = (
+    PROJECT_ROOT / "docs/reference/strict-citation-profile.md"
+)
 
 def _combined_docs() -> str:
     return "\n\n".join(path.read_text(encoding="utf-8") for path in CURRENT_DOCS)
+
+
+def test_strict_citation_profile_reference_locks_opt_in_contract() -> None:
+    reference = STRICT_CITATION_REFERENCE.read_text(encoding="utf-8")
+    collapsed = _collapsed(reference)
+
+    for literal in (
+        'profile_id="generic-strict-citation"',
+        "GET /api/profiles/generic-strict-citation",
+        "--profile generic-strict-citation",
+        "--wait",
+        "--result",
+        "dra.strict-citation-profile.v1",
+        "finalization/run_finalization_failed",
+        "strict_citation_*",
+        "dra.downstream-consumer.v1",
+        "repository + release/tag-or-commit + profile_id + profile_version + proof_schema",
+    ):
+        assert literal in reference
+    for truth in (
+        "at least one exact admitted URL from current-run source Evidence",
+        "zero correction calls",
+        "at most one application-level",
+        "bounded target excerpts",
+        "admitted public URLs",
+        "bounded source snippets",
+        "does not claim one provider transport request",
+        "not a manifest or result field",
+        "does not automatically require a consumer upgrade",
+        "Release remains a separate decision",
+    ):
+        assert truth in collapsed
+    assert "profile-list endpoint" in reference
+    assert "no new request, response, database, status, artifact, or failure field" in collapsed
 
 
 def _section_between(text: str, start: str, end: str) -> str:

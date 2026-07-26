@@ -36,6 +36,23 @@ inside v1. The live status API may expose that field, but it is outside this
 historical fixture schema and checksum. The fixture bytes and checksum remain
 unchanged.
 
+## Strict Profile Opt-In
+
+The v0.1.6 fixture remains unchanged and does not silently gain strict
+citation semantics. A consumer that needs `generic-strict-citation@1` must
+separately validate and intentionally pin:
+
+```text
+repository + release/tag-or-commit + profile_id + profile_version + proof_schema
+```
+
+The strict proof schema is `dra.strict-citation-profile.v1`. It is documented
+producer-pin identity, not a new response or manifest field. A DRA version
+change does not automatically require a consumer upgrade, and landing the
+profile does not claim a Release. The frozen `dra.downstream-consumer.v1`
+fixture, checksum, generic exact-public-HTTPS checks, and v0.1.6 producer
+identity remain unchanged.
+
 ## State And Disposition
 
 | Execution / review / delivery | Result | Classification | Disposition |

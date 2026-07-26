@@ -92,6 +92,16 @@ objects from an identified `network_search` subgraph reach the existing
 Evidence extractor; other tool output, model text, reasoning, and summaries do
 not acquire Evidence authority.
 
+The strict citation profile reuses the same generic DeepAgents graph. After
+that graph returns, one application-level invocation of the configured
+LangChain chat model may perform a bounded ID-only placement selection. This is
+not a second graph, subagent, tool, Skill, or
+checkpointed workflow. The application prepares the packet before a fresh
+repository fence, invokes immediately after a true fence, then owns URL lookup,
+Markdown insertion, citation recomputation, and the fenced terminal
+transaction. The one-invocation bound does not redefine retry, fallback,
+transport, or tracing behavior already owned by the configured wrapper.
+
 ## Trade-offs
 
 - An application-owned port adds an adapter boundary, but prevents framework

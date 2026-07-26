@@ -91,12 +91,10 @@ def test_run_delivery_snapshot_contains_only_resolver_inputs(tmp_path):
     assert set(snapshot) == {
         "run_id",
         "profile_id",
-        "profile_version",
         "execution_status",
         "delivery_status",
         "current_artifact_ids",
         "artifacts",
-        "cited_source_urls",
     }
     assert snapshot["current_artifact_ids"] == ()
     assert snapshot["artifacts"][0]["content"] == "# Decision Brief"

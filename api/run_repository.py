@@ -1171,25 +1171,34 @@ def get_run_delivery_snapshot(
             """,
             (run_id,),
         ).fetchall()
-        cited_rows = conn.execute(
-            """
-            SELECT source_url
-            FROM evidence_entries_v2
-            WHERE run_id = ?
-              AND citation_status = 'cited'
-              AND source_url IS NOT NULL
-            ORDER BY created_at ASC, evidence_id ASC
-            """,
-            (run_id,),
-        ).fetchall()
         snapshot = {
-            **dict(run),
+            "run_id": run["run_id"],
+            "profile_id": run["profile_id"],
+            "execution_status": run["execution_status"],
+            "delivery_status": run["delivery_status"],
             "current_artifact_ids": current_ids,
             "artifacts": tuple(dict(row) for row in rows),
-            "cited_source_urls": tuple(
-                row["source_url"] for row in cited_rows
-            ),
         }
+        if run["profile_id"] == "generic-strict-citation":
+            cited_rows = conn.execute(
+                """
+                SELECT source_url
+                FROM evidence_entries_v2
+                WHERE run_id = ?
+                  AND citation_status = 'cited'
+                  AND source_url IS NOT NULL
+                ORDER BY created_at ASC, evidence_id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+            snapshot.update(
+                {
+                    "profile_version": run["profile_version"],
+                    "cited_source_urls": tuple(
+                        row["source_url"] for row in cited_rows
+                    ),
+                }
+            )
         conn.commit()
         return snapshot
     except (json.JSONDecodeError, sqlite3.Error, TypeError, ValueError) as exc:

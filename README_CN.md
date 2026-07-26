@@ -235,6 +235,7 @@ DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_v2_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/secure_local_runtime_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/bounded_live_producer_proof.py check
@@ -246,6 +247,7 @@ python tools/decision_research_agent_tool.py doctor
 ### Required CI proof 清单
 
 - Agent evaluation regression gate：`python scripts/agent_evaluation_gate.py check`
+- Agent evaluation sensitivity gate v2：`python scripts/agent_evaluation_v2_gate.py check`
 - Run creation idempotency proof：`python scripts/run_creation_idempotency_proof.py check`
 - Run dispatch reconciliation proof：`python scripts/run_dispatch_reconciliation_proof.py check`
 - Run failure cause proof：`python scripts/run_failure_cause_proof.py check`
@@ -255,6 +257,11 @@ python tools/decision_research_agent_tool.py doctor
 required pytest 覆盖 downstream fixture/CLI behavior；该行为没有独立的
 top-level workflow step。当前 required-gate authority 是
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
+
+Agent evaluation sensitivity v2: three pairs use independent healthy
+persistence replays followed by post-traversal synthetic evaluator-input
+controls. This provider-free evidence is not a runtime incident, not a
+model-quality result, and not failure capture.
 
 Bounded live producer 的 `check` 不使用 provider，也不启动 Docker。其需要
 单独授权的 `observe-live` 命令不会被 tests 或 CI 调用。仓库保留了一次已审查的
@@ -279,6 +286,7 @@ business acceptance、provider billing、exactly-once、production readiness
 - [API Contract](docs/reference/api-contract.md)
 - [Data Models](docs/reference/data-models.md)
 - [Agent Evaluation Regression Gate](docs/reference/agent-evaluation-regression-gate.md)
+- [Agent Evaluation Sensitivity Gate v2](docs/reference/agent-evaluation-sensitivity-gate.md)
 - [Bounded Live Producer Evaluation](docs/reference/bounded-live-producer-evaluation.md)
 - [Durable Run Failure Cause Proof](docs/evidence/run-failure-cause-v1.md)
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)

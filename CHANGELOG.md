@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Agent evaluation sensitivity evidence
+
+- Added a provider-free v2 gate proving that all six independently persisted
+  healthy anchors pass all six deterministic evaluators before three
+  post-traversal synthetic evaluator-input controls exercise one responsible
+  evaluator each.
+- Added canonical JSON and Markdown evidence, public diagnosis/navigation, and
+  the required Backend CI check.
+- This evidence is not a runtime incident, model-quality result, failure
+  capture, API/UI change, deployment, or release claim.
+
 ### Privacy-safe observation contract
 
 - Hardened project-owned WebSocket, existing LangGraph `stream_writer`,

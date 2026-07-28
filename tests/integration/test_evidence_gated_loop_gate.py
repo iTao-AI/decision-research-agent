@@ -850,6 +850,39 @@ def test_second_replace_failure_restores_first_and_leaves_no_temps(
     ]
 
 
+def test_restore_replace_failure_cleans_restore_temp_and_keeps_stable_error(
+    deterministic_report, tmp_path, monkeypatch
+) -> None:
+    json_output = tmp_path / "report.json"
+    markdown_output = tmp_path / "report.md"
+    json_output.write_bytes(b"old-json\n")
+    markdown_output.write_bytes(b"old-markdown\n")
+    actual_replace = os.replace
+    calls = 0
+
+    def fail_json_and_restore(source, target):
+        nonlocal calls
+        calls += 1
+        if calls in {2, 3}:
+            raise OSError("private replace detail")
+        actual_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", fail_json_and_restore)
+    with pytest.raises(LoopGateError, match="loop_output_invalid"):
+        write_artifacts_recoverably(
+            deterministic_report,
+            render_markdown(deterministic_report),
+            json_output=json_output,
+            markdown_output=markdown_output,
+        )
+    assert calls == 3
+    assert json_output.read_bytes() == b"old-json\n"
+    assert markdown_output.read_bytes() != b"old-markdown\n"
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "report.json", "report.md",
+    ]
+
+
 def test_second_replace_failure_removes_new_first_when_no_prior_file(
     deterministic_report, tmp_path, monkeypatch
 ) -> None:
@@ -982,6 +1015,92 @@ def test_reference_identity_drift_fails_closed_in_report(
         canonical_json_bytes(strict["value"])
     ).hexdigest()
     with pytest.raises(LoopGateError, match=code):
+        validate_report(report)
+
+
+def _mutate_context_candidate_predecessor(case) -> None:
+    case["episodes"][0]["candidate_refs"][0][
+        "predecessor_or_rollback_ref"
+    ] = "f" * 40
+
+
+def _mutate_context_candidate_carrier(case) -> None:
+    episode = case["episodes"][0]
+    episode["candidate_refs"][0]["carrier"] = "knowledge"
+    episode["action"]["selected_carrier"] = "knowledge"
+    for assessment in episode["carrier_assessments"]:
+        if assessment["carrier"] == "knowledge":
+            assessment["disposition"] = "selected"
+        elif assessment["carrier"] == "program_harness":
+            assessment["disposition"] = "rejected"
+
+
+def _mutate_context_candidate_surface(case) -> None:
+    episode = case["episodes"][0]
+    episode["candidate_refs"][0]["change_surface"] = "knowledge"
+    episode["action"]["change_surface"] = "knowledge"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        _mutate_context_candidate_predecessor,
+        _mutate_context_candidate_carrier,
+        _mutate_context_candidate_surface,
+    ],
+    ids=["predecessor", "carrier", "change-surface"],
+)
+def test_complete_reference_candidate_identity_drift_fails_closed(
+    deterministic_report,
+    mutation,
+) -> None:
+    report = copy.deepcopy(deterministic_report)
+    context = next(
+        item for item in report["cases"]
+        if item["value"]["case_id"] == "context-resolver-projection"
+    )
+    mutation(context["value"])
+    context["sha256"] = hashlib.sha256(
+        canonical_json_bytes(context["value"])
+    ).hexdigest()
+    with pytest.raises(
+        LoopGateError, match="loop_candidate_identity_invalid"
+    ):
+        validate_report(report)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("subject_candidate_id", None),
+        ("origin_kind", "repository_audit"),
+        ("reviewed_summary", "Overclaiming reviewed summary"),
+        (
+            "claim_scope",
+            "live-provider strict success and production reliability accepted",
+        ),
+        ("public_safe", False),
+    ],
+)
+def test_complete_reference_evidence_identity_drift_fails_closed(
+    deterministic_report,
+    field,
+    replacement,
+) -> None:
+    report = copy.deepcopy(deterministic_report)
+    strict = next(
+        item for item in report["cases"]
+        if item["value"]["case_id"] == "strict-citation-consumer"
+    )
+    consumer = next(
+        item for item in strict["value"]["evidence_refs"]
+        if item["evidence_id"] == "strict-consumer-pr-75"
+    )
+    consumer[field] = replacement
+    strict["sha256"] = hashlib.sha256(
+        canonical_json_bytes(strict["value"])
+    ).hexdigest()
+    with pytest.raises(LoopGateError, match="loop_evidence_ref_invalid"):
         validate_report(report)
 
 

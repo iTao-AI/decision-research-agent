@@ -72,6 +72,9 @@ _REFERENCE_CANDIDATE_IDENTITIES = {
             "2c50f233c2cc1df4fe2818551e95ab98cd61ede5",
             "8da21672e9fd63352e9bc15365818f7edd12d106",
             None,
+            "program_harness",
+            "evaluation_proof",
+            "2dadae56f038790f66c4c3af05b7bae10d8e0462",
         ),
     },
     "evaluation-sensitivity": {
@@ -80,6 +83,9 @@ _REFERENCE_CANDIDATE_IDENTITIES = {
             "6a3020863fbaaf9d218420b7981150a5736b7fb8",
             "d6b0dd3a0911125795eb7146bcd659c99233067d",
             None,
+            "program_harness",
+            "evaluation_proof",
+            "8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9",
         ),
     },
     "strict-citation-consumer": {
@@ -92,6 +98,9 @@ _REFERENCE_CANDIDATE_IDENTITIES = {
                 "profile_version": "1",
                 "proof_schema": "dra.strict-citation-profile.v1",
             },
+            "program_harness",
+            "runtime_harness",
+            "6a3020863fbaaf9d218420b7981150a5736b7fb8",
         ),
     },
 }
@@ -103,6 +112,13 @@ _REFERENCE_EVIDENCE_IDENTITIES = {
             "1c27d38370cd9ecbb04b77630b75df9b0c4d46f1",
             "PR #122 provider-free context regression",
             "reviewed_historical_red",
+            None,
+            "repository_audit",
+            "PR #122 preserved the reviewed provider-free regression surface "
+            "later used to expose context projection false greens.",
+            "incompatible resolver and persisted-state combinations were not "
+            "yet rejected by the retained projection test set",
+            True,
         ),
         "context-candidate-pass": (
             "https://github.com/iTao-AI/decision-research-agent",
@@ -110,6 +126,13 @@ _REFERENCE_EVIDENCE_IDENTITIES = {
             "8da21672e9fd63352e9bc15365818f7edd12d106",
             "PR #123 reviewed provider-free verification and merge surface",
             "reviewed_candidate_verification_passed",
+            "context-projection-pr-123",
+            "repository_audit",
+            "The reviewed PR #123 verification and merge surface passed the "
+            "context regression and retained checks for the exact candidate.",
+            "exact candidate passed reviewed provider-free context projection "
+            "verification",
+            True,
         ),
     },
     "evaluation-sensitivity": {
@@ -119,6 +142,14 @@ _REFERENCE_EVIDENCE_IDENTITIES = {
             "56fb2e148da3b4026f5ec430b94336e5e484cb85",
             "PR #128 review of pre-candidate main",
             "reviewed_verification_gap",
+            None,
+            "verification_gap",
+            "Review found that pre-candidate healthy anchors alone did not "
+            "prove that each responsible evaluator detected its declared "
+            "failure dimension.",
+            "healthy anchors alone did not prove sensitivity to each "
+            "evaluator's declared failure dimension",
+            True,
         ),
         "evaluator-red": (
             "https://github.com/iTao-AI/decision-research-agent",
@@ -126,6 +157,14 @@ _REFERENCE_EVIDENCE_IDENTITIES = {
             "56fb2e148da3b4026f5ec430b94336e5e484cb85",
             "PR #128 reviewed RED against pre-candidate main",
             "reviewed_historical_red",
+            None,
+            "repository_audit",
+            "PR #128 recorded that pre-candidate main lacked "
+            "one-dimensional post-traversal controls that distinguish "
+            "responsible sensitivity from unrelated drift.",
+            "responsible evaluators had to detect their fixed synthetic "
+            "control while unrelated projections remained stable",
+            True,
         ),
         "evaluator-candidate-pass": (
             "https://github.com/iTao-AI/decision-research-agent",
@@ -133,6 +172,14 @@ _REFERENCE_EVIDENCE_IDENTITIES = {
             "d6b0dd3a0911125795eb7146bcd659c99233067d",
             "PR #128 reviewed provider-free verification and merge surface",
             "reviewed_candidate_verification_passed",
+            "evaluation-sensitivity-pr-128",
+            "repository_audit",
+            "The reviewed PR #128 verification and merge surface passed "
+            "Evaluation Sensitivity v2 and retained checks for the exact "
+            "candidate.",
+            "exact candidate passed reviewed provider-free evaluator "
+            "sensitivity verification",
+            True,
         ),
     },
     "strict-citation-consumer": {
@@ -143,6 +190,13 @@ _REFERENCE_EVIDENCE_IDENTITIES = {
             "docs/decisions/0011-dra-v0-1-6-live-consumer-boundary.md "
             "reviewed 25 Evidence and zero cited summary",
             "reviewed_historical_red",
+            None,
+            "downstream_consumer",
+            "The first governed live attempt retained 25 same-run Evidence "
+            "rows, produced zero cited rows, and stopped before import.",
+            "governed live attempt stopped before import with 25 same-run "
+            "Evidence rows and zero cited rows",
+            True,
         ),
         "strict-live-83-0": (
             "https://github.com/iTao-AI/night-voyager",
@@ -151,6 +205,13 @@ _REFERENCE_EVIDENCE_IDENTITIES = {
             "docs/decisions/0011-dra-v0-1-6-live-consumer-boundary.md "
             "reviewed 83 Evidence and zero cited summary",
             "reviewed_historical_red",
+            None,
+            "downstream_consumer",
+            "The second governed live attempt retained 83 same-run Evidence "
+            "rows, produced zero cited rows, and stopped before import.",
+            "governed live attempt stopped before import with 83 same-run "
+            "Evidence rows and zero cited rows",
+            True,
         ),
         "strict-candidate-pass": (
             "https://github.com/iTao-AI/decision-research-agent",
@@ -158,6 +219,13 @@ _REFERENCE_EVIDENCE_IDENTITIES = {
             "06e5282414d3801b11040bba735dd107105e8a30",
             "PR #129 reviewed tree with seven successful hosted checks",
             "reviewed_candidate_verification_passed",
+            "strict-citation-pr-129",
+            "repository_audit",
+            "The reviewed PR #129 tree and hosted checks passed the strict "
+            "producer verification surface for the exact candidate.",
+            "exact strict producer candidate passed reviewed hosted "
+            "verification before independent consumer proof",
+            True,
         ),
         "strict-consumer-pr-75": (
             "https://github.com/iTao-AI/night-voyager",
@@ -166,9 +234,82 @@ _REFERENCE_EVIDENCE_IDENTITIES = {
             "PR #75 merge-SHA run 30257237706 with successful python, "
             "frontend, and compose jobs",
             "independent_consumer_contract",
+            "strict-citation-pr-129",
+            "downstream_consumer",
+            "Night Voyager PR #75 pinned the exact strict producer tuple and "
+            "passed consumer-owned provider-free contract checks.",
+            "exact producer tuple, zero-cited stop, reconciliation, and "
+            "evaluation contracts passed consumer-owned provider-free checks",
+            True,
         ),
     },
 }
+
+
+def _candidate_identity(value: Mapping[str, Any]) -> tuple[Any, ...]:
+    return (
+        value.get("repository"),
+        value.get("commit_sha"),
+        value.get("tree_sha"),
+        value.get("capability_identity"),
+        value.get("carrier"),
+        value.get("change_surface"),
+        value.get("predecessor_or_rollback_ref"),
+    )
+
+
+def _evidence_identity(value: Mapping[str, Any]) -> tuple[Any, ...]:
+    return (
+        value.get("repository"),
+        value.get("commit_sha"),
+        value.get("tree_sha"),
+        value.get("locator"),
+        value.get("proof_kind"),
+        value.get("subject_candidate_id"),
+        value.get("origin_kind"),
+        value.get("reviewed_summary"),
+        value.get("claim_scope"),
+        value.get("public_safe"),
+    )
+
+
+def _validate_reference_identities(
+    cases: Sequence[Mapping[str, Any]],
+    *,
+    require_complete: bool,
+) -> None:
+    for case in cases:
+        case_id = case.get("case_id")
+        expected_candidates = _REFERENCE_CANDIDATE_IDENTITIES.get(case_id)
+        episodes = case.get("episodes")
+        if expected_candidates is not None and isinstance(episodes, list):
+            actual_candidates = {
+                candidate.get("candidate_id"): _candidate_identity(candidate)
+                for episode in episodes
+                if isinstance(episode, Mapping)
+                for candidate in episode.get("candidate_refs", [])
+                if isinstance(candidate, Mapping)
+                and candidate.get("candidate_id") in expected_candidates
+            }
+            if (
+                (require_complete or actual_candidates)
+                and actual_candidates != expected_candidates
+            ):
+                raise LoopContractError("loop_candidate_identity_invalid")
+        expected_evidence = _REFERENCE_EVIDENCE_IDENTITIES.get(case_id)
+        evidence_refs = case.get("evidence_refs")
+        if expected_evidence is not None and isinstance(evidence_refs, list):
+            actual_evidence = {
+                evidence.get("evidence_id"): _evidence_identity(evidence)
+                for evidence in evidence_refs
+                if isinstance(evidence, Mapping)
+                and evidence.get("evidence_id") in expected_evidence
+            }
+            if (
+                (require_complete or actual_evidence)
+                and actual_evidence != expected_evidence
+            ):
+                raise LoopContractError("loop_evidence_ref_invalid")
 
 
 class LoopGateError(ValueError):
@@ -270,41 +411,10 @@ def validate_kernel_inputs(
     for code, identities in identity_sets.items():
         if len(identities) != len(set(identities)):
             raise LoopContractError(code)
-    for case in cases:
-        expected_candidates = _REFERENCE_CANDIDATE_IDENTITIES.get(case.case_id)
-        if expected_candidates is not None:
-            actual_candidates = {
-                candidate.candidate_id: (
-                    candidate.repository,
-                    candidate.commit_sha,
-                    candidate.tree_sha,
-                    (
-                        candidate.capability_identity.model_dump(mode="json")
-                        if candidate.capability_identity is not None
-                        else None
-                    ),
-                )
-                for episode in case.episodes
-                for candidate in episode.candidate_refs
-                if candidate.candidate_id in expected_candidates
-            }
-            if actual_candidates != expected_candidates:
-                raise LoopContractError("loop_candidate_identity_invalid")
-        expected_evidence = _REFERENCE_EVIDENCE_IDENTITIES.get(case.case_id)
-        if expected_evidence is not None:
-            actual_evidence = {
-                evidence.evidence_id: (
-                    evidence.repository,
-                    evidence.commit_sha,
-                    evidence.tree_sha,
-                    evidence.locator,
-                    evidence.proof_kind,
-                )
-                for evidence in case.evidence_refs
-                if evidence.evidence_id in expected_evidence
-            }
-            if actual_evidence != expected_evidence:
-                raise LoopContractError("loop_evidence_ref_invalid")
+    _validate_reference_identities(
+        tuple(case.model_dump(mode="json") for case in cases),
+        require_complete=True,
+    )
     declared = [
         (item.profile_id, item.profile_version)
         for item in registry.verification_profiles
@@ -449,6 +559,17 @@ def build_report() -> dict[str, Any]:
 def validate_report(value: Mapping[str, Any]) -> dict[str, Any]:
     try:
         validate_public_projection(value)
+        raw_cases = value.get("cases")
+        if isinstance(raw_cases, list):
+            _validate_reference_identities(
+                tuple(
+                    item["value"]
+                    for item in raw_cases
+                    if isinstance(item, Mapping)
+                    and isinstance(item.get("value"), Mapping)
+                ),
+                require_complete=False,
+            )
         raw_results = value.get("verification_results")
         if not isinstance(raw_results, list) or any(
             not isinstance(item, Mapping)
@@ -679,6 +800,7 @@ def write_artifacts_recoverably(
                 raise LoopGateError("loop_output_invalid") from None
     json_temp: Path | None = None
     markdown_temp: Path | None = None
+    restore_temp: Path | None = None
     prior_markdown = (
         markdown_target.read_bytes() if markdown_target.exists() else None
     )
@@ -696,13 +818,16 @@ def write_artifacts_recoverably(
             if prior_markdown is None:
                 markdown_target.unlink(missing_ok=True)
             else:
-                restore = _stage_file(markdown_target, prior_markdown)
-                os.replace(restore, markdown_target)
+                restore_temp = _stage_file(
+                    markdown_target, prior_markdown
+                )
+                os.replace(restore_temp, markdown_target)
+                restore_temp = None
             raise
     except (OSError, LoopGateError):
         raise LoopGateError("loop_output_invalid") from None
     finally:
-        for temp in (json_temp, markdown_temp):
+        for temp in (json_temp, markdown_temp, restore_temp):
             if temp is not None:
                 temp.unlink(missing_ok=True)
 

@@ -22,6 +22,8 @@ Directory presence does not confer verification or current release authority.
 | [run-dispatch-reconciliation-v1.md](run-dispatch-reconciliation-v1.md) | Human-readable cases and limits, including `commit_before_execution_start_recovery: proven` and `crash_before_schedule_recovery: proven`. |
 | [secure-local-runtime-v1.json](secure-local-runtime-v1.json) | Canonical deterministic 16-case secure local runtime contract report; not a Docker runtime observation or deployment certification. |
 | [secure-local-runtime-v1.md](secure-local-runtime-v1.md) | Human-readable rendering of the validated secure local runtime report, ordered boundaries, and explicit limits. |
+| [JSON](evidence-gated-loop-kernel-v1.json) | Canonical provider-free Evidence-Gated Loop Kernel report over three reviewed lineages. |
+| [Markdown](evidence-gated-loop-kernel-v1.md) | Deterministic projection of the canonical JSON. See the [Reference](../reference/evidence-gated-loop-kernel.md). |
 
 ## Optional Operator/Workflow Proof
 

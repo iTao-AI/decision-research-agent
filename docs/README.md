@@ -59,6 +59,8 @@ external evaluation of the public contract surface.
 - [Data Models](reference/data-models.md) — run, Evidence, artifact, review, and publication records.
 - [State Machines](reference/state-machines.md) — execution, delivery, review, and verification transitions.
 - [Tool Registry](reference/tool-registry.md) — server-owned tool and Skill boundaries.
+- [Evidence-Gated Loop Kernel](reference/evidence-gated-loop-kernel.md) —
+  provider-free offline lineage, fixed-profile, and reviewer contract.
 - [External Services](reference/external-services.md) — provider and storage dependencies.
 
 ## Explanation And Decisions
@@ -69,6 +71,8 @@ external evaluation of the public contract surface.
 - [Framework And Runtime Boundaries](decisions/framework-runtime-boundaries.md) — framework ownership.
 - [Run Identity Boundaries](decisions/run-identity-boundaries.md) — identity scopes.
 - [Evidence Verification Authority](decisions/evidence-verification-authority.md) — immutable Evidence decisions.
+- [Evidence-Gated Evolution Authority](decisions/evidence-gated-evolution-authority.md)
+  — candidate/verifier isolation and human-owned release/rollback authority.
 - [Product Naming](decisions/product-naming.md) — canonical identity.
 - [AI-Assisted Engineering](development/ai-assisted-engineering.md) — governed implementation workflow.
 - [Superpowers Lifecycle](superpowers/README.md), the

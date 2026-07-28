@@ -65,6 +65,110 @@ STABLE_ERROR_CODES = (
     "loop_public_output_unsafe",
     "loop_internal_error",
 )
+_REFERENCE_CANDIDATE_IDENTITIES = {
+    "context-resolver-projection": {
+        "context-projection-pr-123": (
+            "https://github.com/iTao-AI/decision-research-agent",
+            "2c50f233c2cc1df4fe2818551e95ab98cd61ede5",
+            "8da21672e9fd63352e9bc15365818f7edd12d106",
+            None,
+        ),
+    },
+    "evaluation-sensitivity": {
+        "evaluation-sensitivity-pr-128": (
+            "https://github.com/iTao-AI/decision-research-agent",
+            "6a3020863fbaaf9d218420b7981150a5736b7fb8",
+            "d6b0dd3a0911125795eb7146bcd659c99233067d",
+            None,
+        ),
+    },
+    "strict-citation-consumer": {
+        "strict-citation-pr-129": (
+            "https://github.com/iTao-AI/decision-research-agent",
+            "01ba21f2996769e68cbc88f4bb0596740df27f6b",
+            "06e5282414d3801b11040bba735dd107105e8a30",
+            {
+                "profile_id": "generic-strict-citation",
+                "profile_version": "1",
+                "proof_schema": "dra.strict-citation-profile.v1",
+            },
+        ),
+    },
+}
+_REFERENCE_EVIDENCE_IDENTITIES = {
+    "context-resolver-projection": {
+        "context-red": (
+            "https://github.com/iTao-AI/decision-research-agent",
+            "2dadae56f038790f66c4c3af05b7bae10d8e0462",
+            "1c27d38370cd9ecbb04b77630b75df9b0c4d46f1",
+            "PR #122 provider-free context regression",
+            "reviewed_historical_red",
+        ),
+        "context-candidate-pass": (
+            "https://github.com/iTao-AI/decision-research-agent",
+            "2c50f233c2cc1df4fe2818551e95ab98cd61ede5",
+            "8da21672e9fd63352e9bc15365818f7edd12d106",
+            "PR #123 reviewed provider-free verification and merge surface",
+            "reviewed_candidate_verification_passed",
+        ),
+    },
+    "evaluation-sensitivity": {
+        "evaluator-gap": (
+            "https://github.com/iTao-AI/decision-research-agent",
+            "8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9",
+            "56fb2e148da3b4026f5ec430b94336e5e484cb85",
+            "PR #128 review of pre-candidate main",
+            "reviewed_verification_gap",
+        ),
+        "evaluator-red": (
+            "https://github.com/iTao-AI/decision-research-agent",
+            "8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9",
+            "56fb2e148da3b4026f5ec430b94336e5e484cb85",
+            "PR #128 reviewed RED against pre-candidate main",
+            "reviewed_historical_red",
+        ),
+        "evaluator-candidate-pass": (
+            "https://github.com/iTao-AI/decision-research-agent",
+            "6a3020863fbaaf9d218420b7981150a5736b7fb8",
+            "d6b0dd3a0911125795eb7146bcd659c99233067d",
+            "PR #128 reviewed provider-free verification and merge surface",
+            "reviewed_candidate_verification_passed",
+        ),
+    },
+    "strict-citation-consumer": {
+        "strict-live-25-0": (
+            "https://github.com/iTao-AI/night-voyager",
+            "95cce4f28357150450c7f87105adcb47abf1a15d",
+            "7e310124de9c7d081723eee5b42c152a258b0919",
+            "docs/decisions/0011-dra-v0-1-6-live-consumer-boundary.md "
+            "reviewed 25 Evidence and zero cited summary",
+            "reviewed_historical_red",
+        ),
+        "strict-live-83-0": (
+            "https://github.com/iTao-AI/night-voyager",
+            "95cce4f28357150450c7f87105adcb47abf1a15d",
+            "7e310124de9c7d081723eee5b42c152a258b0919",
+            "docs/decisions/0011-dra-v0-1-6-live-consumer-boundary.md "
+            "reviewed 83 Evidence and zero cited summary",
+            "reviewed_historical_red",
+        ),
+        "strict-candidate-pass": (
+            "https://github.com/iTao-AI/decision-research-agent",
+            "01ba21f2996769e68cbc88f4bb0596740df27f6b",
+            "06e5282414d3801b11040bba735dd107105e8a30",
+            "PR #129 reviewed tree with seven successful hosted checks",
+            "reviewed_candidate_verification_passed",
+        ),
+        "strict-consumer-pr-75": (
+            "https://github.com/iTao-AI/night-voyager",
+            "95cce4f28357150450c7f87105adcb47abf1a15d",
+            "7e310124de9c7d081723eee5b42c152a258b0919",
+            "PR #75 merge-SHA run 30257237706 with successful python, "
+            "frontend, and compose jobs",
+            "independent_consumer_contract",
+        ),
+    },
+}
 
 
 class LoopGateError(ValueError):
@@ -166,6 +270,41 @@ def validate_kernel_inputs(
     for code, identities in identity_sets.items():
         if len(identities) != len(set(identities)):
             raise LoopContractError(code)
+    for case in cases:
+        expected_candidates = _REFERENCE_CANDIDATE_IDENTITIES.get(case.case_id)
+        if expected_candidates is not None:
+            actual_candidates = {
+                candidate.candidate_id: (
+                    candidate.repository,
+                    candidate.commit_sha,
+                    candidate.tree_sha,
+                    (
+                        candidate.capability_identity.model_dump(mode="json")
+                        if candidate.capability_identity is not None
+                        else None
+                    ),
+                )
+                for episode in case.episodes
+                for candidate in episode.candidate_refs
+                if candidate.candidate_id in expected_candidates
+            }
+            if actual_candidates != expected_candidates:
+                raise LoopContractError("loop_candidate_identity_invalid")
+        expected_evidence = _REFERENCE_EVIDENCE_IDENTITIES.get(case.case_id)
+        if expected_evidence is not None:
+            actual_evidence = {
+                evidence.evidence_id: (
+                    evidence.repository,
+                    evidence.commit_sha,
+                    evidence.tree_sha,
+                    evidence.locator,
+                    evidence.proof_kind,
+                )
+                for evidence in case.evidence_refs
+                if evidence.evidence_id in expected_evidence
+            }
+            if actual_evidence != expected_evidence:
+                raise LoopContractError("loop_evidence_ref_invalid")
     declared = [
         (item.profile_id, item.profile_version)
         for item in registry.verification_profiles
@@ -310,6 +449,14 @@ def build_report() -> dict[str, Any]:
 def validate_report(value: Mapping[str, Any]) -> dict[str, Any]:
     try:
         validate_public_projection(value)
+        raw_results = value.get("verification_results")
+        if not isinstance(raw_results, list) or any(
+            not isinstance(item, Mapping)
+            or item.get("coverage")
+            != ["fail_to_pass", "retained", "safety_compatibility"]
+            for item in raw_results
+        ):
+            raise LoopGateError("loop_verification_profile_invalid")
         report = LoopReport.model_validate(value, strict=True)
         registry = validate_registry(
             report.registry.value.model_dump(mode="json")
@@ -351,6 +498,8 @@ def validate_report(value: Mapping[str, Any]) -> dict[str, Any]:
         if len(canonical) > MAX_REPORT_BYTES:
             raise ValueError("oversized")
         return report.model_dump(mode="json")
+    except LoopGateError:
+        raise
     except LoopContractError as exc:
         raise LoopGateError(exc.code) from None
     except (ValidationError, ValueError, TypeError):
@@ -487,13 +636,23 @@ def _stage_file(target: Path, value: bytes) -> Path:
     handle = tempfile.NamedTemporaryFile(
         mode="wb", dir=target.parent, prefix=f".{target.name}.", delete=False
     )
+    staged = Path(handle.name)
     try:
         handle.write(value)
         handle.flush()
         os.fsync(handle.fileno())
-        return Path(handle.name)
-    finally:
         handle.close()
+    except OSError:
+        try:
+            handle.close()
+        except OSError:
+            pass
+        try:
+            staged.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    return staged
 
 
 def write_artifacts_recoverably(

@@ -477,6 +477,8 @@ def _validate_case_semantics(case: EvolutionCase) -> None:
     candidate_by_id = {item.candidate_id: item for item in candidates}
     if len(candidate_by_id) != len(candidates):
         _raise("loop_candidate_identity_invalid")
+    if any(not _valid_repository(item.repository) for item in candidates):
+        _raise("loop_candidate_identity_invalid")
 
     for evidence in case.evidence_refs:
         if not _valid_repository(evidence.repository):
@@ -618,31 +620,77 @@ def _validate_case_semantics(case: EvolutionCase) -> None:
             ):
                 _raise("loop_decision_invalid")
 
-        if decision.consumer_proof_status == "pending":
-            if (
-                decision.loop_closure_status != "open_waiting_consumer"
-                or decision.release_disposition != "hold"
-            ):
+        if isinstance(action, ChangeAction):
+            if decision.candidate_verdict == "accepted":
+                if decision.consumer_proof_status == "pending":
+                    coherent = (
+                        decision.loop_closure_status
+                        == "open_waiting_consumer"
+                        and decision.release_disposition == "hold"
+                    )
+                else:
+                    coherent = (
+                        decision.consumer_proof_status
+                        in {"accepted", "not_required"}
+                        and decision.loop_closure_status == "closed_accepted"
+                        and decision.release_disposition
+                        in {
+                            "hold",
+                            "eligible_for_separate_release_review",
+                        }
+                    )
+            elif decision.candidate_verdict == "rejected":
+                coherent = (
+                    decision.consumer_proof_status
+                    in {"rejected", "not_required"}
+                    and decision.loop_closure_status == "closed_rejected"
+                    and decision.release_disposition == "hold"
+                )
+            elif decision.candidate_verdict == "need_more_evidence":
+                coherent = (
+                    decision.consumer_proof_status == "not_required"
+                    and decision.loop_closure_status
+                    == "open_waiting_evidence"
+                    and decision.release_disposition == "hold"
+                )
+            else:
+                coherent = False
+            if not coherent:
                 _raise("loop_decision_invalid")
-        if decision.consumer_proof_status == "rejected":
-            if decision.release_disposition == "eligible_for_separate_release_review":
+        else:
+            if decision.consumer_proof_status == "pending":
                 _raise("loop_decision_invalid")
-        if decision.loop_closure_status == "closed_accepted":
-            if (
-                decision.candidate_verdict != "accepted"
-                or decision.consumer_proof_status
-                not in {"accepted", "not_required"}
-            ):
-                _raise("loop_decision_invalid")
-        if decision.loop_closure_status == "closed_no_change":
-            if (
-                not isinstance(action, NoChangeAction)
-                or decision.candidate_verdict != "not_applicable"
-            ):
-                _raise("loop_decision_invalid")
-        if decision.release_disposition == "eligible_for_separate_release_review":
-            if decision.loop_closure_status != "closed_accepted":
-                _raise("loop_decision_invalid")
+            if decision.release_disposition != "rollback_recommended":
+                coherent = (
+                    (
+                        (
+                            decision.loop_closure_status == "closed_no_change"
+                            and decision.consumer_proof_status
+                            in {"accepted", "not_required"}
+                            and decision.release_disposition
+                            in {
+                                "hold",
+                                "eligible_for_separate_release_review",
+                            }
+                        )
+                        or (
+                            decision.loop_closure_status
+                            == "open_waiting_evidence"
+                            and decision.consumer_proof_status
+                            == "not_required"
+                            and decision.release_disposition == "hold"
+                        )
+                    )
+                )
+                if not coherent:
+                    _raise("loop_decision_invalid")
+
+        if (
+            decision.consumer_proof_status == "rejected"
+            and decision.release_disposition
+            == "eligible_for_separate_release_review"
+        ):
+            _raise("loop_decision_invalid")
 
         rollback_fields_empty = (
             decision.rollback_basis is None

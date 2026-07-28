@@ -359,8 +359,9 @@ provider-free 的保留集与安全检查复核候选，并把在线应用状态
 PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
 ```
 
-固定 profile 运行期间不会输出中间进度。它们共享 420 秒 aggregate profile
-deadline；该时限不包含冷启动环境准备或依赖安装，也不是端到端 TTHW claim。
+固定 profile 运行期间不会输出中间进度。它们共享
+420 秒 aggregate profile deadline；该时限不包含冷启动环境准备或依赖安装，
+也不是端到端 TTHW claim。
 成功时 stdout 恰好为：
 
 ```json

@@ -62,6 +62,60 @@ def test_loop_kernel_unreleased_truth_and_readme_contract() -> None:
             assert required in text
 
 
+def test_unreleased_changelog_does_not_claim_release_or_runtime_evolution() -> None:
+    changelog = _read("CHANGELOG.md")
+    unreleased = _section(changelog, "## [Unreleased]", "## [0.1.6]")
+    normalized = " ".join(unreleased.split())
+    assert "Evidence-Gated Loop Kernel" in unreleased
+    assert "provider-free" in unreleased
+    assert "release remains on hold" in normalized
+    assert "not runtime self-modification" in normalized
+    assert (
+        "not runtime self-modification, live-provider success, "
+        "or a v0.1.7 release"
+    ) in normalized
+    for forbidden in (
+        "autonomous self-improvement",
+        "implements runtime self-modification",
+        "demonstrates live-provider strict success",
+        "released in v0.1.7",
+    ):
+        assert forbidden not in normalized
+
+
+def test_readmes_link_commands_schemas_and_nonclaims() -> None:
+    for text in (_read("README.md"), _read("README_CN.md")):
+        for required in (
+            "python scripts/evidence_gated_loop_gate.py check",
+            "[Evidence-Gated Loop Kernel]"
+            "(docs/reference/evidence-gated-loop-kernel.md)",
+            "[canonical JSON]"
+            "(docs/evidence/evidence-gated-loop-kernel-v1.json)",
+            "dra.evidence-gated-loop-registry.v1",
+            "dra.evolution-case.v1",
+            "dra.evidence-gated-loop-report.v1",
+        ):
+            assert required in text
+        assert (
+            "not runtime self-modification" in text
+            or "不是运行时自修改" in text
+        )
+        assert (
+            "not a v0.1.7 release" in text
+            or ("不证明" in text and "v0.1.7 已发布" in text)
+        )
+        assert '{"match":true,"record_status":"valid","status":"valid"}' in text
+
+    english = _read("README.md")
+    chinese = _read("README_CN.md")
+    assert "No intermediate output is expected" in english
+    assert "420-second aggregate profile deadline" in english
+    assert "not an end-to-end TTHW claim" in english
+    assert "不会输出中间进度" in chinese
+    assert "420 秒 aggregate profile deadline" in chinese
+    assert "不是端到端 TTHW claim" in chinese
+
+
 def _section(text: str, heading: str, next_heading: str | None = None) -> str:
     start = text.index(heading)
     if next_heading is None:

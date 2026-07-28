@@ -70,6 +70,81 @@ def test_evidence_gated_loop_reference_locks_commands_and_nonclaims() -> None:
         assert phrase in text
 
 
+def test_evidence_gated_loop_reference_locks_first_result_and_safe_build() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for phrase in (
+        "[Contributing](../../CONTRIBUTING.md#environment)",
+        "No intermediate output is expected",
+        "420-second aggregate profile deadline",
+        "does not include cold environment setup",
+        '{"match":true,"record_status":"valid","status":"valid"}',
+        "mktemp -d",
+        "existing targets may be replaced",
+        "Candidate JSON is the generated pair authority",
+        "Only reviewed committed JSON is the repository baseline",
+    ):
+        assert phrase in text
+
+
+def test_evidence_gated_loop_reference_maps_every_stable_error() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for heading in (
+        "Stable code",
+        "Owner",
+        "Likely cause",
+        "First exact symbol or bounded check",
+        "Safe fix",
+        "Prohibited false fix",
+    ):
+        assert heading in text
+    for code in (
+        "loop_registry_invalid",
+        "loop_case_invalid",
+        "loop_evidence_ref_invalid",
+        "loop_episode_invalid",
+        "loop_diagnosis_invalid",
+        "loop_action_invalid",
+        "loop_candidate_identity_invalid",
+        "loop_verification_profile_invalid",
+        "loop_verification_failed",
+        "loop_decision_invalid",
+        "loop_report_invalid",
+        "loop_baseline_invalid",
+        "loop_output_invalid",
+        "loop_public_output_unsafe",
+        "loop_internal_error",
+    ):
+        assert f"| `{code}` |" in text
+    for profile in (
+        "context-resolver-coherence@1",
+        "evaluation-sensitivity@1",
+        "strict-citation-consumer@1",
+    ):
+        assert profile in text
+
+
+def test_evidence_gated_loop_reference_locks_extension_versioning() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for phrase in (
+        "New case, existing kinds",
+        "Append episode to an existing lineage",
+        "Profile contract change",
+        "New evidence, proof, field, enum, or verifier kind",
+        "case_version",
+        "profile_version",
+        "kernel_version",
+        "parallel versioned schema",
+        "sorted registry path",
+        "code-owned episode binding",
+        "temporary `build`",
+        "review the JSON and Markdown diff",
+        "run the real `check` once",
+        "No manifest command or dynamic verifier",
+        "No automatic baseline acceptance",
+    ):
+        assert phrase in text
+
+
 def test_evidence_gated_evolution_adr_keeps_verifier_outside_candidate() -> None:
     text = LOOP_ADR.read_text(encoding="utf-8")
     for phrase in (

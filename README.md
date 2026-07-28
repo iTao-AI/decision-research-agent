@@ -335,9 +335,10 @@ exactly:
 
 See the [Evidence-Gated Loop Kernel](docs/reference/evidence-gated-loop-kernel.md)
 and its [canonical JSON](docs/evidence/evidence-gated-loop-kernel-v1.json).
-This provider-free contract proof is not runtime self-modification, live-provider
-strict success, production reliability, or a v0.1.7 release. The immutable
-v0.1.6 release does not contain the post-v0.1.6 kernel.
+This provider-free contract proof is not runtime self-modification or
+live-provider strict success, is not production reliability evidence, and is
+not a v0.1.7 release. The immutable v0.1.6 release does not contain the
+post-v0.1.6 kernel.
 
 ## Documentation
 

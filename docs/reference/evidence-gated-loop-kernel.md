@@ -86,8 +86,9 @@ PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py build \
 Use a fresh task-owned directory because existing targets may be replaced. The
 parent must already exist; output paths must be distinct non-symlink,
 non-baseline files. Candidate JSON is the generated pair authority and
-Markdown is its deterministic projection. Only reviewed committed JSON is the
-repository baseline. `build` never accepts or rewrites that baseline.
+Markdown is its deterministic projection.
+Only reviewed committed JSON is the repository baseline. `build` never
+accepts or rewrites that baseline.
 
 ## Reading The JSON And Markdown
 
@@ -125,8 +126,9 @@ candidate, and an immutable predecessor target.
 The checklist is: add the sorted registry path; preserve unique IDs; update
 versions; update the code-owned episode binding; write RED tests; use a
 temporary `build`; review the JSON and Markdown diff; update indexes and
-contracts; then run the real `check` once. No manifest command or dynamic
-verifier is allowed. No automatic baseline acceptance is allowed.
+contracts; then run the real `check` once.
+No manifest command or dynamic verifier is allowed.
+No automatic baseline acceptance is allowed.
 
 ## When A New Kind Requires Review
 

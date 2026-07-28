@@ -106,6 +106,17 @@ def test_runner_uses_shell_false_fixed_cwd_devnull_and_minimal_env(
     assert observed["env"]["LANGCHAIN_TRACING_V2"] == "false"
     assert observed["env"]["PYTHONHASHSEED"] == "0"
     assert "OPENAI_API_KEY" not in observed["env"]
+    assert set(observed["env"]) <= {
+        "PYTHON_DOTENV_DISABLED",
+        "LANGCHAIN_TRACING_V2",
+        "PYTHONHASHSEED",
+        "PATH",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "SYSTEMROOT",
+        "WINDIR",
+    }
 
 
 def test_required_profiles_run_once_in_registry_order(monkeypatch) -> None:
@@ -133,6 +144,37 @@ def test_required_profiles_run_once_in_registry_order(monkeypatch) -> None:
         "context-resolver-coherence",
         "evaluation-sensitivity",
         "strict-citation-consumer",
+    ]
+
+
+def test_required_profiles_fail_closed_at_aggregate_deadline(
+    monkeypatch,
+) -> None:
+    ticks = iter([0.0, 0.0, 121.0, 421.0])
+    calls = []
+    monkeypatch.setattr(profiles.time, "monotonic", lambda: next(ticks))
+
+    def fake_run(ref, *, timeout_seconds, **kwargs):
+        calls.append((ref.profile_id, timeout_seconds))
+        return VerificationResult(
+            profile_id=ref.profile_id,
+            profile_version=ref.profile_version,
+            provider_free=True,
+            status="passed",
+            coverage=[
+                "fail_to_pass", "retained", "safety_compatibility"
+            ],
+            diagnostic_code="loop_verification_passed",
+        )
+
+    monkeypatch.setattr(profiles, "run_verification_profile", fake_run)
+    with pytest.raises(
+        LoopProfileError, match="loop_verification_failed"
+    ):
+        run_required_profiles(load_registry())
+    assert calls == [
+        ("context-resolver-coherence", 120),
+        ("evaluation-sensitivity", 299.0),
     ]
 
 

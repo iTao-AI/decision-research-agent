@@ -11,7 +11,8 @@ All notable changes to this project are documented in this file.
   immutable candidate and consumer identities, explicit reviewed verification,
   accept/reject/no-change decisions, and evidence-bound rollback semantics;
   release remains on hold. This is not runtime self-modification,
-  historical-candidate execution, live-provider success, or a v0.1.7 release.
+  live-provider success, or a v0.1.7 release. It also does not claim
+  historical-candidate execution.
 
 ### Strict exact-source citation profile
 

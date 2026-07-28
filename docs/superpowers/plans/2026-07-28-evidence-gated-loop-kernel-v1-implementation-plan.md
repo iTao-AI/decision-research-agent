@@ -7,10 +7,10 @@
 > profiles, canonical artifacts, and documentation contracts form one tightly
 > coupled authority surface. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Pending designated-authority AutoPlan review and the implementation
-gate. Landing this plan does not authorize implementation, dependency
-installation, provider/model use, Docker, push, PR, merge, release, deployment,
-or cleanup.
+**Status:** Approved for local implementation after designated-authority
+AutoPlan review. This approval is limited to Tasks 1-7 in the existing isolated
+worktree and does not authorize dependency installation, provider/model use,
+Docker, push, PR, merge, release, deployment, or cleanup.
 
 **Goal:** Add a provider-free Evidence-Gated Loop Kernel v1 that preserves
 three reviewed DRA failure or verification lineages, validates structured

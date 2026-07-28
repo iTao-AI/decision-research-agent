@@ -37,9 +37,158 @@ CURRENT_DOCS = [
 STRICT_CITATION_REFERENCE = (
     PROJECT_ROOT / "docs/reference/strict-citation-profile.md"
 )
+LOOP_REFERENCE = PROJECT_ROOT / "docs/reference/evidence-gated-loop-kernel.md"
+LOOP_ADR = PROJECT_ROOT / "docs/decisions/evidence-gated-evolution-authority.md"
+ARCHITECTURE = PROJECT_ROOT / "docs/architecture.md"
+DOCS_INDEX = PROJECT_ROOT / "docs/README.md"
+EVIDENCE_INDEX = PROJECT_ROOT / "docs/evidence/README.md"
 
 def _combined_docs() -> str:
     return "\n\n".join(path.read_text(encoding="utf-8") for path in CURRENT_DOCS)
+
+
+def test_evidence_gated_loop_reference_locks_commands_and_nonclaims() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for phrase in (
+        "dra.evidence-gated-loop-registry.v1",
+        "dra.evolution-case.v1",
+        "dra.evidence-gated-loop-report.v1",
+        "python scripts/evidence_gated_loop_gate.py check",
+        "historical RED",
+        "fixed verification profile",
+        "reviewed_candidate_verification_status",
+        "candidate-bound pass receipt",
+        "code-owned case and episode binding",
+        "record_status",
+        "candidate_verdict",
+        "closure_status",
+        "release `hold`",
+        "recommendation-only rollback",
+        "No runtime self-modification",
+        "No live-provider strict success",
+    ):
+        assert phrase in text
+
+
+def test_evidence_gated_loop_reference_locks_first_result_and_safe_build() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for phrase in (
+        "[Contributing](../../CONTRIBUTING.md#environment)",
+        "No intermediate output is expected",
+        "420-second aggregate profile deadline",
+        "does not include cold environment setup",
+        '{"match":true,"record_status":"valid","status":"valid"}',
+        "mktemp -d",
+        "existing targets may be replaced",
+        "Candidate JSON is the generated pair authority",
+        "Only reviewed committed JSON is the repository baseline",
+    ):
+        assert phrase in text
+
+
+def test_evidence_gated_loop_reference_maps_every_stable_error() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for heading in (
+        "Stable code",
+        "Owner",
+        "Likely cause",
+        "First exact symbol or bounded check",
+        "Safe fix",
+        "Prohibited false fix",
+    ):
+        assert heading in text
+    for code in (
+        "loop_registry_invalid",
+        "loop_case_invalid",
+        "loop_evidence_ref_invalid",
+        "loop_episode_invalid",
+        "loop_diagnosis_invalid",
+        "loop_action_invalid",
+        "loop_candidate_identity_invalid",
+        "loop_verification_profile_invalid",
+        "loop_verification_failed",
+        "loop_decision_invalid",
+        "loop_report_invalid",
+        "loop_baseline_invalid",
+        "loop_output_invalid",
+        "loop_public_output_unsafe",
+        "loop_internal_error",
+    ):
+        assert f"| `{code}` |" in text
+    for profile in (
+        "context-resolver-coherence@1",
+        "evaluation-sensitivity@1",
+        "strict-citation-consumer@1",
+    ):
+        assert profile in text
+
+
+def test_evidence_gated_loop_reference_locks_extension_versioning() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for phrase in (
+        "New case, existing kinds",
+        "Append episode to an existing lineage",
+        "Profile contract change",
+        "New evidence, proof, field, enum, or verifier kind",
+        "case_version",
+        "profile_version",
+        "kernel_version",
+        "parallel versioned schema",
+        "sorted registry path",
+        "code-owned episode binding",
+        "temporary `build`",
+        "review the JSON and Markdown diff",
+        "run the real `check` once",
+        "No manifest command or dynamic verifier",
+        "No automatic baseline acceptance",
+    ):
+        assert phrase in text
+
+
+def test_evidence_gated_evolution_adr_keeps_verifier_outside_candidate() -> None:
+    text = LOOP_ADR.read_text(encoding="utf-8")
+    for phrase in (
+        "Status: Accepted",
+        "Offline Verification",
+        "candidate cannot modify",
+        "verification profile registry",
+        "human-reviewed verdict",
+        "consumer-owned proof",
+        "terminal episode",
+        "privacy-safe observation",
+        "not a fourth evolution-success case",
+        "runtime self-modification",
+        "automatic release",
+    ):
+        assert phrase in text
+
+
+def test_architecture_places_loop_kernel_under_verification() -> None:
+    text = ARCHITECTURE.read_text(encoding="utf-8")
+    assert "Evidence-Gated Loop Kernel" in text
+    assert "Verification" in text
+    assert "Framework Runtime" in text
+    assert "does not own application state" in text
+
+
+def test_loop_indexes_use_repository_relative_links() -> None:
+    docs_index = DOCS_INDEX.read_text(encoding="utf-8")
+    evidence_index = EVIDENCE_INDEX.read_text(encoding="utf-8")
+    assert (
+        "[Evidence-Gated Loop Kernel](reference/evidence-gated-loop-kernel.md)"
+        in docs_index
+    )
+    assert (
+        "[Evidence-Gated Evolution Authority]"
+        "(decisions/evidence-gated-evolution-authority.md)"
+        in docs_index
+    )
+    assert "[JSON](evidence-gated-loop-kernel-v1.json)" in evidence_index
+    assert "[Markdown](evidence-gated-loop-kernel-v1.md)" in evidence_index
+    assert (
+        "[Reference](../reference/evidence-gated-loop-kernel.md)"
+        in evidence_index
+    )
 
 
 def test_strict_citation_profile_reference_locks_opt_in_contract() -> None:

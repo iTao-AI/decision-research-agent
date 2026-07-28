@@ -221,6 +221,13 @@ Detailed fields and publication semantics live in
 
 Verification is intentionally bounded:
 
+The **Evidence-Gated Loop Kernel** sits under Verification, separate from
+Framework Runtime and domain authority. It reads reviewed public-safe offline
+records, executes code-owned provider-free profiles, and validates candidate,
+consumer, closure, release-hold, and recommendation-only rollback axes. It
+does not own application state, mutate the Agent, infer a human verdict, or
+publish a release.
+
 - Unit, contract, integration, and documentation tests check repository
   behavior and public presentation.
 - Benchmark and proof artifacts state their own scope and limitations.

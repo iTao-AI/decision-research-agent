@@ -344,6 +344,36 @@ business acceptance、provider billing、exactly-once、production readiness
 - 已完成的实施历史保留在 Git 中；当前公开中性的项目计划保留在受控的
   Superpowers workspace 中。
 
+### Evidence-Gated Loop Kernel
+
+Evidence-Gated Loop Kernel v1 固化了三个已审查的失败或验证谱系，以固定、
+provider-free 的保留集与安全检查复核候选，并把在线应用状态与离线变更决策分开。
+它显式记录已审查验证状态、接受、拒绝、需要更多证据、不修改、发布保持 hold 与
+有证据绑定的回滚建议。当前固定 profile 复核仓库保留状态，不 checkout 任意历史
+候选，也不从当前 profile 失败自动推断人工 verdict。公开 schema 为
+`dra.evidence-gated-loop-registry.v1`、`dra.evolution-case.v1` 和
+`dra.evidence-gated-loop-report.v1`。
+`v0.1.6` selector 只验证当前 release metadata，不执行历史 release 行为。
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
+```
+
+固定 profile 运行期间不会输出中间进度。它们共享
+420 秒 aggregate profile deadline；该时限不包含冷启动环境准备或依赖安装，
+也不是端到端 TTHW claim。
+成功时 stdout 恰好为：
+
+```json
+{"match":true,"record_status":"valid","status":"valid"}
+```
+
+详情见 [Evidence-Gated Loop Kernel](docs/reference/evidence-gated-loop-kernel.md)
+及其 [canonical JSON](docs/evidence/evidence-gated-loop-kernel-v1.json)。
+这项 provider-free contract proof 不是运行时自修改，也不证明 live-provider
+strict success、生产可靠性或 v0.1.7 已发布；不可变的 v0.1.6 release 不包含这一
+post-v0.1.6 kernel。
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).

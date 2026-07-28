@@ -306,6 +306,40 @@ baseline and does not establish source truth, research/provider quality,
 downstream business acceptance, provider billing, exactly-once execution,
 production readiness, or an SLA.
 
+### Evidence-Gated Loop Kernel
+
+Evidence-Gated Loop Kernel v1 preserves three reviewed failure and verification
+lineages, executes fixed provider-free retained and safety profiles, keeps
+online application state separate from offline change decisions, and records
+reviewed verification status, accept, reject, need-more-evidence, no-change,
+release hold, and evidence-bound rollback recommendation explicitly. Current
+fixed profiles verify retained repository state; they do not check out
+arbitrary historical candidates or infer human verdicts. Its public schemas are
+`dra.evidence-gated-loop-registry.v1`, `dra.evolution-case.v1`, and
+`dra.evidence-gated-loop-report.v1`.
+The `v0.1.6` selector verifies current release metadata only; it does not
+execute historical release behavior.
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
+```
+
+No intermediate output is expected while the fixed profiles run. They have a
+420-second aggregate profile deadline; this excludes cold environment setup or
+dependency installation and is not an end-to-end TTHW claim. Success prints
+exactly:
+
+```json
+{"match":true,"record_status":"valid","status":"valid"}
+```
+
+See the [Evidence-Gated Loop Kernel](docs/reference/evidence-gated-loop-kernel.md)
+and its [canonical JSON](docs/evidence/evidence-gated-loop-kernel-v1.json).
+This provider-free contract proof is not runtime self-modification or
+live-provider strict success, is not production reliability evidence, and is
+not a v0.1.7 release. The immutable v0.1.6 release does not contain the
+post-v0.1.6 kernel.
+
 ## Documentation
 
 - [Documentation Index](docs/README.md)

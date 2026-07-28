@@ -683,6 +683,17 @@ known references, fails before subprocess execution. Adding a reviewed case of
 an existing kind requires an explicit binding review but does not require a
 core schema change.
 
+The profile identity covers its code-owned episode bindings, argument vector,
+timeout, coverage, and failure code. Changing any of those values requires a
+new `profile_version`; manifest or case bytes cannot redefine them. A new case
+of an existing kind starts at `case_version=1`. Appending an episode to an
+existing lineage increments that case's version. Either change may stay on the
+v1 registry, case, report, and kernel schemas only when field shapes, closed
+enums, and interpretation remain compatible. A new evidence/proof kind, field,
+closed-enum value, verifier authority, or incompatible CLI/report behavior
+requires architecture review and a parallel versioned schema/kernel contract;
+it is never silently added to v1.
+
 ### 10.1 `context-resolver-coherence@1`
 
 Runs fixed provider-free pytest selectors covering:
@@ -734,6 +745,19 @@ PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py build \
 
 `check` loads bounded registry and case bytes, executes all referenced fixed profiles, builds the canonical report, and compares it byte-for-byte with committed JSON and Markdown.
 
+The maintainer golden path begins only after the repository's documented
+Python 3.11 pinned environment is ready. It requires no `.env`, provider
+credential, backend, network, or Docker. The CLI is intentionally
+terminal-only: it emits no intermediate progress while fixed profiles execute,
+then prints exactly one terminal line. Profile execution has a 420-second
+aggregate deadline plus bounded registry, rendering, and comparison overhead;
+that limit is not a claim about cold installation time or end-to-end
+time-to-first-working-result. Successful `check` stdout is exactly:
+
+```json
+{"match":true,"record_status":"valid","status":"valid"}
+```
+
 `build` writes only to two explicit non-baseline paths. Canonical JSON is the
 sole authority and Markdown is a deterministic projection that can be rebuilt
 from it. The command validates the complete pair before a recoverable paired
@@ -741,6 +765,11 @@ write, replaces Markdown first and JSON last as the commit point, restores the
 prior Markdown on caught second-write failure, detects any pair drift, and
 cleans task-owned temporary files. It does not claim transaction-level
 atomicity across a process or power failure.
+
+The public build example must use a fresh task-owned temporary directory, two
+distinct non-symlink paths under an existing parent, and exact cleanup. It must
+state that `build` may replace existing output targets, candidate JSON is the
+pair authority, and only reviewed committed JSON is the repository baseline.
 
 There is no `accept`, `promote`, `repair`, `regenerate-baseline`, `release`, or `rollback` command.
 
@@ -765,6 +794,10 @@ loop_internal_error
 ```
 
 Public errors expose no raw exception, command output, host path, credential, query, prompt, snippet, trace, or private payload.
+The public reference maps every stable code to its owner, likely cause, first
+exact symbol or bounded check, safe fix, and prohibited false fix. For
+`loop_verification_failed`, it gives the fixed profile-isolation order without
+exposing retained subprocess output.
 
 ## 12. Intended implementation surface
 
@@ -816,7 +849,13 @@ Because this is an offline verification authority, implementation requires:
 3. a reference document with commands, reviewer paths, diagnosis codes, update rules, and non-claims;
 4. canonical JSON and Markdown evidence indexes;
 5. equivalent English and Chinese README command, claim, and boundary text;
-6. an `[Unreleased]` changelog entry that does not imply a release.
+6. an `[Unreleased]` changelog entry that does not imply a release;
+7. one warm-environment golden path with exact terminal output, the
+   no-intermediate-output expectation, the 420-second profile deadline, and an
+   honest cold-setup/TTHW non-claim;
+8. a complete stable-code recovery table covered by documentation contracts;
+9. an extension/versioning matrix and checklist that separates an
+   existing-kind case or episode from a new proof/schema/verifier kind.
 
 CI adds one real provider-free kernel `check` step after the existing Evaluation Sensitivity v2 check and before the remaining deterministic proofs and full pytest suite. Default pytest artifact-coherence tests use fixed validated profile results and must not launch a nested real kernel check; the final command matrix likewise runs the real kernel once.
 
@@ -867,6 +906,10 @@ Tests must also prove:
   candidate-bound input evidence remain structurally green in isolated
   contract tests only when current fixed profiles pass;
 - adding a case of an existing kind does not require a core schema change;
+- an existing-kind case cannot enter a full report until the sorted registry
+  path and code-owned episode binding are reviewed together;
+- changing code-owned bindings, arguments, timeout, coverage, or failure code
+  requires a new profile version;
 - adding an unknown evidence or verification kind fails closed;
 - fixed profiles cannot be overridden by manifest bytes or swapped between canonical case/episode bindings;
 - report release aggregation uses only each case's unique terminal episode,
@@ -894,7 +937,10 @@ The phase is complete only when:
 9. focused tests, documentation contracts, full non-Docker pytest, presentation audit, and `git diff --check` pass;
 10. hosted CI succeeds on the exact reviewed head;
 11. the report records release `hold` and no publication action occurs;
-12. public documentation preserves all non-claims.
+12. public documentation preserves all non-claims;
+13. public documentation contracts prove the golden path, terminal-only wait
+    semantics, complete stable-code recovery map, safe temporary build path,
+    and extension/versioning checklist.
 
 ## 16. Release and rollback disposition
 

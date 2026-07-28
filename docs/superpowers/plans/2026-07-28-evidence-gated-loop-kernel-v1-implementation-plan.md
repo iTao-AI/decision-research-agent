@@ -37,7 +37,7 @@ standard library (`argparse`, `dataclasses`, `hashlib`, `json`, `os`,
 - Authority spec:
   `docs/superpowers/specs/2026-07-28-evidence-gated-loop-kernel-v1-design.md`
   with SHA-256
-  `1e60a1e324dba5a1b32bf4a2258dcf871b4ede9e6d4ca91ec6a8e9974548b687`.
+  `bd814fe8e7a8be8bf7bdda94d8eafb59e126efd97ef0bf12486b67349e5d5c19`.
 - Audited DRA base is
   `01ba21f2996769e68cbc88f4bb0596740df27f6b`; implementation begins only
   from the later commit that contains this reviewed plan.
@@ -126,7 +126,7 @@ test -n "$IMPLEMENTATION_BASE"
 test "$(git rev-parse HEAD)" = "$IMPLEMENTATION_BASE"
 test "$(git status --porcelain)" = ""
 test "$(shasum -a 256 "$SPEC_PATH" | awk '{print $1}')" = \
-  1e60a1e324dba5a1b32bf4a2258dcf871b4ede9e6d4ca91ec6a8e9974548b687
+  bd814fe8e7a8be8bf7bdda94d8eafb59e126efd97ef0bf12486b67349e5d5c19
 git show --stat --oneline "$IMPLEMENTATION_BASE" -- "$PLAN_PATH" "$SPEC_PATH"
 ```
 
@@ -1112,6 +1112,18 @@ The optional timeout override is internal, may only reduce the code-owned
 profile timeout, and is used by `run_required_profiles` to enforce the
 aggregate deadline; manifest bytes cannot set it.
 
+`profile_version` identifies the complete code-owned profile contract:
+`episode_bindings`, `argv`, `timeout_seconds`, `coverage`, and `failure_code`.
+Changing any of those values requires a new profile version and corresponding
+registry/case reference update. A new case of an existing kind starts at
+`case_version="1"`; appending an episode to an existing lineage increments that
+case's version. Compatible case/profile additions keep the three v1 schema
+identities and `kernel_version="1"` only when field shapes, closed enums, and
+interpretation remain unchanged. A new evidence/proof kind, field, enum value,
+verifier authority, or incompatible CLI/report behavior requires architecture
+review and a parallel versioned schema/kernel contract. Never reinterpret v1
+in place.
+
 `VerificationResult.coverage` is accepted only in this exact order with no
 duplicates:
 
@@ -1313,6 +1325,14 @@ for `build`. Failure stderr is:
 with empty stdout. Stable codes are exactly those in the spec, including
 `loop_internal_error` as the final catch-all.
 
+The public maintainer golden path begins after the documented Python 3.11
+pinned environment is ready. It needs no `.env`, provider credential, backend,
+network, or Docker. `check` intentionally emits no intermediate progress while
+the fixed profiles run; it prints exactly one terminal line. The 420-second
+aggregate deadline covers profile execution only, with bounded
+load/render/compare overhead outside that deadline. Do not claim cold setup,
+installation, or full CLI time-to-first-working-result from that bound.
+
 ```python
 STABLE_ERROR_CODES = (
     "loop_registry_invalid",
@@ -1380,6 +1400,13 @@ is not called atomic: pair derivation detects it and rerunning `build`
 reconstructs Markdown from canonical JSON. `check` bounded-reads fixed
 baselines, revalidates JSON, derives Markdown from that JSON, and requires byte
 equality.
+
+Public documentation uses a fresh task-owned `mktemp -d` directory for
+`build`, installs exact cleanup for the two known files and now-empty
+directory, and explains that the parent must exist, paths must be distinct
+non-symlink non-baseline targets, and existing targets may be replaced.
+Candidate JSON is the generated pair authority; only reviewed committed JSON
+is the repository baseline.
 
 ---
 
@@ -2185,7 +2212,7 @@ def test_valid_rejected_and_need_more_records_remain_structurally_valid() -> Non
         assert validate_case(case).episodes[0].reviewed_decision.candidate_verdict \
             == verdict
 
-def test_existing_kind_new_case_requires_no_core_schema_change() -> None:
+def test_existing_kind_new_case_reuses_v1_case_schema() -> None:
     case = _case("context-resolver-projection")
     case["case_id"] = "future-context-case"
     case["evidence_refs"][0]["evidence_id"] = "future-red"
@@ -2200,7 +2227,9 @@ def test_existing_kind_new_case_requires_no_core_schema_change() -> None:
     case["episodes"][0]["reviewed_decision"][
         "reviewed_verification_evidence_ids"
     ] = ["future-pass"]
-    assert validate_case(case).case_id == "future-context-case"
+    validated = validate_case(case)
+    assert validated.schema_version == "dra.evolution-case.v1"
+    assert validated.case_id == "future-context-case"
 
 def test_candidate_owned_evidence_requires_exact_subject_candidate() -> None:
     case = _case("strict-citation-consumer")
@@ -2754,7 +2783,8 @@ git commit -m "feat(loop): add fixed verification profiles"
 
 - [ ] **Step 1: Write RED report, CLI, drift, and recoverable-output tests**
 
-Add these exact behaviors:
+Add `import dataclasses` alongside the test file's existing `copy`, `json`, and
+`Path` imports. Add these exact behaviors:
 
 ```python
 def _passing_profile_results() -> tuple[VerificationResult, ...]:
@@ -2984,6 +3014,78 @@ def test_swapping_two_known_episode_profiles_fails_before_execution(
             tuple(validate_case(value) for value in values),
         )
     assert calls == []
+
+def test_existing_kind_case_requires_versioned_code_owned_binding(
+    monkeypatch,
+) -> None:
+    values = {
+        case_id: _case(case_id)
+        for case_id in (
+            "context-resolver-projection",
+            "evaluation-sensitivity",
+            "strict-citation-consumer",
+        )
+    }
+    context = values["context-resolver-projection"]
+    context["episodes"][0]["verification_profile_ref"][
+        "profile_version"
+    ] = "2"
+    future = copy.deepcopy(context)
+    future["case_id"] = "future-context-case"
+    future["case_version"] = "1"
+    future["evidence_refs"][0]["evidence_id"] = "future-context-red"
+    future["evidence_refs"][1]["evidence_id"] = "future-context-pass"
+    future["evidence_refs"][1]["subject_candidate_id"] = \
+        "future-context-candidate"
+    episode = future["episodes"][0]
+    episode["episode_id"] = "future-context-episode-1"
+    episode["input_evidence_ids"] = [
+        "future-context-red", "future-context-pass",
+    ]
+    episode["candidate_refs"][0]["candidate_id"] = \
+        "future-context-candidate"
+    episode["reviewed_decision"]["reviewed_verification_evidence_ids"] = [
+        "future-context-pass"
+    ]
+
+    registry_value = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    registry_value["case_paths"].append(
+        "benchmarks/evidence-gated-loop-v1/cases/future-context-case.json"
+    )
+    registry_value["case_paths"].sort()
+    registry_value["verification_profiles"][0]["profile_version"] = "2"
+    registry = validate_registry(registry_value)
+    cases_by_id = {
+        **values,
+        "future-context-case": future,
+    }
+    cases = tuple(
+        validate_case(cases_by_id[Path(path).stem])
+        for path in registry.case_paths
+    )
+
+    with pytest.raises(
+        LoopContractError, match="loop_verification_profile_invalid"
+    ):
+        validate_kernel_inputs(registry, cases)
+
+    current = gate.PROFILE_REGISTRY[
+        ("context-resolver-coherence", "1")
+    ]
+    reviewed = dataclasses.replace(
+        current,
+        profile_version="2",
+        episode_bindings=(
+            *current.episode_bindings,
+            ("future-context-case", "future-context-episode-1"),
+        ),
+    )
+    updated_profiles = dict(gate.PROFILE_REGISTRY)
+    del updated_profiles[("context-resolver-coherence", "1")]
+    updated_profiles[("context-resolver-coherence", "2")] = reviewed
+    monkeypatch.setattr(gate, "PROFILE_REGISTRY", updated_profiles)
+
+    validate_kernel_inputs(registry, cases)
 
 def test_registry_case_count_order_and_path_identity_are_exact() -> None:
     registry = load_registry()
@@ -3371,7 +3473,7 @@ def test_cli_shape_error_is_stable(capsys) -> None:
 ```bash
 PYTHON_DOTENV_DISABLED=1 "$PWD/.venv/bin/python" -m pytest -q \
   tests/integration/test_evidence_gated_loop_gate.py -k \
-  'report or duplicate or registry_case or declared_unused or registered_case or unknown_verification or rendering or markdown or build or compare or cli'
+  'report or duplicate or registry_case or existing_kind or declared_unused or registered_case or unknown_verification or rendering or markdown or build or compare or cli'
 ```
 
 Expected: FAIL because the report/gate interfaces do not exist.
@@ -3464,23 +3566,21 @@ def validate_kernel_inputs(
         or any(identity not in PROFILE_REGISTRY for identity in declared)
     ):
         raise LoopContractError("loop_verification_profile_invalid")
-    expected_bindings = [
-        (case_id, episode_id, *profile_identity)
+    expected_bindings = {
+        (case_id, episode_id): profile_identity
         for profile_identity in declared
         for case_id, episode_id in (
             PROFILE_REGISTRY[profile_identity].episode_bindings
         )
-    ]
-    actual_bindings = [
-        (
-            case.case_id,
-            episode.episode_id,
+    }
+    actual_bindings = {
+        (case.case_id, episode.episode_id): (
             episode.verification_profile_ref.profile_id,
             episode.verification_profile_ref.profile_version,
         )
         for case in cases
         for episode in case.episodes
-    ]
+    }
     if actual_bindings != expected_bindings:
         raise LoopContractError("loop_verification_profile_invalid")
 ```
@@ -3718,22 +3818,31 @@ def test_reference_case_git_identities_are_exact() -> None:
     strict = load_case_file(
         CASES_ROOT / "strict-citation-consumer.json"
     )
+    context_evidence = {
+        item.evidence_id: item for item in context.evidence_refs
+    }
+    evaluation_evidence = {
+        item.evidence_id: item for item in evaluation.evidence_refs
+    }
+    strict_evidence = {
+        item.evidence_id: item for item in strict.evidence_refs
+    }
     observed = [
         (
-            context.evidence_refs[0].commit_sha,
-            context.evidence_refs[0].tree_sha,
+            context_evidence["context-red"].commit_sha,
+            context_evidence["context-red"].tree_sha,
             context.episodes[0].candidate_refs[0].commit_sha,
             context.episodes[0].candidate_refs[0].tree_sha,
         ),
         (
-            evaluation.evidence_refs[0].commit_sha,
-            evaluation.evidence_refs[0].tree_sha,
+            evaluation_evidence["evaluator-gap"].commit_sha,
+            evaluation_evidence["evaluator-gap"].tree_sha,
             evaluation.episodes[0].candidate_refs[0].commit_sha,
             evaluation.episodes[0].candidate_refs[0].tree_sha,
         ),
         (
-            strict.evidence_refs[0].commit_sha,
-            strict.evidence_refs[0].tree_sha,
+            strict_evidence["strict-live-25-0"].commit_sha,
+            strict_evidence["strict-live-25-0"].tree_sha,
             strict.episodes[0].candidate_refs[0].commit_sha,
             strict.episodes[0].candidate_refs[0].tree_sha,
         ),
@@ -3746,8 +3855,8 @@ def test_reference_case_git_identities_are_exact() -> None:
             "8da21672e9fd63352e9bc15365818f7edd12d106",
         ),
         (
-            "6a3020863fbaaf9d218420b7981150a5736b7fb8",
-            "d6b0dd3a0911125795eb7146bcd659c99233067d",
+            "8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9",
+            "56fb2e148da3b4026f5ec430b94336e5e484cb85",
             "6a3020863fbaaf9d218420b7981150a5736b7fb8",
             "d6b0dd3a0911125795eb7146bcd659c99233067d",
         ),
@@ -3758,6 +3867,20 @@ def test_reference_case_git_identities_are_exact() -> None:
             "06e5282414d3801b11040bba735dd107105e8a30",
         ),
     ]
+    assert (
+        evaluation_evidence["evaluator-red"].commit_sha,
+        evaluation_evidence["evaluator-red"].tree_sha,
+    ) == (
+        "8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9",
+        "56fb2e148da3b4026f5ec430b94336e5e484cb85",
+    )
+    assert (
+        evaluation_evidence["evaluator-candidate-pass"].commit_sha,
+        evaluation_evidence["evaluator-candidate-pass"].tree_sha,
+    ) == (
+        evaluation.episodes[0].candidate_refs[0].commit_sha,
+        evaluation.episodes[0].candidate_refs[0].tree_sha,
+    )
 
 def test_historical_red_and_executable_profiles_are_distinct(
     deterministic_report
@@ -3923,6 +4046,78 @@ def test_evidence_gated_loop_reference_locks_commands_and_nonclaims() -> None:
     ):
         assert phrase in text
 
+def test_evidence_gated_loop_reference_locks_first_result_and_safe_build() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for phrase in (
+        "[Contributing](../../CONTRIBUTING.md#environment)",
+        "No intermediate output is expected",
+        "420-second aggregate profile deadline",
+        "does not include cold environment setup",
+        '{"match":true,"record_status":"valid","status":"valid"}',
+        "mktemp -d",
+        "existing targets may be replaced",
+        "Candidate JSON is the generated pair authority",
+        "Only reviewed committed JSON is the repository baseline",
+    ):
+        assert phrase in text
+
+def test_evidence_gated_loop_reference_maps_every_stable_error() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for heading in (
+        "Stable code",
+        "Owner",
+        "Likely cause",
+        "First exact symbol or bounded check",
+        "Safe fix",
+        "Prohibited false fix",
+    ):
+        assert heading in text
+    for code in (
+        "loop_registry_invalid",
+        "loop_case_invalid",
+        "loop_evidence_ref_invalid",
+        "loop_episode_invalid",
+        "loop_diagnosis_invalid",
+        "loop_action_invalid",
+        "loop_candidate_identity_invalid",
+        "loop_verification_profile_invalid",
+        "loop_verification_failed",
+        "loop_decision_invalid",
+        "loop_report_invalid",
+        "loop_baseline_invalid",
+        "loop_output_invalid",
+        "loop_public_output_unsafe",
+        "loop_internal_error",
+    ):
+        assert f"| `{code}` |" in text
+    for profile in (
+        "context-resolver-coherence@1",
+        "evaluation-sensitivity@1",
+        "strict-citation-consumer@1",
+    ):
+        assert profile in text
+
+def test_evidence_gated_loop_reference_locks_extension_versioning() -> None:
+    text = LOOP_REFERENCE.read_text(encoding="utf-8")
+    for phrase in (
+        "New case, existing kinds",
+        "Append episode to an existing lineage",
+        "Profile contract change",
+        "New evidence, proof, field, enum, or verifier kind",
+        "case_version",
+        "profile_version",
+        "kernel_version",
+        "parallel versioned schema",
+        "sorted registry path",
+        "code-owned episode binding",
+        "temporary `build`",
+        "review the JSON and Markdown diff",
+        "run the real `check` once",
+        "No manifest command or dynamic verifier",
+        "No automatic baseline acceptance",
+    ):
+        assert phrase in text
+
 def test_evidence_gated_evolution_adr_keeps_verifier_outside_candidate() -> None:
     text = LOOP_ADR.read_text(encoding="utf-8")
     for phrase in (
@@ -4010,7 +4205,9 @@ What It Does Not Prove
 Schemas And Case Lineage
 Diagnosis And Carrier Selection
 Fixed Verification Profiles
+Prerequisites And First Result
 Commands
+Safe Candidate Build
 Reading The JSON And Markdown
 Accept, Reject, Need More Evidence, And No Change
 Independent Consumer Proof
@@ -4032,6 +4229,110 @@ a human verdict from a failed current profile. State that the `v0.1.6`
 selector verifies current release metadata only and does not execute historical
 release behavior. Document the exact rollback
 basis-to-proof-kind matrix and the evidence-to-subject-candidate binding.
+
+Lock this maintainer golden path in `Prerequisites And First Result`:
+
+````markdown
+Use the repository [Contributing](../../CONTRIBUTING.md#environment) steps for
+the pinned Python 3.11 environment. The kernel itself needs no `.env`, provider
+credential, backend, network, or Docker.
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
+```
+
+No intermediate output is expected while the fixed profiles run. They have a
+420-second aggregate profile deadline plus bounded load, render, and compare
+overhead. That deadline does not include cold environment setup or dependency
+installation and is not an end-to-end TTHW claim.
+
+Expected stdout:
+
+```json
+{"match":true,"record_status":"valid","status":"valid"}
+```
+````
+
+Lock this safe candidate build example and explanation:
+
+````markdown
+```bash
+LOOP_OUTPUT_DIR="$(mktemp -d)"
+cleanup_loop_output() {
+  rm -f \
+    "$LOOP_OUTPUT_DIR/evidence-gated-loop-kernel-v1.json" \
+    "$LOOP_OUTPUT_DIR/evidence-gated-loop-kernel-v1.md"
+  rmdir "$LOOP_OUTPUT_DIR"
+}
+trap cleanup_loop_output EXIT
+PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py build \
+  --json-output \
+  "$LOOP_OUTPUT_DIR/evidence-gated-loop-kernel-v1.json" \
+  --markdown-output \
+  "$LOOP_OUTPUT_DIR/evidence-gated-loop-kernel-v1.md"
+```
+
+Use a fresh task-owned directory because existing targets may be replaced. The
+parent must already exist; output paths must be distinct non-symlink,
+non-baseline files. Candidate JSON is the generated pair authority and
+Markdown is its deterministic projection. Only reviewed committed JSON is the
+repository baseline. `build` never accepts or rewrites that baseline.
+````
+
+The `Stable Error Codes` section contains this complete recovery map:
+
+| Stable code | Owner | Likely cause | First exact symbol or bounded check | Safe fix | Prohibited false fix |
+|---|---|---|---|---|---|
+| `loop_registry_invalid` | registry contract | schema, path order, profile declaration, limit, or non-claim drift | `scripts.evidence_gated_loop_contracts.validate_registry` | restore reviewed registry bytes and ordering | do not sort silently, loosen the schema, or add executable manifest fields |
+| `loop_case_invalid` | case contract | malformed, unregistered, duplicate, missing, or path-mismatched case | `scripts.evidence_gated_loop_contracts.validate_case`, then `scripts.evidence_gated_loop_gate.validate_kernel_inputs` | restore the registered canonical case and exact path identity | do not accept unknown cases or drop a case from the report |
+| `loop_evidence_ref_invalid` | evidence reference contract | malformed identity, proof kind, candidate subject, or public-safety field | `scripts.evidence_gated_loop_contracts.EvidenceRef` and the case validator | repair the reviewed reference and exact subject binding | do not remove required provenance or weaken public-safety checks |
+| `loop_episode_invalid` | lineage contract | duplicate episode, non-immediate predecessor, dangling input, or nonlinear lineage | `scripts.evidence_gated_loop_contracts.EvolutionCase` | repair the append-only episode chain and referenced inputs | do not reorder silently or rewrite earlier decisions |
+| `loop_diagnosis_invalid` | diagnosis contract | unsupported status/layer or incoherent expected, observed, and scope fields | `scripts.evidence_gated_loop_contracts.Diagnosis` | restore the reviewed bounded diagnosis | do not auto-diagnose from raw runtime data |
+| `loop_action_invalid` | carrier/action contract | incoherent change/no-change action, multiple carriers/candidates, or unsupported model parameters | `scripts.evidence_gated_loop_contracts.DecisionEpisode` | select one supported carrier/candidate or record explicit no-change | do not merge carriers or enable model-parameter authority |
+| `loop_candidate_identity_invalid` | candidate contract | invalid repository/commit/tree/predecessor or candidate/provenance self-reference | `scripts.evidence_gated_loop_contracts.CandidateRef` and the case validator | restore the reviewed immutable Git identity and candidate-bound receipt | do not replace a commit/tree with a moving branch or tag |
+| `loop_verification_profile_invalid` | profile binding | unknown version or incorrect case/episode-to-profile mapping | `scripts.evidence_gated_loop_profiles.PROFILE_REGISTRY`, then `scripts.evidence_gated_loop_gate.validate_kernel_inputs` | review a new profile version and exact code-owned bindings | do not load commands dynamically or accept a manifest override |
+| `loop_verification_failed` | fixed profile execution | first fixed profile returned nonzero, timed out, signaled, or could not execute | `scripts.evidence_gated_loop_profiles.run_required_profiles` | run the exact documented profiles independently in registry order and repair the first failing owner | do not expose raw subprocess output, skip a profile, parallelize away order, or weaken its expectation |
+| `loop_decision_invalid` | reviewed decision contract | verdict, consumer, closure, release, or rollback axes are incoherent | `scripts.evidence_gated_loop_contracts.ReviewedDecision`, then the episode validator | correct the reviewed evidence-bound decision | do not infer acceptance or release from current profile success |
+| `loop_report_invalid` | report builder | embedded hash, order, summary, limits, non-claims, or Markdown derivation drift | `scripts.evidence_gated_loop_gate.validate_report` | fix the typed builder or deterministic renderer | do not copy a manifest summary or hand-edit Markdown authority |
+| `loop_baseline_invalid` | comparison | committed JSON/Markdown is invalid, incoherent, noncanonical, or byte-drifted | `scripts.evidence_gated_loop_gate.compare_artifacts` | build a temporary candidate pair and review the exact diff | do not auto-rewrite or auto-accept the baseline |
+| `loop_output_invalid` | CLI/output writer | invalid command shape, alias/symlink/path conflict, missing parent, or recoverable write failure | `scripts.evidence_gated_loop_gate._ArgumentParser.error`, `_resolve_output`, then `write_artifacts_recoverably` | use only `check` or `build` with fresh distinct paths under an existing parent | do not print raw paths or target committed baselines |
+| `loop_public_output_unsafe` | public projection | forbidden raw content, credential marker, host path, trace, or private identifier | `scripts.evidence_gated_loop_contracts.validate_public_projection` | remove the value at its owning projection before serialization | do not redact after serialization or weaken the scanner |
+| `loop_internal_error` | public boundary | an unexpected exception escaped a typed layer | `scripts.evidence_gated_loop_gate.main` | reproduce with focused provider-free tests and return to review | do not expose a traceback or map an unknown failure to success |
+
+For `loop_verification_failed`, list this exact privacy-safe isolation order:
+
+1. `context-resolver-coherence@1`;
+2. `evaluation-sensitivity@1`;
+3. `strict-citation-consumer@1`.
+
+Each entry points to the exact fixed command in `Fixed Verification Profiles`;
+none retains or prints the kernel subprocess output.
+
+The two extension sections contain this version matrix:
+
+| Change | Version rule | Required review |
+|---|---|---|
+| New case, existing kinds | start `case_version=1`; bump the affected `profile_version` because `episode_bindings` changes; keep schema and `kernel_version=1` only when semantics remain compatible | registry path, globally unique IDs, reviewed evidence, code-owned binding, canonical artifacts, docs, and CI |
+| Append episode to an existing lineage | increment `case_version`; bump every profile version whose binding changes | predecessor/input/decision review plus terminal-case release aggregation |
+| Profile contract change | bump `profile_version` for any binding, argv, timeout, coverage, or failure-code change | code-owned registry, negative controls, bounded timing, and compatibility review |
+| New evidence, proof, field, enum, or verifier kind | no in-place v1 change; require ADR and a parallel versioned schema/kernel contract | adapter/profile authority, compatibility, migration/retirement, and negative controls |
+
+The existing-kind checklist is exact:
+
+1. add the canonical case or episode and its sorted registry path;
+2. preserve globally unique IDs and reviewed public-safe evidence;
+3. bump the case/profile versions required by the matrix;
+4. update the code-owned episode binding and prove unbound input fails closed;
+5. write focused RED tests before data/artifact changes;
+6. run a temporary `build`, review the JSON and Markdown diff, and keep JSON
+   authority explicit;
+7. update summaries, indexes, reference, README/CHANGELOG boundaries, and
+   compatibility tests;
+8. run the real `check` once and require hosted CI on the reviewed head.
+
+No manifest command or dynamic verifier is allowed. No automatic baseline
+acceptance, release, rollback, or promotion is allowed. A new kind stops at
+architecture review rather than being forced through the existing-kind path.
 
 - [ ] **Step 4: Update architecture and indexes**
 
@@ -4159,6 +4460,16 @@ def test_readmes_link_commands_schemas_and_nonclaims() -> None:
             "not a v0.1.7 release" in text
             or ("不证明" in text and "v0.1.7 已发布" in text)
         )
+        assert '{"match":true,"record_status":"valid","status":"valid"}' in text
+
+    english = README.read_text(encoding="utf-8")
+    chinese = README_CN.read_text(encoding="utf-8")
+    assert "No intermediate output is expected" in english
+    assert "420-second aggregate profile deadline" in english
+    assert "not an end-to-end TTHW claim" in english
+    assert "不会输出中间进度" in chinese
+    assert "420 秒 aggregate profile deadline" in chinese
+    assert "不是端到端 TTHW claim" in chinese
 ```
 
 - [ ] **Step 2: Run public-truth tests and observe RED**
@@ -4199,6 +4510,15 @@ execute historical release behavior.
 PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
 ```
 
+No intermediate output is expected while the fixed profiles run. They have a
+420-second aggregate profile deadline; this excludes cold environment setup or
+dependency installation and is not an end-to-end TTHW claim. Success prints
+exactly:
+
+```json
+{"match":true,"record_status":"valid","status":"valid"}
+```
+
 See the [Evidence-Gated Loop Kernel](docs/reference/evidence-gated-loop-kernel.md)
 and its [canonical JSON](docs/evidence/evidence-gated-loop-kernel-v1.json).
 This provider-free contract proof is not runtime self-modification, live-provider
@@ -4222,6 +4542,14 @@ provider-free 的保留集与安全检查复核候选，并把在线应用状态
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
+```
+
+固定 profile 运行期间不会输出中间进度。它们共享 420 秒 aggregate profile
+deadline；该时限不包含冷启动环境准备或依赖安装，也不是端到端 TTHW claim。
+成功时 stdout 恰好为：
+
+```json
+{"match":true,"record_status":"valid","status":"valid"}
 ```
 
 详情见 [Evidence-Gated Loop Kernel](docs/reference/evidence-gated-loop-kernel.md)

@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Evidence-Gated Loop Kernel
+
+- Added a provider-free offline verification kernel for three reviewed DRA
+  failure and verification lineages, with fixed retained/safety profiles,
+  immutable candidate and consumer identities, explicit reviewed verification,
+  accept/reject/no-change decisions, and evidence-bound rollback semantics;
+  release remains on hold. This is not runtime self-modification,
+  historical-candidate execution, live-provider success, or a v0.1.7 release.
+
 ### Strict exact-source citation profile
 
 - Added opt-in `generic-strict-citation@1`, reusing generic research while

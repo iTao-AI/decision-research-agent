@@ -37,6 +37,10 @@ jobs:
         env:
           PYTHON_DOTENV_DISABLED: '1'
         run: python scripts/agent_evaluation_v2_gate.py check
+      - name: Run evidence-gated loop kernel
+        env:
+          PYTHON_DOTENV_DISABLED: '1'
+        run: python scripts/evidence_gated_loop_gate.py check
       - name: Run deterministic run creation idempotency proof
         env:
           PYTHON_DOTENV_DISABLED: '1'

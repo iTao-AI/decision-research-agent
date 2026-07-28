@@ -14,6 +14,54 @@ def _read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def test_readmes_publish_equivalent_bounded_loop_kernel_claim() -> None:
+    english = _read("README.md")
+    chinese = _read("README_CN.md")
+    for text in (english, chinese):
+        assert "Evidence-Gated Loop Kernel" in text
+        assert "provider-free" in text
+        assert "three reviewed" in text or "三个已审查" in text
+        assert "accept" in text or "接受" in text
+        assert "reject" in text or "拒绝" in text
+        assert "no-change" in text or "不修改" in text
+        assert "release" in text or "发布" in text
+        assert "rollback" in text or "回滚" in text
+        assert "v0.1.6" in text
+
+
+def test_ci_runs_loop_after_v2_and_before_remaining_proofs() -> None:
+    text = _read(".github/workflows/ci.yml")
+    v2 = "python scripts/agent_evaluation_v2_gate.py check"
+    loop = "python scripts/evidence_gated_loop_gate.py check"
+    next_gate = "python scripts/run_creation_idempotency_proof.py check"
+    assert text.index(v2) < text.index(loop) < text.index(next_gate)
+    assert text.count(loop) == 1
+    assert "PYTHON_DOTENV_DISABLED: '1'" in text
+
+
+def test_loop_kernel_unreleased_truth_and_readme_contract() -> None:
+    changelog = _read("CHANGELOG.md")
+    unreleased = _section(changelog, "## [Unreleased]", "## [0.1.6]")
+    normalized = " ".join(unreleased.split())
+    assert "Evidence-Gated Loop Kernel" in unreleased
+    assert "provider-free" in unreleased
+    assert "release remains on hold" in normalized
+    assert "not runtime self-modification" in normalized
+    for text in (_read("README.md"), _read("README_CN.md")):
+        for required in (
+            "python scripts/evidence_gated_loop_gate.py check",
+            "[Evidence-Gated Loop Kernel]"
+            "(docs/reference/evidence-gated-loop-kernel.md)",
+            "[canonical JSON]"
+            "(docs/evidence/evidence-gated-loop-kernel-v1.json)",
+            "dra.evidence-gated-loop-registry.v1",
+            "dra.evolution-case.v1",
+            "dra.evidence-gated-loop-report.v1",
+            '{"match":true,"record_status":"valid","status":"valid"}',
+        ):
+            assert required in text
+
+
 def _section(text: str, heading: str, next_heading: str | None = None) -> str:
     start = text.index(heading)
     if next_heading is None:

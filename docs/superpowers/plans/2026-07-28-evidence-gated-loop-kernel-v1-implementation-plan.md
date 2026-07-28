@@ -29,7 +29,7 @@ and the verifier cannot be supplied or weakened by manifest bytes.
 
 **Tech Stack:** Python 3.11, the repository-pinned Pydantic 2.13.4, Python
 standard library (`argparse`, `dataclasses`, `hashlib`, `json`, `os`,
-`pathlib`, `re`, `subprocess`, `sys`, `tempfile`, `typing`,
+`pathlib`, `re`, `subprocess`, `sys`, `tempfile`, `time`, `typing`,
 `urllib.parse`), pytest 9.0.3, Markdown, JSON, and GitHub Actions.
 
 ## Global Constraints
@@ -37,7 +37,7 @@ standard library (`argparse`, `dataclasses`, `hashlib`, `json`, `os`,
 - Authority spec:
   `docs/superpowers/specs/2026-07-28-evidence-gated-loop-kernel-v1-design.md`
   with SHA-256
-  `f8c61a6889549990268dc1228ae3aa8ce1dd7054349681e34473583d8f08c28a`.
+  `1e60a1e324dba5a1b32bf4a2258dcf871b4ede9e6d4ca91ec6a8e9974548b687`.
 - Audited DRA base is
   `01ba21f2996769e68cbc88f4bb0596740df27f6b`; implementation begins only
   from the later commit that contains this reviewed plan.
@@ -65,16 +65,19 @@ standard library (`argparse`, `dataclasses`, `hashlib`, `json`, `os`,
 - A green kernel result means the record and required proof are coherent. It
   does not mean every candidate is accepted or a release is authorized.
 - Each change episode stores a human-reviewed candidate verification status
-  separately from current code-owned profile execution. Reviewed `failed` or
-  `inconclusive` status requires typed episode input evidence whose
+  separately from current code-owned profile execution. Reviewed `passed`,
+  `failed`, or `inconclusive` status requires typed episode input evidence whose
   `subject_candidate_id` binds the exact current candidate and can support a
-  coherent reject/need-more decision; any current profile execution failure
+  coherent pass, reject, or need-more decision. A reviewed pass receipt must
+  identify an independent review or hosted-check surface; the candidate
+  identity cannot verify itself. Any current profile execution failure
   invalidates the whole report and is never reclassified as a green rejected
   record.
 - Every canonical `case_id + episode_id` is bound by code to one exact profile
   identity. Swapping two known manifest references fails before execution.
 - A rollback recommendation requires a typed basis and explicit evidence IDs
-  newly introduced by that episode; it never executes rollback.
+  newly introduced by that episode; ordinary hold/eligibility decisions keep
+  `rollback_target=null` and it never executes rollback.
 - External GitHub and Night Voyager evidence is a reviewed immutable
   reference. Required DRA CI performs no network revalidation and makes no
   live-provider success claim.
@@ -96,8 +99,9 @@ standard library (`argparse`, `dataclasses`, `hashlib`, `json`, `os`,
   migration code, Night Voyager, `VERSION`, release notes, existing v1/v2
   evaluation datasets or artifacts, or existing downstream fixture bytes.
 - Public outputs must not contain prompts, queries, snippets, raw tool or
-  provider payloads, exceptions, tracebacks, credentials, tokens, host paths,
-  private markers, or private coordination identifiers.
+  provider payloads, exceptions, tracebacks, credentials, tokens, absolute
+  POSIX or Windows host paths, private markers, or private coordination
+  identifiers.
 - CLI failures emit one canonical JSON line with a stable code and no raw
   subprocess output or traceback.
 - If any RED requires a runtime/API/database/dependency/consumer/release
@@ -122,7 +126,7 @@ test -n "$IMPLEMENTATION_BASE"
 test "$(git rev-parse HEAD)" = "$IMPLEMENTATION_BASE"
 test "$(git status --porcelain)" = ""
 test "$(shasum -a 256 "$SPEC_PATH" | awk '{print $1}')" = \
-  f8c61a6889549990268dc1228ae3aa8ce1dd7054349681e34473583d8f08c28a
+  1e60a1e324dba5a1b32bf4a2258dcf871b4ede9e6d4ca91ec6a8e9974548b687
 git show --stat --oneline "$IMPLEMENTATION_BASE" -- "$PLAN_PATH" "$SPEC_PATH"
 ```
 
@@ -235,7 +239,7 @@ scripts/evidence_gated_loop_profiles.py
 
 scripts/evidence_gated_loop_gate.py
   imports contracts and profiles; owns cross-case/profile coherence, report
-  models/validation, rendering, baseline comparison, atomic writes, and CLI
+  models/validation, rendering, baseline comparison, recoverable writes, and CLI
 ```
 
 The concrete exception ownership is:
@@ -293,6 +297,7 @@ approved stable code. No lower layer imports the gate.
     "No runtime self-modification, automatic diagnosis, candidate generation, promotion, release, or rollback.",
     "No live-provider success, production reliability, user-adoption, business-impact, or universal Agent-quality claim.",
     "Current fixed profiles verify retained repository state; they do not check out arbitrary historical candidates or infer human verdicts.",
+    "The v0.1.6 selector verifies current release metadata only; it does not execute historical release behavior.",
     "Post-v0.1.6 capabilities are not part of the immutable v0.1.6 release."
   ],
   "schema_version": "dra.evidence-gated-loop-registry.v1",
@@ -358,6 +363,7 @@ class EvidenceRef(_StrictModel):
     proof_kind: Literal[
         "reviewed_historical_red",
         "reviewed_verification_gap",
+        "reviewed_candidate_verification_passed",
         "independent_consumer_contract",
         "reviewed_candidate_regression",
         "reviewed_candidate_safety_failure",
@@ -518,6 +524,8 @@ REQUIRED_NON_CLAIMS = (
     "business-impact, or universal Agent-quality claim.",
     "Current fixed profiles verify retained repository state; they do not "
     "check out arbitrary historical candidates or infer human verdicts.",
+    "The v0.1.6 selector verifies current release metadata only; it does "
+    "not execute historical release behavior.",
     "Post-v0.1.6 capabilities are not part of the immutable v0.1.6 release.",
 )
 ```
@@ -539,15 +547,28 @@ list, and object values. It rejects:
   `provider_payload`, `exception`, `traceback`, `credential`, `password`,
   `secret`, `token`, `thread_id`, or `source_thread_id`, case-insensitively
   after `-` to `_` normalization;
-- value markers matching `Traceback`, POSIX home paths such as `/Users/...`
-  or `/home/...`, Windows drive/UNC host paths, or credential assignments
-  such as `api_key=...`, `password:...`, `secret=...`, and `token:...`.
+- value markers matching `Traceback`, any absolute POSIX host path (including
+  `/Users/...`, `/home/...`, `/private/...`, `/var/...`, `/tmp/...`,
+  `/Volumes/...`, `/opt/...`, `/etc/...`, and `/root/...`), Windows drive/UNC
+  host paths, or credential assignments such as `api_key=...`,
+  `password:...`, `secret=...`, and `token:...`.
 
 Bare public-neutral words such as `prompt_skill`, `credentials`, `token
 budget`, and `No live-provider strict success` are not rejected. The
 assignment/path patterns, forbidden raw-content keys, and structural bounds
 are the authority; do not add a broad substring ban that would reject the
 approved carrier enums, non-claims, or safety explanations.
+
+Use this exact URL-aware POSIX-path pattern so an absolute token is rejected
+without treating the path component of `https://...` as a host path:
+
+```python
+ABSOLUTE_POSIX_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9:/])/[A-Za-z0-9._~%+-]+"
+    r"(?:/[A-Za-z0-9._~%+-]+)*"
+    r"(?=$|[\s,.;:)\]}'\"])",
+)
+```
 
 Repository validation uses `urllib.parse.urlsplit` and requires exact
 `https`, a non-empty hostname, no username/password, query, fragment, or
@@ -570,6 +591,7 @@ tree_sha, locator, proof_kind, reviewed_summary, claim_scope, public_safe
 Allowed `origin_kind` values are `repository_audit`, `verification_gap`, and
 `downstream_consumer`. Allowed `proof_kind` values are
 `reviewed_historical_red`, `reviewed_verification_gap`,
+`reviewed_candidate_verification_passed`,
 `independent_consumer_contract`, `reviewed_candidate_regression`,
 `reviewed_candidate_safety_failure`,
 `reviewed_candidate_verification_inconclusive`, and
@@ -585,6 +607,7 @@ subject null:
   reviewed_verification_gap
 
 subject required:
+  reviewed_candidate_verification_passed
   independent_consumer_contract
   reviewed_candidate_regression
   reviewed_candidate_safety_failure
@@ -592,10 +615,17 @@ subject required:
   independent_consumer_rejection
 ```
 
+A `reviewed_candidate_verification_passed` item additionally requires its
+repository, commit, and tree to equal the referenced candidate's immutable
+tuple. This exact-tuple equality is specific to the pass receipt; a downstream
+consumer proof may correctly bind a DRA candidate while retaining the
+consumer repository's own immutable commit and tree.
+
 Contracts also own these exact closed constants:
 
 ```python
 SUBJECT_REQUIRED_PROOF_KINDS = frozenset({
+    "reviewed_candidate_verification_passed",
     "independent_consumer_contract",
     "reviewed_candidate_regression",
     "reviewed_candidate_safety_failure",
@@ -608,6 +638,9 @@ ROLLBACK_PROOF_KIND_BY_BASIS = {
     "consumer_rejection": "independent_consumer_rejection",
 }
 REVIEWED_VERIFICATION_PROOF_KINDS_BY_STATUS = {
+    "passed": frozenset({
+        "reviewed_candidate_verification_passed",
+    }),
     "failed": frozenset({
         "reviewed_candidate_regression",
         "reviewed_candidate_safety_failure",
@@ -621,6 +654,9 @@ ALLOWED_ORIGINS_BY_PROOF_KIND = {
         "repository_audit", "downstream_consumer",
     }),
     "reviewed_verification_gap": frozenset({"verification_gap"}),
+    "reviewed_candidate_verification_passed": frozenset({
+        "repository_audit",
+    }),
     "independent_consumer_contract": frozenset({"downstream_consumer"}),
     "reviewed_candidate_regression": frozenset({
         "repository_audit", "verification_gap",
@@ -665,7 +701,7 @@ The reviewed decision fields and enums are:
 reviewed_candidate_verification_status =
   passed | failed | inconclusive | not_applicable
 reviewed_verification_evidence_ids =
-  ordered unique input identifiers; non-empty for failed/inconclusive
+  ordered unique input identifiers; non-empty for passed/failed/inconclusive
 candidate_verdict =
   accepted | rejected | need_more_evidence | not_applicable
 consumer_proof_status =
@@ -678,24 +714,28 @@ release_disposition =
 rollback_basis = null | regression | safety | consumer_rejection
 rollback_evidence_ids = ordered unique identifiers; empty unless rollback
 rollback_subject_candidate_id = null | exact earlier accepted candidate ID
-rollback_target = null | immutable 40-hex commit
+rollback_target = null unless rollback is recommended |
+  immutable 40-hex commit when rollback is recommended
 reason_codes = non-empty ordered unique identifiers
 ```
 
 `reviewed_candidate_verification_status` is the human-reviewed change-candidate
 result under the referenced profile. It is not the current subprocess result.
-Reviewed `failed` or `inconclusive` requires explicit evidence IDs resolving
-to current episode inputs and binding the exact current candidate.
-`failed` accepts only `reviewed_candidate_regression` or
+Reviewed `passed`, `failed`, or `inconclusive` requires explicit evidence IDs
+resolving to current episode inputs and binding the exact current candidate.
+`passed` accepts only `reviewed_candidate_verification_passed`; `failed`
+accepts only `reviewed_candidate_regression` or
 `reviewed_candidate_safety_failure`; `inconclusive` accepts only
-`reviewed_candidate_verification_inconclusive`. Reviewed `passed` uses an
-empty evidence list because current code-owned execution supplies
-retained-state proof. Current change actions cannot use `not_applicable`;
-every no-change action must use `not_applicable` and an empty evidence list.
-Current profile execution remains pass-only and any execution failure
-invalidates the report. A rollback recommendation requires explicit evidence
-IDs that are inputs to the new episode, were not consumed by any earlier
-episode, bind the exact earlier accepted candidate, and match the typed basis.
+`reviewed_candidate_verification_inconclusive`. Candidate identity alone is
+not proof; a passed receipt names an independent review or hosted-check
+surface. Current change actions cannot use `not_applicable`; every no-change
+action must use `not_applicable` and an empty evidence list. Current profile
+execution remains a separate pass-only freshness gate and any execution
+failure invalidates the report. A rollback recommendation requires explicit
+evidence IDs that are inputs to the new episode, were not consumed by any
+earlier episode, bind the exact earlier accepted candidate, and match the
+typed basis. Every non-rollback decision requires `rollback_target=null`;
+the ordinary predecessor remains on `CandidateRef`.
 
 ### Exact reference-case matrix
 
@@ -721,9 +761,21 @@ evidence:
       surface later used to expose context projection false greens.
     claim_scope: incompatible resolver and persisted-state combinations were
       not yet rejected by the retained projection test set
+  context-candidate-pass
+    subject_candidate_id: context-projection-pr-123
+    origin_kind: repository_audit
+    repository: https://github.com/iTao-AI/decision-research-agent
+    commit_sha: 2c50f233c2cc1df4fe2818551e95ab98cd61ede5
+    tree_sha: 8da21672e9fd63352e9bc15365818f7edd12d106
+    locator: PR #123 reviewed provider-free verification and merge surface
+    proof_kind: reviewed_candidate_verification_passed
+    reviewed_summary: The reviewed PR #123 verification and merge surface
+      passed the context regression and retained checks for the exact candidate.
+    claim_scope: exact candidate passed reviewed provider-free context
+      projection verification
 episode: context-projection-episode-1
 predecessor: null
-inputs: [context-red]
+inputs: [context-red, context-candidate-pass]
 diagnosis:
   status: confirmed
   failure_mode_code: context.projection_false_green
@@ -756,7 +808,7 @@ candidate:
 verification: context-resolver-coherence@1
 decision:
   reviewed_candidate_verification_status: passed
-  reviewed_verification_evidence_ids: []
+  reviewed_verification_evidence_ids: [context-candidate-pass]
   candidate_verdict: accepted
   consumer_proof_status: not_required
   loop_closure_status: closed_accepted
@@ -764,7 +816,7 @@ decision:
   rollback_basis: null
   rollback_evidence_ids: []
   rollback_subject_candidate_id: null
-  rollback_target: 2dadae56f038790f66c4c3af05b7bae10d8e0462
+  rollback_target: null
   reason_codes: [historical_red_closed, retained_and_safety_profiles_passed]
 ```
 
@@ -778,29 +830,44 @@ evidence:
     subject_candidate_id: null
     origin_kind: verification_gap
     repository: https://github.com/iTao-AI/decision-research-agent
-    commit_sha: 6a3020863fbaaf9d218420b7981150a5736b7fb8
-    tree_sha: d6b0dd3a0911125795eb7146bcd659c99233067d
-    locator: PR #128 reviewed evaluator-sensitivity gap
+    commit_sha: 8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9
+    tree_sha: 56fb2e148da3b4026f5ec430b94336e5e484cb85
+    locator: PR #128 review of pre-candidate main
     proof_kind: reviewed_verification_gap
-    reviewed_summary: Review found that healthy anchors alone did not prove
-      that each responsible evaluator detected its declared failure dimension.
+    reviewed_summary: Review found that pre-candidate healthy anchors alone
+      did not prove that each responsible evaluator detected its declared
+      failure dimension.
     claim_scope: healthy anchors alone did not prove sensitivity to each
       evaluator's declared failure dimension
   evaluator-red
     subject_candidate_id: null
     origin_kind: repository_audit
     repository: https://github.com/iTao-AI/decision-research-agent
-    commit_sha: 6a3020863fbaaf9d218420b7981150a5736b7fb8
-    tree_sha: d6b0dd3a0911125795eb7146bcd659c99233067d
-    locator: PR #128 one-dimensional post-traversal negative controls
+    commit_sha: 8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9
+    tree_sha: 56fb2e148da3b4026f5ec430b94336e5e484cb85
+    locator: PR #128 reviewed RED against pre-candidate main
     proof_kind: reviewed_historical_red
-    reviewed_summary: PR #128 retained one-dimensional post-traversal controls
-      that distinguish responsible sensitivity from unrelated drift.
+    reviewed_summary: PR #128 recorded that pre-candidate main lacked
+      one-dimensional post-traversal controls that distinguish responsible
+      sensitivity from unrelated drift.
     claim_scope: responsible evaluators had to detect their fixed synthetic
       control while unrelated projections remained stable
+  evaluator-candidate-pass
+    subject_candidate_id: evaluation-sensitivity-pr-128
+    origin_kind: repository_audit
+    repository: https://github.com/iTao-AI/decision-research-agent
+    commit_sha: 6a3020863fbaaf9d218420b7981150a5736b7fb8
+    tree_sha: d6b0dd3a0911125795eb7146bcd659c99233067d
+    locator: PR #128 reviewed provider-free verification and merge surface
+    proof_kind: reviewed_candidate_verification_passed
+    reviewed_summary: The reviewed PR #128 verification and merge surface
+      passed Evaluation Sensitivity v2 and retained checks for the exact
+      candidate.
+    claim_scope: exact candidate passed reviewed provider-free evaluator
+      sensitivity verification
 episode: evaluation-sensitivity-episode-1
 predecessor: null
-inputs: [evaluator-gap, evaluator-red]
+inputs: [evaluator-gap, evaluator-red, evaluator-candidate-pass]
 diagnosis:
   status: confirmed
   failure_mode_code: evaluation.verifier_sensitivity_unproven
@@ -832,7 +899,7 @@ candidate:
 verification: evaluation-sensitivity@1
 decision:
   reviewed_candidate_verification_status: passed
-  reviewed_verification_evidence_ids: []
+  reviewed_verification_evidence_ids: [evaluator-candidate-pass]
   candidate_verdict: accepted
   consumer_proof_status: not_required
   loop_closure_status: closed_accepted
@@ -840,7 +907,7 @@ decision:
   rollback_basis: null
   rollback_evidence_ids: []
   rollback_subject_candidate_id: null
-  rollback_target: 8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9
+  rollback_target: null
   reason_codes: [verifier_sensitivity_proven, retained_and_safety_profiles_passed]
 ```
 
@@ -876,6 +943,18 @@ evidence:
       Evidence rows, produced zero cited rows, and stopped before import.
     claim_scope: governed live attempt stopped before import with 83 same-run
       Evidence rows and zero cited rows
+  strict-candidate-pass
+    subject_candidate_id: strict-citation-pr-129
+    origin_kind: repository_audit
+    repository: https://github.com/iTao-AI/decision-research-agent
+    commit_sha: 01ba21f2996769e68cbc88f4bb0596740df27f6b
+    tree_sha: 06e5282414d3801b11040bba735dd107105e8a30
+    locator: PR #129 reviewed tree with seven successful hosted checks
+    proof_kind: reviewed_candidate_verification_passed
+    reviewed_summary: The reviewed PR #129 tree and hosted checks passed the
+      strict producer verification surface for the exact candidate.
+    claim_scope: exact strict producer candidate passed reviewed hosted
+      verification before independent consumer proof
   strict-consumer-pr-75
     subject_candidate_id: strict-citation-pr-129
     origin_kind: downstream_consumer
@@ -891,7 +970,7 @@ evidence:
       evaluation contracts passed consumer-owned provider-free checks
 episode 1: strict-citation-change-episode-1
 predecessor: null
-inputs: [strict-live-25-0, strict-live-83-0]
+inputs: [strict-live-25-0, strict-live-83-0, strict-candidate-pass]
 diagnosis:
   status: confirmed
   failure_mode_code: citation.delivery_invariant_mismatch
@@ -927,7 +1006,7 @@ candidate:
 verification: strict-citation-consumer@1
 decision:
   reviewed_candidate_verification_status: passed
-  reviewed_verification_evidence_ids: []
+  reviewed_verification_evidence_ids: [strict-candidate-pass]
   candidate_verdict: accepted
   consumer_proof_status: pending
   loop_closure_status: open_waiting_consumer
@@ -935,7 +1014,7 @@ decision:
   rollback_basis: null
   rollback_evidence_ids: []
   rollback_subject_candidate_id: null
-  rollback_target: 6a3020863fbaaf9d218420b7981150a5736b7fb8
+  rollback_target: null
   reason_codes: [historical_red_closed, independent_consumer_proof_required]
 episode 2: strict-citation-consumer-close-episode-2
 predecessor: strict-citation-change-episode-1
@@ -984,6 +1063,8 @@ field set from the spec; arrays are ordered and unique.
 `scripts/evidence_gated_loop_profiles.py` defines:
 
 ```python
+TOTAL_VERIFICATION_TIMEOUT_SECONDS = 420
+
 @dataclass(frozen=True)
 class VerificationProfile:
     profile_id: str
@@ -1011,7 +1092,8 @@ PROFILE_REGISTRY: Mapping[tuple[str, str], VerificationProfile]
 
 The callable interfaces are
 `run_verification_profile(ref: VerificationProfileRef, *,
-project_root: Path = PROJECT_ROOT) -> VerificationResult` and
+project_root: Path = PROJECT_ROOT,
+timeout_seconds: float | None = None) -> VerificationResult` and
 `run_required_profiles(registry: LoopRegistry, *,
 project_root: Path = PROJECT_ROOT) -> tuple[VerificationResult, ...]`.
 The concrete dataclass stores `episode_bindings`, `argv`, and `coverage` as
@@ -1026,6 +1108,9 @@ timeout, missing executable, or OS error raises
 failing executable gate into a green stored report. Structurally valid
 `rejected` and `need_more_evidence` episode records use reviewed candidate-time
 status and are tested separately with current profile results passing.
+The optional timeout override is internal, may only reduce the code-owned
+profile timeout, and is used by `run_required_profiles` to enforce the
+aggregate deadline; manifest bytes cannot set it.
 
 `VerificationResult.coverage` is accepted only in this exact order with no
 duplicates:
@@ -1073,6 +1158,8 @@ STRICT_ARGV = (
     "test_strict_resolver_rejects_nonexact_persisted_profile_version",
     "tests/integration/test_strict_citation_profile.py::"
     "test_literal_generic_zero_citation_remains_ready_without_correction",
+    "tests/integration/test_downstream_consumer_contract.py::"
+    "test_committed_fixture_matches_fresh_build",
     "tests/integration/test_evidence_gated_loop_gate.py::"
     "test_frozen_generic_downstream_fixture_rejects_strict_profile",
     "tests/unit/test_v0_1_6_release_metadata.py::"
@@ -1096,8 +1183,13 @@ STRICT_EPISODE_BINDINGS = (
 ```
 
 Timeouts are 120 seconds for context, 300 seconds for Evaluation Sensitivity
-v2, and 180 seconds for strict citation. Every profile declares all three
-coverage kinds. Use `subprocess.run(..., shell=False, cwd=project_root,
+v2, and 180 seconds for strict citation. `TOTAL_VERIFICATION_TIMEOUT_SECONDS`
+is 420 for the complete serial profile set. `run_required_profiles` starts one
+`time.monotonic()` deadline, fails before starting a profile when no time
+remains, and passes the smaller of that profile's timeout and the remaining
+aggregate budget to the private subprocess helper. Profiles remain serial and
+fail fast; do not split them into parallel CI jobs. Every profile declares all
+three coverage kinds. Use `subprocess.run(..., shell=False, cwd=project_root,
 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)` with only
 these environment values plus present platform temp/path keys:
 
@@ -1114,6 +1206,11 @@ Allowlist inherited names only from
 full environment and never inspect credential-named values. Unknown profile,
 nonzero exit, signal, timeout, executable failure, or OS error maps to a
 stable kernel code without output.
+
+The final `v0.1.6` selector verifies current repository release metadata only.
+It is not a historical checkout or runtime proof. The strict profile first
+proves that the committed generic downstream fixture equals a fresh generic
+build, then applies the isolated strict-profile mutation as a negative control.
 
 ### Report and CLI
 
@@ -1150,12 +1247,14 @@ The summary is:
 
 This is a dimensional summary, not an aggregate outcome. The report contains
 no timestamp, duration, branch, local path, command output, or network result.
-Derive summary release disposition conservatively: any
-`rollback_recommended` episode yields `rollback_recommended`; otherwise any
-`hold` episode yields `hold`; only a set with no rollback and no hold yields
-`eligible_for_separate_release_review`. The three canonical cases therefore
-derive `hold`. This field summarizes release authority only and must not be
-renamed or reused as a loop outcome.
+For each linear case lineage, derive its current disposition from the unique
+terminal episode only. Then aggregate those terminal case dispositions:
+`rollback_recommended` wins over `hold`, and only a set whose terminal
+dispositions are all `eligible_for_separate_release_review` yields
+eligibility. Historical episode decisions remain in the report but do not
+permanently freeze the current case disposition. The three canonical terminal
+episodes derive `hold`. This field summarizes release authority only and must
+not be renamed or reused as a loop outcome.
 
 Public gate constants are `PROJECT_ROOT: Path`, `REGISTRY_PATH: Path`,
 `BASELINE_JSON_PATH: Path`, and `BASELINE_MARKDOWN_PATH: Path`. Public
@@ -1170,11 +1269,11 @@ compare_artifacts(candidate_report: Mapping[str, Any],
                   candidate_markdown: str,
                   baseline_json: bytes,
                   baseline_markdown: bytes) -> dict[str, Any]
-write_artifacts_atomically(report: Mapping[str, Any],
-                           markdown: str,
-                           *,
-                           json_output: Path,
-                           markdown_output: Path) -> None
+write_artifacts_recoverably(report: Mapping[str, Any],
+                            markdown: str,
+                            *,
+                            json_output: Path,
+                            markdown_output: Path) -> None
 main(argv: Sequence[str] | None = None) -> int
 ```
 
@@ -1271,11 +1370,16 @@ Markdown order is fixed:
 9. limits and non-claims.
 
 `build` refuses committed baseline aliases, identical outputs, missing or
-non-directory parents, directories, and symlinks. It stages both sibling
-temporary files, flushes/fsyncs, validates the complete pair, atomically
-replaces targets, restores the first target if the second replace fails, and
-cleans task-owned temporary files. `check` bounded-reads fixed baselines,
-revalidates JSON, derives Markdown from that JSON, and requires byte equality.
+non-directory parents, directories, and symlinks. Canonical JSON is the sole
+authority; Markdown is a deterministic projection rebuilt from it. The writer
+stages both sibling temporary files, flushes/fsyncs, validates the complete
+pair, replaces Markdown first and JSON last as the commit point, restores the
+prior Markdown on a caught JSON-replace failure, and cleans task-owned
+temporary and backup files. A process or power failure between replacements
+is not called atomic: pair derivation detects it and rerunning `build`
+reconstructs Markdown from canonical JSON. `check` bounded-reads fixed
+baselines, revalidates JSON, derives Markdown from that JSON, and requires byte
+equality.
 
 ---
 
@@ -1419,6 +1523,13 @@ def test_public_projection_rejects_excessive_depth() -> None:
         {"prompt": "body"},
         {"safe": "Traceback: private"},
         {"safe": "/Users/private/repo"},
+        {"safe": "saved under /private/runtime/report.json"},
+        {"safe": "saved under /var/tmp/report.json"},
+        {"safe": "saved under /tmp/report.json"},
+        {"safe": "saved under /Volumes/work/report.json"},
+        {"safe": "saved under /opt/service/report.json"},
+        {"safe": "saved under /etc/service/report.json"},
+        {"safe": "saved under /root/report.json"},
         {"safe": "api_key=secret"},
         {"tool_payload": {"value": "body"}},
     ],
@@ -1483,6 +1594,8 @@ REQUIRED_NON_CLAIMS = (
     "business-impact, or universal Agent-quality claim.",
     "Current fixed profiles verify retained repository state; they do not "
     "check out arbitrary historical candidates or infer human verdicts.",
+    "The v0.1.6 selector verifies current release metadata only; it does "
+    "not execute historical release behavior.",
     "Post-v0.1.6 capabilities are not part of the immutable v0.1.6 release.",
 )
 
@@ -1719,6 +1832,11 @@ def test_inconclusive_diagnosis_can_wait_with_no_change() -> None:
         "kind": "no_change",
         "reason_codes": ["insufficient_evidence_for_change"],
     }
+    case["evidence_refs"] = [
+        evidence for evidence in case["evidence_refs"]
+        if evidence["evidence_id"] != "context-candidate-pass"
+    ]
+    episode["input_evidence_ids"] = ["context-red"]
     episode["candidate_refs"] = []
     episode["reviewed_decision"] = {
         "reviewed_candidate_verification_status": "not_applicable",
@@ -1738,7 +1856,49 @@ def test_inconclusive_diagnosis_can_wait_with_no_change() -> None:
 
 def test_accepted_candidate_requires_historical_red() -> None:
     case = _case("evaluation-sensitivity")
-    case["episodes"][0]["input_evidence_ids"] = ["evaluator-gap"]
+    case["episodes"][0]["input_evidence_ids"] = [
+        "evaluator-gap", "evaluator-candidate-pass",
+    ]
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(case)
+
+def test_evaluation_red_identity_is_pre_candidate() -> None:
+    case = _case("evaluation-sensitivity")
+    candidate = case["episodes"][0]["candidate_refs"][0]
+    predecessor = candidate["predecessor_or_rollback_ref"]
+    for evidence_id in ("evaluator-gap", "evaluator-red"):
+        evidence = next(
+            item for item in case["evidence_refs"]
+            if item["evidence_id"] == evidence_id
+        )
+        assert evidence["commit_sha"] == predecessor
+        assert evidence["commit_sha"] != candidate["commit_sha"]
+        assert evidence["tree_sha"] == \
+            "56fb2e148da3b4026f5ec430b94336e5e484cb85"
+
+def test_passed_candidate_requires_candidate_bound_pass_receipt() -> None:
+    case = _case("context-resolver-projection")
+    case["episodes"][0]["reviewed_decision"][
+        "reviewed_verification_evidence_ids"
+    ] = []
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(case)
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("repository", "https://github.com/iTao-AI/night-voyager"),
+        ("commit_sha", "f" * 40),
+        ("tree_sha", "e" * 40),
+    ],
+)
+def test_pass_receipt_identity_matches_exact_candidate(field, value) -> None:
+    case = _case("context-resolver-projection")
+    receipt = next(
+        item for item in case["evidence_refs"]
+        if item["evidence_id"] == "context-candidate-pass"
+    )
+    receipt[field] = value
     with pytest.raises(LoopContractError, match="loop_decision_invalid"):
         validate_case(case)
 
@@ -1768,14 +1928,16 @@ def test_reviewed_verification_evidence_ids_match_status_and_inputs() -> None:
 
 def test_reviewed_verification_evidence_binds_status_proof_kind() -> None:
     case = _case("context-resolver-projection")
-    evidence = case["evidence_refs"][0]
+    evidence = case["evidence_refs"][1]
     evidence["proof_kind"] = \
         "reviewed_candidate_verification_inconclusive"
     evidence["origin_kind"] = "verification_gap"
     evidence["subject_candidate_id"] = "context-projection-pr-123"
     decision = case["episodes"][0]["reviewed_decision"]
     decision["reviewed_candidate_verification_status"] = "failed"
-    decision["reviewed_verification_evidence_ids"] = ["context-red"]
+    decision["reviewed_verification_evidence_ids"] = [
+        "context-candidate-pass"
+    ]
     decision["candidate_verdict"] = "rejected"
     decision["loop_closure_status"] = "closed_rejected"
     with pytest.raises(LoopContractError, match="loop_decision_invalid"):
@@ -1832,9 +1994,19 @@ def test_accepted_closed_candidate_can_be_eligible_for_separate_review() -> None
     assert validate_case(case).episodes[0].reviewed_decision \
         .release_disposition == "eligible_for_separate_release_review"
 
+def test_nonrollback_decision_rejects_rollback_target() -> None:
+    case = _case("context-resolver-projection")
+    case["episodes"][0]["reviewed_decision"]["rollback_target"] = \
+        "2dadae56f038790f66c4c3af05b7bae10d8e0462"
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(case)
+
 def test_rollback_recommendation_requires_accepted_predecessor_and_target() -> None:
     case = _case("strict-citation-consumer")
-    evidence = case["evidence_refs"][2]
+    evidence = next(
+        item for item in case["evidence_refs"]
+        if item["evidence_id"] == "strict-consumer-pr-75"
+    )
     evidence["proof_kind"] = "independent_consumer_rejection"
     evidence["reviewed_summary"] = (
         "A reviewed consumer contract rejected the exact producer tuple "
@@ -1891,7 +2063,10 @@ def test_rollback_basis_binds_new_episode_evidence(
     basis, proof_kind, origin_kind, consumer_status
 ) -> None:
     case = _case("strict-citation-consumer")
-    evidence = case["evidence_refs"][2]
+    evidence = next(
+        item for item in case["evidence_refs"]
+        if item["evidence_id"] == "strict-consumer-pr-75"
+    )
     evidence["proof_kind"] = proof_kind
     evidence["origin_kind"] = origin_kind
     evidence["locator"] = f"synthetic reviewed {basis} rollback fixture"
@@ -1943,7 +2118,10 @@ def test_rollback_rejects_missing_old_or_wrong_kind_evidence(
 
 def test_rollback_rejects_subject_mismatch() -> None:
     case = _case("strict-citation-consumer")
-    evidence = case["evidence_refs"][2]
+    evidence = next(
+        item for item in case["evidence_refs"]
+        if item["evidence_id"] == "strict-consumer-pr-75"
+    )
     evidence["proof_kind"] = "independent_consumer_rejection"
     decision = case["episodes"][1]["reviewed_decision"]
     decision["consumer_proof_status"] = "rejected"
@@ -1982,7 +2160,7 @@ def test_valid_rejected_and_need_more_records_remain_structurally_valid() -> Non
         candidate["candidate_id"] = candidate_id
         candidate["commit_sha"] = "1" * 40
         candidate["tree_sha"] = "2" * 40
-        evidence = case["evidence_refs"][0]
+        evidence = case["evidence_refs"][1]
         evidence["proof_kind"] = proof_kind
         evidence["origin_kind"] = origin_kind
         evidence["subject_candidate_id"] = candidate_id
@@ -1998,7 +2176,9 @@ def test_valid_rejected_and_need_more_records_remain_structurally_valid() -> Non
             "contract validation for a reviewed nonpassing candidate record"
         decision = episode["reviewed_decision"]
         decision["reviewed_candidate_verification_status"] = status
-        decision["reviewed_verification_evidence_ids"] = ["context-red"]
+        decision["reviewed_verification_evidence_ids"] = [
+            "context-candidate-pass"
+        ]
         decision["candidate_verdict"] = verdict
         decision["loop_closure_status"] = closure
         decision["reason_codes"] = [f"reviewed_{verdict}"]
@@ -2009,15 +2189,25 @@ def test_existing_kind_new_case_requires_no_core_schema_change() -> None:
     case = _case("context-resolver-projection")
     case["case_id"] = "future-context-case"
     case["evidence_refs"][0]["evidence_id"] = "future-red"
+    case["evidence_refs"][1]["evidence_id"] = "future-pass"
+    case["evidence_refs"][1]["subject_candidate_id"] = "future-candidate"
     case["episodes"][0]["episode_id"] = "future-episode-1"
-    case["episodes"][0]["input_evidence_ids"] = ["future-red"]
+    case["episodes"][0]["input_evidence_ids"] = [
+        "future-red", "future-pass",
+    ]
     case["episodes"][0]["candidate_refs"][0]["candidate_id"] = \
         "future-candidate"
+    case["episodes"][0]["reviewed_decision"][
+        "reviewed_verification_evidence_ids"
+    ] = ["future-pass"]
     assert validate_case(case).case_id == "future-context-case"
 
 def test_candidate_owned_evidence_requires_exact_subject_candidate() -> None:
     case = _case("strict-citation-consumer")
-    evidence = case["evidence_refs"][2]
+    evidence = next(
+        item for item in case["evidence_refs"]
+        if item["evidence_id"] == "strict-consumer-pr-75"
+    )
     evidence["subject_candidate_id"] = "missing-candidate"
     with pytest.raises(
         LoopContractError, match="loop_evidence_ref_invalid"
@@ -2035,7 +2225,11 @@ def test_precandidate_evidence_rejects_candidate_subject() -> None:
 
 def test_origin_and_proof_kind_matrix_is_closed() -> None:
     case = _case("strict-citation-consumer")
-    case["evidence_refs"][2]["origin_kind"] = "repository_audit"
+    evidence = next(
+        item for item in case["evidence_refs"]
+        if item["evidence_id"] == "strict-consumer-pr-75"
+    )
+    evidence["origin_kind"] = "repository_audit"
     with pytest.raises(
         LoopContractError, match="loop_evidence_ref_invalid"
     ):
@@ -2216,17 +2410,22 @@ stable code. In `EvolutionCase` validation:
 7. bind action carrier/surface to candidate carrier/surface;
 8. require accepted candidates to consume at least one
    `reviewed_historical_red` and have
-   `reviewed_candidate_verification_status=passed`;
+   `reviewed_candidate_verification_status=passed` with at least one
+   `reviewed_candidate_verification_passed` input receipt bound to the exact
+   current candidate; require every such pass receipt's repository, commit,
+   and tree to equal that candidate's immutable tuple;
 9. require change-action `failed` to end in `rejected` or
    `need_more_evidence` with release `hold`, change-action `inconclusive` to
    end in `need_more_evidence` with release `hold`, and accepted change to use
-   `passed`; both non-passing statuses require non-empty evidence IDs resolving
-   to current episode inputs and binding the exact current candidate through
-   `subject_candidate_id`; require `failed` proof kinds to come from
+   `passed`; all three applicable statuses require non-empty evidence IDs
+   resolving to current episode inputs and binding the exact current candidate
+   through `subject_candidate_id`; require each status's proof kinds to come
+   from its exact `REVIEWED_VERIFICATION_PROOF_KINDS_BY_STATUS` set, including
+   `reviewed_candidate_verification_passed` for `passed`; require `failed`
+   proof kinds to come from
    `REVIEWED_VERIFICATION_PROOF_KINDS_BY_STATUS["failed"]` and
    `inconclusive` proof kinds from the corresponding `inconclusive` set;
-   `passed` requires an empty list; require every no-change action to use
-   `not_applicable` and an empty list;
+   require every no-change action to use `not_applicable` and an empty list;
 10. enforce diagnosis/verdict/consumer/closure/release combinations;
 11. validate `rollback_recommended` only on a later no-change episode with
     `closed_rejected`, an earlier accepted change candidate, a non-null typed
@@ -2240,7 +2439,7 @@ stable code. In `EvolutionCase` validation:
     `reviewed_candidate_safety_failure` for `safety`, and
     `independent_consumer_rejection` plus consumer status `rejected` for
     `consumer_rejection`; all non-rollback decisions use null basis, empty
-    evidence IDs, and null subject;
+    evidence IDs, null subject, and null `rollback_target`;
 13. run `validate_public_projection` over the canonical model dump;
 14. reject symlink/oversized/non-regular case inputs and require input file
     bytes to be canonical.
@@ -2289,7 +2488,9 @@ git commit -m "feat(loop): validate evolution case lineage"
 
 - [ ] **Step 1: Write RED profile-registry and subprocess-boundary tests**
 
-Add:
+Import `scripts.evidence_gated_loop_profiles` as `profiles`, import
+`TOTAL_VERIFICATION_TIMEOUT_SECONDS` with the other named profile interfaces,
+and add:
 
 ```python
 def test_profile_registry_owns_exact_commands_timeout_and_coverage() -> None:
@@ -2314,6 +2515,7 @@ def test_profile_registry_owns_exact_commands_timeout_and_coverage() -> None:
     assert [
         profile.timeout_seconds for profile in PROFILE_REGISTRY.values()
     ] == [120, 300, 180]
+    assert TOTAL_VERIFICATION_TIMEOUT_SECONDS == 420
     assert all(
         profile.coverage
         == ("fail_to_pass", "retained", "safety_compatibility")
@@ -2400,6 +2602,34 @@ def test_required_profiles_run_once_in_registry_order(monkeypatch) -> None:
         "strict-citation-consumer",
     ]
 
+def test_required_profiles_fail_closed_at_aggregate_deadline(
+    monkeypatch,
+) -> None:
+    ticks = iter([0.0, 0.0, 121.0, 421.0])
+    calls = []
+    monkeypatch.setattr(profiles.time, "monotonic", lambda: next(ticks))
+    def fake_run(ref, *, timeout_seconds, **kwargs):
+        calls.append((ref.profile_id, timeout_seconds))
+        return VerificationResult(
+            profile_id=ref.profile_id,
+            profile_version=ref.profile_version,
+            provider_free=True,
+            status="passed",
+            coverage=[
+                "fail_to_pass", "retained", "safety_compatibility"
+            ],
+            diagnostic_code="loop_verification_passed",
+        )
+    monkeypatch.setattr(profiles, "run_verification_profile", fake_run)
+    with pytest.raises(
+        LoopProfileError, match="loop_verification_failed"
+    ):
+        run_required_profiles(load_registry())
+    assert calls == [
+        ("context-resolver-coherence", 120),
+        ("evaluation-sensitivity", 299.0),
+    ]
+
 @pytest.mark.parametrize(
     "outcome",
     [
@@ -2427,7 +2657,10 @@ def test_runner_maps_all_failures_without_raw_output(
     assert capsys.readouterr() == ("", "")
 ```
 
-In the integration file add the actual frozen-fixture proof:
+Reuse the existing
+`test_committed_fixture_matches_fresh_build` selector as the positive generic
+fixture-equality proof. In the new integration file add only the isolated
+strict-profile mutation negative control:
 
 ```python
 def test_frozen_generic_downstream_fixture_rejects_strict_profile() -> None:
@@ -2449,6 +2682,8 @@ def test_frozen_generic_downstream_fixture_rejects_strict_profile() -> None:
 ```bash
 PYTHON_DOTENV_DISABLED=1 "$PWD/.venv/bin/python" -m pytest -q \
   tests/unit/test_evidence_gated_loop_profiles.py \
+  tests/integration/test_downstream_consumer_contract.py::\
+test_committed_fixture_matches_fresh_build \
   tests/integration/test_evidence_gated_loop_gate.py::\
 test_frozen_generic_downstream_fixture_rejects_strict_profile
 ```
@@ -2466,7 +2701,10 @@ immutable tuple directly; never parse shell text. Map unknown references to
 on zero exit. Implement `run_required_profiles` by iterating
 `registry.verification_profiles`, not episode references, so the strict
 profile shared by two episodes runs once. Profile execution stays independent
-of reviewed candidate-time status.
+of reviewed candidate-time status. Start one 420-second monotonic deadline,
+cap each subprocess timeout by the remaining budget, and fail before launching
+the next profile when the budget is exhausted. Preserve serial deterministic
+order and do not add a parallel CI lane.
 
 - [ ] **Step 4: Run Task 3 tests and each real profile**
 
@@ -2498,7 +2736,7 @@ git diff --cached --check
 git commit -m "feat(loop): add fixed verification profiles"
 ```
 
-### Task 4: Build The Deterministic Report, Gate, And Atomic CLI
+### Task 4: Build The Deterministic Report, Gate, And Recoverable CLI
 
 **Files:**
 
@@ -2512,9 +2750,9 @@ git commit -m "feat(loop): add fixed verification profiles"
 - Produces: `LoopGateError`, report models, `validate_kernel_inputs`,
   `validate_report`, `build_report`, `serialize_report`,
   `render_markdown`, `compare_artifacts`,
-  `write_artifacts_atomically`, and stable `main`.
+  `write_artifacts_recoverably`, and stable `main`.
 
-- [ ] **Step 1: Write RED report, CLI, drift, and atomic-output tests**
+- [ ] **Step 1: Write RED report, CLI, drift, and recoverable-output tests**
 
 Add these exact behaviors:
 
@@ -2582,10 +2820,32 @@ def test_report_keeps_record_candidate_and_closure_axes_separate(
         ),
     ],
 )
-def test_report_release_disposition_uses_conservative_priority(
+def test_report_release_disposition_uses_terminal_case_priority(
     dispositions, expected
 ) -> None:
     assert gate._derive_release_disposition(dispositions) == expected
+
+def test_historical_hold_does_not_freeze_later_terminal_eligibility() -> None:
+    values = [
+        _case("context-resolver-projection"),
+        _case("evaluation-sensitivity"),
+        _case("strict-citation-consumer"),
+    ]
+    values[0]["episodes"][0]["reviewed_decision"][
+        "release_disposition"
+    ] = "eligible_for_separate_release_review"
+    values[1]["episodes"][0]["reviewed_decision"][
+        "release_disposition"
+    ] = "eligible_for_separate_release_review"
+    values[2]["episodes"][1]["reviewed_decision"][
+        "release_disposition"
+    ] = "eligible_for_separate_release_review"
+    cases = tuple(validate_case(value) for value in values)
+    assert values[2]["episodes"][0]["reviewed_decision"][
+        "release_disposition"
+    ] == "hold"
+    assert gate._derive_release_disposition_from_cases(cases) \
+        == "eligible_for_separate_release_review"
 
 def test_report_binds_registry_case_hashes_and_profile_results(
     deterministic_report
@@ -2657,8 +2917,17 @@ def test_cross_case_duplicate_identities_fail_closed(kind, code) -> None:
         values[1]["episodes"][0]["episode_id"] = \
             values[0]["episodes"][0]["episode_id"]
     else:
+        old_candidate_id = values[1]["episodes"][0][
+            "candidate_refs"
+        ][0]["candidate_id"]
+        duplicate_candidate_id = values[0]["episodes"][0][
+            "candidate_refs"
+        ][0]["candidate_id"]
         values[1]["episodes"][0]["candidate_refs"][0]["candidate_id"] = \
-            values[0]["episodes"][0]["candidate_refs"][0]["candidate_id"]
+            duplicate_candidate_id
+        for evidence in values[1]["evidence_refs"]:
+            if evidence["subject_candidate_id"] == old_candidate_id:
+                evidence["subject_candidate_id"] = duplicate_candidate_id
     cases = tuple(validate_case(value) for value in values)
     with pytest.raises(LoopContractError, match=code):
         validate_kernel_inputs(load_registry(), cases)
@@ -2785,7 +3054,7 @@ def test_failed_current_profile_invalidates_every_report(
         candidate["candidate_id"] = "reviewed-failed-candidate"
         candidate["commit_sha"] = "1" * 40
         candidate["tree_sha"] = "2" * 40
-        evidence = cases[0]["evidence_refs"][0]
+        evidence = cases[0]["evidence_refs"][1]
         evidence["proof_kind"] = "reviewed_candidate_regression"
         evidence["subject_candidate_id"] = candidate["candidate_id"]
         evidence["commit_sha"] = candidate["commit_sha"]
@@ -2798,14 +3067,16 @@ def test_failed_current_profile_invalidates_every_report(
         evidence["claim_scope"] = \
             "contract validation for a reviewed failed candidate record"
         decision["reviewed_candidate_verification_status"] = "failed"
-        decision["reviewed_verification_evidence_ids"] = ["context-red"]
+        decision["reviewed_verification_evidence_ids"] = [
+            "context-candidate-pass"
+        ]
         decision["loop_closure_status"] = "closed_rejected"
     elif verdict == "need_more_evidence":
         candidate = cases[0]["episodes"][0]["candidate_refs"][0]
         candidate["candidate_id"] = "reviewed-inconclusive-candidate"
         candidate["commit_sha"] = "1" * 40
         candidate["tree_sha"] = "2" * 40
-        evidence = cases[0]["evidence_refs"][0]
+        evidence = cases[0]["evidence_refs"][1]
         evidence["proof_kind"] = \
             "reviewed_candidate_verification_inconclusive"
         evidence["origin_kind"] = "verification_gap"
@@ -2823,7 +3094,9 @@ def test_failed_current_profile_invalidates_every_report(
             "candidate record"
         )
         decision["reviewed_candidate_verification_status"] = "inconclusive"
-        decision["reviewed_verification_evidence_ids"] = ["context-red"]
+        decision["reviewed_verification_evidence_ids"] = [
+            "context-candidate-pass"
+        ]
         decision["loop_closure_status"] = "open_waiting_evidence"
     registry = load_registry()
     validated_cases = tuple(validate_case(value) for value in cases)
@@ -2892,7 +3165,7 @@ def test_build_refuses_baseline_alias_and_identical_outputs(
 ) -> None:
     markdown = render_markdown(deterministic_report)
     with pytest.raises(LoopGateError, match="loop_output_invalid"):
-        write_artifacts_atomically(
+        write_artifacts_recoverably(
             deterministic_report,
             markdown,
             json_output=BASELINE_JSON_PATH,
@@ -2900,7 +3173,7 @@ def test_build_refuses_baseline_alias_and_identical_outputs(
         )
     same = tmp_path / "same"
     with pytest.raises(LoopGateError, match="loop_output_invalid"):
-        write_artifacts_atomically(
+        write_artifacts_recoverably(
             deterministic_report,
             markdown,
             json_output=same,
@@ -2918,7 +3191,7 @@ def test_build_refuses_symlink_output_without_mutating_target(
     except OSError as exc:
         pytest.skip(f"symlink unavailable: {exc}")
     with pytest.raises(LoopGateError, match="loop_output_invalid"):
-        write_artifacts_atomically(
+        write_artifacts_recoverably(
             deterministic_report,
             render_markdown(deterministic_report),
             json_output=link,
@@ -2938,7 +3211,7 @@ def test_build_refuses_missing_parent_and_directory_target(
     deterministic_report, tmp_path, json_output_factory
 ) -> None:
     with pytest.raises(LoopGateError, match="loop_output_invalid"):
-        write_artifacts_atomically(
+        write_artifacts_recoverably(
             deterministic_report,
             render_markdown(deterministic_report),
             json_output=json_output_factory(tmp_path),
@@ -2990,15 +3263,17 @@ def test_second_replace_failure_restores_first_and_leaves_no_temps(
     markdown_output.write_bytes(b"old-markdown\n")
     actual_replace = os.replace
     calls = 0
+    targets = []
     def fail_second(source, target):
         nonlocal calls
         calls += 1
+        targets.append(Path(target))
         if calls == 2:
             raise OSError("private replace detail")
         actual_replace(source, target)
     monkeypatch.setattr(os, "replace", fail_second)
     with pytest.raises(LoopGateError, match="loop_output_invalid"):
-        write_artifacts_atomically(
+        write_artifacts_recoverably(
             deterministic_report,
             render_markdown(deterministic_report),
             json_output=json_output,
@@ -3006,7 +3281,10 @@ def test_second_replace_failure_restores_first_and_leaves_no_temps(
         )
     assert json_output.read_bytes() == b"old-json\n"
     assert markdown_output.read_bytes() == b"old-markdown\n"
-    assert list(tmp_path.glob(".*.tmp")) == []
+    assert targets[:2] == [markdown_output, json_output]
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "report.json", "report.md",
+    ]
 
 def test_second_replace_failure_removes_new_first_when_no_prior_file(
     deterministic_report, tmp_path, monkeypatch
@@ -3023,7 +3301,7 @@ def test_second_replace_failure_removes_new_first_when_no_prior_file(
         actual_replace(source, target)
     monkeypatch.setattr(os, "replace", fail_second)
     with pytest.raises(LoopGateError, match="loop_output_invalid"):
-        write_artifacts_atomically(
+        write_artifacts_recoverably(
             deterministic_report,
             render_markdown(deterministic_report),
             json_output=json_output,
@@ -3031,7 +3309,7 @@ def test_second_replace_failure_removes_new_first_when_no_prior_file(
         )
     assert not json_output.exists()
     assert not markdown_output.exists()
-    assert list(tmp_path.glob(".*.tmp")) == []
+    assert list(tmp_path.iterdir()) == []
 
 def test_oversized_existing_output_fails_before_mutation(
     deterministic_report, tmp_path
@@ -3041,7 +3319,7 @@ def test_oversized_existing_output_fails_before_mutation(
     json_output.write_bytes(b"x" * (MAX_REPORT_BYTES + 1))
     markdown_output.write_bytes(b"old-markdown\n")
     with pytest.raises(LoopGateError, match="loop_output_invalid"):
-        write_artifacts_atomically(
+        write_artifacts_recoverably(
             deterministic_report,
             render_markdown(deterministic_report),
             json_output=json_output,
@@ -3258,7 +3536,10 @@ Build the report only after every declared current fixed profile passes.
 Reviewed candidate-time `failed` or `inconclusive` status can remain coherent
 only through its constrained rejected/need-more decision; it never weakens the
 current execution gate. Derive all summary counts from canonical episode
-decisions; do not copy a summary from a manifest. `validate_report` must
+decisions. Derive current release disposition only from each case's unique
+terminal episode and then apply the conservative cross-case priority; do not
+let an earlier historical hold permanently freeze a later reviewed terminal
+decision, and do not copy a summary from a manifest. `validate_report` must
 revalidate the embedded registry and cases,
 recompute every SHA-256, require verification results to match the declared
 profile order and coverage, recompute the dimensional summary, and compare
@@ -3267,20 +3548,25 @@ and canonical byte bound before serialization. Map any contracts/profile
 exception at this layer to `LoopGateError` with the same approved code; map
 report-model or recomputation mismatch to `loop_report_invalid`.
 
-- [ ] **Step 4: Implement deterministic Markdown, compare, atomic pair, and CLI**
+- [ ] **Step 4: Implement deterministic Markdown, compare, recoverable pair, and CLI**
 
-Use the existing `agent_evaluation_v2_gate.py` atomic-write mechanics, but
-implement these exact v1 differences:
+Reuse only the existing `agent_evaluation_v2_gate.py` safe staging mechanics;
+do not claim transaction-level atomicity for two independent paths. Implement
+these exact v1 differences:
 
 1. `_resolve_output` rejects the raw path when `is_symlink()` is true before
    resolving it; it then rejects either baseline alias, identical resolved
    outputs, a missing/non-directory parent, and a directory target.
 2. `_stage_file` creates one sibling `NamedTemporaryFile(delete=False)`,
    writes the complete bytes, flushes, and `fsync`s before returning it.
-3. `write_artifacts_atomically` validates report/Markdown coherence, stages
-   both files, bounded-reads an existing first target for rollback, replaces
-   JSON then Markdown, restores or removes JSON if the second replace fails,
-   and unlinks only its own remaining temporary files in `finally`.
+3. `write_artifacts_recoverably` treats JSON as the sole authority and
+   Markdown as its deterministic projection. It validates coherence, stages
+   both files, bounded-reads an existing Markdown target for rollback,
+   replaces Markdown first and JSON last as the commit point, restores or
+   removes Markdown if the JSON replace fails, and unlinks only its own
+   remaining temporary/backup files in `finally`. A process or power failure
+   between replacements is detected as pair drift on readback and is repaired
+   only by rerunning explicit `build`.
 4. `compare_artifacts` requires baseline JSON bytes to equal
    `serialize_report(validated_baseline)`, requires baseline Markdown bytes to
    equal `render_markdown(validated_baseline).encode("utf-8")`, and then
@@ -3544,7 +3830,22 @@ Expected stdout:
 Read back the two printed source paths, then copy their exact validated bytes
 to the exact committed paths using `apply_patch`; do not use `cp` and do not
 add a baseline-regeneration CLI. Re-run `cmp` between each source and its
-committed destination before proceeding.
+committed destination, then remove only the two named task-owned temporary
+files and their now-empty `mktemp` directory before proceeding:
+
+```bash
+LOOP_TMP_DIR='<paste the exact printed TMP_DIR from Step 3>'
+test -d "$LOOP_TMP_DIR"
+cmp -s "$LOOP_TMP_DIR/evidence-gated-loop-kernel-v1.json" \
+  docs/evidence/evidence-gated-loop-kernel-v1.json
+cmp -s "$LOOP_TMP_DIR/evidence-gated-loop-kernel-v1.md" \
+  docs/evidence/evidence-gated-loop-kernel-v1.md
+unlink "$LOOP_TMP_DIR/evidence-gated-loop-kernel-v1.json"
+unlink "$LOOP_TMP_DIR/evidence-gated-loop-kernel-v1.md"
+rmdir "$LOOP_TMP_DIR"
+test ! -e "$LOOP_TMP_DIR"
+unset LOOP_TMP_DIR
+```
 
 - [ ] **Step 4: Verify the committed pair and full kernel integration**
 
@@ -3605,6 +3906,7 @@ def test_evidence_gated_loop_reference_locks_commands_and_nonclaims() -> None:
         "historical RED",
         "fixed verification profile",
         "reviewed_candidate_verification_status",
+        "candidate-bound pass receipt",
         "code-owned case and episode binding",
         "record_status",
         "candidate_verdict",
@@ -3617,6 +3919,7 @@ def test_evidence_gated_loop_reference_locks_commands_and_nonclaims() -> None:
         "No runtime self-modification",
         "No live-provider strict success",
         "Current fixed profiles verify retained repository state",
+        "v0.1.6 selector verifies current release metadata only",
     ):
         assert phrase in text
 
@@ -3629,6 +3932,7 @@ def test_evidence_gated_evolution_adr_keeps_verifier_outside_candidate() -> None
         "verification profile registry",
         "human-reviewed verdict",
         "consumer-owned proof",
+        "terminal episode",
         "privacy-safe observation",
         "not a fourth evolution-success case",
         "runtime self-modification",
@@ -3721,9 +4025,12 @@ Non-Claims
 Use the exact CLI, schema values, carrier enum, three decision axes, and hard
 stops from this plan. Explain the temporal split between reviewed
 candidate-time verification status and current pass-only profile execution, the
-code-owned case/episode binding, and typed rollback evidence. State explicitly
+candidate-bound pass receipt, the code-owned case/episode binding, terminal
+episode release aggregation, and typed rollback evidence. State explicitly
 that the kernel neither checks out arbitrary historical candidates nor infers
-a human verdict from a failed current profile. Document the exact rollback
+a human verdict from a failed current profile. State that the `v0.1.6`
+selector verifies current release metadata only and does not execute historical
+release behavior. Document the exact rollback
 basis-to-proof-kind matrix and the evidence-to-subject-candidate binding.
 
 - [ ] **Step 4: Update architecture and indexes**
@@ -3793,6 +4100,10 @@ def test_readmes_publish_equivalent_bounded_loop_kernel_claim() -> None:
         assert (
             "do not check out arbitrary historical candidates" in text
             or "不 checkout 任意历史候选" in text
+        )
+        assert (
+            "v0.1.6 selector verifies current release metadata only" in text
+            or "v0.1.6 selector 只验证当前 release metadata" in text
         )
         assert "v0.1.6" in text
 
@@ -3881,6 +4192,8 @@ fixed profiles verify retained repository state; they do not check out
 arbitrary historical candidates or infer human verdicts. Its public schemas are
 `dra.evidence-gated-loop-registry.v1`, `dra.evolution-case.v1`, and
 `dra.evidence-gated-loop-report.v1`.
+The `v0.1.6` selector verifies current release metadata only; it does not
+execute historical release behavior.
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
@@ -3905,6 +4218,7 @@ provider-free 的保留集与安全检查复核候选，并把在线应用状态
 候选，也不从当前 profile 失败自动推断人工 verdict。公开 schema 为
 `dra.evidence-gated-loop-registry.v1`、`dra.evolution-case.v1` 和
 `dra.evidence-gated-loop-report.v1`。
+`v0.1.6` selector 只验证当前 release metadata，不执行历史 release 行为。
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
@@ -3946,9 +4260,12 @@ and must not shell out to the kernel. Keep the existing standalone Evaluation
 Sensitivity v2 step: public
 [run 30213660424](https://github.com/iTao-AI/decision-research-agent/actions/runs/30213660424)
 completed that step in one second, while the backend job completed in about
-five minutes under its existing 15-minute limit. The residual v2 re-execution
-inside the one kernel step is a bounded compatibility cost; do not add a
-skip/reuse flag that could weaken the profile authority.
+five minutes under its existing 15-minute limit. The kernel's serial fixed
+profiles have a 420-second aggregate deadline, leaving a bounded margin under
+that existing job limit. The residual v2 re-execution inside the one kernel
+step is a bounded compatibility cost; do not add a skip/reuse flag, parallel
+profile lane, or split CI job that could weaken deterministic profile
+authority.
 
 - [ ] **Step 4: Run focused docs/CI and kernel verification**
 
@@ -4000,31 +4317,35 @@ test -z "$(git diff --name-only "$IMPLEMENTATION_BASE" -- \
   scripts/downstream_consumer_contract.py \
   docs/evidence/downstream-consumer-contract-v1.json)"
 
-! rg -n \
-  '/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
-  benchmarks/evidence-gated-loop-v1 \
-  scripts/evidence_gated_loop_contracts.py \
-  scripts/evidence_gated_loop_profiles.py \
-  scripts/evidence_gated_loop_gate.py \
-  docs/evidence/evidence-gated-loop-kernel-v1.json \
-  docs/evidence/evidence-gated-loop-kernel-v1.md \
-  docs/reference/evidence-gated-loop-kernel.md \
-  docs/decisions/evidence-gated-evolution-authority.md
+! git diff --name-only "$IMPLEMENTATION_BASE"..HEAD | \
+  xargs rg -n -- \
+  '/Users/mac/|/home/mac/|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
 ! rg -n \
-  '/Users/|/home/|/private/|Traceback|api[_-]?key[=:]|credential[=:]|password[=:]|secret[=:]|token[=:]|thread_id|source_thread_id' \
+  '/Users/mac/|/home/mac/|/private/|/var/|/Volumes/|/opt/|/etc/|/root/|Traceback|api[_-]?key[=:]|credential[=:]|password[=:]|secret[=:]|token[=:]|thread_id|source_thread_id' \
   benchmarks/evidence-gated-loop-v1 \
   docs/evidence/evidence-gated-loop-kernel-v1.json \
   docs/evidence/evidence-gated-loop-kernel-v1.md \
   docs/reference/evidence-gated-loop-kernel.md \
-  docs/decisions/evidence-gated-evolution-authority.md
+  docs/decisions/evidence-gated-evolution-authority.md \
+  docs/architecture.md \
+  docs/README.md \
+  docs/evidence/README.md \
+  README.md \
+  README_CN.md \
+  CHANGELOG.md \
+  .github/workflows/ci.yml
 ```
 
-The first scan catches actual local identities across code and artifacts. The
-second applies raw-payload markers only to data and prose, because contracts
-code intentionally contains generic rejection patterns such as `/Users/` and
-`token=`. Inspect any match; do not weaken validators or delete safety tests to
-make a scan green.
+The first scan covers the complete task-owned diff and catches actual local
+identities and private coordination UUIDs. The second applies raw-payload and
+host-path markers to every planned public data/prose/CI surface, including the
+READMEs, changelog, architecture, and evidence indexes; contracts and tests are
+excluded because they intentionally contain generic rejection literals.
+Generic documented `/tmp` CLI output paths remain allowed in prose, while the
+runtime public-projection validator rejects `/tmp/...` when it appears in a
+manifest/report scalar. Inspect any match; do not weaken validators or delete
+safety tests to make a scan green.
 
 - [ ] **Step 7: Commit Task 7**
 

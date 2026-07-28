@@ -187,6 +187,7 @@ Allowed `proof_kind` values in v1 are:
 ```text
 reviewed_historical_red
 reviewed_verification_gap
+reviewed_candidate_verification_passed
 independent_consumer_contract
 reviewed_candidate_regression
 reviewed_candidate_safety_failure
@@ -195,21 +196,27 @@ independent_consumer_rejection
 ```
 
 These values distinguish reviewed pre-candidate provenance, an
-evaluation-system gap, consumer-owned provider-free acceptance proof, and the
-three typed rollback evidence classes. They do not claim that external
-history is re-executed by DRA CI.
+evaluation-system gap, a candidate-bound reviewed verification receipt,
+consumer-owned provider-free acceptance proof, and the three typed rollback
+evidence classes. They do not claim that external history is re-executed by
+DRA CI.
 
 `subject_candidate_id` is `null` for pre-candidate provenance. Candidate
 verification outcomes, candidate-owned consumer proof, and all rollback
 evidence bind it to an exact candidate in the same case. The candidate record
 then closes repository, commit, tree, optional profile tuple, and predecessor
-or rollback target.
+or rollback target. A candidate identity alone is never verification evidence:
+a reviewed pass receipt must identify the independent review or hosted-check
+surface that evaluated the exact candidate. Its repository, commit, and tree
+must equal the referenced candidate tuple; a matching candidate ID with a
+different immutable tuple fails closed.
 
 The code-owned origin/proof matrix is closed:
 
 - `reviewed_historical_red` uses `repository_audit` or
   `downstream_consumer`;
 - `reviewed_verification_gap` uses `verification_gap`;
+- `reviewed_candidate_verification_passed` uses `repository_audit`;
 - `reviewed_candidate_regression` and
   `reviewed_candidate_safety_failure` use `repository_audit` or
   `verification_gap`;
@@ -380,15 +387,17 @@ not_applicable
 This is the human-reviewed outcome for a change episode's candidate under its
 referenced profile at decision time. It is not the result of the kernel's
 current subprocess execution. The report keeps that reviewed temporal fact
-separate from the current code-owned profile result. A `failed` or
+separate from the current code-owned profile result. A `passed`, `failed`, or
 `inconclusive` status requires one or more
 `reviewed_verification_evidence_ids` resolving to the current episode's
-inputs and binding the exact current candidate. `failed` accepts only
+inputs and binding the exact current candidate. `passed` accepts only
+`reviewed_candidate_verification_passed`; `failed` accepts only
 `reviewed_candidate_regression` or
 `reviewed_candidate_safety_failure`; `inconclusive` accepts only
-`reviewed_candidate_verification_inconclusive`. `passed` uses an empty list
-because current code-owned execution supplies the retained-state proof. A
-no-change episode must use `not_applicable` and an empty list.
+`reviewed_candidate_verification_inconclusive`. The separately executed
+current code-owned profile is a freshness and retained-state gate; it cannot
+stand in for the historical candidate-time pass receipt. A no-change episode
+must use `not_applicable` and an empty list.
 
 Allowed candidate verdicts are:
 
@@ -432,12 +441,20 @@ rollback_recommended
 recommended. `rollback_subject_candidate_id` is `null` unless rollback is
 recommended; when non-null it resolves to the exact earlier accepted candidate
 whose immutable identity and predecessor or pin are under review.
+`rollback_target` is also `null` unless rollback is recommended. The ordinary
+predecessor or contingency for a change remains on the candidate's
+`predecessor_or_rollback_ref`; it is not presented as an active rollback
+decision.
 
-The report-level release disposition is derived conservatively in this exact
-priority order: any `rollback_recommended` episode yields
-`rollback_recommended`; otherwise any `hold` episode yields `hold`; only a
-record in which every episode is `eligible_for_separate_release_review` yields
-that value. Manifests cannot supply the aggregate.
+Each case's current release disposition comes from its terminal episode, which
+is the unique last episode in its ordered predecessor chain. Historical
+episodes remain visible but do not permanently freeze the current case
+disposition. The report-level release disposition is derived conservatively
+from those terminal case dispositions in this exact priority order: any
+terminal `rollback_recommended` yields `rollback_recommended`; otherwise any
+terminal `hold` yields `hold`; only a record in which every terminal case
+disposition is `eligible_for_separate_release_review` yields that value.
+Manifests cannot supply the aggregate.
 
 No value means that a release, rollback, or deployment happened.
 
@@ -450,6 +467,8 @@ Public lineage:
 - Context Reliability PR #122 established the provider-free regression pack.
 - Independent audit found that an incompatible persisted terminal state and stable resolver error pair could remain green.
 - PR #123 introduced six cross-state RED cases and three unknown-enum RED cases, then closed them without changing production runtime.
+- The reviewed PR #123 verification and merge surface supplies a
+  candidate-bound pass receipt distinct from the candidate identity record.
 
 Decision:
 
@@ -469,9 +488,14 @@ release           = hold
 
 Public lineage:
 
-- A healthy baseline did not prove that the responsible evaluator detected its declared failure dimension.
+- Pre-candidate main at `8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9`
+  did not prove that the responsible evaluator detected its declared failure
+  dimension.
 - Evaluation Sensitivity v2 added six healthy persisted anchors and three one-dimensional post-traversal controls.
 - The responsible evaluator must detect its control while non-responsible evaluators and application-owned projections remain stable.
+- The reviewed PR #128 verification and merge surface supplies a
+  candidate-bound pass receipt; the pre-candidate RED identity remains
+  separate from candidate `6a3020863fbaaf9d218420b7981150a5736b7fb8`.
 
 Decision:
 
@@ -497,6 +521,8 @@ Public lineage:
 - Both stopped before candidate import and caused no candidate, promotion, planning, review, or decision mutation.
 - Continuing query or Prompt changes, weakening the consumer exact-public-HTTPS gate, and a third provider attempt were rejected.
 - DRA PR #129 added the opt-in strict profile while preserving literal generic behavior.
+- The reviewed PR #129 tree and hosted checks supply the producer
+  candidate-bound pass receipt.
 - Night Voyager PR #75 adopted the exact producer tuple and completed independent provider-free consumer contract proof.
 
 Episode 1:
@@ -569,7 +595,8 @@ An accepted candidate requires:
 2. exactly one selected supported carrier;
 3. exactly one candidate identity bound to that carrier;
 4. reviewed historical RED provenance;
-5. reviewed candidate verification status `passed`;
+5. reviewed candidate verification status `passed` with at least one exact
+   candidate-bound `reviewed_candidate_verification_passed` receipt;
 6. executable fail-to-pass regression;
 7. pass-to-pass retained checks;
 8. safety and compatibility checks;
@@ -590,7 +617,10 @@ nonzero exit, signal, timeout, missing executable, or OS error makes the report
 invalid with `loop_verification_failed`; the kernel never converts an
 execution or infrastructure failure into a green rejected record. Structurally
 valid `rejected` and `need_more_evidence` episodes therefore still require all
-current fixed profiles to pass.
+current fixed profiles to pass. Profiles execute serially in registry order
+under one code-owned 420-second monotonic aggregate deadline; a profile keeps
+its smaller code-owned timeout, and manifest bytes can neither extend nor
+weaken either bound.
 
 A candidate may also be rejected after passing tests when reviewed cost, compatibility, authority, or scope evidence is unacceptable. The reason code must identify that boundary.
 
@@ -640,6 +670,12 @@ verification_profile_version
 
 The code-owned profile registry contains the exact immutable argument vectors, environment, timeout, expected exit behavior, and stable diagnostic code. It rejects unknown profiles and cannot be extended by manifest data.
 
+The runner also owns one aggregate monotonic deadline for the complete ordered
+profile set. Individual profile timeouts remain upper bounds, but the
+aggregate deadline wins when less time remains. Profiles execute serially and
+fail fast so deterministic ordering and the first stable failure code remain
+auditable.
+
 The same code-owned registry also binds every canonical
 `case_id + episode_id` pair to its exact profile identity. Set equality is not
 enough: replacing a reference with another known profile, or swapping two
@@ -675,9 +711,14 @@ Runs fixed provider-free pytest selectors covering:
 - fail-closed safe-state retention;
 - exact strict profile identity and version rejection;
 - literal generic compatibility;
+- committed generic downstream fixture equality before the strict mutation
+  control;
 - the frozen generic downstream fixture rejecting a strict profile.
 
 No profile calls a provider, reads credentials, starts Docker, changes a database schema, or accesses Night Voyager.
+The `v0.1.6` selector checks current repository release metadata only; it does
+not execute the historical release or prove that post-`v0.1.6` behavior exists
+in that immutable release.
 
 ## 11. CLI and canonical artifacts
 
@@ -693,7 +734,13 @@ PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py build \
 
 `check` loads bounded registry and case bytes, executes all referenced fixed profiles, builds the canonical report, and compares it byte-for-byte with committed JSON and Markdown.
 
-`build` writes only to two explicit non-baseline paths. It validates the complete pair before atomic replacement and cleans task-owned temporary files on failure.
+`build` writes only to two explicit non-baseline paths. Canonical JSON is the
+sole authority and Markdown is a deterministic projection that can be rebuilt
+from it. The command validates the complete pair before a recoverable paired
+write, replaces Markdown first and JSON last as the commit point, restores the
+prior Markdown on caught second-write failure, detects any pair drift, and
+cleans task-owned temporary files. It does not claim transaction-level
+atomicity across a process or power failure.
 
 There is no `accept`, `promote`, `repair`, `regenerate-baseline`, `release`, or `rollback` command.
 
@@ -795,15 +842,19 @@ Implementation starts RED-first. Tests must reject at least:
   `subject_candidate_id` does not match the status and exact current candidate;
 - a change action with `not_applicable` candidate verification or a no-change action with any other value;
 - accepted verdict with missing historical RED;
+- passed reviewed candidate verification without one or more exact
+  candidate-bound `reviewed_candidate_verification_passed` input receipts;
 - any current fixed-profile execution failure, including when the stored verdict is rejected or need-more-evidence;
 - a known profile attached to the wrong case or episode;
 - release eligibility while required consumer proof is pending or rejected;
 - rollback recommendation without an accepted predecessor, exact subject candidate, typed basis, new matching input evidence, or immutable target;
 - rollback evidence whose subject or proof kind does not match the code-owned basis matrix;
 - manifest-supplied command, selector, import path, environment override, or output path;
-- raw content, prompts, queries, snippets, exceptions, credentials, tokens, host paths, or private markers;
+- raw content, prompts, queries, snippets, exceptions, credentials, tokens,
+  absolute POSIX or Windows host paths, or private markers;
 - oversized reads, deep nesting, excessive collections, non-canonical ordering, or JSON/Markdown drift;
-- partial paired output writes and leaked temporary files;
+- partial recoverable paired output writes, undetected JSON/Markdown
+  generation drift, and leaked temporary files;
 - raw subprocess output or traceback escaping a stable error boundary.
 
 Tests must also prove:
@@ -818,11 +869,14 @@ Tests must also prove:
 - adding a case of an existing kind does not require a core schema change;
 - adding an unknown evidence or verification kind fails closed;
 - fixed profiles cannot be overridden by manifest bytes or swapped between canonical case/episode bindings;
-- mixed episode release dispositions use the exact conservative report-level priority;
+- report release aggregation uses only each case's unique terminal episode,
+  while preserving earlier decisions in the lineage;
 - default pytest does not launch a nested real kernel check;
 - two builds are byte-identical;
 - the committed JSON and Markdown pair is coherent;
-- existing Evaluation v1/v2 artifacts and downstream fixture remain unchanged.
+- existing Evaluation v1/v2 artifacts and downstream fixture remain unchanged;
+- the committed downstream fixture equals a fresh generic build before the
+  strict mutation control is applied;
 
 ## 15. Acceptance criteria
 
@@ -832,7 +886,8 @@ The phase is complete only when:
 2. every episode has closed evidence, diagnosis, carrier assessment, action, verification, decision, and release semantics;
 3. the strict case preserves its change episode and later no-change episode;
 4. historical RED and current executable regressions are reported separately;
-5. all fixed profiles pass provider-free;
+5. all fixed profiles pass provider-free within the aggregate deadline, while
+   every accepted change retains an exact candidate-bound pass receipt;
 6. canonical JSON and Markdown are byte-stable and match committed baselines;
 7. negative controls prove that false acceptance, arbitrary verification, unsafe projection, and invalid rollback fail closed;
 8. existing runtime, API, database, dependency, release, v1/v2 evaluation, generic profile, and consumer fixture behavior remains unchanged;
@@ -872,6 +927,7 @@ The project must not claim:
 - live-provider strict success;
 - production reliability, hosted deployment, SLA, user adoption, or business impact;
 - source truth, semantic entailment, citation completeness, or universal Agent quality;
+- historical `v0.1.6` runtime execution from a current metadata-only selector;
 - that post-`v0.1.6` capabilities are included in the `v0.1.6` release.
 
 ## 18. Hard stops

@@ -15,8 +15,9 @@ or cleanup.
 **Goal:** Add a provider-free Evidence-Gated Loop Kernel v1 that preserves
 three reviewed DRA failure or verification lineages, validates structured
 diagnosis and update-carrier decisions, runs fixed retained and safety
-verification, and records candidate, consumer, closure, release-hold, and
-rollback-recommendation semantics without granting runtime mutation authority.
+verification, and records reviewed verification, candidate, consumer, closure,
+release-hold, and evidence-bound rollback-recommendation semantics without
+granting runtime mutation authority.
 
 **Architecture:** Keep online DRA execution unchanged and place the kernel
 under offline Verification. Strict Pydantic contracts load bounded,
@@ -36,7 +37,7 @@ standard library (`argparse`, `dataclasses`, `hashlib`, `json`, `os`,
 - Authority spec:
   `docs/superpowers/specs/2026-07-28-evidence-gated-loop-kernel-v1-design.md`
   with SHA-256
-  `43d5cb6337f01c5728f62e8858491268f8dd07fd88013a7f4e4e9a0a657d832a`.
+  `f8c61a6889549990268dc1228ae3aa8ce1dd7054349681e34473583d8f08c28a`.
 - Audited DRA base is
   `01ba21f2996769e68cbc88f4bb0596740df27f6b`; implementation begins only
   from the later commit that contains this reviewed plan.
@@ -63,6 +64,17 @@ standard library (`argparse`, `dataclasses`, `hashlib`, `json`, `os`,
   release, deploy, or execute rollback.
 - A green kernel result means the record and required proof are coherent. It
   does not mean every candidate is accepted or a release is authorized.
+- Each change episode stores a human-reviewed candidate verification status
+  separately from current code-owned profile execution. Reviewed `failed` or
+  `inconclusive` status requires typed episode input evidence whose
+  `subject_candidate_id` binds the exact current candidate and can support a
+  coherent reject/need-more decision; any current profile execution failure
+  invalidates the whole report and is never reclassified as a green rejected
+  record.
+- Every canonical `case_id + episode_id` is bound by code to one exact profile
+  identity. Swapping two known manifest references fails before execution.
+- A rollback recommendation requires a typed basis and explicit evidence IDs
+  newly introduced by that episode; it never executes rollback.
 - External GitHub and Night Voyager evidence is a reviewed immutable
   reference. Required DRA CI performs no network revalidation and makes no
   live-provider success claim.
@@ -110,7 +122,7 @@ test -n "$IMPLEMENTATION_BASE"
 test "$(git rev-parse HEAD)" = "$IMPLEMENTATION_BASE"
 test "$(git status --porcelain)" = ""
 test "$(shasum -a 256 "$SPEC_PATH" | awk '{print $1}')" = \
-  43d5cb6337f01c5728f62e8858491268f8dd07fd88013a7f4e4e9a0a657d832a
+  f8c61a6889549990268dc1228ae3aa8ce1dd7054349681e34473583d8f08c28a
 git show --stat --oneline "$IMPLEMENTATION_BASE" -- "$PLAN_PATH" "$SPEC_PATH"
 ```
 
@@ -280,6 +292,7 @@ approved stable code. No lower layer imports the gate.
   "non_claims": [
     "No runtime self-modification, automatic diagnosis, candidate generation, promotion, release, or rollback.",
     "No live-provider success, production reliability, user-adoption, business-impact, or universal Agent-quality claim.",
+    "Current fixed profiles verify retained repository state; they do not check out arbitrary historical candidates or infer human verdicts.",
     "Post-v0.1.6 capabilities are not part of the immutable v0.1.6 release."
   ],
   "schema_version": "dra.evidence-gated-loop-registry.v1",
@@ -334,6 +347,7 @@ CommitSha = Annotated[
 
 class EvidenceRef(_StrictModel):
     evidence_id: Identifier
+    subject_candidate_id: Identifier | None
     origin_kind: Literal[
         "repository_audit", "verification_gap", "downstream_consumer"
     ]
@@ -345,6 +359,10 @@ class EvidenceRef(_StrictModel):
         "reviewed_historical_red",
         "reviewed_verification_gap",
         "independent_consumer_contract",
+        "reviewed_candidate_regression",
+        "reviewed_candidate_safety_failure",
+        "reviewed_candidate_verification_inconclusive",
+        "independent_consumer_rejection",
     ]
     reviewed_summary: PublicText
     claim_scope: PublicText
@@ -399,6 +417,12 @@ class CandidateRef(_StrictModel):
     capability_identity: CapabilityIdentity | None
 
 class ReviewedDecision(_StrictModel):
+    reviewed_candidate_verification_status: Literal[
+        "passed", "failed", "inconclusive", "not_applicable"
+    ]
+    reviewed_verification_evidence_ids: list[Identifier] = Field(
+        max_length=16
+    )
     candidate_verdict: Literal[
         "accepted", "rejected", "need_more_evidence", "not_applicable"
     ]
@@ -413,6 +437,11 @@ class ReviewedDecision(_StrictModel):
         "hold", "eligible_for_separate_release_review",
         "rollback_recommended",
     ]
+    rollback_basis: Literal[
+        "regression", "safety", "consumer_rejection"
+    ] | None
+    rollback_evidence_ids: list[Identifier] = Field(max_length=16)
+    rollback_subject_candidate_id: Identifier | None
     rollback_target: CommitSha | None
     reason_codes: list[Identifier] = Field(min_length=1, max_length=16)
 
@@ -487,6 +516,8 @@ REQUIRED_NON_CLAIMS = (
     "generation, promotion, release, or rollback.",
     "No live-provider success, production reliability, user-adoption, "
     "business-impact, or universal Agent-quality claim.",
+    "Current fixed profiles verify retained repository state; they do not "
+    "check out arbitrary historical candidates or infer human verdicts.",
     "Post-v0.1.6 capabilities are not part of the immutable v0.1.6 release.",
 )
 ```
@@ -532,14 +563,79 @@ schema_version, case_id, case_version, title, evidence_refs, episodes
 Each evidence reference has:
 
 ```text
-evidence_id, origin_kind, repository, commit_sha, tree_sha, locator,
-proof_kind, reviewed_summary, claim_scope, public_safe
+evidence_id, subject_candidate_id, origin_kind, repository, commit_sha,
+tree_sha, locator, proof_kind, reviewed_summary, claim_scope, public_safe
 ```
 
 Allowed `origin_kind` values are `repository_audit`, `verification_gap`, and
 `downstream_consumer`. Allowed `proof_kind` values are
-`reviewed_historical_red`, `reviewed_verification_gap`, and
-`independent_consumer_contract`. `public_safe` is literal `true`.
+`reviewed_historical_red`, `reviewed_verification_gap`,
+`independent_consumer_contract`, `reviewed_candidate_regression`,
+`reviewed_candidate_safety_failure`,
+`reviewed_candidate_verification_inconclusive`, and
+`independent_consumer_rejection`. `public_safe` is literal `true`.
+Pre-candidate provenance uses `subject_candidate_id: null`; candidate
+verification evidence, candidate-owned consumer proof, and every rollback
+evidence item resolve an exact candidate ID in the same case. Enforce this
+code-owned partition:
+
+```text
+subject null:
+  reviewed_historical_red
+  reviewed_verification_gap
+
+subject required:
+  independent_consumer_contract
+  reviewed_candidate_regression
+  reviewed_candidate_safety_failure
+  reviewed_candidate_verification_inconclusive
+  independent_consumer_rejection
+```
+
+Contracts also own these exact closed constants:
+
+```python
+SUBJECT_REQUIRED_PROOF_KINDS = frozenset({
+    "independent_consumer_contract",
+    "reviewed_candidate_regression",
+    "reviewed_candidate_safety_failure",
+    "reviewed_candidate_verification_inconclusive",
+    "independent_consumer_rejection",
+})
+ROLLBACK_PROOF_KIND_BY_BASIS = {
+    "regression": "reviewed_candidate_regression",
+    "safety": "reviewed_candidate_safety_failure",
+    "consumer_rejection": "independent_consumer_rejection",
+}
+REVIEWED_VERIFICATION_PROOF_KINDS_BY_STATUS = {
+    "failed": frozenset({
+        "reviewed_candidate_regression",
+        "reviewed_candidate_safety_failure",
+    }),
+    "inconclusive": frozenset({
+        "reviewed_candidate_verification_inconclusive",
+    }),
+}
+ALLOWED_ORIGINS_BY_PROOF_KIND = {
+    "reviewed_historical_red": frozenset({
+        "repository_audit", "downstream_consumer",
+    }),
+    "reviewed_verification_gap": frozenset({"verification_gap"}),
+    "independent_consumer_contract": frozenset({"downstream_consumer"}),
+    "reviewed_candidate_regression": frozenset({
+        "repository_audit", "verification_gap",
+    }),
+    "reviewed_candidate_safety_failure": frozenset({
+        "repository_audit", "verification_gap",
+    }),
+    "reviewed_candidate_verification_inconclusive": frozenset({
+        "verification_gap",
+    }),
+    "independent_consumer_rejection": frozenset({
+        "downstream_consumer",
+    }),
+}
+```
 
 Every episode assesses carriers in this exact order:
 
@@ -566,6 +662,10 @@ kind="no_change", reason_codes
 The reviewed decision fields and enums are:
 
 ```text
+reviewed_candidate_verification_status =
+  passed | failed | inconclusive | not_applicable
+reviewed_verification_evidence_ids =
+  ordered unique input identifiers; non-empty for failed/inconclusive
 candidate_verdict =
   accepted | rejected | need_more_evidence | not_applicable
 consumer_proof_status =
@@ -575,9 +675,27 @@ loop_closure_status =
   open_waiting_evidence | open_waiting_consumer
 release_disposition =
   hold | eligible_for_separate_release_review | rollback_recommended
+rollback_basis = null | regression | safety | consumer_rejection
+rollback_evidence_ids = ordered unique identifiers; empty unless rollback
+rollback_subject_candidate_id = null | exact earlier accepted candidate ID
 rollback_target = null | immutable 40-hex commit
 reason_codes = non-empty ordered unique identifiers
 ```
+
+`reviewed_candidate_verification_status` is the human-reviewed change-candidate
+result under the referenced profile. It is not the current subprocess result.
+Reviewed `failed` or `inconclusive` requires explicit evidence IDs resolving
+to current episode inputs and binding the exact current candidate.
+`failed` accepts only `reviewed_candidate_regression` or
+`reviewed_candidate_safety_failure`; `inconclusive` accepts only
+`reviewed_candidate_verification_inconclusive`. Reviewed `passed` uses an
+empty evidence list because current code-owned execution supplies
+retained-state proof. Current change actions cannot use `not_applicable`;
+every no-change action must use `not_applicable` and an empty evidence list.
+Current profile execution remains pass-only and any execution failure
+invalidates the report. A rollback recommendation requires explicit evidence
+IDs that are inputs to the new episode, were not consumed by any earlier
+episode, bind the exact earlier accepted candidate, and match the typed basis.
 
 ### Exact reference-case matrix
 
@@ -592,6 +710,7 @@ case_version: "1"
 title: Context resolver projection false green
 evidence:
   context-red
+    subject_candidate_id: null
     origin_kind: repository_audit
     repository: https://github.com/iTao-AI/decision-research-agent
     commit_sha: 2dadae56f038790f66c4c3af05b7bae10d8e0462
@@ -636,10 +755,15 @@ candidate:
   capability_identity: null
 verification: context-resolver-coherence@1
 decision:
+  reviewed_candidate_verification_status: passed
+  reviewed_verification_evidence_ids: []
   candidate_verdict: accepted
   consumer_proof_status: not_required
   loop_closure_status: closed_accepted
   release_disposition: hold
+  rollback_basis: null
+  rollback_evidence_ids: []
+  rollback_subject_candidate_id: null
   rollback_target: 2dadae56f038790f66c4c3af05b7bae10d8e0462
   reason_codes: [historical_red_closed, retained_and_safety_profiles_passed]
 ```
@@ -651,6 +775,7 @@ case_version: "1"
 title: Evaluation sensitivity false green
 evidence:
   evaluator-gap
+    subject_candidate_id: null
     origin_kind: verification_gap
     repository: https://github.com/iTao-AI/decision-research-agent
     commit_sha: 6a3020863fbaaf9d218420b7981150a5736b7fb8
@@ -662,6 +787,7 @@ evidence:
     claim_scope: healthy anchors alone did not prove sensitivity to each
       evaluator's declared failure dimension
   evaluator-red
+    subject_candidate_id: null
     origin_kind: repository_audit
     repository: https://github.com/iTao-AI/decision-research-agent
     commit_sha: 6a3020863fbaaf9d218420b7981150a5736b7fb8
@@ -705,10 +831,15 @@ candidate:
   capability_identity: null
 verification: evaluation-sensitivity@1
 decision:
+  reviewed_candidate_verification_status: passed
+  reviewed_verification_evidence_ids: []
   candidate_verdict: accepted
   consumer_proof_status: not_required
   loop_closure_status: closed_accepted
   release_disposition: hold
+  rollback_basis: null
+  rollback_evidence_ids: []
+  rollback_subject_candidate_id: null
   rollback_target: 8efc7d5a39cc515e15f7ea9b29901f7e6e064ae9
   reason_codes: [verifier_sensitivity_proven, retained_and_safety_profiles_passed]
 ```
@@ -720,6 +851,7 @@ case_version: "1"
 title: Strict citation downstream consumer failure
 evidence:
   strict-live-25-0
+    subject_candidate_id: null
     origin_kind: downstream_consumer
     repository: https://github.com/iTao-AI/night-voyager
     commit_sha: 95cce4f28357150450c7f87105adcb47abf1a15d
@@ -732,6 +864,7 @@ evidence:
     claim_scope: governed live attempt stopped before import with 25 same-run
       Evidence rows and zero cited rows
   strict-live-83-0
+    subject_candidate_id: null
     origin_kind: downstream_consumer
     repository: https://github.com/iTao-AI/night-voyager
     commit_sha: 95cce4f28357150450c7f87105adcb47abf1a15d
@@ -744,6 +877,7 @@ evidence:
     claim_scope: governed live attempt stopped before import with 83 same-run
       Evidence rows and zero cited rows
   strict-consumer-pr-75
+    subject_candidate_id: strict-citation-pr-129
     origin_kind: downstream_consumer
     repository: https://github.com/iTao-AI/night-voyager
     commit_sha: 95cce4f28357150450c7f87105adcb47abf1a15d
@@ -792,10 +926,15 @@ candidate:
     proof_schema: dra.strict-citation-profile.v1
 verification: strict-citation-consumer@1
 decision:
+  reviewed_candidate_verification_status: passed
+  reviewed_verification_evidence_ids: []
   candidate_verdict: accepted
   consumer_proof_status: pending
   loop_closure_status: open_waiting_consumer
   release_disposition: hold
+  rollback_basis: null
+  rollback_evidence_ids: []
+  rollback_subject_candidate_id: null
   rollback_target: 6a3020863fbaaf9d218420b7981150a5736b7fb8
   reason_codes: [historical_red_closed, independent_consumer_proof_required]
 episode 2: strict-citation-consumer-close-episode-2
@@ -822,10 +961,15 @@ action:
 candidate_refs: []
 verification: strict-citation-consumer@1
 decision:
+  reviewed_candidate_verification_status: not_applicable
+  reviewed_verification_evidence_ids: []
   candidate_verdict: not_applicable
   consumer_proof_status: accepted
   loop_closure_status: closed_no_change
   release_disposition: hold
+  rollback_basis: null
+  rollback_evidence_ids: []
+  rollback_subject_candidate_id: null
   rollback_target: null
   reason_codes: [provider_free_consumer_contract_accepted,
     release_requires_separate_review]
@@ -844,6 +988,7 @@ field set from the spec; arrays are ordered and unique.
 class VerificationProfile:
     profile_id: str
     profile_version: str
+    episode_bindings: Sequence[tuple[str, str]]
     argv: Sequence[str]
     timeout_seconds: int
     coverage: Sequence[
@@ -869,15 +1014,18 @@ The callable interfaces are
 project_root: Path = PROJECT_ROOT) -> VerificationResult` and
 `run_required_profiles(registry: LoopRegistry, *,
 project_root: Path = PROJECT_ROOT) -> tuple[VerificationResult, ...]`.
-The concrete dataclass stores `argv` and `coverage` as tuples before exposure.
+The concrete dataclass stores `episode_bindings`, `argv`, and `coverage` as
+tuples before exposure.
 `run_required_profiles` validates every declared registry identity against
 `PROFILE_REGISTRY`, executes each declared identity exactly once in registry
 order even when multiple episodes reference it, and returns results in that
-same order. A nonzero exit, signal, timeout, missing executable, or OS error
-raises `LoopProfileError("loop_verification_failed")`; v1 does not turn a
-currently failing executable gate into a green stored report. Structurally
-valid `rejected` and `need_more_evidence` episode records are tested
-separately, as required by the spec.
+same order. The code-owned `episode_bindings` enumerate the exact
+`(case_id, episode_id)` pairs served by each profile. A nonzero exit, signal,
+timeout, missing executable, or OS error raises
+`LoopProfileError("loop_verification_failed")`; v1 does not turn a currently
+failing executable gate into a green stored report. Structurally valid
+`rejected` and `need_more_evidence` episode records use reviewed candidate-time
+status and are tested separately with current profile results passing.
 
 `VerificationResult.coverage` is accepted only in this exact order with no
 duplicates:
@@ -929,6 +1077,21 @@ STRICT_ARGV = (
     "test_frozen_generic_downstream_fixture_rejects_strict_profile",
     "tests/unit/test_v0_1_6_release_metadata.py::"
     "test_v0_1_6_version_identity_is_consistent",
+)
+```
+
+The exact code-owned episode bindings are:
+
+```python
+CONTEXT_EPISODE_BINDINGS = (
+    ("context-resolver-projection", "context-projection-episode-1"),
+)
+EVALUATION_EPISODE_BINDINGS = (
+    ("evaluation-sensitivity", "evaluation-sensitivity-episode-1"),
+)
+STRICT_EPISODE_BINDINGS = (
+    ("strict-citation-consumer", "strict-citation-change-episode-1"),
+    ("strict-citation-consumer", "strict-citation-consumer-close-episode-2"),
 )
 ```
 
@@ -1318,6 +1481,8 @@ REQUIRED_NON_CLAIMS = (
     "generation, promotion, release, or rollback.",
     "No live-provider success, production reliability, user-adoption, "
     "business-impact, or universal Agent-quality claim.",
+    "Current fixed profiles verify retained repository state; they do not "
+    "check out arbitrary historical candidates or infer human verdicts.",
     "Post-v0.1.6 capabilities are not part of the immutable v0.1.6 release.",
 )
 
@@ -1556,10 +1721,15 @@ def test_inconclusive_diagnosis_can_wait_with_no_change() -> None:
     }
     episode["candidate_refs"] = []
     episode["reviewed_decision"] = {
+        "reviewed_candidate_verification_status": "not_applicable",
+        "reviewed_verification_evidence_ids": [],
         "candidate_verdict": "not_applicable",
         "consumer_proof_status": "not_required",
         "loop_closure_status": "open_waiting_evidence",
         "release_disposition": "hold",
+        "rollback_basis": None,
+        "rollback_evidence_ids": [],
+        "rollback_subject_candidate_id": None,
         "rollback_target": None,
         "reason_codes": ["more_reviewed_evidence_required"],
     }
@@ -1571,6 +1741,59 @@ def test_accepted_candidate_requires_historical_red() -> None:
     case["episodes"][0]["input_evidence_ids"] = ["evaluator-gap"]
     with pytest.raises(LoopContractError, match="loop_decision_invalid"):
         validate_case(case)
+
+@pytest.mark.parametrize("status", ["failed", "inconclusive"])
+def test_accepted_candidate_requires_passed_reviewed_verification(
+    status,
+) -> None:
+    case = _case("context-resolver-projection")
+    case["episodes"][0]["reviewed_decision"][
+        "reviewed_candidate_verification_status"
+    ] = status
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(case)
+
+def test_reviewed_verification_evidence_ids_match_status_and_inputs() -> None:
+    case = _case("context-resolver-projection")
+    decision = case["episodes"][0]["reviewed_decision"]
+    decision["reviewed_verification_evidence_ids"] = ["context-red"]
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(case)
+    decision["reviewed_candidate_verification_status"] = "failed"
+    decision["reviewed_verification_evidence_ids"] = ["missing-evidence"]
+    decision["candidate_verdict"] = "rejected"
+    decision["loop_closure_status"] = "closed_rejected"
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(case)
+
+def test_reviewed_verification_evidence_binds_status_proof_kind() -> None:
+    case = _case("context-resolver-projection")
+    evidence = case["evidence_refs"][0]
+    evidence["proof_kind"] = \
+        "reviewed_candidate_verification_inconclusive"
+    evidence["origin_kind"] = "verification_gap"
+    evidence["subject_candidate_id"] = "context-projection-pr-123"
+    decision = case["episodes"][0]["reviewed_decision"]
+    decision["reviewed_candidate_verification_status"] = "failed"
+    decision["reviewed_verification_evidence_ids"] = ["context-red"]
+    decision["candidate_verdict"] = "rejected"
+    decision["loop_closure_status"] = "closed_rejected"
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(case)
+
+def test_candidate_verification_applicability_matches_action_kind() -> None:
+    change = _case("context-resolver-projection")
+    change["episodes"][0]["reviewed_decision"][
+        "reviewed_candidate_verification_status"
+    ] = "not_applicable"
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(change)
+    no_change = _case("strict-citation-consumer")
+    no_change["episodes"][1]["reviewed_decision"][
+        "reviewed_candidate_verification_status"
+    ] = "passed"
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(no_change)
 
 def test_selected_model_parameters_fail_closed() -> None:
     case = _case("context-resolver-projection")
@@ -1612,6 +1835,7 @@ def test_accepted_closed_candidate_can_be_eligible_for_separate_review() -> None
 def test_rollback_recommendation_requires_accepted_predecessor_and_target() -> None:
     case = _case("strict-citation-consumer")
     evidence = case["evidence_refs"][2]
+    evidence["proof_kind"] = "independent_consumer_rejection"
     evidence["reviewed_summary"] = (
         "A reviewed consumer contract rejected the exact producer tuple "
         "without changing the approved public gate."
@@ -1623,6 +1847,9 @@ def test_rollback_recommendation_requires_accepted_predecessor_and_target() -> N
     decision["release_disposition"] = "rollback_recommended"
     decision["loop_closure_status"] = "closed_rejected"
     decision["consumer_proof_status"] = "rejected"
+    decision["rollback_basis"] = "consumer_rejection"
+    decision["rollback_evidence_ids"] = ["strict-consumer-pr-75"]
+    decision["rollback_subject_candidate_id"] = "strict-citation-pr-129"
     decision["reason_codes"] = ["reviewed_consumer_rejection"]
     decision["rollback_target"] = None
     with pytest.raises(LoopContractError, match="loop_decision_invalid"):
@@ -1632,13 +1859,146 @@ def test_rollback_recommendation_requires_accepted_predecessor_and_target() -> N
     assert validate_case(case).episodes[1].reviewed_decision \
         .release_disposition == "rollback_recommended"
 
+@pytest.mark.parametrize(
+    (
+        "basis",
+        "proof_kind",
+        "origin_kind",
+        "consumer_status",
+    ),
+    [
+        (
+            "regression",
+            "reviewed_candidate_regression",
+            "repository_audit",
+            "not_required",
+        ),
+        (
+            "safety",
+            "reviewed_candidate_safety_failure",
+            "verification_gap",
+            "not_required",
+        ),
+        (
+            "consumer_rejection",
+            "independent_consumer_rejection",
+            "downstream_consumer",
+            "rejected",
+        ),
+    ],
+)
+def test_rollback_basis_binds_new_episode_evidence(
+    basis, proof_kind, origin_kind, consumer_status
+) -> None:
+    case = _case("strict-citation-consumer")
+    evidence = case["evidence_refs"][2]
+    evidence["proof_kind"] = proof_kind
+    evidence["origin_kind"] = origin_kind
+    evidence["locator"] = f"synthetic reviewed {basis} rollback fixture"
+    evidence["reviewed_summary"] = (
+        "A bounded synthetic rollback fixture records reviewed "
+        f"{basis} evidence for the immutable subject candidate."
+    )
+    evidence["claim_scope"] = \
+        f"contract validation for a reviewed {basis} rollback basis"
+    decision = case["episodes"][1]["reviewed_decision"]
+    decision["candidate_verdict"] = "not_applicable"
+    decision["consumer_proof_status"] = consumer_status
+    decision["loop_closure_status"] = "closed_rejected"
+    decision["release_disposition"] = "rollback_recommended"
+    decision["rollback_basis"] = basis
+    decision["rollback_evidence_ids"] = ["strict-consumer-pr-75"]
+    decision["rollback_subject_candidate_id"] = "strict-citation-pr-129"
+    decision["rollback_target"] = \
+        "6a3020863fbaaf9d218420b7981150a5736b7fb8"
+    decision["reason_codes"] = [f"reviewed_{basis}"]
+    assert validate_case(case).episodes[1].reviewed_decision \
+        .rollback_basis == basis
+
+@pytest.mark.parametrize(
+    ("evidence_ids", "basis"),
+    [
+        ([], "consumer_rejection"),
+        (["strict-live-25-0"], "consumer_rejection"),
+        (["strict-consumer-pr-75"], "regression"),
+    ],
+)
+def test_rollback_rejects_missing_old_or_wrong_kind_evidence(
+    evidence_ids, basis
+) -> None:
+    case = _case("strict-citation-consumer")
+    decision = case["episodes"][1]["reviewed_decision"]
+    decision["candidate_verdict"] = "not_applicable"
+    decision["consumer_proof_status"] = "rejected"
+    decision["loop_closure_status"] = "closed_rejected"
+    decision["release_disposition"] = "rollback_recommended"
+    decision["rollback_basis"] = basis
+    decision["rollback_evidence_ids"] = evidence_ids
+    decision["rollback_subject_candidate_id"] = "strict-citation-pr-129"
+    decision["rollback_target"] = \
+        "6a3020863fbaaf9d218420b7981150a5736b7fb8"
+    decision["reason_codes"] = ["reviewed_rollback"]
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(case)
+
+def test_rollback_rejects_subject_mismatch() -> None:
+    case = _case("strict-citation-consumer")
+    evidence = case["evidence_refs"][2]
+    evidence["proof_kind"] = "independent_consumer_rejection"
+    decision = case["episodes"][1]["reviewed_decision"]
+    decision["consumer_proof_status"] = "rejected"
+    decision["loop_closure_status"] = "closed_rejected"
+    decision["release_disposition"] = "rollback_recommended"
+    decision["rollback_basis"] = "consumer_rejection"
+    decision["rollback_evidence_ids"] = ["strict-consumer-pr-75"]
+    decision["rollback_subject_candidate_id"] = "missing-candidate"
+    decision["rollback_target"] = \
+        "6a3020863fbaaf9d218420b7981150a5736b7fb8"
+    decision["reason_codes"] = ["reviewed_consumer_rejection"]
+    with pytest.raises(LoopContractError, match="loop_decision_invalid"):
+        validate_case(case)
+
 def test_valid_rejected_and_need_more_records_remain_structurally_valid() -> None:
-    for verdict, closure in [
-        ("rejected", "closed_rejected"),
-        ("need_more_evidence", "open_waiting_evidence"),
+    for status, proof_kind, origin_kind, verdict, closure in [
+        (
+            "failed",
+            "reviewed_candidate_regression",
+            "repository_audit",
+            "rejected",
+            "closed_rejected",
+        ),
+        (
+            "inconclusive",
+            "reviewed_candidate_verification_inconclusive",
+            "verification_gap",
+            "need_more_evidence",
+            "open_waiting_evidence",
+        ),
     ]:
         case = _case("context-resolver-projection")
-        decision = case["episodes"][0]["reviewed_decision"]
+        episode = case["episodes"][0]
+        candidate = episode["candidate_refs"][0]
+        candidate_id = f"reviewed-{status}-candidate"
+        candidate["candidate_id"] = candidate_id
+        candidate["commit_sha"] = "1" * 40
+        candidate["tree_sha"] = "2" * 40
+        evidence = case["evidence_refs"][0]
+        evidence["proof_kind"] = proof_kind
+        evidence["origin_kind"] = origin_kind
+        evidence["subject_candidate_id"] = candidate_id
+        evidence["commit_sha"] = candidate["commit_sha"]
+        evidence["tree_sha"] = candidate["tree_sha"]
+        evidence["locator"] = \
+            f"synthetic reviewed {status} candidate fixture"
+        evidence["reviewed_summary"] = (
+            "A bounded synthetic contract fixture records a reviewed "
+            f"{status} candidate verification status."
+        )
+        evidence["claim_scope"] = \
+            "contract validation for a reviewed nonpassing candidate record"
+        decision = episode["reviewed_decision"]
+        decision["reviewed_candidate_verification_status"] = status
+        decision["reviewed_verification_evidence_ids"] = ["context-red"]
         decision["candidate_verdict"] = verdict
         decision["loop_closure_status"] = closure
         decision["reason_codes"] = [f"reviewed_{verdict}"]
@@ -1654,6 +2014,32 @@ def test_existing_kind_new_case_requires_no_core_schema_change() -> None:
     case["episodes"][0]["candidate_refs"][0]["candidate_id"] = \
         "future-candidate"
     assert validate_case(case).case_id == "future-context-case"
+
+def test_candidate_owned_evidence_requires_exact_subject_candidate() -> None:
+    case = _case("strict-citation-consumer")
+    evidence = case["evidence_refs"][2]
+    evidence["subject_candidate_id"] = "missing-candidate"
+    with pytest.raises(
+        LoopContractError, match="loop_evidence_ref_invalid"
+    ):
+        validate_case(case)
+
+def test_precandidate_evidence_rejects_candidate_subject() -> None:
+    case = _case("context-resolver-projection")
+    case["evidence_refs"][0]["subject_candidate_id"] = \
+        "context-projection-pr-123"
+    with pytest.raises(
+        LoopContractError, match="loop_evidence_ref_invalid"
+    ):
+        validate_case(case)
+
+def test_origin_and_proof_kind_matrix_is_closed() -> None:
+    case = _case("strict-citation-consumer")
+    case["evidence_refs"][2]["origin_kind"] = "repository_audit"
+    with pytest.raises(
+        LoopContractError, match="loop_evidence_ref_invalid"
+    ):
+        validate_case(case)
 
 @pytest.mark.parametrize(
     ("field_path", "value", "code"),
@@ -1821,21 +2207,42 @@ stable code. In `EvolutionCase` validation:
 
 1. require unique evidence/episode/candidate IDs;
 2. require immediate predecessor lineage;
-3. require every input evidence ID to resolve;
+3. require every input evidence ID to resolve; enforce the closed
+   origin/proof-kind and subject-required matrices; require every non-null
+   evidence `subject_candidate_id` to resolve exactly once in the same case;
 4. require all four carrier assessments in canonical order;
 5. require exactly one selected supported carrier and candidate for change;
 6. require no selected carrier/candidate for no-change;
 7. bind action carrier/surface to candidate carrier/surface;
 8. require accepted candidates to consume at least one
-   `reviewed_historical_red`;
-9. enforce diagnosis/verdict/consumer/closure/release combinations;
-10. validate `rollback_recommended` only on a later no-change episode whose
-    `consumer_proof_status` is `rejected`, whose closure is
-    `closed_rejected`, whose immediate lineage contains an earlier accepted
-    change candidate, and whose immutable `rollback_target` equals that
+   `reviewed_historical_red` and have
+   `reviewed_candidate_verification_status=passed`;
+9. require change-action `failed` to end in `rejected` or
+   `need_more_evidence` with release `hold`, change-action `inconclusive` to
+   end in `need_more_evidence` with release `hold`, and accepted change to use
+   `passed`; both non-passing statuses require non-empty evidence IDs resolving
+   to current episode inputs and binding the exact current candidate through
+   `subject_candidate_id`; require `failed` proof kinds to come from
+   `REVIEWED_VERIFICATION_PROOF_KINDS_BY_STATUS["failed"]` and
+   `inconclusive` proof kinds from the corresponding `inconclusive` set;
+   `passed` requires an empty list; require every no-change action to use
+   `not_applicable` and an empty list;
+10. enforce diagnosis/verdict/consumer/closure/release combinations;
+11. validate `rollback_recommended` only on a later no-change episode with
+    `closed_rejected`, an earlier accepted change candidate, a non-null typed
+    basis, non-empty `rollback_evidence_ids`, an exact
+    `rollback_subject_candidate_id`, and a `rollback_target` equal to that
     candidate's `predecessor_or_rollback_ref`;
-11. run `validate_public_projection` over the canonical model dump;
-12. reject symlink/oversized/non-regular case inputs and require input file
+12. require every rollback evidence ID to be an input newly introduced by the
+    current episode, not consumed by any earlier episode, and bound through
+    `subject_candidate_id` to the rollback subject; require
+    `reviewed_candidate_regression` for `regression`,
+    `reviewed_candidate_safety_failure` for `safety`, and
+    `independent_consumer_rejection` plus consumer status `rejected` for
+    `consumer_rejection`; all non-rollback decisions use null basis, empty
+    evidence IDs, and null subject;
+13. run `validate_public_projection` over the canonical model dump;
+14. reject symlink/oversized/non-regular case inputs and require input file
     bytes to be canonical.
 
 Create the three case files exactly from the locked matrix.
@@ -1848,7 +2255,8 @@ PYTHON_DOTENV_DISABLED=1 "$PWD/.venv/bin/python" -m pytest -q \
 ```
 
 Expected: PASS, including valid rejected and need-more-evidence structural
-records and the multiple-carrier/candidate negative control.
+records with exact candidate-bound typed evidence, plus the
+multiple-carrier/candidate negative control.
 
 - [ ] **Step 5: Commit Task 2**
 
@@ -1896,6 +2304,13 @@ def test_profile_registry_owns_exact_commands_timeout_and_coverage() -> None:
         == EVALUATION_ARGV
     assert PROFILE_REGISTRY[("strict-citation-consumer", "1")].argv \
         == STRICT_ARGV
+    assert [
+        profile.episode_bindings for profile in PROFILE_REGISTRY.values()
+    ] == [
+        CONTEXT_EPISODE_BINDINGS,
+        EVALUATION_EPISODE_BINDINGS,
+        STRICT_EPISODE_BINDINGS,
+    ]
     assert [
         profile.timeout_seconds for profile in PROFILE_REGISTRY.values()
     ] == [120, 300, 180]
@@ -2042,14 +2457,16 @@ Expected: FAIL because the profile module does not exist.
 
 - [ ] **Step 3: Implement the fixed registry and fail-closed runner**
 
-Create frozen dataclasses and Pydantic result model from the locked interface.
-Build the subprocess environment only from fixed values and allowlisted
-platform keys. Pass the immutable tuple directly; never parse shell text.
-Map unknown references to `loop_verification_profile_invalid` and every
-execution failure to `loop_verification_failed`. Return only the bounded
-identity/coverage result on zero exit. Implement `run_required_profiles` by
-iterating `registry.verification_profiles`, not episode references, so the
-strict profile shared by two episodes runs once.
+Create frozen dataclasses and Pydantic result model from the locked interface,
+including exact code-owned episode-binding tuples. Build the subprocess
+environment only from fixed values and allowlisted platform keys. Pass the
+immutable tuple directly; never parse shell text. Map unknown references to
+`loop_verification_profile_invalid` and every execution failure to
+`loop_verification_failed`. Return only the bounded identity/coverage result
+on zero exit. Implement `run_required_profiles` by iterating
+`registry.verification_profiles`, not episode references, so the strict
+profile shared by two episodes runs once. Profile execution stays independent
+of reviewed candidate-time status.
 
 - [ ] **Step 4: Run Task 3 tests and each real profile**
 
@@ -2144,6 +2561,31 @@ def test_report_keeps_record_candidate_and_closure_axes_separate(
         "release_disposition": "hold",
     }
     assert "loop_outcome" not in json.dumps(deterministic_report)
+
+@pytest.mark.parametrize(
+    ("dispositions", "expected"),
+    [
+        (
+            [
+                "eligible_for_separate_release_review",
+                "eligible_for_separate_release_review",
+            ],
+            "eligible_for_separate_release_review",
+        ),
+        (
+            ["eligible_for_separate_release_review", "hold"],
+            "hold",
+        ),
+        (
+            ["hold", "rollback_recommended"],
+            "rollback_recommended",
+        ),
+    ],
+)
+def test_report_release_disposition_uses_conservative_priority(
+    dispositions, expected
+) -> None:
+    assert gate._derive_release_disposition(dispositions) == expected
 
 def test_report_binds_registry_case_hashes_and_profile_results(
     deterministic_report
@@ -2247,6 +2689,33 @@ def test_unknown_verification_profile_fails_closed_before_execution(
         )
     assert calls == []
 
+def test_swapping_two_known_episode_profiles_fails_before_execution(
+    monkeypatch,
+) -> None:
+    values = [
+        _case("context-resolver-projection"),
+        _case("evaluation-sensitivity"),
+        _case("strict-citation-consumer"),
+    ]
+    first = values[0]["episodes"][0]["verification_profile_ref"]
+    second = values[1]["episodes"][0]["verification_profile_ref"]
+    values[0]["episodes"][0]["verification_profile_ref"] = second
+    values[1]["episodes"][0]["verification_profile_ref"] = first
+    calls = []
+    monkeypatch.setattr(
+        profiles,
+        "run_verification_profile",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    with pytest.raises(
+        LoopContractError, match="loop_verification_profile_invalid"
+    ):
+        validate_kernel_inputs(
+            load_registry(),
+            tuple(validate_case(value) for value in values),
+        )
+    assert calls == []
+
 def test_registry_case_count_order_and_path_identity_are_exact() -> None:
     registry = load_registry()
     cases = tuple(
@@ -2298,7 +2767,69 @@ def test_registered_case_symlink_fails_before_case_parse(
             project_root=tmp_path,
         )
 
-def test_failed_profile_cannot_build_an_accepted_report(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "verdict", ["accepted", "rejected", "need_more_evidence"]
+)
+def test_failed_current_profile_invalidates_every_report(
+    monkeypatch, verdict
+) -> None:
+    cases = [
+        _case("context-resolver-projection"),
+        _case("evaluation-sensitivity"),
+        _case("strict-citation-consumer"),
+    ]
+    decision = cases[0]["episodes"][0]["reviewed_decision"]
+    decision["candidate_verdict"] = verdict
+    if verdict == "rejected":
+        candidate = cases[0]["episodes"][0]["candidate_refs"][0]
+        candidate["candidate_id"] = "reviewed-failed-candidate"
+        candidate["commit_sha"] = "1" * 40
+        candidate["tree_sha"] = "2" * 40
+        evidence = cases[0]["evidence_refs"][0]
+        evidence["proof_kind"] = "reviewed_candidate_regression"
+        evidence["subject_candidate_id"] = candidate["candidate_id"]
+        evidence["commit_sha"] = candidate["commit_sha"]
+        evidence["tree_sha"] = candidate["tree_sha"]
+        evidence["locator"] = "synthetic reviewed failed candidate fixture"
+        evidence["reviewed_summary"] = (
+            "A bounded synthetic contract fixture records a reviewed "
+            "failed candidate verification status."
+        )
+        evidence["claim_scope"] = \
+            "contract validation for a reviewed failed candidate record"
+        decision["reviewed_candidate_verification_status"] = "failed"
+        decision["reviewed_verification_evidence_ids"] = ["context-red"]
+        decision["loop_closure_status"] = "closed_rejected"
+    elif verdict == "need_more_evidence":
+        candidate = cases[0]["episodes"][0]["candidate_refs"][0]
+        candidate["candidate_id"] = "reviewed-inconclusive-candidate"
+        candidate["commit_sha"] = "1" * 40
+        candidate["tree_sha"] = "2" * 40
+        evidence = cases[0]["evidence_refs"][0]
+        evidence["proof_kind"] = \
+            "reviewed_candidate_verification_inconclusive"
+        evidence["origin_kind"] = "verification_gap"
+        evidence["subject_candidate_id"] = candidate["candidate_id"]
+        evidence["commit_sha"] = candidate["commit_sha"]
+        evidence["tree_sha"] = candidate["tree_sha"]
+        evidence["locator"] = \
+            "synthetic reviewed inconclusive candidate fixture"
+        evidence["reviewed_summary"] = (
+            "A bounded synthetic contract fixture records a reviewed "
+            "inconclusive candidate verification status."
+        )
+        evidence["claim_scope"] = (
+            "contract validation for a reviewed inconclusive "
+            "candidate record"
+        )
+        decision["reviewed_candidate_verification_status"] = "inconclusive"
+        decision["reviewed_verification_evidence_ids"] = ["context-red"]
+        decision["loop_closure_status"] = "open_waiting_evidence"
+    registry = load_registry()
+    validated_cases = tuple(validate_case(value) for value in cases)
+    monkeypatch.setattr(
+        gate, "_load_kernel_inputs", lambda: (registry, validated_cases)
+    )
     def fail_profiles(*args, **kwargs):
         raise LoopProfileError("loop_verification_failed")
     monkeypatch.setattr(gate, "run_required_profiles", fail_profiles)
@@ -2655,6 +3186,25 @@ def validate_kernel_inputs(
         or any(identity not in PROFILE_REGISTRY for identity in declared)
     ):
         raise LoopContractError("loop_verification_profile_invalid")
+    expected_bindings = [
+        (case_id, episode_id, *profile_identity)
+        for profile_identity in declared
+        for case_id, episode_id in (
+            PROFILE_REGISTRY[profile_identity].episode_bindings
+        )
+    ]
+    actual_bindings = [
+        (
+            case.case_id,
+            episode.episode_id,
+            episode.verification_profile_ref.profile_id,
+            episode.verification_profile_ref.profile_version,
+        )
+        for case in cases
+        for episode in case.episodes
+    ]
+    if actual_bindings != expected_bindings:
+        raise LoopContractError("loop_verification_profile_invalid")
 ```
 
 Use these report model fields; no report field is optional:
@@ -2698,9 +3248,18 @@ class LoopReport(_StrictModel):
     non_claims: list[str] = Field(min_length=3, max_length=16)
 ```
 
-Build the report only after every declared fixed profile passes. Derive all
-summary counts from canonical episode decisions; do not copy a summary from a
-manifest. `validate_report` must revalidate the embedded registry and cases,
+Implement `_derive_release_disposition` as a closed pure function over a
+non-empty sequence of episode dispositions. Reject unknown values; return
+`rollback_recommended` if present, otherwise `hold` if present, otherwise
+require every value to be `eligible_for_separate_release_review`. Never copy
+the report-level value from manifest bytes.
+
+Build the report only after every declared current fixed profile passes.
+Reviewed candidate-time `failed` or `inconclusive` status can remain coherent
+only through its constrained rejected/need-more decision; it never weakens the
+current execution gate. Derive all summary counts from canonical episode
+decisions; do not copy a summary from a manifest. `validate_report` must
+revalidate the embedded registry and cases,
 recompute every SHA-256, require verification results to match the declared
 profile order and coverage, recompute the dimensional summary, and compare
 limits/non-claims with the registry. Revalidate the complete public projection
@@ -2825,19 +3384,6 @@ git commit -m "feat(loop): add deterministic evidence gate"
 Add:
 
 ```python
-def _provider_free_test_env() -> dict[str, str]:
-    result = {
-        "PYTHON_DOTENV_DISABLED": "1",
-        "LANGCHAIN_TRACING_V2": "false",
-        "PYTHONHASHSEED": "0",
-    }
-    for name in (
-        "PATH", "TMPDIR", "TEMP", "TMP", "SYSTEMROOT", "WINDIR"
-    ):
-        if name in os.environ:
-            result[name] = os.environ[name]
-    return result
-
 def test_strict_case_preserves_change_then_no_change_lineage() -> None:
     case = load_case_file(
         CASES_ROOT / "strict-citation-consumer.json"
@@ -2943,21 +3489,13 @@ def test_historical_red_and_executable_profiles_are_distinct(
     assert "historical RED was re-executed" not in \
         json.dumps(deterministic_report)
 
-def test_committed_json_and_markdown_match_fresh_build() -> None:
-    completed = subprocess.run(
-        [sys.executable, "scripts/evidence_gated_loop_gate.py", "check"],
-        cwd=PROJECT_ROOT,
-        env=_provider_free_test_env(),
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=660,
-    )
-    assert completed.returncode == 0
-    assert completed.stdout == (
-        '{"match":true,"record_status":"valid","status":"valid"}\n'
-    )
-    assert completed.stderr == ""
+def test_committed_json_and_markdown_match_fresh_validated_build(
+    deterministic_report,
+) -> None:
+    assert serialize_report(deterministic_report) \
+        == BASELINE_JSON_PATH.read_bytes()
+    assert render_markdown(deterministic_report).encode("utf-8") \
+        == BASELINE_MARKDOWN_PATH.read_bytes()
 
 def test_two_builds_are_byte_identical(
     deterministic_report,
@@ -3066,13 +3604,19 @@ def test_evidence_gated_loop_reference_locks_commands_and_nonclaims() -> None:
         "python scripts/evidence_gated_loop_gate.py check",
         "historical RED",
         "fixed verification profile",
+        "reviewed_candidate_verification_status",
+        "code-owned case and episode binding",
         "record_status",
         "candidate_verdict",
         "closure_status",
         "release `hold`",
         "recommendation-only rollback",
+        "rollback_basis",
+        "rollback_evidence_ids",
+        "rollback_subject_candidate_id",
         "No runtime self-modification",
         "No live-provider strict success",
+        "Current fixed profiles verify retained repository state",
     ):
         assert phrase in text
 
@@ -3175,7 +3719,12 @@ Non-Claims
 ```
 
 Use the exact CLI, schema values, carrier enum, three decision axes, and hard
-stops from this plan.
+stops from this plan. Explain the temporal split between reviewed
+candidate-time verification status and current pass-only profile execution, the
+code-owned case/episode binding, and typed rollback evidence. State explicitly
+that the kernel neither checks out arbitrary historical candidates nor infers
+a human verdict from a failed current profile. Document the exact rollback
+basis-to-proof-kind matrix and the evidence-to-subject-candidate binding.
 
 - [ ] **Step 4: Update architecture and indexes**
 
@@ -3240,6 +3789,11 @@ def test_readmes_publish_equivalent_bounded_loop_kernel_claim() -> None:
         assert "no-change" in text or "不修改" in text
         assert "release" in text or "发布" in text
         assert "rollback" in text or "回滚" in text
+        assert "reviewed verification" in text or "已审查验证" in text
+        assert (
+            "do not check out arbitrary historical candidates" in text
+            or "不 checkout 任意历史候选" in text
+        )
         assert "v0.1.6" in text
 
 def test_ci_runs_loop_after_v2_and_before_remaining_proofs() -> None:
@@ -3248,6 +3802,7 @@ def test_ci_runs_loop_after_v2_and_before_remaining_proofs() -> None:
     loop = "python scripts/evidence_gated_loop_gate.py check"
     next_gate = "python scripts/run_creation_idempotency_proof.py check"
     assert text.index(v2) < text.index(loop) < text.index(next_gate)
+    assert text.count(loop) == 1
     assert "PYTHON_DOTENV_DISABLED: '1'" in text
 
 def test_unreleased_changelog_does_not_claim_release_or_runtime_evolution() -> None:
@@ -3320,8 +3875,10 @@ English:
 Evidence-Gated Loop Kernel v1 preserves three reviewed failure and verification
 lineages, executes fixed provider-free retained and safety profiles, keeps
 online application state separate from offline change decisions, and records
-accept, reject, need-more-evidence, no-change, release hold, and rollback
-recommendation explicitly. Its public schemas are
+reviewed verification status, accept, reject, need-more-evidence, no-change,
+release hold, and evidence-bound rollback recommendation explicitly. Current
+fixed profiles verify retained repository state; they do not check out
+arbitrary historical candidates or infer human verdicts. Its public schemas are
 `dra.evidence-gated-loop-registry.v1`, `dra.evolution-case.v1`, and
 `dra.evidence-gated-loop-report.v1`.
 
@@ -3343,8 +3900,10 @@ Chinese:
 
 Evidence-Gated Loop Kernel v1 固化了三个已审查的失败或验证谱系，以固定、
 provider-free 的保留集与安全检查复核候选，并把在线应用状态与离线变更决策分开。
-它显式记录接受、拒绝、需要更多证据、不修改、发布保持 hold 与回滚建议。公开
-schema 为 `dra.evidence-gated-loop-registry.v1`、`dra.evolution-case.v1` 和
+它显式记录已审查验证状态、接受、拒绝、需要更多证据、不修改、发布保持 hold 与
+有证据绑定的回滚建议。当前固定 profile 复核仓库保留状态，不 checkout 任意历史
+候选，也不从当前 profile 失败自动推断人工 verdict。公开 schema 为
+`dra.evidence-gated-loop-registry.v1`、`dra.evolution-case.v1` 和
 `dra.evidence-gated-loop-report.v1`。
 
 ```bash
@@ -3365,9 +3924,10 @@ At the top of `[Unreleased]`, add:
 
 - Added a provider-free offline verification kernel for three reviewed DRA
   failure and verification lineages, with fixed retained/safety profiles,
-  immutable candidate and consumer identities, explicit accept/reject/
-  no-change decisions; release remains on hold. This is not runtime
-  self-modification, live-provider success, or a v0.1.7 release.
+  immutable candidate and consumer identities, explicit reviewed verification,
+  accept/reject/no-change decisions, and evidence-bound rollback semantics;
+  release remains on hold. This is not runtime self-modification,
+  historical-candidate execution, live-provider success, or a v0.1.7 release.
 ```
 
 Insert exactly this CI step after Evaluation Sensitivity v2 and before the
@@ -3379,6 +3939,16 @@ idempotency proof:
           PYTHON_DOTENV_DISABLED: '1'
         run: python scripts/evidence_gated_loop_gate.py check
 ```
+
+This is the only real kernel execution inside the hosted workflow. The default
+pytest suite validates artifact coherence with fixed validated profile results
+and must not shell out to the kernel. Keep the existing standalone Evaluation
+Sensitivity v2 step: public
+[run 30213660424](https://github.com/iTao-AI/decision-research-agent/actions/runs/30213660424)
+completed that step in one second, while the backend job completed in about
+five minutes under its existing 15-minute limit. The residual v2 re-execution
+inside the one kernel step is a bounded compatibility cost; do not add a
+skip/reuse flag that could weaken the profile authority.
 
 - [ ] **Step 4: Run focused docs/CI and kernel verification**
 

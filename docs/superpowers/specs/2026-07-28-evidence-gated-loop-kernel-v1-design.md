@@ -162,6 +162,7 @@ Each evidence reference contains:
 
 ```text
 evidence_id
+subject_candidate_id
 origin_kind
 repository
 commit_sha
@@ -187,9 +188,36 @@ Allowed `proof_kind` values in v1 are:
 reviewed_historical_red
 reviewed_verification_gap
 independent_consumer_contract
+reviewed_candidate_regression
+reviewed_candidate_safety_failure
+reviewed_candidate_verification_inconclusive
+independent_consumer_rejection
 ```
 
-These values distinguish reviewed pre-candidate provenance, an evaluation-system gap, and consumer-owned provider-free proof. They do not claim that external history is re-executed by DRA CI.
+These values distinguish reviewed pre-candidate provenance, an
+evaluation-system gap, consumer-owned provider-free acceptance proof, and the
+three typed rollback evidence classes. They do not claim that external
+history is re-executed by DRA CI.
+
+`subject_candidate_id` is `null` for pre-candidate provenance. Candidate
+verification outcomes, candidate-owned consumer proof, and all rollback
+evidence bind it to an exact candidate in the same case. The candidate record
+then closes repository, commit, tree, optional profile tuple, and predecessor
+or rollback target.
+
+The code-owned origin/proof matrix is closed:
+
+- `reviewed_historical_red` uses `repository_audit` or
+  `downstream_consumer`;
+- `reviewed_verification_gap` uses `verification_gap`;
+- `reviewed_candidate_regression` and
+  `reviewed_candidate_safety_failure` use `repository_audit` or
+  `verification_gap`;
+- `reviewed_candidate_verification_inconclusive` uses
+  `verification_gap`;
+- both consumer proof kinds use `downstream_consumer`.
+
+Other combinations fail closed.
 
 `reviewed_summary` is a bounded public-safe projection, not raw source material. `public_safe` must be the literal `true`.
 
@@ -327,13 +355,40 @@ repository + commit
 Reviewed decision contains independent axes:
 
 ```text
+reviewed_candidate_verification_status
+reviewed_verification_evidence_ids
 candidate_verdict
 consumer_proof_status
 loop_closure_status
 release_disposition
+rollback_basis
+rollback_evidence_ids
+rollback_subject_candidate_id
 rollback_target
 reason_codes
 ```
+
+Allowed reviewed verification statuses are:
+
+```text
+passed
+failed
+inconclusive
+not_applicable
+```
+
+This is the human-reviewed outcome for a change episode's candidate under its
+referenced profile at decision time. It is not the result of the kernel's
+current subprocess execution. The report keeps that reviewed temporal fact
+separate from the current code-owned profile result. A `failed` or
+`inconclusive` status requires one or more
+`reviewed_verification_evidence_ids` resolving to the current episode's
+inputs and binding the exact current candidate. `failed` accepts only
+`reviewed_candidate_regression` or
+`reviewed_candidate_safety_failure`; `inconclusive` accepts only
+`reviewed_candidate_verification_inconclusive`. `passed` uses an empty list
+because current code-owned execution supplies the retained-state proof. A
+no-change episode must use `not_applicable` and an empty list.
 
 Allowed candidate verdicts are:
 
@@ -370,6 +425,19 @@ hold
 eligible_for_separate_release_review
 rollback_recommended
 ```
+
+`rollback_basis` is `null` unless release disposition is
+`rollback_recommended`. Its non-null values are `regression`, `safety`, and
+`consumer_rejection`. `rollback_evidence_ids` is empty unless rollback is
+recommended. `rollback_subject_candidate_id` is `null` unless rollback is
+recommended; when non-null it resolves to the exact earlier accepted candidate
+whose immutable identity and predecessor or pin are under review.
+
+The report-level release disposition is derived conservatively in this exact
+priority order: any `rollback_recommended` episode yields
+`rollback_recommended`; otherwise any `hold` episode yields `hold`; only a
+record in which every episode is `eligible_for_separate_release_review` yields
+that value. Manifests cannot supply the aggregate.
 
 No value means that a release, rollback, or deployment happened.
 
@@ -457,15 +525,21 @@ release            = hold
 
 PR #75 does not prove live-provider strict success. Strict live acceptance remains unobserved and is not required for this provider-free kernel record.
 
+The `strict-consumer-pr-75` evidence binds
+`subject_candidate_id = strict-citation-pr-129`; the two pre-candidate live
+failure references keep `subject_candidate_id = null`.
+
 ### 8.4 Privacy-safe observation boundary
 
 Privacy-safe observation PR #127 is not a fourth evolution-success case. It defines the closed, lossy, non-authoritative online evidence boundary that the kernel must preserve. Raw observation data is not imported into case manifests.
 
 ## 9. Verification state machine
 
-The kernel preserves three separate axes:
+The kernel preserves a reviewed verification fact and three separate outcome
+axes:
 
 ```text
+reviewed_candidate_verification_status = passed | failed | inconclusive | not_applicable
 record_status      = valid | invalid
 candidate_verdict  = accepted | rejected | need_more_evidence | not_applicable
 closure_status     = closed_accepted | closed_rejected | closed_no_change | open_waiting_evidence | open_waiting_consumer
@@ -482,7 +556,8 @@ evidence registered
 -> change selected
 -> candidate identity closed
 -> historical RED present
--> fixed verification profile passes
+-> reviewed candidate verification status recorded
+-> current fixed verification profile passes
 -> reviewed candidate verdict
 -> consumer proof when required
 -> hold, separate release review, or rollback recommendation
@@ -494,16 +569,28 @@ An accepted candidate requires:
 2. exactly one selected supported carrier;
 3. exactly one candidate identity bound to that carrier;
 4. reviewed historical RED provenance;
-5. executable fail-to-pass regression;
-6. pass-to-pass retained checks;
-7. safety and compatibility checks;
-8. provider-free execution;
-9. required consumer proof or explicit `open_waiting_consumer` with release `hold`;
-10. a human-reviewed verdict.
+5. reviewed candidate verification status `passed`;
+6. executable fail-to-pass regression;
+7. pass-to-pass retained checks;
+8. safety and compatibility checks;
+9. provider-free execution;
+10. required consumer proof or explicit `open_waiting_consumer` with release `hold`;
+11. a human-reviewed verdict.
 
 ### 9.2 Reject and need-more-evidence paths
 
-A failed verification profile cannot produce `accepted`. It must produce `rejected` or `need_more_evidence` with release `hold`.
+An episode whose reviewed candidate verification status is `failed` cannot produce
+`accepted`. It must produce `rejected` or `need_more_evidence` with release
+`hold`. An `inconclusive` reviewed status must produce
+`need_more_evidence` with release `hold`. A change episode cannot use
+`not_applicable`.
+
+Current fixed-profile execution is a separate freshness and safety gate. A
+nonzero exit, signal, timeout, missing executable, or OS error makes the report
+invalid with `loop_verification_failed`; the kernel never converts an
+execution or infrastructure failure into a green rejected record. Structurally
+valid `rejected` and `need_more_evidence` episodes therefore still require all
+current fixed profiles to pass.
 
 A candidate may also be rejected after passing tests when reviewed cost, compatibility, authority, or scope evidence is unacceptable. The reason code must identify that boundary.
 
@@ -515,6 +602,7 @@ A no-change episode requires:
 - no candidate;
 - an explicit evidence-backed reason;
 - applicable retained and safety checks;
+- reviewed candidate verification `not_applicable` with no verification evidence IDs;
 - candidate verdict `not_applicable`;
 - closure `closed_no_change` or `open_waiting_evidence`;
 - release `hold` unless an existing immutable subject separately qualifies for release review.
@@ -530,7 +618,11 @@ A provider-free consumer proof can close a provider-free contract requirement wh
 Rollback is recommendation-only. It requires:
 
 - a previously accepted candidate;
-- new regression, safety, or consumer-rejection evidence;
+- a typed basis of `regression`, `safety`, or `consumer_rejection`;
+- one or more explicit `rollback_evidence_ids` that are inputs to the new episode and were not consumed by any earlier episode in the lineage;
+- exact `rollback_subject_candidate_id` resolution to that earlier accepted candidate;
+- evidence whose `subject_candidate_id` equals the rollback subject;
+- code-owned basis compatibility: `reviewed_candidate_regression` for regression, `reviewed_candidate_safety_failure` for safety, and `independent_consumer_rejection` plus consumer status `rejected` for consumer rejection;
 - an immutable prior candidate or consumer pin;
 - human review;
 - release disposition `rollback_recommended`.
@@ -547,6 +639,13 @@ verification_profile_version
 ```
 
 The code-owned profile registry contains the exact immutable argument vectors, environment, timeout, expected exit behavior, and stable diagnostic code. It rejects unknown profiles and cannot be extended by manifest data.
+
+The same code-owned registry also binds every canonical
+`case_id + episode_id` pair to its exact profile identity. Set equality is not
+enough: replacing a reference with another known profile, or swapping two
+known references, fails before subprocess execution. Adding a reviewed case of
+an existing kind requires an explicit binding review but does not require a
+core schema change.
 
 ### 10.1 `context-resolver-coherence@1`
 
@@ -672,7 +771,7 @@ Because this is an offline verification authority, implementation requires:
 5. equivalent English and Chinese README command, claim, and boundary text;
 6. an `[Unreleased]` changelog entry that does not imply a release.
 
-CI adds one provider-free kernel `check` step after the existing Evaluation Sensitivity v2 check and before the remaining deterministic proofs and full pytest suite.
+CI adds one real provider-free kernel `check` step after the existing Evaluation Sensitivity v2 check and before the remaining deterministic proofs and full pytest suite. Default pytest artifact-coherence tests use fixed validated profile results and must not launch a nested real kernel check; the final command matrix likewise runs the real kernel once.
 
 ## 14. TDD and negative controls
 
@@ -682,6 +781,7 @@ Implementation starts RED-first. Tests must reject at least:
 - duplicate case, evidence, episode, candidate, or profile IDs;
 - missing or non-immediate episode predecessors;
 - dangling evidence references;
+- candidate-owned evidence with a missing or mismatched `subject_candidate_id`;
 - malformed commit or tree SHA;
 - a change action without a selected carrier or candidate;
 - a change action with multiple selected carriers or candidates;
@@ -689,10 +789,17 @@ Implementation starts RED-first. Tests must reject at least:
 - selected `model_parameters` in v1;
 - candidate carrier and action carrier mismatch;
 - accepted verdict with inconclusive diagnosis;
+- accepted verdict with failed or inconclusive reviewed candidate verification;
+- failed or inconclusive reviewed candidate verification without explicit input evidence IDs;
+- failed or inconclusive reviewed candidate verification whose proof kind or
+  `subject_candidate_id` does not match the status and exact current candidate;
+- a change action with `not_applicable` candidate verification or a no-change action with any other value;
 - accepted verdict with missing historical RED;
-- accepted verdict with failed fail-to-pass, retained, or safety checks;
+- any current fixed-profile execution failure, including when the stored verdict is rejected or need-more-evidence;
+- a known profile attached to the wrong case or episode;
 - release eligibility while required consumer proof is pending or rejected;
-- rollback recommendation without an accepted predecessor and immutable target;
+- rollback recommendation without an accepted predecessor, exact subject candidate, typed basis, new matching input evidence, or immutable target;
+- rollback evidence whose subject or proof kind does not match the code-owned basis matrix;
 - manifest-supplied command, selector, import path, environment override, or output path;
 - raw content, prompts, queries, snippets, exceptions, credentials, tokens, host paths, or private markers;
 - oversized reads, deep nesting, excessive collections, non-canonical ordering, or JSON/Markdown drift;
@@ -704,10 +811,15 @@ Tests must also prove:
 - all three reference cases validate in canonical order;
 - strict citation contains two ordered episodes;
 - at least one accepted change and one closed no-change outcome exist;
-- valid rejected and need-more-evidence records remain structurally green in isolated contract tests;
+- valid rejected and need-more-evidence records with failed or inconclusive
+  reviewed candidate verification, status-compatible proof kinds, and exact
+  candidate-bound input evidence remain structurally green in isolated
+  contract tests only when current fixed profiles pass;
 - adding a case of an existing kind does not require a core schema change;
 - adding an unknown evidence or verification kind fails closed;
-- fixed profiles cannot be overridden by manifest bytes;
+- fixed profiles cannot be overridden by manifest bytes or swapped between canonical case/episode bindings;
+- mixed episode release dispositions use the exact conservative report-level priority;
+- default pytest does not launch a nested real kernel check;
 - two builds are byte-identical;
 - the committed JSON and Markdown pair is coherent;
 - existing Evaluation v1/v2 artifacts and downstream fixture remain unchanged.
@@ -746,7 +858,7 @@ Consumer rollback means retaining or restoring a previously approved immutable p
 
 After implementation, authority review, merge, and exact-head hosted CI succeed, the repository may state:
 
-> Decision Research Agent includes a provider-free evidence-gated outer-loop kernel that preserves three reviewed failure and verification lineages, separates online evidence from offline change decisions, validates fixed retained and safety profiles, records immutable producer and independent consumer proof, and treats accept, reject, no-change, release hold, and rollback recommendation as explicit outcomes.
+> Decision Research Agent includes a provider-free evidence-gated outer-loop kernel for offline reviewed decisions and current-state verification. It preserves three reviewed failure and verification lineages, separates online evidence from offline change decisions, validates fixed retained and safety profiles, records immutable producer and independent consumer proof, and treats reviewed accept, reject, no-change, release hold, and rollback recommendation as explicit outcomes.
 
 The statement must retain personal open-source, provider-free, contract-level, and non-production boundaries.
 
@@ -755,6 +867,7 @@ The project must not claim:
 - autonomous or continuous self-improvement;
 - runtime self-modification;
 - automatic trajectory aggregation, root-cause analysis, candidate generation, promotion, release, or rollback;
+- arbitrary historical-candidate checkout or automatic inference of a human verdict from a failed current profile;
 - demonstrated knowledge, Prompt/Skill, or model-parameter evolution;
 - live-provider strict success;
 - production reliability, hosted deployment, SLA, user adoption, or business impact;
@@ -778,10 +891,10 @@ Stop and request architecture review if implementation would require:
 ## 19. Required sequence after spec landing
 
 1. Mechanically land this approved spec only.
-2. Perform Career authority review of the actual spec diff.
+2. Perform designated-authority review of the actual spec diff.
 3. Use `superpowers:writing-plans` to create the implementation plan.
 4. Mechanically land the new plan.
-5. Run Career-owned Max AutoPlan review on the landed plan.
+5. Run designated-authority Max AutoPlan review on the landed plan.
 6. Obtain the implementation approval gate.
 7. Execute RED-first implementation in the project execution window.
 

@@ -88,7 +88,10 @@ def _run(*args: str, inject: str | None = None):
 
 @pytest.fixture(scope="module")
 def report():
-    return _load_module().build_report()
+    completed = _run("check")
+    assert completed.returncode == 0
+    assert completed.stderr == ""
+    return json.loads(completed.stdout)
 
 
 def test_report_has_exact_ordered_cases_boundaries_and_limits(report):
@@ -228,11 +231,45 @@ def test_corrupted_restored_db_uses_old_revision_verify_failure_code():
     assert completed.stderr == STAGE_CODES["rollback_verify"] + "\n"
 
 
-def test_provider_and_tool_guards_are_real_counted_fail_closed_boundaries():
-    guard = _load_module()._ProofBoundaryGuard()
-    with pytest.raises(RuntimeError, match="provider_boundary_reached"):
-        guard.reject_provider()
-    with pytest.raises(RuntimeError, match="tool_boundary_reached"):
-        guard.reject_tool()
-    assert guard.provider_calls == 1
-    assert guard.tool_calls == 1
+def test_provider_and_tool_guards_are_installed_on_real_reachable_boundaries():
+    program = """
+import asyncio
+import agent.main_agent as main_agent
+import api.server as server
+from scripts import run_execution_recovery_proof as proof
+
+guard = proof._ProofBoundaryGuard()
+with proof._installed_boundary_guards(server, guard) as installed:
+    for operation, code in (
+        (lambda: asyncio.run(server.run_deep_agent("must not execute")),
+         "provider_boundary_reached"),
+        (lambda: type(main_agent.model)._generate(None, []),
+         "provider_boundary_reached"),
+        (lambda: installed["tools"][0].invoke({"query": "must not execute"}),
+         "tool_boundary_reached"),
+    ):
+        try:
+            operation()
+        except RuntimeError as exc:
+            assert str(exc) == code
+        else:
+            raise AssertionError(code)
+assert (guard.provider_calls, guard.tool_calls) == (2, 1)
+"""
+    environment = {
+        **os.environ,
+        "PYTHON_DOTENV_DISABLED": "1",
+        "DEEPSEEK_API_KEY": "provider-disabled-local-proof",
+        "LLM_FALLBACK_MODEL": "none",
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert completed.stdout == completed.stderr == ""

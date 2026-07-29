@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from api.run_dispatch_models import RunDispatchConflict
+from api.run_execution_models import RunExecutionConflict
 from api.run_dispatch_repository import (
     claim_run_dispatch,
     dispatch_attempt_is_started,
@@ -898,7 +899,10 @@ def test_claim_fails_closed_for_missing_initial_segment(tmp_path):
     finally:
         connection.close()
 
-    with pytest.raises(RunDispatchConflict, match="run_dispatch_state_invalid"):
+    with pytest.raises(
+        RunExecutionConflict,
+        match="run_execution_recovery_unavailable",
+    ):
         _claim(db_path, run_id=created["run_id"])
 
 

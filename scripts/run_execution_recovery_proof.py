@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -111,11 +112,83 @@ class _ProofBoundaryGuard:
         self.provider_calls += 1
         raise RuntimeError("provider_boundary_reached")
 
+    async def reject_provider_async(self, *args: Any, **kwargs: Any) -> None:
+        self.reject_provider(*args, **kwargs)
+
     def reject_tool(self, *args: Any, **kwargs: Any) -> None:
         del args, kwargs
         self.tool_calls += 1
         raise RuntimeError("tool_boundary_reached")
 
+    async def reject_tool_async(self, *args: Any, **kwargs: Any) -> None:
+        self.reject_tool(*args, **kwargs)
+
+
+@contextmanager
+def _installed_boundary_guards(server: Any, guard: _ProofBoundaryGuard):
+    import agent.research_agents as research_agents
+
+    main_agent_module = sys.modules.get("agent.main_agent")
+    if main_agent_module is None or not hasattr(main_agent_module, "model"):
+        raise RuntimeError("provider_boundary_inventory_unavailable")
+    pending_models = [main_agent_module.model]
+    model_classes: list[type] = []
+    seen_models: set[int] = set()
+    while pending_models:
+        model = pending_models.pop()
+        if id(model) in seen_models:
+            continue
+        seen_models.add(id(model))
+        model_type = type(model)
+        if model_type not in model_classes:
+            model_classes.append(model_type)
+        for attribute in ("primary", "fallback", "wrapped"):
+            nested = getattr(model, attribute, None)
+            if nested is not None:
+                pending_models.append(nested)
+    old_route = server.run_deep_agent
+    model_methods = tuple(
+        (owner, name, replacement)
+        for owner in model_classes
+        for name, replacement in (
+            ("_generate", guard.reject_provider),
+            ("_agenerate", guard.reject_provider_async),
+        )
+        if hasattr(owner, name)
+    )
+    if not model_methods:
+        raise RuntimeError("provider_boundary_inventory_unavailable")
+    old_model_methods = [
+        (owner, name, getattr(owner, name)) for owner, name, _ in model_methods
+    ]
+    tools = [
+        tool
+        for config in research_agents._RESEARCHER_CONFIG.values()
+        for tool in config["tools"]
+    ]
+    old_tool_methods = [
+        (tool, tool.func, tool.coroutine)
+        for tool in tools
+    ]
+    try:
+        server.run_deep_agent = guard.reject_provider_async
+        for owner, name, replacement in model_methods:
+            setattr(owner, name, replacement)
+        for tool in tools:
+            object.__setattr__(tool, "func", guard.reject_tool)
+            object.__setattr__(tool, "coroutine", guard.reject_tool_async)
+        yield {
+            "server": server,
+            "model_classes": tuple(model_classes),
+            "tools": tuple(tools),
+        }
+    finally:
+        server.run_deep_agent = old_route
+        for owner, name, original in old_model_methods:
+            setattr(owner, name, original)
+        for tool, old_func, old_coroutine in old_tool_methods:
+            object.__setattr__(tool, "func", old_func)
+            object.__setattr__(tool, "coroutine", old_coroutine)
 
 def _run_stage(
     name: str,
@@ -500,14 +573,23 @@ def _replacement_case(
     guard: _ProofBoundaryGuard,
 ) -> dict[str, Any]:
     old_provider_key = os.environ.get("OPENAI_API_KEY")
+    old_deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+    old_fallback_model = os.environ.get("LLM_FALLBACK_MODEL")
     os.environ["OPENAI_API_KEY"] = "provider-disabled-local-proof"
+    os.environ["DEEPSEEK_API_KEY"] = "provider-disabled-local-proof"
+    os.environ["LLM_FALLBACK_MODEL"] = "none"
     try:
         import api.server as server
     except Exception:
-        if old_provider_key is None:
-            os.environ.pop("OPENAI_API_KEY", None)
-        else:
-            os.environ["OPENAI_API_KEY"] = old_provider_key
+        for key, value in (
+            ("OPENAI_API_KEY", old_provider_key),
+            ("DEEPSEEK_API_KEY", old_deepseek_key),
+            ("LLM_FALLBACK_MODEL", old_fallback_model),
+        ):
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         raise
 
     db_path = root / "replacement.db"
@@ -520,7 +602,6 @@ def _replacement_case(
     )
     old_output = server.output_dir
     old_factory = server.create_run_dispatch_worker
-    old_run_deep_agent = server.run_deep_agent
     try:
         os.environ["DECISION_RESEARCH_AGENT_DB_PATH"] = str(db_path)
         os.environ["DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL"] = "false"
@@ -529,33 +610,34 @@ def _replacement_case(
         ] = "false"
         server.output_dir = root / "output"
         server.create_run_dispatch_worker = lambda *args, **kwargs: _IdleWorker()
-        server.run_deep_agent = guard.reject_provider
         server.app.state.runtime_access_policy = server.load_runtime_access_policy(
             {"API_SECRET": "proof-local-secret"}
         )
-        with TestClient(server.app) as client:
-            headers = {
-                "X-API-Key": "proof-local-secret",
-                "Idempotency-Key": "proof-recovery-key-0123456789abcdef",
-            }
-            first = client.post(
-                f"/api/runs/{source['run_id']}/retries",
-                content=b"",
-                headers=headers,
-            )
-            replay = client.post(
-                f"/api/runs/{source['run_id']}/retries",
-                content=b"",
-                headers=headers,
-            )
+        with _installed_boundary_guards(server, guard):
+            with TestClient(server.app) as client:
+                headers = {
+                    "X-API-Key": "proof-local-secret",
+                    "Idempotency-Key": "proof-recovery-key-0123456789abcdef",
+                }
+                first = client.post(
+                    f"/api/runs/{source['run_id']}/retries",
+                    content=b"",
+                    headers=headers,
+                )
+                replay = client.post(
+                    f"/api/runs/{source['run_id']}/retries",
+                    content=b"",
+                    headers=headers,
+                )
         one = first.json()
         two = replay.json()
     finally:
         server.output_dir = old_output
         server.create_run_dispatch_worker = old_factory
-        server.run_deep_agent = old_run_deep_agent
         for key, value in (
             ("OPENAI_API_KEY", old_provider_key),
+            ("DEEPSEEK_API_KEY", old_deepseek_key),
+            ("LLM_FALLBACK_MODEL", old_fallback_model),
             ("DECISION_RESEARCH_AGENT_DB_PATH", old_db),
             ("DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL", old_hitl),
             (

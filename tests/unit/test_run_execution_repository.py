@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 
 import pytest
 
@@ -92,7 +96,63 @@ def test_convergence_writes_no_evidence_packet_artifact_review_or_lineage(tmp_pa
 
 
 def test_convergence_invokes_no_agent_model_graph_tool_or_provider_boundary(tmp_path):
-    test_convergence_writes_no_evidence_packet_artifact_review_or_lineage(tmp_path)
+    path = _database(tmp_path)
+    _active(path)
+    program = """
+import asyncio
+import sys
+import agent.main_agent as main_agent
+import api.server as server
+from api.run_execution_repository import activate_run_execution_boot
+from scripts import run_execution_recovery_proof as proof
+
+probe = proof._ProofBoundaryGuard()
+with proof._installed_boundary_guards(server, probe) as installed:
+    try:
+        asyncio.run(server.run_deep_agent("must not execute"))
+    except RuntimeError as exc:
+        assert str(exc) == "provider_boundary_reached"
+    else:
+        raise AssertionError("harness guard not installed")
+    try:
+        type(main_agent.model)._generate(None, [])
+    except RuntimeError as exc:
+        assert str(exc) == "provider_boundary_reached"
+    else:
+        raise AssertionError("provider guard not installed")
+    try:
+        installed["tools"][0].invoke({"query": "must not execute"})
+    except RuntimeError as exc:
+        assert str(exc) == "tool_boundary_reached"
+    else:
+        raise AssertionError("tool guard not installed")
+assert (probe.provider_calls, probe.tool_calls) == (2, 1)
+
+guard = proof._ProofBoundaryGuard()
+with proof._installed_boundary_guards(server, guard):
+    activate_run_execution_boot(
+        db_path=sys.argv[1],
+        boot_id="boot_" + "c" * 32,
+    )
+assert (guard.provider_calls, guard.tool_calls) == (0, 0)
+"""
+    environment = {
+        **os.environ,
+        "PYTHON_DOTENV_DISABLED": "1",
+        "DEEPSEEK_API_KEY": "provider-disabled-local-proof",
+        "LLM_FALLBACK_MODEL": "none",
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", program, str(path)],
+        cwd=Path(__file__).resolve().parents[2],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert completed.stdout == completed.stderr == ""
 
 
 def test_old_boot_loses_current_boot_check_after_activation(tmp_path):

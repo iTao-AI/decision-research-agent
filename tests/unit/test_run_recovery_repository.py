@@ -6,9 +6,19 @@ import threading
 
 import pytest
 
-from api.run_execution_repository import activate_run_execution_boot
+from api.run_dispatch_repository import (
+    claim_run_dispatch,
+    release_run_dispatch_for_retry,
+    start_run_dispatch,
+)
+from api.run_execution_repository import (
+    activate_run_execution_boot,
+    advance_run_execution_phase,
+)
+from api.run_failure_cause_models import RunFailureCauseWrite
 from api.run_recovery_models import RunRecoveryConflict
 from api.run_recovery_repository import create_or_replay_run_recovery
+from api.run_repository import finalize_run_transaction
 from tests.unit.test_run_execution_repository import _active, _database
 
 
@@ -26,6 +36,18 @@ def _recover(path, boot, key="recovery-key-1234"):
         exact_profile_is_available=lambda profile_id, version: (profile_id, version) == ("generic", "1"),
         db_path=str(path),
     )
+
+
+def _claim_replacement(path, boot, run_id, *, worker_hex="d"):
+    claim = claim_run_dispatch(
+        db_path=str(path),
+        worker_id=f"dispatch_worker_{worker_hex * 32}",
+        boot_id=boot,
+        lease_seconds=30,
+        run_id=run_id,
+    )
+    assert claim is not None
+    return claim
 
 
 def test_recovery_creates_run_segment_dispatch_and_lineage_in_one_transaction(tmp_path):
@@ -318,3 +340,264 @@ def test_different_key_bound_source_conflicts_before_profile_eligibility(tmp_pat
             db_path=str(path),
         )
     assert profile_calls == []
+
+
+def test_same_key_replay_rejects_mixed_replacement_lifecycle(tmp_path):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            UPDATE research_runs_v2
+            SET execution_status='failed', review_status='not_required',
+                delivery_status='pending', state_version=1
+            WHERE run_id=?
+            """,
+            (accepted.run_id,),
+        )
+        connection.execute(
+            "UPDATE run_segments SET status='completed' WHERE run_id=?",
+            (accepted.run_id,),
+        )
+        connection.execute(
+            """
+            UPDATE run_dispatches_v1
+            SET status='started', attempt_count=1, started_at=updated_at
+            WHERE run_id=?
+            """,
+            (accepted.run_id,),
+        )
+    with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
+        _recover(path, boot)
+
+
+def test_same_key_replay_accepts_real_production_dispatch_lease(tmp_path):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    _claim_replacement(path, boot, accepted.run_id)
+    replay = _recover(path, boot)
+    assert replay.run_id == accepted.run_id
+    assert replay.segment_id == accepted.segment_id
+    assert replay.idempotent_replay is True
+
+
+@pytest.mark.parametrize(
+    "lifecycle",
+    [
+        "initial_pending",
+        "retry_pending",
+        "leased",
+        "running",
+        "completed",
+        "prestart_failed",
+        "dispatch_failed",
+        "later_boot_interrupted",
+    ],
+)
+def test_same_key_replay_uses_shared_legal_lifecycle_matrix(
+    tmp_path,
+    lifecycle,
+):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    if lifecycle not in {"initial_pending", "prestart_failed"}:
+        claim = _claim_replacement(path, boot, accepted.run_id)
+        if lifecycle == "retry_pending":
+            assert (
+                release_run_dispatch_for_retry(
+                    db_path=str(path),
+                    claim=claim,
+                    error_code="run_dispatch_schedule_failed",
+                )
+                == "retry"
+            )
+        elif lifecycle in {"running", "completed", "later_boot_interrupted"}:
+            owner = start_run_dispatch(db_path=str(path), claim=claim)
+            assert owner is not None
+            if lifecycle == "completed":
+                assert advance_run_execution_phase(
+                    db_path=str(path),
+                    handle=owner,
+                )
+                assert finalize_run_transaction(
+                    run_id=accepted.run_id,
+                    segment_id=accepted.segment_id,
+                    expected_state_version=1,
+                    allowed_previous_statuses={"running"},
+                    execution_status="completed",
+                    delivery_status="ready",
+                    evidence_entries=[],
+                    owner_handle=owner,
+                    db_path=str(path),
+                )
+            elif lifecycle == "later_boot_interrupted":
+                boot = f"boot_{'e' * 32}"
+                result = activate_run_execution_boot(
+                    db_path=str(path),
+                    boot_id=boot,
+                )
+                assert result.interrupted_execution_count == 1
+        elif lifecycle == "dispatch_failed":
+            for attempt in range(1, 4):
+                assert claim.attempt_count == attempt
+                outcome = release_run_dispatch_for_retry(
+                    db_path=str(path),
+                    claim=claim,
+                    error_code="run_dispatch_schedule_failed",
+                )
+                if attempt < 3:
+                    assert outcome == "retry"
+                    claim = _claim_replacement(
+                        path,
+                        boot,
+                        accepted.run_id,
+                        worker_hex=str(attempt),
+                    )
+                else:
+                    assert outcome == "failed"
+    if lifecycle == "prestart_failed":
+        assert finalize_run_transaction(
+            run_id=accepted.run_id,
+            segment_id=accepted.segment_id,
+            expected_state_version=0,
+            allowed_previous_statuses={"pending"},
+            execution_status="failed",
+            delivery_status="failed",
+            evidence_entries=[],
+            failure_cause=RunFailureCauseWrite(
+                phase="execution",
+                code="cancelled",
+            ),
+            db_path=str(path),
+        )
+
+    replay = _recover(path, boot)
+    assert replay.run_id == accepted.run_id
+    assert replay.segment_id == accepted.segment_id
+    assert replay.idempotent_replay is True
+    if lifecycle == "later_boot_interrupted":
+        with pytest.raises(RunRecoveryConflict, match="run_recovery_exhausted"):
+            create_or_replay_run_recovery(
+                source_run_id=accepted.run_id,
+                idempotency_key="recovery-key-second-hop",
+                boot_id=boot,
+                exact_profile_is_available=lambda *_: True,
+                db_path=str(path),
+            )
+
+
+@pytest.mark.parametrize(
+    "mixed_case",
+    [
+        "pending_segment_terminal",
+        "leased_run_started_without_owner",
+        "running_dispatch_released",
+        "closed_terminal_segment_drift",
+        "dispatch_failed_cause_drift",
+        "interrupted_terminal_timestamp_drift",
+    ],
+)
+def test_same_key_replay_rejects_shared_lifecycle_mixed_cross_products(
+    tmp_path,
+    mixed_case,
+):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    claim = None
+    owner = None
+    if mixed_case != "pending_segment_terminal":
+        claim = _claim_replacement(path, boot, accepted.run_id)
+    if mixed_case in {
+        "running_dispatch_released",
+        "closed_terminal_segment_drift",
+        "interrupted_terminal_timestamp_drift",
+    }:
+        owner = start_run_dispatch(db_path=str(path), claim=claim)
+        assert owner is not None
+    if mixed_case == "closed_terminal_segment_drift":
+        assert advance_run_execution_phase(db_path=str(path), handle=owner)
+        assert finalize_run_transaction(
+            run_id=accepted.run_id,
+            segment_id=accepted.segment_id,
+            expected_state_version=1,
+            allowed_previous_statuses={"running"},
+            execution_status="completed",
+            delivery_status="ready",
+            evidence_entries=[],
+            owner_handle=owner,
+            db_path=str(path),
+        )
+    elif mixed_case == "dispatch_failed_cause_drift":
+        for attempt in range(1, 4):
+            assert claim is not None and claim.attempt_count == attempt
+            outcome = release_run_dispatch_for_retry(
+                db_path=str(path),
+                claim=claim,
+                error_code="run_dispatch_schedule_failed",
+            )
+            if attempt < 3:
+                assert outcome == "retry"
+                claim = _claim_replacement(
+                    path,
+                    boot,
+                    accepted.run_id,
+                    worker_hex=str(attempt),
+                )
+            else:
+                assert outcome == "failed"
+    elif mixed_case == "interrupted_terminal_timestamp_drift":
+        boot = f"boot_{'e' * 32}"
+        activate_run_execution_boot(db_path=str(path), boot_id=boot)
+
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA ignore_check_constraints=ON")
+        mutations = {
+            "pending_segment_terminal": (
+                "UPDATE run_segments SET status='completed' WHERE run_id=?",
+                (accepted.run_id,),
+            ),
+            "leased_run_started_without_owner": (
+                """
+                UPDATE research_runs_v2
+                SET execution_status='running', state_version=1
+                WHERE run_id=?
+                """,
+                (accepted.run_id,),
+            ),
+            "running_dispatch_released": (
+                """
+                UPDATE run_dispatches_v1
+                SET status='leased',
+                    lease_owner='dispatch_worker_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    lease_expires_at='2026-07-30T00:00:00+00:00',
+                    started_at=NULL
+                WHERE run_id=?
+                """,
+                (accepted.run_id,),
+            ),
+            "closed_terminal_segment_drift": (
+                "UPDATE run_segments SET status='failed' WHERE run_id=?",
+                (accepted.run_id,),
+            ),
+            "dispatch_failed_cause_drift": (
+                """
+                UPDATE run_failure_causes_v1
+                SET code='run_dispatch_start_timeout'
+                WHERE run_id=?
+                """,
+                (accepted.run_id,),
+            ),
+            "interrupted_terminal_timestamp_drift": (
+                """
+                UPDATE run_execution_owners_v1
+                SET closed_at='2026-07-30T00:00:00+00:00'
+                WHERE run_id=?
+                """,
+                (accepted.run_id,),
+            ),
+        }
+        sql, params = mutations[mixed_case]
+        connection.execute(sql, params)
+
+    with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
+        _recover(path, boot)

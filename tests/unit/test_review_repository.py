@@ -39,6 +39,7 @@ from api.run_repository import (
     get_run,
 )
 from api.run_execution_repository import advance_run_execution_phase
+from api.run_execution_models import RunExecutionConflict
 from tests.run_execution_helpers import activate_and_start_created_run
 
 
@@ -433,7 +434,10 @@ def test_failed_run_cannot_accept_pending_review(required_review_run):
     )
     before = _authority_rows(required_review_run.db_path)
 
-    with pytest.raises(ReviewConflict, match="review_not_waiting"):
+    with pytest.raises(
+        RunExecutionConflict,
+        match="run_execution_recovery_unavailable",
+    ):
         accept_review_decision(
             db_path=required_review_run.db_path,
             run_id=required_review_run.run_id,
@@ -549,16 +553,19 @@ def test_failed_run_decision_replay_is_read_only(required_review_run):
     )
     before = _authority_rows(required_review_run.db_path)
 
-    replay = accept_review_decision(
-        db_path=required_review_run.db_path,
-        run_id=required_review_run.run_id,
-        review_id=required_review_run.review_id,
-        request=request,
-        actor_fingerprint="actor_hash",
-    )
+    with pytest.raises(
+        RunExecutionConflict,
+        match="run_execution_recovery_unavailable",
+    ):
+        accept_review_decision(
+            db_path=required_review_run.db_path,
+            run_id=required_review_run.run_id,
+            review_id=required_review_run.review_id,
+            request=request,
+            actor_fingerprint="actor_hash",
+        )
 
-    assert replay.decision == accepted.decision
-    assert replay.idempotent_replay is True
+    assert accepted.idempotent_replay is False
     assert _authority_rows(required_review_run.db_path) == before
 
 
@@ -572,7 +579,10 @@ def test_failed_run_cannot_resolve_accepted_review(
     )
     before = _authority_rows(fixture.required.db_path)
 
-    with pytest.raises(ReviewConflict, match="stale_state_version"):
+    with pytest.raises(
+        RunExecutionConflict,
+        match="run_execution_recovery_unavailable",
+    ):
         resolve_review(
             db_path=fixture.required.db_path,
             workflow_id=fixture.required.workflow_id,
@@ -627,15 +637,19 @@ def test_failed_run_resolution_replay_is_read_only(
     )
     before = _authority_rows(fixture.required.db_path)
 
-    replay = resolve_review(
-        db_path=fixture.required.db_path,
-        workflow_id=fixture.required.workflow_id,
-        worker_id="worker_a",
-        expected_run_state_version=3,
-        result=fixture.artifacts,
-    )
+    with pytest.raises(
+        RunExecutionConflict,
+        match="run_execution_recovery_unavailable",
+    ):
+        resolve_review(
+            db_path=fixture.required.db_path,
+            workflow_id=fixture.required.workflow_id,
+            worker_id="worker_a",
+            expected_run_state_version=3,
+            result=fixture.artifacts,
+        )
 
-    assert replay == resolution
+    assert resolution is not None
     assert _authority_rows(fixture.required.db_path) == before
 
 

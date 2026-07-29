@@ -10,6 +10,7 @@ from threading import Lock
 from typing import Callable, TypeVar
 
 from api.database import backup_database, restore_database, sqlite_db_path
+from api.run_dispatch_models import MAX_RUN_DISPATCH_ATTEMPTS
 from api.run_execution_models import (
     RUN_EXECUTION_RECOVERY_MIGRATION_CHECKSUM,
     RUN_EXECUTION_RECOVERY_MIGRATION_VERSION,
@@ -153,6 +154,252 @@ def _require(condition: bool) -> None:
         raise RunExecutionConflict("run_execution_recovery_unavailable")
 
 
+def _valid_identifier(value: object, prefix: str) -> bool:
+    return (
+        isinstance(value, str)
+        and re.fullmatch(rf"{re.escape(prefix)}[0-9a-f]{{32}}", value) is not None
+    )
+
+
+def _cause_matches(
+    row: sqlite3.Row,
+    *,
+    terminal_state_version: int,
+    terminal_timestamp: str,
+) -> bool:
+    return (
+        row["observation_status"] == "observed"
+        and row["terminal_state_version"] == terminal_state_version
+        and isinstance(row["cause_phase"], str)
+        and isinstance(row["cause_code"], str)
+        and row["recorded_at"] == terminal_timestamp
+    )
+
+
+def _verify_dispatch_shape(row: sqlite3.Row) -> None:
+    status = row["dispatch_status"]
+    attempt = row["attempt_count"]
+    _require(
+        isinstance(attempt, int)
+        and 0 <= attempt <= MAX_RUN_DISPATCH_ATTEMPTS
+        and _valid_timestamp(row["dispatch_created_at"])
+        and _valid_timestamp(row["dispatch_updated_at"])
+    )
+    if status == "pending":
+        _require(
+            row["lease_owner"] is None
+            and row["lease_expires_at"] is None
+            and row["started_at"] is None
+            and (
+                (
+                    attempt == 0
+                    and row["last_error_code"] is None
+                )
+                or (
+                    1 <= attempt < MAX_RUN_DISPATCH_ATTEMPTS
+                    and isinstance(row["last_error_code"], str)
+                    and bool(row["last_error_code"])
+                )
+            )
+        )
+    elif status == "leased":
+        _require(
+            1 <= attempt <= MAX_RUN_DISPATCH_ATTEMPTS
+            and _valid_identifier(row["lease_owner"], "dispatch_worker_")
+            and _valid_timestamp(row["lease_expires_at"])
+            and row["started_at"] is None
+        )
+    elif status == "started":
+        _require(
+            1 <= attempt <= MAX_RUN_DISPATCH_ATTEMPTS
+            and row["lease_owner"] is None
+            and row["lease_expires_at"] is None
+            and row["last_error_code"] is None
+            and _valid_timestamp(row["started_at"])
+            and row["dispatch_updated_at"] == row["started_at"]
+        )
+    else:
+        _require(
+            status == "failed"
+            and attempt == MAX_RUN_DISPATCH_ATTEMPTS
+            and row["lease_owner"] is None
+            and row["lease_expires_at"] is None
+            and isinstance(row["last_error_code"], str)
+            and bool(row["last_error_code"])
+            and row["started_at"] is None
+        )
+
+
+def _verify_lifecycle_row(
+    row: sqlite3.Row,
+    *,
+    current_boot_id: str | None,
+    lineage_replacement: bool,
+) -> None:
+    _verify_dispatch_shape(row)
+    _require(
+        row["initial_segment_count"] == 1
+        and row["segment_id"] is not None
+        and row["segment_run_id"] == row["run_id"]
+        and row["kind"] == "initial"
+        and row["sequence"] == 0
+        and row["segment_attempt"] == 1
+        and _valid_timestamp(row["run_created_at"])
+        and _valid_timestamp(row["segment_created_at"])
+        and _valid_timestamp(row["run_updated_at"])
+        and _valid_timestamp(row["segment_updated_at"])
+    )
+    owner_status = row["owner_status"]
+    has_cause = row["observation_status"] is not None
+    if owner_status is not None:
+        _require(
+            _valid_timestamp(row["owner_created_at"])
+            and _valid_timestamp(row["owner_phase_updated_at"])
+            and row["owner_phase"] in {"execution", "finalization"}
+        )
+    pending_state = (
+        row["execution_status"] == "pending"
+        and row["review_status"] == "not_required"
+        and row["delivery_status"] == "pending"
+        and row["state_version"] == 0
+        and row["segment_status"] == "pending"
+        and row["run_updated_at"] == row["run_created_at"]
+        and row["segment_updated_at"] == row["segment_created_at"]
+    )
+    if row["dispatch_status"] in {"pending", "leased"}:
+        if pending_state:
+            _require(owner_status is None and not has_cause)
+            return
+        if owner_status is None and not lineage_replacement:
+            return
+        execution_terminal = row["segment_updated_at"]
+        _require(
+            row["execution_status"]
+            in {"completed", "completed_with_fallback", "failed"}
+            and row["state_version"] >= 1
+            and row["segment_status"] == row["execution_status"]
+            and owner_status is None
+            and _valid_timestamp(execution_terminal)
+            and (
+                row["state_version"] > 1
+                or row["run_updated_at"] == execution_terminal
+            )
+        )
+        if row["execution_status"] == "failed":
+            _require(
+                row["state_version"] == 1
+                and _cause_matches(
+                    row,
+                    terminal_state_version=1,
+                    terminal_timestamp=execution_terminal,
+                )
+            )
+        else:
+            _require(not has_cause)
+        return
+
+    if row["dispatch_status"] == "failed":
+        terminal = row["run_updated_at"]
+        _require(
+            row["execution_status"] == "failed"
+            and row["review_status"] == "not_required"
+            and row["delivery_status"] == "failed"
+            and row["state_version"] == 1
+            and row["segment_status"] == "failed"
+            and owner_status is None
+            and row["segment_updated_at"] == terminal
+            and row["dispatch_updated_at"] == terminal
+            and _cause_matches(
+                row,
+                terminal_state_version=1,
+                terminal_timestamp=terminal,
+            )
+            and row["cause_phase"] == "dispatch"
+            and row["cause_code"] == row["last_error_code"]
+        )
+        return
+
+    _require(row["dispatch_status"] == "started")
+    if row["execution_status"] == "running":
+        _require(
+            row["state_version"] == 1
+            and row["segment_status"] == "running"
+            and owner_status == "active"
+            and current_boot_id is not None
+            and row["owner_boot_id"] == current_boot_id
+            and _valid_identifier(row["owner_id"], "owner_")
+            and row["owner_closed_at"] is None
+            and row["recovery_reason"] is None
+            and row["owner_segment_id"] == row["segment_id"]
+            and _valid_timestamp(row["owner_phase_updated_at"])
+            and not has_cause
+        )
+        return
+
+    if owner_status is None and not lineage_replacement:
+        return
+    _require(
+        row["execution_status"]
+        in {"completed", "completed_with_fallback", "failed"}
+        and row["segment_status"] == row["execution_status"]
+        and owner_status in {"closed", "interrupted"}
+        and row["owner_boot_id"] is None
+        and row["owner_id"] is None
+        and row["owner_segment_id"] == row["segment_id"]
+    )
+    if owner_status == "closed":
+        execution_terminal = row["segment_updated_at"]
+        _require(
+            row["state_version"] >= 2
+            and row["recovery_reason"] is None
+            and row["owner_closed_at"] == execution_terminal
+            and row["owner_phase_updated_at"] == execution_terminal
+            and _valid_timestamp(execution_terminal)
+            and (
+                row["state_version"] > 2
+                or row["run_updated_at"] == execution_terminal
+            )
+        )
+        if row["execution_status"] == "failed":
+            _require(
+                row["state_version"] == 2
+                and _cause_matches(
+                    row,
+                    terminal_state_version=2,
+                    terminal_timestamp=execution_terminal,
+                )
+            )
+        else:
+            _require(not has_cause)
+        return
+
+    terminal = row["run_updated_at"]
+    expected_code = {
+        "execution": "execution_error",
+        "finalization": "run_finalization_failed",
+    }.get(row["owner_phase"])
+    _require(
+        row["execution_status"] == "failed"
+        and row["review_status"] == "not_required"
+        and row["delivery_status"] == "failed"
+        and row["state_version"] == 2
+        and row["owner_closed_at"] == terminal
+        and row["owner_phase_updated_at"] == terminal
+        and row["segment_updated_at"] == terminal
+        and _valid_timestamp(terminal)
+        and row["recovery_reason"]
+        in {"previous_boot_interrupted", "pre_v1_running_without_owner"}
+        and expected_code is not None
+        and _cause_matches(
+            row,
+            terminal_state_version=2,
+            terminal_timestamp=terminal,
+        )
+        and row["cause_phase"] == row["owner_phase"]
+        and row["cause_code"] == expected_code
+    )
+
+
 def _verify_exact_schema(connection: sqlite3.Connection) -> None:
     expected_sql = {
         "run_execution_boot_v1": BOOT_TABLE_SQL,
@@ -276,84 +523,86 @@ def _verify_rows(connection: sqlite3.Connection) -> None:
             and bool(boots[0]["boot_id"])
             and _valid_timestamp(boots[0]["activated_at"])
         )
-    owners = connection.execute(
+    lineage_replacement_ids = {
+        row["replacement_run_id"]
+        for row in connection.execute(
+            "SELECT replacement_run_id FROM run_recovery_retries_v1"
+        )
+    }
+    lifecycle = connection.execute(
         """
-        SELECT owner.*, run.execution_status, run.review_status,
-               run.delivery_status, run.state_version, run.updated_at,
-               segment.run_id AS segment_run_id, segment.kind,
-               segment.sequence, segment.attempt, segment.status AS segment_status,
+        SELECT dispatch.run_id, dispatch.status AS dispatch_status,
+               dispatch.lease_owner, dispatch.lease_expires_at,
+               dispatch.attempt_count, dispatch.last_error_code,
+               dispatch.created_at AS dispatch_created_at,
+               dispatch.updated_at AS dispatch_updated_at,
+               dispatch.started_at,
+               run.execution_status, run.review_status, run.delivery_status,
+               run.state_version, run.created_at AS run_created_at,
+               run.updated_at AS run_updated_at,
+               segment.segment_id, segment.run_id AS segment_run_id,
+               segment.kind, segment.sequence,
+               segment.attempt AS segment_attempt,
+               segment.status AS segment_status,
+               segment.created_at AS segment_created_at,
                segment.updated_at AS segment_updated_at,
+               owner.segment_id AS owner_segment_id,
+               owner.status AS owner_status, owner.phase AS owner_phase,
+               owner.boot_id AS owner_boot_id, owner.owner_id,
+               owner.created_at AS owner_created_at,
+               owner.phase_updated_at AS owner_phase_updated_at,
+               owner.closed_at AS owner_closed_at, owner.recovery_reason,
                cause.observation_status, cause.terminal_state_version,
                cause.phase AS cause_phase, cause.code AS cause_code,
-               cause.recorded_at
-        FROM run_execution_owners_v1 AS owner
-        JOIN research_runs_v2 AS run ON run.run_id=owner.run_id
-        JOIN run_segments AS segment ON segment.segment_id=owner.segment_id
-        LEFT JOIN run_failure_causes_v1 AS cause ON cause.run_id=owner.run_id
+               cause.recorded_at,
+               (
+                   SELECT COUNT(*)
+                   FROM run_segments AS exact_segment
+                   WHERE exact_segment.run_id=run.run_id
+                     AND exact_segment.kind='initial'
+                     AND exact_segment.sequence=0
+                     AND exact_segment.attempt=1
+               ) AS initial_segment_count
+        FROM run_dispatches_v1 AS dispatch
+        JOIN research_runs_v2 AS run ON run.run_id=dispatch.run_id
+        LEFT JOIN run_segments AS segment
+          ON segment.run_id=run.run_id
+         AND segment.kind='initial'
+         AND segment.sequence=0
+         AND segment.attempt=1
+        LEFT JOIN run_execution_owners_v1 AS owner ON owner.run_id=run.run_id
+        LEFT JOIN run_failure_causes_v1 AS cause ON cause.run_id=run.run_id
         """
     ).fetchall()
-    for row in owners:
-        _require(
-            row["segment_run_id"] == row["run_id"]
-            and row["kind"] == "initial"
-            and row["sequence"] == 0
-            and row["attempt"] == 1
-            and _valid_timestamp(row["created_at"])
-            and _valid_timestamp(row["phase_updated_at"])
+    current_boot_id = boots[0]["boot_id"] if boots else None
+    for row in lifecycle:
+        _verify_lifecycle_row(
+            row,
+            current_boot_id=current_boot_id,
+            lineage_replacement=row["run_id"] in lineage_replacement_ids,
         )
-        if row["status"] == "active":
-            _require(
-                len(boots) == 1
-                and row["boot_id"] == boots[0]["boot_id"]
-                and bool(row["owner_id"])
-                and row["execution_status"] == "running"
-                and row["state_version"] == 1
-                and row["segment_status"] == "running"
-                and row["closed_at"] is None
-                and row["recovery_reason"] is None
-                and row["observation_status"] is None
-            )
-        elif row["status"] == "interrupted":
-            expected_code = {
-                "execution": "execution_error",
-                "finalization": "run_finalization_failed",
-            }.get(row["phase"])
-            _require(
-                row["boot_id"] is None
-                and row["owner_id"] is None
-                and row["recovery_reason"]
-                in {"previous_boot_interrupted", "pre_v1_running_without_owner"}
-                and row["execution_status"] == "failed"
-                and row["review_status"] == "not_required"
-                and row["delivery_status"] == "failed"
-                and row["state_version"] == 2
-                and row["segment_status"] == "failed"
-                and row["observation_status"] == "observed"
-                and row["terminal_state_version"] == 2
-                and row["cause_phase"] == row["phase"]
-                and row["cause_code"] == expected_code
-                and row["updated_at"]
-                == row["segment_updated_at"]
-                == row["phase_updated_at"]
-                == row["closed_at"]
-                == row["recorded_at"]
-                and _valid_timestamp(row["closed_at"])
-            )
-        else:
-            _require(
-                row["status"] == "closed"
-                and row["boot_id"] is None
-                and row["owner_id"] is None
-                and row["recovery_reason"] is None
-                and _valid_timestamp(row["closed_at"])
-            )
+    lifecycle_by_run = {row["run_id"]: row for row in lifecycle}
+    owner_ids = {
+        row["run_id"]
+        for row in connection.execute("SELECT run_id FROM run_execution_owners_v1")
+    }
+    _require(
+        owner_ids
+        == {
+            row["run_id"]
+            for row in lifecycle
+            if row["owner_status"] is not None
+        }
+    )
     running_ids = {
         row["run_id"]
         for row in connection.execute(
             "SELECT run_id FROM research_runs_v2 WHERE execution_status='running'"
         )
     }
-    active_ids = {row["run_id"] for row in owners if row["status"] == "active"}
+    active_ids = {
+        row["run_id"] for row in lifecycle if row["owner_status"] == "active"
+    }
     _require(running_ids == active_ids)
     lineage = connection.execute(
         """
@@ -384,7 +633,11 @@ def _verify_rows(connection: sqlite3.Connection) -> None:
             row["source_run_id"] for row in lineage
         )
     )
-    owner_by_run = {row["run_id"]: row for row in owners}
+    owner_by_run = {
+        row["run_id"]: row
+        for row in lifecycle
+        if row["owner_status"] is not None
+    }
     for row in lineage:
         _require(
             row["request_schema_version"] == RUN_RECOVERY_REQUEST_SCHEMA_VERSION
@@ -410,7 +663,8 @@ def _verify_rows(connection: sqlite3.Connection) -> None:
         replacement_segment = replacement_segments[0]
         replacement_dispatch = replacement_dispatches[0]
         _require(
-            replacement_segment["segment_id"]
+            row["replacement_run_id"] in lifecycle_by_run
+            and replacement_segment["segment_id"]
             == f"{row['replacement_run_id']}_seg_000"
             and replacement_segment["kind"] == "initial"
             and replacement_segment["sequence"] == 0
@@ -439,13 +693,13 @@ def _verify_rows(connection: sqlite3.Connection) -> None:
             failure_phase=source["cause_phase"],
             failure_code=source["cause_code"],
             recovery_reason=source["recovery_reason"],
-            interrupted_phase=source["phase"],
+            interrupted_phase=source["owner_phase"],
             recovery_attempt=1,
         )
         _require(
             row["request_hash"] == expected_hash
             and row["recovery_reason"] == source["recovery_reason"]
-            and row["interrupted_phase"] == source["phase"]
+            and row["interrupted_phase"] == source["owner_phase"]
         )
 
 

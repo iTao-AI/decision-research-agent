@@ -11,6 +11,7 @@ from agent.research import EvidenceEntry
 from agent.talent_contracts import ResearchPacket
 from api.evidence_verification_models import VerificationDecisionRequest
 from api.evidence_verification_repository import accept_verification_decision
+from api.run_execution_models import RunExecutionConflict
 from api.publication_repository import (
     PublicationConflict,
     count_current_publications,
@@ -465,10 +466,18 @@ def _fail_run_after_publication_write(
         connection.close()
 
 
-@pytest.mark.parametrize("execution_status", ["failed", "running"])
+@pytest.mark.parametrize(
+    ("execution_status", "expected_error", "expected_code"),
+    [
+        ("failed", PublicationConflict, "verification_publication_conflict"),
+        ("running", RunExecutionConflict, "run_execution_recovery_unavailable"),
+    ],
+)
 def test_noncompleted_run_cannot_stale_current_publication(
     tmp_path,
     execution_status,
+    expected_error,
+    expected_code,
 ):
     seeded = _seed_talent_run(tmp_path, migrate=True)
     _set_run_execution_status(
@@ -479,8 +488,8 @@ def test_noncompleted_run_cannot_stale_current_publication(
     before = _publication_tables(seeded.db_path)
 
     with pytest.raises(
-        PublicationConflict,
-        match="verification_publication_conflict",
+        expected_error,
+        match=expected_code,
     ):
         _accept_verification(seeded)
 

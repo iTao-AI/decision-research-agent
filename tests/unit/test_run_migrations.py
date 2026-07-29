@@ -169,6 +169,23 @@ def _seed_pre_009_runs(db_path, *, statuses=()):
                     """,
                     (f"{run_id}_seg_000", run_id, status, now, now),
                 )
+                connection.execute(
+                    """
+                    INSERT INTO run_dispatches_v1(
+                        run_id, status, lease_owner, lease_expires_at,
+                        attempt_count, last_error_code, created_at, updated_at,
+                        started_at
+                    ) VALUES (?, ?, NULL, NULL, ?, NULL, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        "started" if status == "running" else "pending",
+                        1 if status == "running" else 0,
+                        now,
+                        now,
+                        now if status == "running" else None,
+                    ),
+                )
                 if status == "running":
                     connection.execute(
                         """

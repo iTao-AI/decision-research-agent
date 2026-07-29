@@ -411,3 +411,41 @@ def test_010_rejects_replacement_used_as_later_lineage_source(tmp_path):
         )
     with pytest.raises(RunExecutionConflict):
         verify_run_execution_recovery_schema(db_path=str(path))
+
+
+def test_010_rejects_closed_owner_attached_to_pending_run_and_segment(tmp_path):
+    path = _migrated(tmp_path)
+    timestamp = "2026-07-29T00:00:00+00:00"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            INSERT INTO research_runs_v2 VALUES
+            ('run_pending','thread','query','generic','1','{}','pending',
+             'not_required','pending',0,?,?)
+            """,
+            (timestamp, timestamp),
+        )
+        connection.execute(
+            """
+            INSERT INTO run_segments VALUES
+            ('run_pending_seg_000','run_pending','initial',0,1,'pending',?,?)
+            """,
+            (timestamp, timestamp),
+        )
+        connection.execute(
+            """
+            INSERT INTO run_dispatches_v1 VALUES
+            ('run_pending','pending',NULL,NULL,0,NULL,?,?,NULL)
+            """,
+            (timestamp, timestamp),
+        )
+        connection.execute(
+            """
+            INSERT INTO run_execution_owners_v1 VALUES
+            ('run_pending','run_pending_seg_000','closed','execution',
+             NULL,NULL,?,?,?,NULL)
+            """,
+            (timestamp, timestamp, timestamp),
+        )
+    with pytest.raises(RunExecutionConflict):
+        verify_run_execution_recovery_schema(db_path=str(path))

@@ -122,7 +122,7 @@ def _validated_replacement(
     if len(segments) != 1 or len(dispatches) != 1:
         raise _conflict("run_recovery_state_invalid")
     segment, dispatch = segments[0], dispatches[0]
-    immutable_invalid = (
+    if (
         replacement["thread_id"] != source["thread_id"]
         or replacement["query"] != source["query"]
         or replacement["profile_id"] != source["profile_id"]
@@ -134,35 +134,7 @@ def _validated_replacement(
         or segment["attempt"] != 1
         or segment["created_at"] != replacement["created_at"]
         or dispatch["created_at"] != replacement["created_at"]
-    )
-    pending = (
-        replacement["execution_status"] == "pending"
-        and replacement["review_status"] == "not_required"
-        and replacement["delivery_status"] == "pending"
-        and replacement["state_version"] == 0
-        and replacement["created_at"] == replacement["updated_at"]
-        and segment["status"] == "pending"
-        and segment["updated_at"] == replacement["created_at"]
-        and dispatch["status"] == "pending"
-        and dispatch["lease_owner"] is None
-        and dispatch["lease_expires_at"] is None
-        and dispatch["attempt_count"] == 0
-        and dispatch["last_error_code"] is None
-        and dispatch["updated_at"] == replacement["created_at"]
-        and dispatch["started_at"] is None
-    )
-    started = (
-        replacement["execution_status"] in {"running", "completed", "completed_with_fallback", "failed"}
-        and replacement["state_version"] in {1, 2}
-        and segment["status"] in {"running", "completed", "completed_with_fallback", "failed"}
-        and dispatch["status"] == "started"
-        and dispatch["lease_owner"] is None
-        and dispatch["lease_expires_at"] is None
-        and dispatch["attempt_count"] >= 1
-        and dispatch["last_error_code"] is None
-        and dispatch["started_at"] is not None
-    )
-    if immutable_invalid or not (pending or started):
+    ):
         raise _conflict("run_recovery_state_invalid")
     return replacement, segment
 

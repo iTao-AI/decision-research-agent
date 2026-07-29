@@ -19,6 +19,7 @@ V013_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.3.md"
 V014_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.4.md"
 V015_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
 V016_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.6.md"
+V017_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.7.md"
 V015_RELEASE_NOTES_SHA256 = (
     "61cbac951a6513a3eb8f160647b9f16b95ca6ed96a4cca8bea80786462a90b6b"
 )
@@ -129,10 +130,11 @@ def test_current_release_version_is_consistent() -> None:
     package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
     lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
 
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.6"
-    assert package["version"] == "0.1.6"
-    assert lock["version"] == "0.1.6"
-    assert lock["packages"][""]["version"] == "0.1.6"
+    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.7"
+    assert package["version"] == "0.1.7"
+    assert lock["version"] == "0.1.7"
+    assert lock["packages"][""]["version"] == "0.1.7"
+    assert V017_RELEASE_NOTES.exists()
     assert V016_RELEASE_NOTES.exists()
     assert V015_RELEASE_NOTES.exists()
     assert sha256(V015_RELEASE_NOTES.read_bytes()).hexdigest() == V015_RELEASE_NOTES_SHA256

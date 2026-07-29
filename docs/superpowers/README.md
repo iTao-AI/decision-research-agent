@@ -19,6 +19,15 @@ solely because they are complete.
 Private rationale, raw prompts, transcripts, local paths, generated review
 artifacts, and tool-specific restore data never belong in this directory.
 
+## Current v0.1.7 Release Records
+
+- [Approved design](specs/2026-07-29-v0-1-7-evidence-governed-reliability-release-design.md)
+- [Approved implementation plan](plans/2026-07-29-v0-1-7-evidence-governed-reliability-release-implementation-plan.md)
+
+Phase A and Phase B are separately reviewed release records. Current code,
+tests, release notes, Git identities, hosted checks, and public Release state
+remain authoritative.
+
 ## Current Crash-Safe Recovery Records
 
 - [Approved design](specs/2026-07-28-crash-safe-agent-run-recovery-v1-design.md)

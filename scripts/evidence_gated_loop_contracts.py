@@ -36,8 +36,8 @@ REQUIRED_NON_CLAIMS = (
     "business-impact, or universal Agent-quality claim.",
     "Current fixed profiles verify retained repository state; they do not "
     "check out arbitrary historical candidates or infer human verdicts.",
-    "The v0.1.6 selector verifies current release metadata only; it does "
-    "not execute historical release behavior.",
+    "The v0.1.6 selector verifies only the immutable v0.1.6 release record; "
+    "it does not execute historical release behavior.",
     "Post-v0.1.6 capabilities are not part of the immutable v0.1.6 release.",
 )
 

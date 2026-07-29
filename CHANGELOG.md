@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Immutable v0.1.6 release-lineage selector
+
+- Corrected the fixed strict-consumer profile's final selector to verify the
+  immutable v0.1.6 release record rather than requiring the mutable repository
+  root to remain at version 0.1.6.
+- The selector argument vector, profile binding, canonical cases, episode
+  decisions, runtime, dependencies, and release version remain unchanged.
+
 ### Crash-safe startup convergence and explicit replacement
 
 - Added a process-lifetime DB-scoped exclusive writer gate, private boot/owner

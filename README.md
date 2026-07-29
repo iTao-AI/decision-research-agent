@@ -317,8 +317,7 @@ fixed profiles verify retained repository state; they do not check out
 arbitrary historical candidates or infer human verdicts. Its public schemas are
 `dra.evidence-gated-loop-registry.v1`, `dra.evolution-case.v1`, and
 `dra.evidence-gated-loop-report.v1`.
-The `v0.1.6` selector verifies current release metadata only; it does not
-execute historical release behavior.
+The v0.1.6 selector verifies only the immutable v0.1.6 release record; it does not execute historical release behavior.
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check

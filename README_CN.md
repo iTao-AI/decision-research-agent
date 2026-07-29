@@ -353,7 +353,7 @@ provider-free 的保留集与安全检查复核候选，并把在线应用状态
 候选，也不从当前 profile 失败自动推断人工 verdict。公开 schema 为
 `dra.evidence-gated-loop-registry.v1`、`dra.evolution-case.v1` 和
 `dra.evidence-gated-loop-report.v1`。
-`v0.1.6` selector 只验证当前 release metadata，不执行历史 release 行为。
+v0.1.6 selector 只验证不可变的 v0.1.6 release record，不执行历史 release 行为。
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check

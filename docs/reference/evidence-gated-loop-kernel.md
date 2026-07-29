@@ -14,8 +14,8 @@ No runtime self-modification, automatic diagnosis, candidate generation,
 promotion, release, or rollback is performed. No live-provider strict success,
 production reliability, adoption, or business impact is claimed. Current fixed
 profiles verify retained repository state; they do not check out arbitrary
-historical candidates or infer human verdicts. The v0.1.6 selector verifies
-current release metadata only; it does not execute historical release behavior.
+historical candidates or infer human verdicts.
+The v0.1.6 selector verifies only the immutable v0.1.6 release record; it does not execute historical release behavior.
 
 ## Schemas And Case Lineage
 
@@ -122,6 +122,15 @@ candidate, and an immutable predecessor target.
 | Append episode to an existing lineage | increment `case_version`; bump every changed profile binding | predecessor, inputs, decision, and terminal aggregation |
 | Profile contract change | bump `profile_version` | argv, timeout, coverage, failure code, and compatibility |
 | New evidence, proof, field, enum, or verifier kind | require ADR and a parallel versioned schema | adapter, authority, compatibility, migration, and negative controls |
+
+Correcting the v0.1.6 selector is compatible verifier maintenance: it removes
+an accidental dependency on mutable repository-root release identity while the
+profile ID/version, argument vector, timeout, coverage, failure code, episode
+binding, intended strict-consumer invariant, and canonical case bytes remain
+unchanged. The repository commit continues to distinguish the exact
+implementation. This maintenance must land before the evaluated release
+candidate. Any change to the intended invariant or listed profile contract
+requires a profile-version and case-binding review.
 
 The checklist is: add the sorted registry path; preserve unique IDs; update
 versions; update the code-owned episode binding; write RED tests; use a

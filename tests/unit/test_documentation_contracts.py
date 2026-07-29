@@ -674,6 +674,17 @@ def test_docs_index_links_curated_project_planning_workspace() -> None:
     assert "superpowers/plans/2026-06-30-react-demo-console-live-flow-implementation.md" in docs_index
 
 
+def test_superpowers_index_links_current_v0_1_7_release_records() -> None:
+    superpowers = (
+        PROJECT_ROOT / "docs" / "superpowers" / "README.md"
+    ).read_text(encoding="utf-8")
+    for target in (
+        "specs/2026-07-29-v0-1-7-evidence-governed-reliability-release-design.md",
+        "plans/2026-07-29-v0-1-7-evidence-governed-reliability-release-implementation-plan.md",
+    ):
+        assert target in superpowers
+
+
 def test_demo_console_docs_define_a_safe_copy_pasteable_local_flow() -> None:
     guide = (PROJECT_ROOT / "docs" / "demo-console.md").read_text(encoding="utf-8")
 

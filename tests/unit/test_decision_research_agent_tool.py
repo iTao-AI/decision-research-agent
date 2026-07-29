@@ -1794,6 +1794,80 @@ def test_retry_validates_exact_success_schema_before_waiting():
 
 
 @pytest.mark.parametrize(
+    ("field", "maximum"),
+    [
+        ("source_run_id", 128),
+        ("run_id", 128),
+        ("thread_id", 256),
+    ],
+)
+def test_retry_identity_max_length_is_accepted(field, maximum):
+    payload = _recovery_payload()
+    payload[field] = "x" * maximum
+    if field == "run_id":
+        payload["segment_id"] = f"{payload[field]}_seg_000"
+    assert tool.validate_recovery_response(payload) == payload
+
+
+@pytest.mark.parametrize(
+    ("field", "maximum"),
+    [
+        ("source_run_id", 128),
+        ("run_id", 128),
+        ("thread_id", 256),
+    ],
+)
+def test_retry_identity_max_plus_one_fails_before_wait_or_result(
+    monkeypatch,
+    capsys,
+    field,
+    maximum,
+):
+    payload = _recovery_payload()
+    payload[field] = "x" * (maximum + 1)
+    if field == "run_id":
+        payload["segment_id"] = f"{payload[field]}_seg_000"
+    monkeypatch.setattr(tool, "retry_run", lambda **kwargs: payload)
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda *args, **kwargs: pytest.fail("must not wait"),
+    )
+    monkeypatch.setattr(
+        tool,
+        "result",
+        lambda *args, **kwargs: pytest.fail("must not fetch result"),
+    )
+    assert tool.main(
+        [
+            "retry",
+            "--run-id",
+            "run/source",
+            "--idempotency-key",
+            "recovery-key-0001",
+            "--wait",
+            "--result",
+        ]
+    ) == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["code"] == "run_recovery_response_invalid"
+    assert output["source_run_id"] == "run/source"
+    assert output["idempotency_key"] == "recovery-key-0001"
+
+
+def test_retry_effective_segment_identity_max_and_relation_are_closed():
+    payload = _recovery_payload()
+    payload["run_id"] = "r" * 128
+    payload["segment_id"] = f"{payload['run_id']}_seg_000"
+    assert len(payload["segment_id"]) == 136
+    assert tool.validate_recovery_response(payload) == payload
+    with pytest.raises(tool.ToolClientError, match="run_recovery_response_invalid"):
+        tool.validate_recovery_response(
+            {**payload, "segment_id": payload["segment_id"] + "x"}
+        )
+
+
+@pytest.mark.parametrize(
     "payload",
     [
         None,

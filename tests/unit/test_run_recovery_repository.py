@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import sqlite3
+import threading
 
 import pytest
 
@@ -88,5 +90,231 @@ def test_stale_route_boot_cannot_create_or_replay(tmp_path):
 
 
 def test_concurrent_same_key_requests_create_exactly_one_replacement(tmp_path):
-    path, boot = _source(tmp_path); first = _recover(path, boot); second = _recover(path, boot)
-    assert first.run_id == second.run_id
+    path, boot = _source(tmp_path)
+    barrier = threading.Barrier(3)
+
+    def recover_after_barrier():
+        barrier.wait(timeout=5)
+        return _recover(path, boot)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(recover_after_barrier) for _ in range(2)]
+        barrier.wait(timeout=5)
+        accepted = [future.result(timeout=10) for future in futures]
+
+    assert accepted[0].run_id == accepted[1].run_id
+    assert sorted(item.idempotent_replay for item in accepted) == [False, True]
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM run_recovery_retries_v1"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM research_runs_v2"
+        ).fetchone()[0] == 2
+
+
+def test_same_key_replay_ignores_current_profile_availability(tmp_path):
+    path, boot = _source(tmp_path)
+    first = _recover(path, boot)
+    profile_calls = []
+    replay = create_or_replay_run_recovery(
+        source_run_id="run_source",
+        idempotency_key="recovery-key-1234",
+        boot_id=boot,
+        exact_profile_is_available=lambda *values: profile_calls.append(values)
+        or False,
+        db_path=str(path),
+    )
+    assert replay.run_id == first.run_id
+    assert replay.idempotent_replay is True
+    assert profile_calls == []
+
+
+def _row_counts(path):
+    with sqlite3.connect(path) as connection:
+        return tuple(
+            connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in (
+                "research_runs_v2",
+                "run_segments",
+                "run_dispatches_v1",
+                "run_recovery_retries_v1",
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "replacement_run",
+        "replacement_segment_missing",
+        "replacement_segment_drift",
+        "replacement_dispatch_missing",
+        "replacement_dispatch_drift",
+        "lineage_schema",
+        "lineage_attempt",
+        "lineage_reason",
+        "lineage_phase",
+        "lineage_hash",
+    ],
+)
+def test_same_key_replay_requires_complete_durable_binding(
+    tmp_path,
+    corruption,
+):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    with sqlite3.connect(path) as connection:
+        if corruption in {"lineage_schema", "lineage_attempt"}:
+            connection.execute("PRAGMA ignore_check_constraints=ON")
+        mutations = {
+            "replacement_run": (
+                "UPDATE research_runs_v2 SET query='drift' WHERE run_id=?",
+                (accepted.run_id,),
+            ),
+            "replacement_segment_missing": (
+                "DELETE FROM run_segments WHERE run_id=?",
+                (accepted.run_id,),
+            ),
+            "replacement_segment_drift": (
+                "UPDATE run_segments SET attempt=2 WHERE run_id=?",
+                (accepted.run_id,),
+            ),
+            "replacement_dispatch_missing": (
+                "DELETE FROM run_dispatches_v1 WHERE run_id=?",
+                (accepted.run_id,),
+            ),
+            "replacement_dispatch_drift": (
+                "UPDATE run_dispatches_v1 SET status='leased', "
+                "lease_owner='dispatch_worker_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', "
+                "lease_expires_at='2026-07-29T01:00:00+00:00' WHERE run_id=?",
+                (accepted.run_id,),
+            ),
+            "lineage_schema": (
+                "UPDATE run_recovery_retries_v1 SET request_schema_version='wrong'",
+                (),
+            ),
+            "lineage_attempt": (
+                "UPDATE run_recovery_retries_v1 SET recovery_attempt=2",
+                (),
+            ),
+            "lineage_reason": (
+                "UPDATE run_recovery_retries_v1 SET recovery_reason="
+                "'pre_v1_running_without_owner'",
+                (),
+            ),
+            "lineage_phase": (
+                "UPDATE run_recovery_retries_v1 SET interrupted_phase='finalization'",
+                (),
+            ),
+            "lineage_hash": (
+                "UPDATE run_recovery_retries_v1 SET request_hash='wrong'",
+                (),
+            ),
+        }
+        sql, params = mutations[corruption]
+        connection.execute(sql, params)
+    before = _row_counts(path)
+    with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
+        _recover(path, boot)
+    assert _row_counts(path) == before
+
+
+@pytest.mark.parametrize(
+    ("sql", "params"),
+    [
+        (
+            "UPDATE run_execution_owners_v1 SET segment_id='run_source_seg_bad'",
+            (),
+        ),
+        ("UPDATE run_execution_owners_v1 SET recovery_reason=NULL", ()),
+        ("UPDATE run_execution_owners_v1 SET phase='finalization'", ()),
+        (
+            "UPDATE run_failure_causes_v1 SET code='run_timeout'",
+            (),
+        ),
+        (
+            "UPDATE run_failure_causes_v1 SET observation_status='unobserved'",
+            (),
+        ),
+        (
+            "UPDATE run_failure_causes_v1 SET terminal_state_version=1",
+            (),
+        ),
+        (
+            "UPDATE run_segments SET kind='continuation'",
+            (),
+        ),
+        (
+            "UPDATE run_segments SET sequence=1",
+            (),
+        ),
+        (
+            "UPDATE run_segments SET attempt=2",
+            (),
+        ),
+        (
+            "UPDATE run_segments SET updated_at='2026-07-29T02:00:00+00:00'",
+            (),
+        ),
+        (
+            "UPDATE run_execution_owners_v1 "
+            "SET closed_at='2026-07-29T02:00:00+00:00'",
+            (),
+        ),
+        (
+            "UPDATE run_execution_owners_v1 "
+            "SET phase_updated_at='2026-07-29T02:00:00+00:00'",
+            (),
+        ),
+        (
+            "UPDATE run_failure_causes_v1 "
+            "SET recorded_at='2026-07-29T02:00:00+00:00'",
+            (),
+        ),
+        (
+            "UPDATE research_runs_v2 "
+            "SET updated_at='2026-07-29T02:00:00+00:00'",
+            (),
+        ),
+    ],
+)
+def test_corrupt_interrupted_source_fails_before_profile_or_mutation(
+    tmp_path,
+    sql,
+    params,
+):
+    path, boot = _source(tmp_path)
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute("PRAGMA ignore_check_constraints=ON")
+        connection.execute(sql, params)
+    before = _row_counts(path)
+    profile_calls = []
+    with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
+        create_or_replay_run_recovery(
+            source_run_id="run_source",
+            idempotency_key="recovery-key-1234",
+            boot_id=boot,
+            exact_profile_is_available=lambda *values: profile_calls.append(values)
+            or True,
+            db_path=str(path),
+        )
+    assert profile_calls == []
+    assert _row_counts(path) == before
+
+
+def test_different_key_bound_source_conflicts_before_profile_eligibility(tmp_path):
+    path, boot = _source(tmp_path)
+    _recover(path, boot)
+    profile_calls = []
+    with pytest.raises(RunRecoveryConflict, match="run_recovery_conflict"):
+        create_or_replay_run_recovery(
+            source_run_id="run_source",
+            idempotency_key="recovery-key-different",
+            boot_id=boot,
+            exact_profile_is_available=lambda *values: profile_calls.append(values)
+            or False,
+            db_path=str(path),
+        )
+    assert profile_calls == []

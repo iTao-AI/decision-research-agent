@@ -101,6 +101,22 @@ class ProofFailure(RuntimeError):
         super().__init__(code)
 
 
+class _ProofBoundaryGuard:
+    def __init__(self) -> None:
+        self.provider_calls = 0
+        self.tool_calls = 0
+
+    def reject_provider(self, *args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        self.provider_calls += 1
+        raise RuntimeError("provider_boundary_reached")
+
+    def reject_tool(self, *args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        self.tool_calls += 1
+        raise RuntimeError("tool_boundary_reached")
+
+
 def _run_stage(
     name: str,
     operation: Callable[[], dict[str, Any]],
@@ -479,7 +495,10 @@ class _IdleWorker:
         return None
 
 
-def _replacement_case(root: Path) -> dict[str, Any]:
+def _replacement_case(
+    root: Path,
+    guard: _ProofBoundaryGuard,
+) -> dict[str, Any]:
     old_provider_key = os.environ.get("OPENAI_API_KEY")
     os.environ["OPENAI_API_KEY"] = "provider-disabled-local-proof"
     try:
@@ -501,6 +520,7 @@ def _replacement_case(root: Path) -> dict[str, Any]:
     )
     old_output = server.output_dir
     old_factory = server.create_run_dispatch_worker
+    old_run_deep_agent = server.run_deep_agent
     try:
         os.environ["DECISION_RESEARCH_AGENT_DB_PATH"] = str(db_path)
         os.environ["DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL"] = "false"
@@ -509,6 +529,7 @@ def _replacement_case(root: Path) -> dict[str, Any]:
         ] = "false"
         server.output_dir = root / "output"
         server.create_run_dispatch_worker = lambda *args, **kwargs: _IdleWorker()
+        server.run_deep_agent = guard.reject_provider
         server.app.state.runtime_access_policy = server.load_runtime_access_policy(
             {"API_SECRET": "proof-local-secret"}
         )
@@ -532,6 +553,7 @@ def _replacement_case(root: Path) -> dict[str, Any]:
     finally:
         server.output_dir = old_output
         server.create_run_dispatch_worker = old_factory
+        server.run_deep_agent = old_run_deep_agent
         for key, value in (
             ("OPENAI_API_KEY", old_provider_key),
             ("DECISION_RESEARCH_AGENT_DB_PATH", old_db),
@@ -593,15 +615,6 @@ def _rollback_revision_available() -> None:
 
 def _rollback_case(root: Path) -> dict[str, Any]:
     _rollback_revision_available()
-    current = root / "rollback-current.db"
-    _build_legacy_running(current)
-    migrate_run_execution_recovery_with_backup(db_path=str(current))
-    backup = Path(f"{current}.pre-run-execution-recovery.bak")
-    restored = root / "rollback-restored.db"
-    try:
-        shutil.copy2(backup, restored)
-    except Exception as exc:
-        raise ProofFailure(ERROR_CODES["rollback_restore"]) from exc
     archive = root / "old.tar"
     completed = subprocess.run(
         ["git", "archive", "--format=tar", "-o", str(archive), ROLLBACK_REVISION],
@@ -617,18 +630,80 @@ def _rollback_case(root: Path) -> dict[str, Any]:
     with tarfile.open(archive) as tar:
         tar.extractall(export, filter="data")
     (export / ".proof-revision").write_text(ROLLBACK_REVISION, encoding="ascii")
-    code = """
+    current = root / "rollback-current.db"
+    prepare_code = """
 import pathlib,sqlite3,sys
+root=pathlib.Path(sys.argv[1]).resolve(); db=sys.argv[2]
+sys.path.insert(0,str(root))
+try:
+ import api.run_repository as repository
+ import api.review_repository as review
+ assert pathlib.Path(repository.__file__).resolve().is_relative_to(root)
+ assert pathlib.Path(review.__file__).resolve().is_relative_to(root)
+ review.init_review_schema(db)
+except Exception:
+ sys.exit(41)
+now='2026-07-29T00:00:00+00:00'
+try:
+ with sqlite3.connect(db) as connection:
+  connection.execute("INSERT INTO research_runs_v2 VALUES ('legacy-running','legacy-thread','legacy-query','generic','1','{}','running','not_required','pending',1,?,?)",(now,now))
+  connection.execute("INSERT INTO run_segments VALUES ('legacy-running_seg_000','legacy-running','initial',0,1,'running',?,?)",(now,now))
+  connection.execute("INSERT INTO run_dispatches_v1 VALUES ('legacy-running','started',NULL,NULL,1,NULL,?,?,?)",(now,now,now))
+except Exception:
+ sys.exit(42)
+"""
+    prepared = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            prepare_code,
+            str(export),
+            str(current),
+        ],
+        cwd=export,
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            "PYTHONNOUSERSITE": "1",
+            "PYTHON_DOTENV_DISABLED": "1",
+        },
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    if prepared.returncode == 41:
+        raise ProofFailure(ERROR_CODES["rollback_import"])
+    if prepared.returncode or prepared.stdout or prepared.stderr:
+        raise ProofFailure(ERROR_CODES["rollback_verify"])
+    migrate_run_execution_recovery_with_backup(db_path=str(current))
+    backup = Path(f"{current}.pre-run-execution-recovery.bak")
+    restored = root / "rollback-restored.db"
+    try:
+        shutil.copy2(backup, restored)
+    except Exception as exc:
+        raise ProofFailure(ERROR_CODES["rollback_restore"]) from exc
+    if os.environ.get("DRA_RECOVERY_PROOF_INJECT_FAILURE") == "rollback_corrupt_db":
+        with sqlite3.connect(restored) as connection:
+            connection.execute("DROP TABLE run_dispatches_v1")
+    code = """
+import pathlib,sys
 root=pathlib.Path(sys.argv[1]).resolve(); db=sys.argv[2]
 sys.path.insert(0,str(root))
 for name in list(sys.modules):
  if name=='api' or name.startswith('api.'): del sys.modules[name]
-import api.run_repository as repo
-assert pathlib.Path(repo.__file__).resolve().is_relative_to(root)
-assert (root/'.proof-revision').read_text(encoding='ascii')==sys.argv[3]
-with sqlite3.connect(db) as c:
- assert c.execute(\"SELECT COUNT(*) FROM schema_migrations WHERE version='010_run_execution_recovery'\").fetchone()[0]==0
- assert c.execute(\"SELECT execution_status FROM research_runs_v2 WHERE run_id='legacy-running'\").fetchone()==('running',)
+try:
+ import api.run_migrations as migrations
+ import api.run_repository as repository
+ assert pathlib.Path(migrations.__file__).resolve().is_relative_to(root)
+ assert pathlib.Path(repository.__file__).resolve().is_relative_to(root)
+ assert (root/'.proof-revision').read_text(encoding='ascii')==sys.argv[3]
+except Exception:
+ sys.exit(41)
+try:
+ migrations.verify_run_schema(db_path=db)
+except Exception:
+ sys.exit(42)
 """
     verified = subprocess.run(
         [
@@ -651,14 +726,14 @@ with sqlite3.connect(db) as c:
         timeout=20,
         check=False,
     )
-    if verified.returncode:
+    if verified.returncode == 41:
         raise ProofFailure(ERROR_CODES["rollback_import"])
-    if verified.stdout or verified.stderr:
+    if verified.returncode or verified.stdout or verified.stderr:
         raise ProofFailure(ERROR_CODES["rollback_verify"])
     return {"backup_restored": True, "old_revision_verified": True}
 
 
-def _retained_case() -> dict[str, Any]:
+def _retained_case(guard: _ProofBoundaryGuard) -> dict[str, Any]:
     environment = {**os.environ, "PYTHON_DOTENV_DISABLED": "1"}
     for script in (
         "run_dispatch_reconciliation_proof.py",
@@ -679,8 +754,8 @@ def _retained_case() -> dict[str, Any]:
         if not (payload.get("valid") is True or payload.get("status") == "valid"):
             raise RuntimeError("retained_contract_invalid")
     return {
-        "provider_calls": 0,
-        "tool_calls": 0,
+        "provider_calls": guard.provider_calls,
+        "tool_calls": guard.tool_calls,
         "retained_checks_passed": True,
     }
 
@@ -694,6 +769,7 @@ def _case(case_id: str, observations: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_report() -> dict[str, Any]:
+    guard = _ProofBoundaryGuard()
     with tempfile.TemporaryDirectory(prefix="dra-recovery-proof-") as temporary:
         root = Path(temporary)
         for stage_root in (
@@ -743,7 +819,7 @@ def build_report() -> dict[str, Any]:
                 "explicit_replacement_replay",
                 _run_stage(
                     "replacement",
-                    lambda: _replacement_case(root / "replacement"),
+                    lambda: _replacement_case(root / "replacement", guard),
                 ),
             ),
             _case(
@@ -764,7 +840,7 @@ def build_report() -> dict[str, Any]:
             ),
             _case(
                 "retained_contracts",
-                _run_stage("retained", _retained_case),
+                _run_stage("retained", lambda: _retained_case(guard)),
             ),
         ]
     return validate_report(

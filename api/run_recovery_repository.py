@@ -9,6 +9,7 @@ from typing import Callable
 
 from api.database import sqlite_db_path
 from api.run_execution_migrations import verify_run_execution_recovery_connection
+from api.run_execution_models import RunExecutionConflict
 from api.run_recovery_models import (
     RUN_RECOVERY_REQUEST_SCHEMA_VERSION,
     RunRecoveryAcceptance,
@@ -27,6 +28,145 @@ def _conflict(code: str) -> RunRecoveryConflict:
     return RunRecoveryConflict(code)
 
 
+def _canonical_scope(run: sqlite3.Row) -> dict:
+    try:
+        scope = json.loads(run["scope_json"])
+    except json.JSONDecodeError as exc:
+        raise _conflict("run_recovery_state_invalid") from exc
+    if (
+        not isinstance(scope, dict)
+        or json.dumps(scope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        != run["scope_json"]
+    ):
+        raise _conflict("run_recovery_state_invalid")
+    return scope
+
+
+def _validated_source(
+    connection: sqlite3.Connection,
+    source_run_id: str,
+) -> tuple[sqlite3.Row, sqlite3.Row, sqlite3.Row, sqlite3.Row, dict]:
+    run = connection.execute(
+        "SELECT * FROM research_runs_v2 WHERE run_id=?", (source_run_id,)
+    ).fetchone()
+    if run is None:
+        raise _conflict("run_recovery_source_not_found")
+    segments = connection.execute(
+        "SELECT * FROM run_segments WHERE run_id=? ORDER BY sequence, attempt",
+        (source_run_id,),
+    ).fetchall()
+    owners = connection.execute(
+        "SELECT * FROM run_execution_owners_v1 WHERE run_id=?", (source_run_id,)
+    ).fetchall()
+    causes = connection.execute(
+        "SELECT * FROM run_failure_causes_v1 WHERE run_id=?", (source_run_id,)
+    ).fetchall()
+    if len(segments) != 1 or len(owners) != 1 or len(causes) != 1:
+        raise _conflict("run_recovery_state_invalid")
+    segment, owner, cause = segments[0], owners[0], causes[0]
+    expected_code = {
+        "execution": "execution_error",
+        "finalization": "run_finalization_failed",
+    }.get(owner["phase"])
+    terminal_timestamp = run["updated_at"]
+    if (
+        run["execution_status"] != "failed"
+        or run["review_status"] != "not_required"
+        or run["delivery_status"] != "failed"
+        or run["state_version"] != 2
+        or segment["segment_id"] != owner["segment_id"]
+        or segment["kind"] != "initial"
+        or segment["sequence"] != 0
+        or segment["attempt"] != 1
+        or segment["status"] != "failed"
+        or owner["status"] != "interrupted"
+        or owner["boot_id"] is not None
+        or owner["owner_id"] is not None
+        or owner["recovery_reason"]
+        not in {"previous_boot_interrupted", "pre_v1_running_without_owner"}
+        or expected_code is None
+        or cause["observation_status"] != "observed"
+        or cause["terminal_state_version"] != 2
+        or cause["phase"] != owner["phase"]
+        or cause["code"] != expected_code
+        or terminal_timestamp is None
+        or segment["updated_at"] != terminal_timestamp
+        or owner["phase_updated_at"] != terminal_timestamp
+        or owner["closed_at"] != terminal_timestamp
+        or cause["recorded_at"] != terminal_timestamp
+    ):
+        raise _conflict("run_recovery_state_invalid")
+    return run, segment, owner, cause, _canonical_scope(run)
+
+
+def _validated_replacement(
+    connection: sqlite3.Connection,
+    *,
+    source: sqlite3.Row,
+    lineage: sqlite3.Row,
+) -> tuple[sqlite3.Row, sqlite3.Row]:
+    replacement = connection.execute(
+        "SELECT * FROM research_runs_v2 WHERE run_id=?",
+        (lineage["replacement_run_id"],),
+    ).fetchone()
+    if replacement is None:
+        raise _conflict("run_recovery_state_invalid")
+    segments = connection.execute(
+        "SELECT * FROM run_segments WHERE run_id=?",
+        (lineage["replacement_run_id"],),
+    ).fetchall()
+    dispatches = connection.execute(
+        "SELECT * FROM run_dispatches_v1 WHERE run_id=?",
+        (lineage["replacement_run_id"],),
+    ).fetchall()
+    if len(segments) != 1 or len(dispatches) != 1:
+        raise _conflict("run_recovery_state_invalid")
+    segment, dispatch = segments[0], dispatches[0]
+    immutable_invalid = (
+        replacement["thread_id"] != source["thread_id"]
+        or replacement["query"] != source["query"]
+        or replacement["profile_id"] != source["profile_id"]
+        or replacement["profile_version"] != source["profile_version"]
+        or replacement["scope_json"] != source["scope_json"]
+        or segment["segment_id"] != f"{replacement['run_id']}_seg_000"
+        or segment["kind"] != "initial"
+        or segment["sequence"] != 0
+        or segment["attempt"] != 1
+        or segment["created_at"] != replacement["created_at"]
+        or dispatch["created_at"] != replacement["created_at"]
+    )
+    pending = (
+        replacement["execution_status"] == "pending"
+        and replacement["review_status"] == "not_required"
+        and replacement["delivery_status"] == "pending"
+        and replacement["state_version"] == 0
+        and replacement["created_at"] == replacement["updated_at"]
+        and segment["status"] == "pending"
+        and segment["updated_at"] == replacement["created_at"]
+        and dispatch["status"] == "pending"
+        and dispatch["lease_owner"] is None
+        and dispatch["lease_expires_at"] is None
+        and dispatch["attempt_count"] == 0
+        and dispatch["last_error_code"] is None
+        and dispatch["updated_at"] == replacement["created_at"]
+        and dispatch["started_at"] is None
+    )
+    started = (
+        replacement["execution_status"] in {"running", "completed", "completed_with_fallback", "failed"}
+        and replacement["state_version"] in {1, 2}
+        and segment["status"] in {"running", "completed", "completed_with_fallback", "failed"}
+        and dispatch["status"] == "started"
+        and dispatch["lease_owner"] is None
+        and dispatch["lease_expires_at"] is None
+        and dispatch["attempt_count"] >= 1
+        and dispatch["last_error_code"] is None
+        and dispatch["started_at"] is not None
+    )
+    if immutable_invalid or not (pending or started):
+        raise _conflict("run_recovery_state_invalid")
+    return replacement, segment
+
+
 def create_or_replay_run_recovery(
     *,
     source_run_id: str,
@@ -43,7 +183,10 @@ def create_or_replay_run_recovery(
     connection.execute("PRAGMA busy_timeout=5000")
     try:
         connection.execute("BEGIN IMMEDIATE")
-        verify_run_execution_recovery_connection(connection)
+        try:
+            verify_run_execution_recovery_connection(connection)
+        except RunExecutionConflict as exc:
+            raise _conflict("run_recovery_state_invalid") from exc
         current = connection.execute(
             "SELECT boot_id FROM run_execution_boot_v1 WHERE boot_scope='application'"
         ).fetchone()
@@ -59,49 +202,18 @@ def create_or_replay_run_recovery(
             (source_run_id,),
         ).fetchone():
             raise _conflict("run_recovery_exhausted")
-        run = connection.execute(
-            "SELECT * FROM research_runs_v2 WHERE run_id=?", (source_run_id,)
-        ).fetchone()
-        if run is None:
-            raise _conflict("run_recovery_source_not_found")
-        segment = connection.execute(
-            "SELECT * FROM run_segments WHERE run_id=? AND kind='initial' AND sequence=0",
+        source_binding = connection.execute(
+            "SELECT key_hash FROM run_recovery_retries_v1 WHERE source_run_id=?",
             (source_run_id,),
-        ).fetchall()
-        owner = connection.execute(
-            "SELECT * FROM run_execution_owners_v1 WHERE run_id=?", (source_run_id,)
         ).fetchone()
-        cause = connection.execute(
-            "SELECT * FROM run_failure_causes_v1 WHERE run_id=?", (source_run_id,)
-        ).fetchone()
-        if (
-            run["execution_status"] != "failed"
-            or run["review_status"] != "not_required"
-            or run["delivery_status"] != "failed"
-            or run["state_version"] != 2
-            or len(segment) != 1
-            or segment[0]["status"] != "failed"
-            or owner is None
-            or owner["status"] != "interrupted"
-            or cause is None
-            or cause["phase"] != owner["phase"]
-        ):
-            raise _conflict("run_recovery_state_invalid")
-        if not exact_profile_is_available(run["profile_id"], run["profile_version"]):
-            raise _conflict("run_recovery_not_eligible")
-        try:
-            scope = json.loads(run["scope_json"])
-        except json.JSONDecodeError as exc:
-            raise _conflict("run_recovery_state_invalid") from exc
-        if (
-            not isinstance(scope, dict)
-            or json.dumps(scope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            != run["scope_json"]
-        ):
-            raise _conflict("run_recovery_state_invalid")
+        if key_row is None and source_binding is not None:
+            raise _conflict("run_recovery_conflict")
+        run, segment, owner, cause, scope = _validated_source(
+            connection, source_run_id
+        )
         request_hash = run_recovery_request_hash(
             source_run_id=source_run_id,
-            segment_id=segment[0]["segment_id"],
+            segment_id=segment["segment_id"],
             query=run["query"],
             thread_id=run["thread_id"],
             profile_id=run["profile_id"],
@@ -119,34 +231,32 @@ def create_or_replay_run_recovery(
         )
         if key_row is not None:
             if (
-                key_row["request_hash"] != request_hash
+                key_row["request_schema_version"]
+                != RUN_RECOVERY_REQUEST_SCHEMA_VERSION
+                or key_row["request_hash"] != request_hash
                 or key_row["recovery_reason"] != owner["recovery_reason"]
                 or key_row["interrupted_phase"] != owner["phase"]
+                or key_row["recovery_attempt"] != 1
             ):
-                raise _conflict("run_recovery_conflict")
-            replacement = connection.execute(
-                "SELECT thread_id FROM research_runs_v2 WHERE run_id=?",
-                (key_row["replacement_run_id"],),
-            ).fetchone()
-            if replacement is None:
                 raise _conflict("run_recovery_state_invalid")
+            replacement, replacement_segment = _validated_replacement(
+                connection,
+                source=run,
+                lineage=key_row,
+            )
             connection.commit()
-            replacement_id = key_row["replacement_run_id"]
             return RunRecoveryAcceptance(
                 reason=owner["recovery_reason"],
                 interrupted_phase=owner["phase"],
                 source_run_id=source_run_id,
-                run_id=replacement_id,
+                run_id=replacement["run_id"],
                 thread_id=replacement["thread_id"],
-                segment_id=f"{replacement_id}_seg_000",
+                segment_id=replacement_segment["segment_id"],
                 recovery_attempt=1,
                 idempotent_replay=True,
             )
-        if connection.execute(
-            "SELECT 1 FROM run_recovery_retries_v1 WHERE source_run_id=?",
-            (source_run_id,),
-        ).fetchone():
-            raise _conflict("run_recovery_conflict")
+        if not exact_profile_is_available(run["profile_id"], run["profile_version"]):
+            raise _conflict("run_recovery_not_eligible")
         replacement_id = f"run_{uuid.uuid4().hex}"
         replacement_segment = f"{replacement_id}_seg_000"
         timestamp = _now()

@@ -12,6 +12,14 @@ from typing import Any
 from urllib import error, parse, request
 import uuid
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from pydantic import ValidationError
+
+from api.run_recovery_models import RunRecoveryAcceptance
+
 
 _LOCAL_ERROR_DETAILS: dict[str, tuple[str, str, str, bool]] = {
     "connection_failed": (
@@ -456,46 +464,11 @@ def retry_run(
 def validate_recovery_response(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    required = {
-        "schema_version",
-        "status",
-        "reason",
-        "interrupted_phase",
-        "source_run_id",
-        "run_id",
-        "thread_id",
-        "segment_id",
-        "recovery_attempt",
-        "idempotent_replay",
-    }
-    string_fields = {
-        "source_run_id",
-        "run_id",
-        "thread_id",
-        "segment_id",
-    }
-    valid = (
-        type(payload) is dict
-        and set(payload) == required
-        and payload.get("schema_version") == "dra.run-recovery.v1"
-        and payload.get("status") == "accepted"
-        and payload.get("reason")
-        in {"previous_boot_interrupted", "pre_v1_running_without_owner"}
-        and payload.get("interrupted_phase") in {"execution", "finalization"}
-        and all(
-            type(payload.get(field)) is str and bool(payload[field])
-            for field in string_fields
-        )
-        and payload.get("source_run_id") != payload.get("run_id")
-        and payload.get("segment_id")
-        == f"{payload.get('run_id')}_seg_000"
-        and type(payload.get("recovery_attempt")) is int
-        and payload.get("recovery_attempt") == 1
-        and type(payload.get("idempotent_replay")) is bool
-    )
-    if not valid:
-        raise ToolClientError("run_recovery_response_invalid")
-    return dict(payload)
+    try:
+        validated = RunRecoveryAcceptance.model_validate(payload, strict=True)
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise ToolClientError("run_recovery_response_invalid") from exc
+    return validated.model_dump(mode="json")
 
 
 def get_run(run_id: str, config: ToolConfig) -> dict[str, Any]:

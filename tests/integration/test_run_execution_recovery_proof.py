@@ -219,3 +219,20 @@ def test_module_import_is_silent_and_help_succeeds():
     assert helped.returncode == 0
     assert helped.stdout
     assert helped.stderr == ""
+
+
+def test_corrupted_restored_db_uses_old_revision_verify_failure_code():
+    completed = _run("check", inject="rollback_corrupt_db")
+    assert completed.returncode == 1
+    assert completed.stdout == ""
+    assert completed.stderr == STAGE_CODES["rollback_verify"] + "\n"
+
+
+def test_provider_and_tool_guards_are_real_counted_fail_closed_boundaries():
+    guard = _load_module()._ProofBoundaryGuard()
+    with pytest.raises(RuntimeError, match="provider_boundary_reached"):
+        guard.reject_provider()
+    with pytest.raises(RuntimeError, match="tool_boundary_reached"):
+        guard.reject_tool()
+    assert guard.provider_calls == 1
+    assert guard.tool_calls == 1

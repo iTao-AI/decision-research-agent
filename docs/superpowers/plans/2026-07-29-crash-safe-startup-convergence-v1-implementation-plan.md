@@ -5,7 +5,8 @@
 > `superpowers:executing-plans` to implement this plan task-by-task. Steps use
 > checkboxes for execution tracking.
 
-**Status:** Approved for implementation.
+**Status:** Approved for bounded lifecycle-authority repair. Tasks 1-8 remain
+frozen; publication remains on hold.
 
 **Goal:** Close the live post-start process-death gap without runtime
 self-modification, heartbeat expiry, checkpoint replay, or automatic Agent
@@ -26,7 +27,10 @@ provider-free proof, CI, and public truth only after the core ownership path is
 coherent. Online execution records and fences evidence; recovery and
 replacement decisions remain explicit, application-owned operations. No
 runtime path diagnoses failures into new rules, mutates prompts, or promotes
-candidates.
+candidates. The lifecycle-authority repair replaces the loose recovery
+verifier with one project-specific pure classifier and two independent
+verification roots. It does not reopen the feature architecture or add a
+generic workflow engine.
 
 **Tech Stack:** Python 3.11, FastAPI 0.138.0, Starlette 1.3.1, Pydantic 2.13.4,
 SQLite, pytest 9.0.3, pytest-asyncio 1.4.0, standard-library subprocess and
@@ -117,6 +121,21 @@ signal primitives.
     One-hop exhaustion also creates no hidden fallback. After inspection, an
     operator may deliberately create an unrelated ordinary keyed run from
     caller-retained input, outside recovery lineage.
+16. The completed Tasks 1-8 implementation candidate at
+    `7617d02529e03cc4272d0bbe9f9a43c0e099c4e6` is frozen. The approved
+    lifecycle-authority spec amendment at
+    `17e235fadaf72c7a22dfca782be9b02902c5ab08` changes only the design
+    document. Task 9 begins only after this amended plan is mechanically
+    landed as one plan-only commit whose parent is that exact spec commit.
+17. Task 9 has a separate `REPAIR_BASE`. Its implementation diff is limited to
+    one project-specific classifier module and focused lifecycle verification
+    tests. Existing recovery API, schema, migration identity, runtime flow,
+    proof schema, docs, dependencies, and release surfaces remain unchanged.
+18. The authority-owned black-box replay is a frozen input to Task 9, not a
+    candidate-owned output. Its exact SHA-256 is
+    `dc2673d494faa4ee8d10439c44ac22444fff013c7e31e9d1272851ac8c2ee62d`,
+    with 251 lines and 7,286 bytes. The implementation window may mechanically
+    land that exact blob but may not edit, normalize, regenerate, or weaken it.
 
 ## Framework Boundary Verification
 
@@ -263,6 +282,7 @@ authority explicitly says the contract is reconciled.
 | `api/run_execution_repository.py` | Startup convergence/activation, current-boot checks, persisted phase fence, active-owner validation and closure helpers |
 | `api/run_recovery_models.py` | Strict public acceptance, canonical source fingerprint, recovery key validation and distinct hash namespace |
 | `api/run_recovery_repository.py` | Exact eligibility, one-hop lineage, first/replay conflict logic, atomic replacement run/segment/dispatch creation |
+| `api/run_recovery_lifecycle.py` | Project-specific immutable lifecycle snapshot, closed role/family values, and pure exact-one-family classifier; no SQLite, I/O, registry, callback, configuration, or extension surface |
 | `scripts/run_execution_recovery_crash_worker.py` | Provider-free child process that commits execution/finalization state, signals readiness, and waits for a real signal |
 | `scripts/run_execution_recovery_proof.py` | Deterministic real-`SIGKILL`, startup convergence, stale-fence, retry/replay, migration/restore, and old-revision rollback report |
 | `tests/run_execution_helpers.py` | Test-only helper that uses migration, boot activation, dispatch claim, and the real production start fence; no direct running bypass |
@@ -272,10 +292,12 @@ authority explicitly says the contract is reconciled.
 | `tests/unit/test_run_execution_repository.py` | Boot activation, convergence, phase, stale-owner, and all-or-nothing transaction tests |
 | `tests/unit/test_run_recovery_models.py` | Exact public shape, key namespace, and canonical fingerprint tests |
 | `tests/unit/test_run_recovery_repository.py` | Eligibility, lineage, concurrency, replay, corruption, and rollback tests |
+| `tests/unit/test_run_recovery_lifecycle.py` | Pure classifier contract, complete family matrix, one-field mutation sensitivity, and pairwise cross-family controls |
 | `tests/integration/test_run_execution_recovery.py` | Production lifespan/start/finalization/timeout/cancel/stale-generation integration |
 | `tests/integration/test_run_recovery_api.py` | Middleware/body/key/repository/wake ordering and exact HTTP contracts |
 | `tests/integration/test_run_recovery_tool_journey.py` | Real loopback production-app and Tool Client acceptance/wait/result journeys under provider-free test budgets |
 | `tests/integration/test_run_execution_recovery_proof.py` | Real-process proof CLI, determinism, privacy, and failure-boundary tests |
+| `tests/integration/test_run_recovery_lifecycle_authority.py` | Frozen authority-owned black-box replay through public production transitions and the public recovery boundary; it imports no private classifier or candidate fixture |
 | `docs/operations/run-execution-recovery.md` | Stopped-writer migration, startup semantics, explicit retry, diagnostics, and rollback runbook |
 
 ### Existing production surfaces
@@ -543,42 +565,95 @@ Recovery replay validates immutable source, lineage, and replacement identity,
 then consumes this same verifier; it must not maintain a weaker or different
 partial lifecycle predicate.
 
-The verifier accepts exactly these lifecycle families:
+Task 9 replaces the earlier loose row predicate with the following closed
+authority. The connection verifier first derives complete source and
+replacement ID sets from the lineage table, rejects any intersection,
+duplicate, missing, cross-linked, or second-hop identity, and assigns exactly
+one role:
 
-| Family | Run and segment | Dispatch | Owner and cause |
-| --- | --- | --- | --- |
-| Pending | run `pending` at version `0`; exact initial segment `pending` | `pending`, including retry-pending attempt/error states allowed by the live dispatch contract | no owner; no observed terminal cause |
-| Leased | run `pending` at version `0`; exact initial segment `pending` | exact `leased` state with bounded owner, expiry, attempt, timestamps, and error fields | no owner; no observed terminal cause |
-| Running | run `running` at version `1`; exact initial segment `running` | exact `started` state | exact active current-boot owner; no observed terminal cause |
-| Terminal | terminal run and matching terminal initial segment | exact `started` state | exact closed or interrupted owner and coherent cause when the terminal path requires one |
-| Dispatch exhausted | run and initial segment `failed` before start | exact `failed` dispatch | exact dispatch failure cause; no execution owner |
-| Interrupted replacement | replacement terminalized by a later boot | exact started dispatch | exact interrupted owner and phase-derived cause; replay from the original source/key remains valid, while using the replacement as a new recovery source remains exhausted |
+```python
+class LifecycleRole(StrEnum):
+    ORDINARY = "ordinary"
+    RECOVERY_SOURCE = "recovery_source"
+    RECOVERY_REPLACEMENT = "recovery_replacement"
+```
 
-All mixed cross-products fail closed. This includes wrong run version,
-run/segment mismatch, pending or running state with a closed owner, terminal
-state with a nonterminal segment, illegal dispatch-owner combinations,
-incoherent cause mapping, and any required terminal timestamp mismatch.
-Normal lifecycle transitions must not be over-constrained: retry-pending,
-leased, running, dispatch-failed, normally terminal, and later-boot-interrupted
-replacement states are independently legal when every row in that family is
-coherent.
+The SQLite projection is normalized once into an immutable
+`RecoveryLifecycleSnapshot`. It carries the selected run, exact initial
+segment, dispatch, owner, failure cause, timestamps, attempt/error history, and
+segment count already selected by the connection query. The pure classifier
+accepts no connection, callback, predicate, configuration, or caller-selected
+family:
 
-Task 3 RED coverage must use a compact table-driven legal/illegal matrix and
-must name these authority failures:
+```text
+classify_recovery_lifecycle(
+    RecoveryLifecycleSnapshot,
+    *,
+    role: LifecycleRole,
+    current_boot_id: str | None,
+) -> LifecycleFamily
+```
 
-- closed owner attached to a pending/version-0 run and pending segment;
-- same-key replay of a mixed failed/version-1 replacement with completed
-  segment and started dispatch;
-- same-key lost-response replay while the replacement holds a real production
-  dispatch lease;
-- retry-pending, running, dispatch-exhausted, normal terminal, and
-  later-boot-interrupted positive replay families;
-- mixed status, version, owner, cause, and required timestamp negative
-  controls.
+The implementation owns one closed tuple of code-defined matchers. It returns
+only when exactly one matcher for the assigned role is true; zero or multiple
+matches raise internal `LifecycleStateInvalid("lifecycle_state_invalid")`.
+There is no registration function, subclass hook, data-driven DSL, plugin,
+environment override, or runtime mutation surface.
 
-Same-key replay returns the persisted replacement identity in every legal
-lifecycle family and skips current profile availability only after exact
-durable binding and legal current replacement state both verify.
+`ordinary` retains the pre-existing compatibility validator as one
+`ORDINARY_COMPATIBLE` matcher inside the closed classifier. Recovery replay
+cannot select that matcher: a replacement that is legal only because of direct
+pending-terminal compatibility remains invalid.
+`recovery_source` matches only the exact later-boot interrupted source family
+already bound by the lineage fingerprint. `recovery_replacement` matches only
+these complete families:
+
+| Family | Exact coupled relation |
+| --- | --- |
+| `initial_pending` | pending run/segment version `0`; pending dispatch attempt `0`, no error; no owner/cause |
+| `retry_pending` | same pending run/segment; pending dispatch attempt `1..MAX-1` with one bounded non-empty error; no owner/cause |
+| `leased` | same pending run/segment; live lease owner/expiry; attempt `1` has no error, while a real expired-lease reclaim at a later attempt may have either no error or one bounded prior error |
+| `running_execution` | started dispatch; running run/segment version `1`; active current-boot owner in `execution`; no cause |
+| `running_finalization` | same running state with active current-boot owner in `finalization`; no cause |
+| `prestart_failed` | failed run/segment version `1`; complete pending or leased pre-start dispatch family that never started; exact pending-finalization cause/timestamps; no owner |
+| `dispatch_exhausted` | failed run/segment version `1`; failed dispatch at `MAX`; dispatch error equals exact dispatch cause; no owner |
+| `closed_terminal` | started dispatch; matching terminal run/segment; exact closed owner; success/fallback requires phase `finalization`; failure follows the existing terminal cause/phase mapping |
+| `later_boot_interrupted` | started dispatch; failed run/segment version `2`; interrupted owner with cleared identities; exact phase-derived cause, reason, and terminal timestamps |
+
+Positive evidence for every family must be generated by production repository
+transitions. Hand-built snapshots are allowed only for pure negative mutation
+tests. Same-key replay returns the persisted replacement identity in every
+legal replacement family and skips current profile availability only after
+the shared verifier and immutable lineage binding both pass.
+
+Mutation sensitivity is required, not inferred from case count. For each
+authority-bearing field group—run, segment, dispatch, owner, cause, boot,
+timestamp, and lineage—the candidate-owned suite changes one relation at a
+time and proves either:
+
+1. the snapshot becomes one other explicitly named complete legal family; or
+2. classification fails with `lifecycle_state_invalid`.
+
+It also combines every pair of field groups using values taken from different
+production-created families and requires rejection unless the complete result
+is itself a named family. Required retained controls include:
+
+- closed owner attached to pending replacement;
+- mixed failed replacement with a completed segment;
+- pending-success replacement;
+- completed replacement whose closed owner is in `execution`;
+- first lease with an invented prior error;
+- later reclaimed lease with no prior error as a legal positive;
+- dispatch-cause and terminal-timestamp drift;
+- source/replacement role intersection and attempted second hop.
+
+The independent authority black-box test enters only through public production
+transitions, direct table mutation, and
+`create_or_replay_run_recovery`. It must not import
+`api.run_recovery_lifecycle`, private migration helpers, or another test
+fixture. Its frozen blob is verified before RED and after GREEN. The current
+frozen candidate produces exactly `3 failed, 2 passed`; the repaired candidate
+must produce `5 passed`.
 
 Task 7 must install fail-closed guards on the actual Agent/Harness entrypoint
 and the actual tool and provider entrypoints reachable from the proof route.
@@ -3696,6 +3771,439 @@ Do not claim completion from pre-commit results.
 
 ---
 
+### Task 9: Bind Producer-Derived Lifecycle Verification Authority
+
+**Files:**
+
+- Create: `api/run_recovery_lifecycle.py`
+- Create: `tests/unit/test_run_recovery_lifecycle.py`
+- Create from the frozen authority blob:
+  `tests/integration/test_run_recovery_lifecycle_authority.py`
+- Modify: `api/run_execution_migrations.py`
+- Modify: `tests/unit/test_run_execution_migrations.py`
+- Modify: `tests/unit/test_run_recovery_repository.py`
+
+**Interfaces:**
+
+- Consumes: the unchanged migration `010` schema, production repository
+  transitions, the existing connection verifier, and the unchanged public
+  `create_or_replay_run_recovery` boundary.
+- Produces:
+
+  ```python
+  class LifecycleRole(StrEnum):
+      ORDINARY = "ordinary"
+      RECOVERY_SOURCE = "recovery_source"
+      RECOVERY_REPLACEMENT = "recovery_replacement"
+
+  class LifecycleFamily(StrEnum):
+      ORDINARY_COMPATIBLE = "ordinary_compatible"
+      INITIAL_PENDING = "initial_pending"
+      RETRY_PENDING = "retry_pending"
+      LEASED = "leased"
+      RUNNING_EXECUTION = "running_execution"
+      RUNNING_FINALIZATION = "running_finalization"
+      PRESTART_FAILED = "prestart_failed"
+      DISPATCH_EXHAUSTED = "dispatch_exhausted"
+      CLOSED_TERMINAL = "closed_terminal"
+      LATER_BOOT_INTERRUPTED = "later_boot_interrupted"
+
+  @dataclass(frozen=True, slots=True)
+  class RecoveryLifecycleSnapshot:
+      run_id: str
+      dispatch_status: str
+      lease_owner: object
+      lease_expires_at: object
+      attempt_count: int
+      last_error_code: object
+      dispatch_created_at: object
+      dispatch_updated_at: object
+      started_at: object
+      execution_status: str
+      review_status: str
+      delivery_status: str
+      state_version: int
+      run_created_at: object
+      run_updated_at: object
+      segment_id: object
+      segment_run_id: object
+      kind: object
+      sequence: object
+      segment_attempt: object
+      segment_status: object
+      segment_created_at: object
+      segment_updated_at: object
+      owner_segment_id: object
+      owner_status: object
+      owner_phase: object
+      owner_boot_id: object
+      owner_id: object
+      owner_created_at: object
+      owner_phase_updated_at: object
+      owner_closed_at: object
+      recovery_reason: object
+      observation_status: object
+      terminal_state_version: object
+      cause_phase: object
+      cause_code: object
+      recorded_at: object
+      initial_segment_count: int
+
+  classify_recovery_lifecycle(
+      RecoveryLifecycleSnapshot,
+      *,
+      role: LifecycleRole,
+      current_boot_id: str | None,
+  ) -> LifecycleFamily
+  ```
+
+The broad `object` annotations describe raw SQLite scalar inputs at the
+normalization edge; matchers must validate exact runtime types and values
+before accepting them. Do not weaken them to truthiness-only checks.
+
+- [ ] **Step 1: Lock the repair base and frozen authorities**
+
+The mechanically landed plan-only commit is the repair base:
+
+```bash
+test "$(git branch --show-current)" = \
+  "codex/crash-safe-startup-convergence-v1"
+test -z "$(git status --porcelain)"
+
+REPAIR_BASE="$(git rev-parse HEAD)"
+test "$(git rev-parse "${REPAIR_BASE}^")" = \
+  "17e235fadaf72c7a22dfca782be9b02902c5ab08"
+test "$(git diff --name-only "${REPAIR_BASE}^".."${REPAIR_BASE}")" = \
+  "docs/superpowers/plans/2026-07-29-crash-safe-startup-convergence-v1-implementation-plan.md"
+
+test "$(
+  shasum -a 256 \
+    docs/superpowers/specs/2026-07-28-crash-safe-agent-run-recovery-v1-design.md \
+    | awk '{print $1}'
+)" = "e80ca43d9c5174cc8c6088f60ccac847a7f09a61edf9ed5cd119cec2a043ad10"
+```
+
+Record `REPAIR_BASE`, the plan SHA supplied by the authority handoff, and the
+existing frozen candidate `7617d02529e03cc4272d0bbe9f9a43c0e099c4e6`.
+Do not amend, squash, reset, or rewrite the prior implementation chain.
+
+- [ ] **Step 2: Mechanically land the frozen authority replay and verify RED**
+
+Mechanically copy the authority-provided source to
+`tests/integration/test_run_recovery_lifecycle_authority.py`, then require:
+
+```bash
+test "$(
+  shasum -a 256 \
+    tests/integration/test_run_recovery_lifecycle_authority.py \
+    | awk '{print $1}'
+)" = "dc2673d494faa4ee8d10439c44ac22444fff013c7e31e9d1272851ac8c2ee62d"
+test "$(wc -l < tests/integration/test_run_recovery_lifecycle_authority.py | tr -d ' ')" = "251"
+test "$(wc -c < tests/integration/test_run_recovery_lifecycle_authority.py | tr -d ' ')" = "7286"
+```
+
+Run:
+
+```bash
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q \
+  tests/integration/test_run_recovery_lifecycle_authority.py
+```
+
+Expected RED is exact: `3 failed, 2 passed`. The failures must be:
+
+```text
+test_authority_rejects_pending_success_replacement
+test_authority_rejects_completed_replacement_with_execution_phase_owner
+test_authority_rejects_first_lease_with_invented_prior_error
+```
+
+The legal reclaimed-second-lease and closed-owner/pending controls must pass.
+Any different result is an authority mismatch; stop without editing the frozen
+test.
+
+- [ ] **Step 3: Add candidate-owned classifier RED tests**
+
+Create `tests/unit/test_run_recovery_lifecycle.py`. It imports only the pure
+module and defines the complete expected values:
+
+```python
+EXPECTED_ROLES = {
+    "ordinary",
+    "recovery_source",
+    "recovery_replacement",
+}
+EXPECTED_FAMILIES = {
+    "ordinary_compatible",
+    "initial_pending",
+    "retry_pending",
+    "leased",
+    "running_execution",
+    "running_finalization",
+    "prestart_failed",
+    "dispatch_exhausted",
+    "closed_terminal",
+    "later_boot_interrupted",
+}
+FIELD_GROUPS = (
+    "run",
+    "segment",
+    "dispatch",
+    "owner",
+    "cause",
+    "boot",
+    "timestamp",
+    "lineage",
+)
+```
+
+The file must contain exactly named tests for:
+
+```text
+test_closed_role_and_family_values_are_exact
+test_classifier_has_no_registration_callback_or_io_surface
+test_each_recovery_family_has_exactly_one_match
+test_recovery_source_requires_exact_later_boot_interrupted_family
+test_each_authority_field_mutation_rejects_or_becomes_named_family
+test_pairwise_cross_family_group_substitutions_reject
+test_first_lease_rejects_prior_error
+test_reclaimed_later_lease_allows_absent_or_bounded_prior_error
+test_ordinary_compatibility_cannot_authorize_replacement
+```
+
+Use `dataclasses.replace` on complete immutable snapshots for negative
+controls. Every negative assertion must match
+`LifecycleStateInvalid("lifecycle_state_invalid")`; do not assert only a
+generic exception. Run:
+
+```bash
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q \
+  tests/unit/test_run_recovery_lifecycle.py
+```
+
+Expected RED: collection fails because `api.run_recovery_lifecycle` does not
+exist. A test that passes against the old verifier is not a valid RED.
+
+- [ ] **Step 4: Expand real-producer and role-assignment RED coverage**
+
+In `tests/unit/test_run_recovery_repository.py`, replace the old compact
+positive matrix with production-created cases for all nine replacement
+families. Split `running` into `running_execution` and
+`running_finalization`; split first lease from expired-lease reclaim; retain
+pending and leased prestart failure paths. Add exact tests:
+
+```text
+test_same_key_replay_accepts_each_producer_derived_replacement_family
+test_same_key_replay_rejects_pending_success_ordinary_escape
+test_same_key_replay_rejects_completed_owner_phase_drift
+test_same_key_replay_rejects_first_lease_with_prior_error
+test_same_key_replay_accepts_reclaimed_lease_without_prior_error
+test_same_key_replay_rejects_each_pairwise_family_cross_product
+```
+
+In `tests/unit/test_run_execution_migrations.py`, add:
+
+```text
+test_010_assigns_exactly_one_lifecycle_role
+test_010_rejects_source_replacement_role_intersection
+test_010_recovery_replacement_cannot_use_ordinary_pending_terminal_compatibility
+test_010_ordinary_pending_terminal_compatibility_remains_retained
+test_010_connection_verifier_consumes_one_normalized_projection
+```
+
+All positive fixtures must call production `create_run`,
+`claim_run_dispatch`, `release_run_dispatch_for_retry`,
+`start_run_dispatch`, `advance_run_execution_phase`,
+`finalize_run_transaction`, and `activate_run_execution_boot` as applicable.
+Direct SQL is permitted only after that producer transition to create a named
+negative mutation.
+
+Run:
+
+```bash
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q \
+  tests/unit/test_run_execution_migrations.py \
+  tests/unit/test_run_recovery_repository.py \
+  tests/integration/test_run_recovery_lifecycle_authority.py
+```
+
+Expected: retained tests pass; the three frozen authority cases and the new
+candidate controls fail for the old verifier.
+
+- [ ] **Step 5: Implement the pure closed classifier**
+
+Create `api/run_recovery_lifecycle.py` with no import from `sqlite3`, repository
+modules, FastAPI, model/provider/tool code, environment, filesystem, or
+network. The module may import only standard-library dataclass/enum/typing and
+the existing dispatch-attempt constant.
+
+The implementation shape is fixed:
+
+```python
+class LifecycleStateInvalid(ValueError):
+    pass
+
+
+def _reject() -> None:
+    raise LifecycleStateInvalid("lifecycle_state_invalid")
+
+
+def classify_recovery_lifecycle(
+    snapshot: RecoveryLifecycleSnapshot,
+    *,
+    role: LifecycleRole,
+    current_boot_id: str | None,
+) -> LifecycleFamily:
+    matches = tuple(
+        family
+        for candidate_role, family, matcher in _CLOSED_MATCHERS
+        if candidate_role is role and matcher(snapshot, current_boot_id)
+    )
+    if len(matches) != 1:
+        _reject()
+    return matches[0]
+```
+
+`_CLOSED_MATCHERS` is a module-owned tuple literal containing every
+role/family relation in the Shared Lifecycle Verification Matrix. It is not
+exported and has no append/register/replace path. Matcher helpers must compare
+the complete coupled relation, including review/delivery state, versions,
+attempt/error history, owner phase/status/identity, cause mapping, and exact
+timestamps. They must not call each other in a way that makes a partial family
+silently inherit an ordinary compatibility escape.
+
+- [ ] **Step 6: Make the connection verifier the single integration root**
+
+Modify `api/run_execution_migrations.py`:
+
+1. project each joined row exactly once into
+   `RecoveryLifecycleSnapshot`;
+2. build source/replacement role sets before row classification;
+3. reject intersections, missing lineage endpoints, cross-links, duplicates,
+   and second hops before classifying;
+4. call `classify_recovery_lifecycle` once for every assigned role;
+5. keep the ordinary compatibility logic only in the classifier's
+   `LifecycleRole.ORDINARY` matcher;
+6. translate `LifecycleStateInvalid` to the unchanged
+   `RunExecutionConflict("run_execution_recovery_unavailable")`;
+7. delete the superseded loose recovery branches from
+   `_verify_lifecycle_row`.
+
+Keep `create_or_replay_run_recovery` on its existing flow:
+
+```text
+BEGIN IMMEDIATE
+-> verify_run_execution_recovery_connection
+-> current boot fence
+-> immutable key/source/lineage comparison
+-> return existing replacement or create initial_pending replacement
+```
+
+Do not add another lifecycle predicate in `api/run_recovery_repository.py`.
+Its exact source and replacement identity comparisons remain valid adjacent
+checks, not lifecycle alternatives.
+
+- [ ] **Step 7: Run focused GREEN and prove the frozen root is unchanged**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q \
+  tests/unit/test_run_recovery_lifecycle.py \
+  tests/unit/test_run_execution_migrations.py \
+  tests/unit/test_run_recovery_repository.py \
+  tests/integration/test_run_recovery_lifecycle_authority.py
+
+test "$(
+  shasum -a 256 \
+    tests/integration/test_run_recovery_lifecycle_authority.py \
+    | awk '{print $1}'
+)" = "dc2673d494faa4ee8d10439c44ac22444fff013c7e31e9d1272851ac8c2ee62d"
+```
+
+Expected: zero failures and frozen authority output `5 passed`. Record the
+actual combined count; do not hard-code it.
+
+- [ ] **Step 8: Run retained proof and full regression gates**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/run_execution_recovery_proof.py check
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/run_creation_idempotency_proof.py check
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/run_dispatch_reconciliation_proof.py check
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/run_failure_cause_proof.py check
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/agent_evaluation_gate.py check
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/agent_evaluation_v2_gate.py check
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/evidence_gated_loop_gate.py check
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/secure_local_runtime_proof.py check
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/bounded_live_producer_proof.py check
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q \
+  tests/integration/test_run_recovery_tool_journey.py
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q -m "not docker"
+```
+
+Expected: every command exits zero with its existing stable output; full
+non-Docker has zero failures. Record the actual counts, deselections, warnings,
+and durations. Docker remains outside Task 9 because no Docker surface changes.
+
+- [ ] **Step 9: Run immutable safety and repair-scope gates**
+
+```bash
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/final_presentation_audit.py --root .
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  scripts/check_canonical_identity.py --root .
+git diff --check
+git diff --check "$REPAIR_BASE"...HEAD
+
+git diff --name-only "$REPAIR_BASE"...HEAD | sort > /tmp/dra-repair-actual.txt
+printf '%s\n' \
+  api/run_execution_migrations.py \
+  api/run_recovery_lifecycle.py \
+  tests/integration/test_run_recovery_lifecycle_authority.py \
+  tests/unit/test_run_execution_migrations.py \
+  tests/unit/test_run_recovery_lifecycle.py \
+  tests/unit/test_run_recovery_repository.py \
+  | sort > /tmp/dra-repair-expected.txt
+cmp -s /tmp/dra-repair-expected.txt /tmp/dra-repair-actual.txt
+```
+
+Both audits must report status `ok`. The exact repair allowlist contains six
+paths. No docs, schema, repository API, proof, dependency, runtime, provider,
+frontend, Docker, version, release, or consumer surface may enter the repair
+diff.
+
+- [ ] **Step 10: Commit one semantic repair and re-run the frozen gate**
+
+```bash
+git add \
+  api/run_execution_migrations.py \
+  api/run_recovery_lifecycle.py \
+  tests/integration/test_run_recovery_lifecycle_authority.py \
+  tests/unit/test_run_execution_migrations.py \
+  tests/unit/test_run_recovery_lifecycle.py \
+  tests/unit/test_run_recovery_repository.py
+git diff --cached --check
+git diff --cached --name-status
+git commit -m "fix(recovery): bind lifecycle verification authority"
+
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q \
+  tests/integration/test_run_recovery_lifecycle_authority.py
+test -z "$(git status --porcelain)"
+```
+
+Expected: one repair commit after `REPAIR_BASE`; frozen authority output
+`5 passed`; final tracked/untracked status clean; ignored task-local `.venv/`
+preserved. Return to Career authority for actual-diff review. Do not push,
+create a PR, merge, tag, release, deploy, or clean any worktree/branch.
+
+---
+
 ## Retained Regression Matrix
 
 The final authority review must explicitly retain:
@@ -3704,6 +4212,7 @@ The final authority review must explicitly retain:
 | --- | --- |
 | Process-lifetime single writer | writer-lock unit/subprocess tests + proof `exclusive_writer_fail_closed` |
 | Graceful shutdown authority order | task-tracker drain tests + lifespan integration ordering |
+| Recovery lifecycle verifier trust root | producer-derived family tests + mutation/cross-product sensitivity + frozen black-box authority replay |
 | Ordinary unkeyed run creation | existing API/repository tests |
 | Keyed run creation and lost-response replay | creation proof + tests |
 | Three-attempt pre-start dispatch reconciliation | dispatch proof + tests |
@@ -3833,7 +4342,12 @@ The phase is complete only when:
 15. the worktree is clean;
 16. the planning authority completes actual-diff review before any publication;
 17. publication, merge, release, deploy, and cleanup remain separately
-    authorized actions.
+    authorized actions;
+18. every recovery source and replacement matches exactly one closed
+    producer-derived family, while ordinary compatibility cannot authorize a
+    recovery replay;
+19. the candidate-owned mutation/cross-product suite and the unchanged
+    authority-owned black-box replay both detect verifier drift.
 
 <!-- AUTONOMOUS DECISION LOG -->
 ## Decision Audit Trail
@@ -3862,6 +4376,64 @@ The phase is complete only when:
 | 20 | DevEx | Emit privacy-safe review-only timing diagnostics from the real local Tool Client journeys | Auto-decided P2 evidence improvement | A budget pass and an observed duration answer different questions | Separate client-observed A0/A1 and W0/W1 readback makes first-success evidence reviewable while keeping it local-fixture-only and outside public performance claims | Infer actual TTHW from the 90/120-second ceilings |
 | 21 | Authority self-review | Keep this slice in the program/Harness layer and preserve online/offline authority separation | Auto-decided from approved architecture | Deterministic safety belongs in code, constraints, verification, and rollback boundaries | Online execution may record and fence evidence, but one failure cannot become a permanent rule; diagnosis, candidate selection, retained regression, acceptance, publication, and rollback remain explicit offline or operator-owned work | Runtime self-modification, automatic promotion, or a generic evolution platform |
 | 22 | DevEx | Bind timing diagnostics only to public results observed by the independent client | Auto-decided P2 measurement correction | Measurement labels must match their actual observation boundary | The acceptance-only journey can report client-validated 202 time, while the wait/result journey can safely report only client-validated completion; a server commit hook cannot prove client observation | Label a server-side durable-commit timestamp as client-observed acceptance |
+| 23 | Authority reset | Reject another local predicate patch and replace the loose verifier with one project-specific closed classifier | Auto-decided after repeated black-box false greens | The verifier is a trust root and must be simpler to validate than the state it approves | Three independent controls proved that individually plausible field checks still accepted impossible recovery replay states | Add more local `if` branches to `_verify_lifecycle_row` |
+| 24 | Authority reset | Freeze one public-boundary black-box replay outside candidate-owned unit tests | Auto-decided from live RED evidence | Candidate verification needs an independent retained root | The frozen five-case replay reproduces three current false greens without importing the private classifier or candidate fixtures | Rely only on tests written against the new classifier |
+| 25 | Authority reset | Preserve the real expired-lease reclaim path while rejecting invented first-attempt history | Auto-decided from producer audit | Legal families come from production transitions, not intuition | A later reclaimed lease can legitimately have attempt `2` and no prior error, while attempt `1` cannot invent one | Treat every later lease without an error as corrupt |
+
+## Lifecycle Authority Amendment Self-Review
+
+### Spec coverage
+
+| Amended design requirement | Plan authority |
+| --- | --- |
+| Closed role assignment | Shared Lifecycle Verification Matrix + Task 9 Steps 4-6 |
+| Exact producer-derived replacement families | Shared matrix + Task 9 Steps 4-7 |
+| One project-specific pure classifier | Task 9 interfaces and Steps 3, 5, 6 |
+| Ordinary compatibility cannot authorize replay | Shared matrix + Task 9 Steps 3, 4, 6 |
+| Independent black-box verification root | Global Constraint 18 + Task 9 Steps 2, 7, 10 |
+| One-field mutation sensitivity | Task 9 Steps 3, 4, 7 |
+| Pairwise cross-family controls | Task 9 Steps 3, 4, 7 |
+| Immutable candidate and rollback authority | Global Constraints 16-18 + Task 9 Step 1 |
+| No generic FSM, DSL, registry, runtime mutation, or automatic release | Global Constraints 1, 8, 17 + Task 9 Step 5 |
+
+No amended spec requirement is deferred to execution-time design.
+
+### Harness and evaluation audit
+
+- The failure is classified as a Harness verifier defect, not a model-quality
+  problem; no provider or model experiment is added.
+- Online execution continues to record and fence application evidence only.
+  Diagnosis, candidate choice, acceptance, publication, and rollback remain
+  offline or operator-owned.
+- The candidate cannot redefine its independent acceptance root. The frozen
+  black-box replay is verified byte-for-byte before RED and after GREEN.
+- Positive families are derived from production transitions. One failed
+  example is not promoted into a global rule; retained mutation and
+  cross-product controls test the generalized relation.
+- The change carrier is the smallest sufficient program/Harness surface: one
+  pure classifier plus verifier integration. Prompt, Skill, knowledge,
+  runtime self-modification, generic EvalOps, and framework extension are
+  rejected as mismatched carriers.
+- Stable main remains rollback authority; hosted CI and publication remain
+  later human-owned gates.
+
+### Plan quality checks
+
+- Task 9 is one independently reviewable repair with a RED root, minimal
+  implementation, focused GREEN, retained suite, safety audit, and one
+  semantic commit.
+- File responsibilities and exact interfaces are consistent across the shared
+  matrix, Task 9 file map, implementation steps, allowlist, and Definition of
+  Done.
+- The frozen black-box identity, current false-green result, expected GREEN,
+  exact error boundary, and allowed diff are explicit.
+- No placeholder, dependency, framework, provider, Docker, release, or
+  consumer decision is left to the execution window.
+
+**Self-review verdict:** APPROVED for the bounded Task 9 lifecycle-authority
+repair. No AutoPlan rerun is required because the product architecture and
+public surface are unchanged; this amendment directly closes a reproduced
+verifier trust-root defect with an independent retained RED.
 
 ## GSTACK REVIEW REPORT
 
@@ -3887,6 +4459,9 @@ direction.
 - Tasks 1-3 remain dormant contract and migration construction. Task 4 is one
   indivisible authority transition. Tasks 5-8 remain serial integration,
   proof, documentation, and closeout work.
+- Task 9 is the bounded post-implementation authority reset: it freezes the
+  prior candidate, replaces only the lifecycle verifier trust root, and keeps
+  the independent black-box replay immutable.
 - The plan retains explicit RED/GREEN commands, fixed provider-free proof
   profiles, stable safe error codes, immutable revision provenance, retained
   compatibility gates, and one exact implementation allowlist.
@@ -3916,8 +4491,10 @@ observability, or automatic release.
 
 The implementation plan is approved by the planning authority and the user. It
 is a bounded program/Harness reliability slice with a provider-free proof path
-and clear rollback boundary. This approval authorizes only the task sequence
-and verification gates in this plan; publication, merge, release, deploy, and
+and clear rollback boundary. The later lifecycle-authority amendment is also
+approved by the planning authority under the user's delegated self-approval:
+only Task 9 may resume. This approval authorizes only the task sequence and
+verification gates in this plan; publication, merge, release, deploy, and
 operational rollback remain separately authorized actions.
 
 NO UNRESOLVED DECISIONS

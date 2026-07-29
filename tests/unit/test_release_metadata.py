@@ -143,6 +143,7 @@ def test_current_release_version_is_consistent() -> None:
 def test_changelog_preserves_published_release_boundary() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     unreleased_heading = "## [Unreleased]"
+    v0_1_7_heading = "## [0.1.7] - 2026-07-29"
     v0_1_6_heading = "## [0.1.6] - 2026-07-24"
     v0_1_5_match = re.search(
         r"^## \[0\.1\.5\] - (\d{4}-\d{2}-\d{2})$",
@@ -158,6 +159,7 @@ def test_changelog_preserves_published_release_boundary() -> None:
     v0_1_0_heading = "## [0.1.0] - 2026-06-28"
 
     assert unreleased_heading in changelog
+    assert v0_1_7_heading in changelog
     assert v0_1_6_heading in changelog
     assert v0_1_5_heading in changelog
     assert v0_1_4_heading in changelog
@@ -165,14 +167,15 @@ def test_changelog_preserves_published_release_boundary() -> None:
     assert v0_1_2_heading in changelog
     assert v0_1_1_heading in changelog
     assert v0_1_0_heading in changelog
-    assert changelog.index(unreleased_heading) < changelog.index(v0_1_6_heading)
+    assert changelog.index(unreleased_heading) < changelog.index(v0_1_7_heading)
+    assert changelog.index(v0_1_7_heading) < changelog.index(v0_1_6_heading)
     assert changelog.index(v0_1_6_heading) < changelog.index(v0_1_5_heading)
     assert changelog.index(v0_1_5_heading) < changelog.index(v0_1_4_heading)
     assert changelog.index(v0_1_4_heading) < changelog.index(v0_1_3_heading)
     assert changelog.index(v0_1_3_heading) < changelog.index(v0_1_2_heading)
     assert changelog.index(v0_1_2_heading) < changelog.index(v0_1_1_heading)
     assert changelog.index(v0_1_1_heading) < changelog.index(v0_1_0_heading)
-    unreleased = changelog.split(unreleased_heading, 1)[1].split(
+    released = changelog.split(v0_1_7_heading, 1)[1].split(
         v0_1_6_heading,
         1,
     )[0]
@@ -180,7 +183,7 @@ def test_changelog_preserves_published_release_boundary() -> None:
     privacy_safe_observation_heading = (
         "### Privacy-safe observation contract"
     )
-    assert privacy_safe_observation_heading in unreleased
+    assert privacy_safe_observation_heading in released
     assert privacy_safe_observation_heading not in v0_1_6
     bounded_producer_subsection = """### Bounded live producer evaluation
 
@@ -380,7 +383,12 @@ def test_security_policy_matches_current_release_surface() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
 
     required = [
-        "Decision Research Agent v0.1.6",
+        "Decision Research Agent v0.1.7 release preparation includes",
+        "context reliability",
+        "privacy-safe observation",
+        "strict citation",
+        "evidence-gated offline verification",
+        "crash-safe single-node recovery",
         "single-node",
         "run dispatch",
         "failure cause",
@@ -396,11 +404,12 @@ def test_security_policy_matches_current_release_surface() -> None:
         assert phrase in security
 
 
-def test_security_policy_publishes_v0_1_6_runtime_controls() -> None:
+def test_security_policy_publishes_v0_1_7_preparation_runtime_controls() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
     normalized = " ".join(security.split())
 
-    assert "Decision Research Agent v0.1.6 ships" in normalized
+    assert "Decision Research Agent v0.1.7 release preparation includes" in normalized
+    assert "Decision Research Agent v0.1.7 ships" not in normalized
     assert "The source template uses `API_SECRET=`" in normalized
     assert "Compose requires non-empty" in normalized
     assert "drops all backend capabilities" in normalized
@@ -614,10 +623,13 @@ def test_v0_1_5_release_notes_cover_secure_local_runtime_and_limits() -> None:
         assert phrase in notes
 
 
-def test_v0_1_6_release_is_current_and_history_remains_discoverable() -> None:
+def test_v0_1_7_release_is_current_and_history_remains_discoverable() -> None:
     readme = _read(PROJECT_ROOT / "README.md")
     readme_cn = _read(PROJECT_ROOT / "README_CN.md")
     docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
+    assert "[v0.1.7 Release Notes](docs/releases/v0.1.7.md)" in readme
+    assert "[v0.1.7 Release Notes](docs/releases/v0.1.7.md)" in readme_cn
+    assert "[v0.1.7 Release Notes](releases/v0.1.7.md)" in docs_index
     assert "[v0.1.6 Release Notes](docs/releases/v0.1.6.md)" in readme
     assert "[v0.1.6 Release Notes](docs/releases/v0.1.6.md)" in readme_cn
     assert "[v0.1.6 Release Notes](releases/v0.1.6.md)" in docs_index
@@ -640,7 +652,11 @@ def test_v0_1_6_release_is_current_and_history_remains_discoverable() -> None:
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
     assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
     assert (
-        "- [v0.1.6 Release Notes](releases/v0.1.6.md) — current supported surface,"
+        "- [v0.1.7 Release Notes](releases/v0.1.7.md) — current supported surface,"
+        in docs_index
+    )
+    assert (
+        "- [v0.1.6 Release Notes](releases/v0.1.6.md) — historical"
         in docs_index
     )
     assert (
@@ -666,7 +682,7 @@ def test_v0_1_6_release_is_current_and_history_remains_discoverable() -> None:
     assert "downstream-consumer and Agent evaluation contract gates." in docs_index
     assert docs_index.count("current supported surface") == 1
     assert (
-        "[v0.1.5 Release Notes](releases/v0.1.5.md) — current supported surface"
+        "[v0.1.6 Release Notes](releases/v0.1.6.md) — current supported surface"
         not in docs_index
     )
     _assert_v0_1_5_public_release_corpus_has_no_premature_claims()

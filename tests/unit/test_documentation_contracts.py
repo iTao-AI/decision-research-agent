@@ -108,7 +108,7 @@ def test_recovery_runbook_locks_upgrade_collision_rollback_and_diagnostics() -> 
         "exact profile ID/version unavailable",
         "replacement used as recovery source",
         "ordinary keyed run",
-        "release remains `hold`",
+        "historical release `hold`",
     ):
         assert phrase.lower() in collapsed
     for forbidden in (
@@ -158,9 +158,16 @@ def test_recovery_docs_reject_automatic_or_production_overclaims() -> None:
         "No distributed lock or leader election",
         "No provider success",
         "No business impact",
-        "No published v0.1.7",
+        "No automatic release or rollback",
     ):
         assert nonclaim in runbook
+    for current_truth in (
+        "v0.1.7 release preparation includes this recovery surface",
+        "historical release `hold`",
+        "does not itself prove publication",
+    ):
+        assert current_truth in runbook
+    assert "No published v0.1.7." not in runbook
     assert "LangGraph checkpoint replay" in combined
     assert "may re-execute" in combined
 
@@ -940,7 +947,9 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
 
     assert "v0.1.5 Release Notes" in current_discovery
     assert "v0.1.6 Release Notes" in current_discovery
-    assert "Decision Research Agent v0.1.6" in current_discovery
+    assert "Decision Research Agent v0.1.7 release preparation includes" in (
+        current_discovery
+    )
 
 
 @pytest.mark.parametrize(
@@ -1164,6 +1173,13 @@ def test_operations_docs_cover_release_recovery_boundaries() -> None:
 
     for phrase in required_phrases:
         assert phrase in docs
+    recovery = RECOVERY_RUNBOOK.read_text(encoding="utf-8")
+    for phrase in (
+        "v0.1.7 release preparation includes this recovery surface",
+        "historical release `hold`",
+        "does not itself prove publication",
+    ):
+        assert phrase in recovery
 
     assert (
         "The current Console does not expose review controls and does not own review authority."
@@ -3011,6 +3027,8 @@ def test_sensitivity_gate_required_ci_inventory_is_value_equal_in_english_and_ch
     )
     assert english_commands == chinese_commands
     assert "python scripts/agent_evaluation_v2_gate.py check" in english_commands
+    assert "python scripts/evidence_gated_loop_gate.py check" in english_commands
+    assert "python scripts/run_execution_recovery_proof.py check" in english_commands
     workflow = (
         PROJECT_ROOT / ".github/workflows/ci.yml"
     ).read_text(encoding="utf-8")

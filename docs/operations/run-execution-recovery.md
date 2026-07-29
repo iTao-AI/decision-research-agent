@@ -2,8 +2,9 @@
 
 This runbook covers the single-node SQLite crash-safety boundary introduced by
 migration `010_run_execution_recovery`. It provides startup-only convergence,
-not runtime monitoring. Release remains `hold`; implementation and proof do not
-publish v0.1.7.
+not runtime monitoring. The implementation phase retained historical release `hold`;
+v0.1.7 release preparation includes this recovery surface through a
+later separate human review. This runbook does not itself prove publication.
 
 ## Authority And Non-claims
 
@@ -27,7 +28,7 @@ run, not resume, and may repeat provider or tool effects.
 - No distributed lock or leader election.
 - No provider success.
 - No business impact.
-- No published v0.1.7.
+- No automatic release or rollback.
 
 The gate covers one supported local application lifespan. Repository helpers,
 migrations, fixtures, and proof scripts expose direct APIs for isolated

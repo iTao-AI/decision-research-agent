@@ -242,9 +242,11 @@ DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_v2_gate.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/secure_local_runtime_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/bounded_live_producer_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/run_execution_recovery_proof.py check
 python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
@@ -254,11 +256,13 @@ python tools/decision_research_agent_tool.py doctor
 
 - Agent evaluation regression gate：`python scripts/agent_evaluation_gate.py check`
 - Agent evaluation sensitivity gate v2：`python scripts/agent_evaluation_v2_gate.py check`
+- Evidence-Gated Loop Kernel：`python scripts/evidence_gated_loop_gate.py check`
 - Run creation idempotency proof：`python scripts/run_creation_idempotency_proof.py check`
 - Run dispatch reconciliation proof：`python scripts/run_dispatch_reconciliation_proof.py check`
 - Run failure cause proof：`python scripts/run_failure_cause_proof.py check`
 - Secure local runtime proof：`python scripts/secure_local_runtime_proof.py check`
 - Bounded live producer contract check：`python scripts/bounded_live_producer_proof.py check`
+- Crash-safe execution recovery proof：`python scripts/run_execution_recovery_proof.py check`
 
 required pytest 覆盖 downstream fixture/CLI behavior；该行为没有独立的
 top-level workflow step。当前 required-gate authority 是
@@ -299,6 +303,7 @@ business acceptance、provider billing、exactly-once、production readiness
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
 - [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.7 Release Notes](docs/releases/v0.1.7.md)
 - [v0.1.6 Release Notes](docs/releases/v0.1.6.md)
 - [v0.1.5 Release Notes](docs/releases/v0.1.5.md)
 - [v0.1.4 Release Notes](docs/releases/v0.1.4.md)
@@ -354,6 +359,8 @@ provider-free 的保留集与安全检查复核候选，并把在线应用状态
 `dra.evidence-gated-loop-registry.v1`、`dra.evolution-case.v1` 和
 `dra.evidence-gated-loop-report.v1`。
 v0.1.6 selector 只验证不可变的 v0.1.6 release record，不执行历史 release 行为。
+不可变的 v0.1.6 release 不包含该 kernel；v0.1.7 release
+preparation 通过后续独立人工审查纳入它，canonical episode 的 hold 决策仍是历史证据。
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
@@ -371,12 +378,12 @@ PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
 详情见 [Evidence-Gated Loop Kernel](docs/reference/evidence-gated-loop-kernel.md)
 及其 [canonical JSON](docs/evidence/evidence-gated-loop-kernel-v1.json)。
 这项 provider-free contract proof 不是运行时自修改，也不证明 live-provider
-strict success、生产可靠性或 v0.1.7 已发布；不可变的 v0.1.6 release 不包含这一
-post-v0.1.6 kernel。
+strict success 或生产可靠性。v0.1.7 release preparation 记录后续独立人工审查的
+repository release decision，canonical episode 的 hold 决策仍是历史证据。
 
 ### Crash-safe startup convergence
 
-未发布的 recovery slice 增加 process-lifetime DB-scoped exclusive writer
+v0.1.7 release preparation 纳入 process-lifetime DB-scoped exclusive writer
 gate、application-owned `running` 状态的 startup-only convergence，以及显式、
 认证、one-hop replacement。原 source 会成为 immutable failed；replacement
 创建 new run, not resume。它没有 automatic retry、checkpoint replay、
@@ -390,8 +397,9 @@ PYTHON_DOTENV_DISABLED=1 python \
 
 该 provider-free real-process proof 覆盖 execution/finalization `SIGKILL`、
 stale-owner fencing、keyed replay、migration restore 与 old-source rollback
-verification。它不发布 release；release 继续 hold。操作边界见
-[runbook](docs/operations/run-execution-recovery.md)。
+verification。implementation phase 保留 release hold；v0.1.7 是后续独立人工
+审查的 repository release decision；本 README 本身不证明 tag 或 GitHub Release
+已发布。操作边界见 [runbook](docs/operations/run-execution-recovery.md)。
 
 ## License
 

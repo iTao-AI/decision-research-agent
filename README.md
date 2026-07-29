@@ -267,9 +267,11 @@ selected local verification subset, not the full required CI proof inventory:
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/agent_evaluation_v2_gate.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/run_failure_cause_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/secure_local_runtime_proof.py check
 PYTHON_DOTENV_DISABLED=1 python scripts/bounded_live_producer_proof.py check
+PYTHON_DOTENV_DISABLED=1 python scripts/run_execution_recovery_proof.py check
 python -m pytest -q
 python scripts/check_canonical_identity.py --root .
 python tools/decision_research_agent_tool.py doctor
@@ -279,11 +281,13 @@ python tools/decision_research_agent_tool.py doctor
 
 - Agent evaluation regression gate: `python scripts/agent_evaluation_gate.py check`
 - Agent evaluation sensitivity gate v2: `python scripts/agent_evaluation_v2_gate.py check`
+- Evidence-Gated Loop Kernel: `python scripts/evidence_gated_loop_gate.py check`
 - Run creation idempotency proof: `python scripts/run_creation_idempotency_proof.py check`
 - Run dispatch reconciliation proof: `python scripts/run_dispatch_reconciliation_proof.py check`
 - Run failure cause proof: `python scripts/run_failure_cause_proof.py check`
 - Secure local runtime proof: `python scripts/secure_local_runtime_proof.py check`
 - Bounded live producer contract check: `python scripts/bounded_live_producer_proof.py check`
+- Crash-safe execution recovery proof: `python scripts/run_execution_recovery_proof.py check`
 
 Required pytest covers downstream fixture/CLI behavior;
 it is not an independent top-level workflow step. The current required-gate
@@ -318,6 +322,9 @@ arbitrary historical candidates or infer human verdicts. Its public schemas are
 `dra.evidence-gated-loop-registry.v1`, `dra.evolution-case.v1`, and
 `dra.evidence-gated-loop-report.v1`.
 The v0.1.6 selector verifies only the immutable v0.1.6 release record; it does not execute historical release behavior.
+The immutable v0.1.6 release does not contain this kernel. The v0.1.7 release preparation includes it
+through a later separate human review; canonical episode hold decisions remain
+historical evidence.
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
@@ -335,9 +342,9 @@ exactly:
 See the [Evidence-Gated Loop Kernel](docs/reference/evidence-gated-loop-kernel.md)
 and its [canonical JSON](docs/evidence/evidence-gated-loop-kernel-v1.json).
 This provider-free contract proof is not runtime self-modification or
-live-provider strict success, is not production reliability evidence, and is
-not a v0.1.7 release. The immutable v0.1.6 release does not contain the
-post-v0.1.6 kernel.
+live-provider strict success and is not production reliability evidence. The
+v0.1.7 release preparation records a later separate human-reviewed repository
+decision while canonical episode hold decisions remain historical evidence.
 
 ## Documentation
 
@@ -359,6 +366,7 @@ post-v0.1.6 kernel.
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
 - [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.7 Release Notes](docs/releases/v0.1.7.md)
 - [v0.1.6 Release Notes](docs/releases/v0.1.6.md)
 - [v0.1.5 Release Notes](docs/releases/v0.1.5.md)
 - [v0.1.4 Release Notes](docs/releases/v0.1.4.md)
@@ -415,7 +423,7 @@ post-v0.1.6 kernel.
 
 ### Crash-safe startup convergence
 
-The unreleased recovery slice adds a process-lifetime DB-scoped exclusive
+The v0.1.7 release preparation includes a process-lifetime DB-scoped exclusive
 writer gate, startup-only convergence for application-owned running state, and
 an explicit authenticated one-hop replacement. The original source becomes
 immutable failed; replacement creates a new run, not resume. There is no
@@ -429,8 +437,10 @@ PYTHON_DOTENV_DISABLED=1 python \
 
 This provider-free real-process proof includes execution/finalization
 `SIGKILL`, stale-owner fencing, keyed replay, migration restore, and old-source
-rollback verification. It does not publish a release; release remains on hold.
-See the [operator runbook](docs/operations/run-execution-recovery.md).
+rollback verification. The implementation phase retained release hold. v0.1.7
+is a later separate human-reviewed repository release decision; this README
+does not itself prove tag or GitHub Release publication. See the
+[operator runbook](docs/operations/run-execution-recovery.md).
 
 ## License
 

@@ -15,7 +15,7 @@ runtime, checkpoints, tracing, and observation records do not become business
 authority. The immutable `v0.1.6` release and
 `dra.downstream-consumer.v1` run status/result/Evidence boundary are unchanged;
 raw observation `args`, `result`, and `error` semantics are intentionally
-hardened in place under `Unreleased`.
+hardened in place and first included in the v0.1.7 release preparation.
 
 ## Monitor envelope
 

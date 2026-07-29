@@ -5,9 +5,7 @@
 > `superpowers:executing-plans` to implement this plan task-by-task. Steps use
 > checkboxes for execution tracking.
 
-**Status:** Approved by the user after AutoPlan review. Bounded implementation
-is authorized through the task sequence below; publication remains separately
-gated.
+**Status:** Approved for implementation.
 
 **Goal:** Close the live post-start process-death gap without runtime
 self-modification, heartbeat expiry, checkpoint replay, or automatic Agent

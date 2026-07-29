@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from itertools import combinations
 import sqlite3
 import threading
 
@@ -16,10 +18,18 @@ from api.run_execution_repository import (
     advance_run_execution_phase,
 )
 from api.run_failure_cause_models import RunFailureCauseWrite
+from api.run_recovery_lifecycle import (
+    LifecycleFamily,
+    LifecycleRole,
+    LifecycleStateInvalid,
+    RecoveryLifecycleSnapshot,
+    classify_recovery_lifecycle,
+)
 from api.run_recovery_models import RunRecoveryConflict
 from api.run_recovery_repository import create_or_replay_run_recovery
 from api.run_repository import finalize_run_transaction
 from tests.unit.test_run_execution_repository import _active, _database
+from tests.unit.test_run_recovery_lifecycle import FIELD_GROUPS, GROUP_FIELDS
 
 
 def _source(tmp_path):
@@ -48,6 +58,160 @@ def _claim_replacement(path, boot, run_id, *, worker_hex="d"):
     )
     assert claim is not None
     return claim
+
+
+def _replacement_snapshot(path, run_id):
+    with sqlite3.connect(path) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT dispatch.run_id, dispatch.status AS dispatch_status,
+                   dispatch.lease_owner, dispatch.lease_expires_at,
+                   dispatch.attempt_count, dispatch.last_error_code,
+                   dispatch.created_at AS dispatch_created_at,
+                   dispatch.updated_at AS dispatch_updated_at,
+                   dispatch.started_at,
+                   run.execution_status, run.review_status,
+                   run.delivery_status, run.state_version,
+                   run.created_at AS run_created_at,
+                   run.updated_at AS run_updated_at,
+                   segment.segment_id, segment.run_id AS segment_run_id,
+                   segment.kind, segment.sequence,
+                   segment.attempt AS segment_attempt,
+                   segment.status AS segment_status,
+                   segment.created_at AS segment_created_at,
+                   segment.updated_at AS segment_updated_at,
+                   owner.segment_id AS owner_segment_id,
+                   owner.status AS owner_status,
+                   owner.phase AS owner_phase,
+                   owner.boot_id AS owner_boot_id,
+                   owner.owner_id,
+                   owner.created_at AS owner_created_at,
+                   owner.phase_updated_at AS owner_phase_updated_at,
+                   owner.closed_at AS owner_closed_at,
+                   owner.recovery_reason,
+                   cause.observation_status,
+                   cause.terminal_state_version,
+                   cause.phase AS cause_phase,
+                   cause.code AS cause_code,
+                   cause.recorded_at,
+                   (
+                       SELECT COUNT(*)
+                       FROM run_segments AS exact_segment
+                       WHERE exact_segment.run_id=run.run_id
+                         AND exact_segment.kind='initial'
+                         AND exact_segment.sequence=0
+                         AND exact_segment.attempt=1
+                   ) AS initial_segment_count
+            FROM run_dispatches_v1 AS dispatch
+            JOIN research_runs_v2 AS run ON run.run_id=dispatch.run_id
+            LEFT JOIN run_segments AS segment
+              ON segment.run_id=run.run_id
+             AND segment.kind='initial'
+             AND segment.sequence=0
+             AND segment.attempt=1
+            LEFT JOIN run_execution_owners_v1 AS owner
+              ON owner.run_id=run.run_id
+            LEFT JOIN run_failure_causes_v1 AS cause
+              ON cause.run_id=run.run_id
+            WHERE run.run_id=?
+            """,
+            (run_id,),
+        ).fetchone()
+    assert row is not None
+    return RecoveryLifecycleSnapshot(
+        **{
+            field_name: row[field_name]
+            for field_name in RecoveryLifecycleSnapshot.__dataclass_fields__
+        }
+    )
+
+
+def _producer_replacement_snapshot(tmp_path, family):
+    root = tmp_path / family
+    root.mkdir()
+    path, boot = _source(root)
+    accepted = _recover(path, boot)
+    if family.startswith("initial"):
+        return _replacement_snapshot(path, accepted.run_id), boot
+
+    claim = _claim_replacement(path, boot, accepted.run_id)
+    if family == "leased":
+        return _replacement_snapshot(path, accepted.run_id), boot
+    owner = start_run_dispatch(db_path=str(path), claim=claim)
+    assert owner is not None
+    if family == "running_execution":
+        return _replacement_snapshot(path, accepted.run_id), boot
+    if family == "later_boot_interrupted":
+        boot = f"boot_{'e' * 32}"
+        activate_run_execution_boot(db_path=str(path), boot_id=boot)
+        return _replacement_snapshot(path, accepted.run_id), boot
+    if family in {"closed_completed", "closed_failed_finalization"}:
+        assert advance_run_execution_phase(db_path=str(path), handle=owner)
+    if family == "closed_completed":
+        assert finalize_run_transaction(
+            run_id=accepted.run_id,
+            segment_id=accepted.segment_id,
+            expected_state_version=1,
+            allowed_previous_statuses={"running"},
+            execution_status="completed",
+            delivery_status="ready",
+            evidence_entries=[],
+            owner_handle=owner,
+            db_path=str(path),
+        )
+    elif family == "closed_failed_finalization":
+        assert finalize_run_transaction(
+            run_id=accepted.run_id,
+            segment_id=accepted.segment_id,
+            expected_state_version=1,
+            allowed_previous_statuses={"running"},
+            execution_status="failed",
+            delivery_status="failed",
+            evidence_entries=[],
+            failure_cause=RunFailureCauseWrite(
+                phase="finalization",
+                code="run_finalization_failed",
+            ),
+            owner_handle=owner,
+            db_path=str(path),
+        )
+    elif family in {
+        "closed_failed_execution",
+        "closed_failed_execution_alt",
+    }:
+        assert finalize_run_transaction(
+            run_id=accepted.run_id,
+            segment_id=accepted.segment_id,
+            expected_state_version=1,
+            allowed_previous_statuses={"running"},
+            execution_status="failed",
+            delivery_status="failed",
+            evidence_entries=[],
+            failure_cause=RunFailureCauseWrite(
+                phase="execution",
+                code=(
+                    "execution_error"
+                    if family == "closed_failed_execution"
+                    else "call_budget_exceeded"
+                ),
+            ),
+            owner_handle=owner,
+            db_path=str(path),
+        )
+    else:
+        raise AssertionError(f"unsupported producer family: {family}")
+    return _replacement_snapshot(path, accepted.run_id), boot
+
+
+def _replace_snapshot_group(snapshot, donor, group):
+    return replace(
+        snapshot,
+        **{
+            field_name: getattr(donor, field_name)
+            for field_name in GROUP_FIELDS[group]
+        },
+    )
 
 
 def test_recovery_creates_run_segment_dispatch_and_lineage_in_one_transaction(tmp_path):
@@ -610,6 +774,102 @@ def test_same_key_replay_rejects_each_pairwise_family_cross_product(
         _recover(path, boot)
 
 
+def test_full_pairwise_matrix_uses_producer_derived_legal_families(tmp_path):
+    produced = {
+        family: _producer_replacement_snapshot(tmp_path, family)[0]
+        for family in (
+            "initial_pending",
+            "initial_lineage",
+            "leased",
+            "running_execution",
+            "later_boot_interrupted",
+            "closed_completed",
+            "closed_failed_execution",
+            "closed_failed_execution_alt",
+            "closed_failed_finalization",
+        )
+    }
+    base = produced["initial_pending"]
+    donors = {
+        "run": produced["running_execution"],
+        "segment": produced["running_execution"],
+        "dispatch": produced["leased"],
+        "owner": produced["running_execution"],
+        "cause": produced["later_boot_interrupted"],
+        "boot": produced["running_execution"],
+        "timestamp": produced["running_execution"],
+        "lineage": produced["initial_lineage"],
+    }
+    pairs = tuple(combinations(FIELD_GROUPS, 2))
+    assert len(pairs) == 28
+
+    for left_group, right_group in pairs:
+        if (left_group, right_group) == ("owner", "cause"):
+            mixed = _replace_snapshot_group(
+                produced["closed_failed_execution"],
+                produced["closed_failed_finalization"],
+                "owner",
+            )
+            mixed = _replace_snapshot_group(
+                mixed,
+                produced["closed_failed_execution_alt"],
+                "cause",
+            )
+        elif (left_group, right_group) == ("owner", "timestamp"):
+            closed = produced["closed_completed"]
+            owner_donor = replace(
+                closed,
+                started_at="2026-07-29T02:00:00+00:00",
+                owner_created_at="2026-07-29T02:00:00+00:00",
+            )
+            timestamp_donor = replace(
+                closed,
+                dispatch_updated_at="2026-07-29T03:00:00+00:00",
+                started_at="2026-07-29T03:00:00+00:00",
+                run_updated_at="2026-07-29T03:01:00+00:00",
+                segment_updated_at="2026-07-29T03:01:00+00:00",
+                owner_phase_updated_at="2026-07-29T03:01:00+00:00",
+                owner_closed_at="2026-07-29T03:01:00+00:00",
+            )
+            mixed = _replace_snapshot_group(closed, owner_donor, "owner")
+            mixed = _replace_snapshot_group(
+                mixed,
+                timestamp_donor,
+                "timestamp",
+            )
+        else:
+            mixed = _replace_snapshot_group(
+                base,
+                donors[left_group],
+                left_group,
+            )
+            mixed = _replace_snapshot_group(
+                mixed,
+                donors[right_group],
+                right_group,
+            )
+
+        if (left_group, right_group) == ("dispatch", "lineage"):
+            assert (
+                classify_recovery_lifecycle(
+                    mixed,
+                    role=LifecycleRole.RECOVERY_REPLACEMENT,
+                    current_boot_id=f"boot_{'c' * 32}",
+                )
+                is LifecycleFamily.LEASED
+            )
+            continue
+        with pytest.raises(
+            LifecycleStateInvalid,
+            match="^lifecycle_state_invalid$",
+        ):
+            classify_recovery_lifecycle(
+                mixed,
+                role=LifecycleRole.RECOVERY_REPLACEMENT,
+                current_boot_id=f"boot_{'c' * 32}",
+            )
+
+
 def test_same_key_replay_rejects_pending_success_ordinary_escape(tmp_path):
     path, boot = _source(tmp_path)
     accepted = _recover(path, boot)
@@ -657,6 +917,35 @@ def test_same_key_replay_rejects_completed_owner_phase_drift(tmp_path):
             "WHERE run_id=?",
             (accepted.run_id,),
         )
+    with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
+        _recover(path, boot)
+
+
+def test_same_key_replay_rejects_completed_owner_created_at_drift(tmp_path):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    claim = _claim_replacement(path, boot, accepted.run_id)
+    owner = start_run_dispatch(db_path=str(path), claim=claim)
+    assert owner is not None
+    assert advance_run_execution_phase(db_path=str(path), handle=owner)
+    assert finalize_run_transaction(
+        run_id=accepted.run_id,
+        segment_id=accepted.segment_id,
+        expected_state_version=1,
+        allowed_previous_statuses={"running"},
+        execution_status="completed",
+        delivery_status="ready",
+        evidence_entries=[],
+        owner_handle=owner,
+        db_path=str(path),
+    )
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE run_execution_owners_v1 SET created_at=? "
+            "WHERE run_id=?",
+            ("2030-01-01T00:00:00+00:00", accepted.run_id),
+        )
+
     with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
         _recover(path, boot)
 

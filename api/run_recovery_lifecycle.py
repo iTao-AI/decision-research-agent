@@ -475,7 +475,7 @@ def _closed_terminal(
         and snapshot.owner_status == "closed"
         and snapshot.owner_boot_id is None
         and snapshot.owner_id is None
-        and _timestamp(snapshot.owner_created_at)
+        and snapshot.owner_created_at == snapshot.started_at
         and snapshot.owner_phase_updated_at
         == snapshot.owner_closed_at
         == terminal
@@ -507,7 +507,7 @@ def _closed_terminal(
         and snapshot.review_status == "not_required"
         and snapshot.delivery_status == "failed"
         and snapshot.owner_phase in {"execution", "finalization"}
-        and snapshot.cause_phase in {"execution", "finalization"}
+        and snapshot.cause_phase == snapshot.owner_phase
         and _cause(
             snapshot,
             version=2,
@@ -545,12 +545,19 @@ def _later_boot_interrupted(
         and snapshot.owner_status == "interrupted"
         and snapshot.owner_boot_id is None
         and snapshot.owner_id is None
-        and _timestamp(snapshot.owner_created_at)
         and snapshot.owner_phase_updated_at
         == snapshot.owner_closed_at
         == terminal
-        and snapshot.recovery_reason
-        in {"previous_boot_interrupted", "pre_v1_running_without_owner"}
+        and (
+            (
+                snapshot.recovery_reason == "previous_boot_interrupted"
+                and snapshot.owner_created_at == snapshot.started_at
+            )
+            or (
+                snapshot.recovery_reason == "pre_v1_running_without_owner"
+                and snapshot.owner_created_at == terminal
+            )
+        )
         and expected_code is not None
         and _cause(
             snapshot,

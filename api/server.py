@@ -589,17 +589,18 @@ async def _run_started_v2_with_persistence(
             profile_id=profile_id,
             scope=scope,
         )
-        phase_won = await asyncio.to_thread(
-            advance_run_execution_phase,
-            db_path=db_path,
-            handle=owner_box.require(),
-        )
-        if not phase_won:
-            return
-        stage.advance_to_finalization()
         execution_status = (
             "failed" if result.failure_kind is not None else "completed"
         )
+        if execution_status == "completed":
+            phase_won = await asyncio.to_thread(
+                advance_run_execution_phase,
+                db_path=db_path,
+                handle=owner_box.require(),
+            )
+            if not phase_won:
+                return
+            stage.advance_to_finalization()
         failure_cause = (
             _execution_failure_cause(result.failure_kind)
             if execution_status == "failed"

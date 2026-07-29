@@ -450,9 +450,17 @@ def _started_run(db_path: Path):
 def _business_counts(db_path: Path) -> tuple[int, ...]:
     tables = (
         "evidence_entries_v2",
-        "research_packets_v1",
-        "run_artifacts_v1",
-        "review_records_v1",
+        "research_packets_v2",
+        "run_artifacts_v2",
+        "review_bundles_v2",
+        "review_workflows_v2",
+        "review_decisions_v2",
+        "review_resolutions_v2",
+        "review_resume_attempts_v2",
+        "evidence_verification_preflights_v2",
+        "evidence_verification_decisions_v2",
+        "evidence_verification_snapshots_v2",
+        "run_publications_v2",
         "run_failure_causes_v1",
         "run_recovery_retries_v1",
     )

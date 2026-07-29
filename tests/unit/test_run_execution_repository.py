@@ -92,7 +92,47 @@ def test_convergence_writes_no_evidence_packet_artifact_review_or_lineage(tmp_pa
     path = _database(tmp_path); _active(path)
     activate_run_execution_boot(db_path=str(path), boot_id=f"boot_{'c'*32}")
     with sqlite3.connect(path) as c:
-        assert c.execute("SELECT COUNT(*) FROM run_recovery_retries_v1").fetchone()[0] == 0
+        business_tables = (
+            "evidence_entries_v2",
+            "research_packets_v2",
+            "run_artifacts_v2",
+            "review_bundles_v2",
+            "review_workflows_v2",
+            "review_decisions_v2",
+            "review_resolutions_v2",
+            "review_resume_attempts_v2",
+            "evidence_verification_preflights_v2",
+            "evidence_verification_decisions_v2",
+            "evidence_verification_snapshots_v2",
+            "run_publications_v2",
+            "run_failure_causes_v1",
+            "run_recovery_retries_v1",
+        )
+        existing = {
+            row[0]
+            for row in c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        counts = {
+            table: c.execute(
+                f"SELECT COUNT(*) FROM {table}"
+            ).fetchone()[0]
+            for table in business_tables
+            if table in existing
+        }
+        assert {
+            "evidence_entries_v2",
+            "research_packets_v2",
+            "run_artifacts_v2",
+            "review_bundles_v2",
+            "run_failure_causes_v1",
+            "run_recovery_retries_v1",
+        } <= counts.keys()
+        assert counts == {
+            table: 1 if table == "run_failure_causes_v1" else 0
+            for table in counts
+        }
 
 
 def test_convergence_invokes_no_agent_model_graph_tool_or_provider_boundary(tmp_path):

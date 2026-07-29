@@ -1592,8 +1592,8 @@ async def test_stale_terminal_result_creates_no_fallback_cause(
             delivery_status="failed",
             evidence_entries=[],
             failure_cause=RunFailureCauseWrite(
-                phase="execution",
-                code="execution_error",
+                phase="finalization",
+                code="run_finalization_failed",
             ),
             owner_handle=kwargs["owner_handle"],
             db_path=kwargs.get("db_path"),
@@ -1617,8 +1617,8 @@ async def test_stale_terminal_result_creates_no_fallback_cause(
 
     assert len(calls) == 1
     run = get_run(run_id=created["run_id"])
-    assert run["failure_cause"]["phase"] == "execution"
-    assert run["failure_cause"]["code"] == "execution_error"
+    assert run["failure_cause"]["phase"] == "finalization"
+    assert run["failure_cause"]["code"] == "run_finalization_failed"
     assert run["artifacts"] == []
 
 

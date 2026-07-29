@@ -1828,6 +1828,54 @@ def test_finalization_exception_closes_exact_finalization_owner(tmp_path):
     )
 
 
+def test_finalization_owner_rejects_execution_phase_failure_cause(tmp_path):
+    from api.run_execution_repository import advance_run_execution_phase
+    from tests.run_execution_helpers import activate_and_start_created_run
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(db_path=db_path, thread_id="thread", query="query")
+    started = activate_and_start_created_run(
+        db_path=db_path,
+        run_id=created["run_id"],
+    )
+    assert advance_run_execution_phase(db_path=db_path, handle=started.handle)
+    before = _table_snapshot(
+        db_path,
+        (
+            "research_runs_v2",
+            "run_segments",
+            "run_execution_owners_v1",
+            "run_failure_causes_v1",
+        ),
+    )
+
+    assert not finalize_run_transaction(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=1,
+        allowed_previous_statuses={"running"},
+        execution_status="failed",
+        delivery_status="failed",
+        evidence_entries=[],
+        failure_cause=RunFailureCauseWrite(
+            phase="execution",
+            code="execution_error",
+        ),
+        owner_handle=started.handle,
+    )
+
+    assert _table_snapshot(
+        db_path,
+        (
+            "research_runs_v2",
+            "run_segments",
+            "run_execution_owners_v1",
+            "run_failure_causes_v1",
+        ),
+    ) == before
+
+
 def test_owner_close_failure_rolls_back_every_business_and_terminal_write(
     tmp_path,
     monkeypatch,

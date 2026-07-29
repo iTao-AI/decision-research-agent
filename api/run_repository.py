@@ -1363,12 +1363,13 @@ def finalize_run_transaction(
                 ):
                     return False
                 if failure_cause is not None:
-                    if failure_cause.code in {"run_timeout", "cancelled"}:
-                        if failure_cause.phase != owner_phase:
-                            return False
-                    elif failure_cause.code == "run_finalization_failed":
-                        if owner_phase != "finalization":
-                            return False
+                    if failure_cause.phase != owner_phase:
+                        return False
+                    if (
+                        failure_cause.code == "run_finalization_failed"
+                        and owner_phase != "finalization"
+                    ):
+                        return False
             cursor = conn.execute(
                 f"""
                 UPDATE research_runs_v2

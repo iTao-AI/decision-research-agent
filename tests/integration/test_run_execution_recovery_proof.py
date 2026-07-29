@@ -60,6 +60,22 @@ STAGE_CODES = {
     ),
     "retained": "run_execution_recovery_proof_retained_contract_failed",
 }
+BUSINESS_TABLES = (
+    "evidence_entries_v2",
+    "research_packets_v2",
+    "run_artifacts_v2",
+    "review_bundles_v2",
+    "review_workflows_v2",
+    "review_decisions_v2",
+    "review_resolutions_v2",
+    "review_resume_attempts_v2",
+    "evidence_verification_preflights_v2",
+    "evidence_verification_decisions_v2",
+    "evidence_verification_snapshots_v2",
+    "run_publications_v2",
+    "run_failure_causes_v1",
+    "run_recovery_retries_v1",
+)
 
 
 def _load_module():
@@ -133,6 +149,34 @@ def test_report_bytes_are_deterministic_across_two_isolated_runs():
     second = _run("check")
     assert first.returncode == second.returncode == 0
     assert first.stdout == second.stdout
+
+
+@pytest.mark.parametrize("changed_table", BUSINESS_TABLES)
+def test_business_counts_observe_each_current_persisted_surface(
+    tmp_path,
+    changed_table,
+):
+    module = _load_module()
+    db_path = tmp_path / "business-counts.db"
+    with module.sqlite3.connect(db_path) as connection:
+        for table in BUSINESS_TABLES:
+            connection.execute(f"CREATE TABLE {table}(marker INTEGER)")
+    before = module._business_counts(db_path)
+    with module.sqlite3.connect(db_path) as connection:
+        connection.execute(
+            f"INSERT INTO {changed_table}(marker) VALUES (1)"
+        )
+    after = module._business_counts(db_path)
+
+    assert len(before) == len(after) == len(BUSINESS_TABLES)
+    assert before == (0,) * len(BUSINESS_TABLES)
+    assert tuple(
+        after[index] - before[index]
+        for index in range(len(BUSINESS_TABLES))
+    ) == tuple(
+        1 if table == changed_table else 0
+        for table in BUSINESS_TABLES
+    )
 
 
 def test_report_contains_no_private_identity_path_pid_key_hash_or_query(report):

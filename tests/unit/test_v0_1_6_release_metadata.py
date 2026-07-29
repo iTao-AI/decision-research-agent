@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from hashlib import sha256
-import json
 from pathlib import Path
 import re
+import shutil
 
 import pytest
 
@@ -30,18 +30,33 @@ HISTORICAL_RELEASE_NOTE_SHA256 = {
 V015_AND_EARLIER_CHANGELOG_SHA256 = (
     "8f9dae3993209cb9669ea2fe98b53450260eb7d902b14371107a3d41823c897d"
 )
-V016_PUBLIC_RELEASE_CORPUS = (
-    PROJECT_ROOT / "CHANGELOG.md",
-    PROJECT_ROOT / "README.md",
-    PROJECT_ROOT / "README_CN.md",
-    PROJECT_ROOT / "SECURITY.md",
-    PROJECT_ROOT / "docs" / "README.md",
-    V016_RELEASE_NOTES,
+V016_RELEASE_NOTES_SHA256 = (
+    "0cb73ea51e8aae8d4e997a0225a31439dbc11b2977692d3510b8d33d1963552e"
+)
+V016_CHANGELOG_SECTION_SHA256 = (
+    "2dc1e44fe1d571381cb15bb41f21584d0087b9896436c0876efc347294b437c9"
 )
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _assert_v0_1_6_historical_identity(project_root: Path) -> None:
+    notes = project_root / "docs" / "releases" / "v0.1.6.md"
+    changelog = _read(project_root / "CHANGELOG.md")
+    start = f"## [0.1.6] - {RELEASE_DATE}"
+    end = "## [0.1.5] - 2026-07-18"
+    section = start + changelog.split(start, 1)[1].split(end, 1)[0]
+
+    assert sha256(notes.read_bytes()).hexdigest() == V016_RELEASE_NOTES_SHA256
+    assert sha256(section.encode("utf-8")).hexdigest() == (
+        V016_CHANGELOG_SECTION_SHA256
+    )
+    assert notes.read_text(encoding="utf-8").startswith(
+        "# Decision Research Agent v0.1.6\n\n"
+        f"Release preparation date: {RELEASE_DATE}."
+    )
 
 
 def _collapsed(text: str) -> str:
@@ -87,37 +102,60 @@ def _assert_frontend_ci_maintenance_contract(text: str) -> None:
         assert phrase in normalized
 
 
+def _copy_v0_1_6_history(target: Path) -> None:
+    releases = target / "docs" / "releases"
+    releases.mkdir(parents=True)
+    shutil.copy2(V016_RELEASE_NOTES, releases / "v0.1.6.md")
+    shutil.copy2(PROJECT_ROOT / "CHANGELOG.md", target / "CHANGELOG.md")
+    (target / "VERSION").write_text("0.1.7\n", encoding="utf-8")
+    frontend = target / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(
+        '{"version":"0.1.7"}\n',
+        encoding="utf-8",
+    )
+    (frontend / "package-lock.json").write_text(
+        '{"version":"0.1.7","packages":{"":{"version":"0.1.7"}}}\n',
+        encoding="utf-8",
+    )
+
+
+def test_v0_1_6_selector_accepts_later_current_release_identity(
+    tmp_path: Path,
+) -> None:
+    _copy_v0_1_6_history(tmp_path)
+    _assert_v0_1_6_historical_identity(tmp_path)
+
+
+def test_v0_1_6_selector_rejects_historical_release_note_byte_drift(
+    tmp_path: Path,
+) -> None:
+    _copy_v0_1_6_history(tmp_path)
+    notes = tmp_path / "docs" / "releases" / "v0.1.6.md"
+    notes.write_text(
+        notes.read_text(encoding="utf-8").replace(
+            "# Decision Research Agent v0.1.6",
+            "# Decision Research Agent v0.1.6 drifted",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError):
+        _assert_v0_1_6_historical_identity(tmp_path)
+
+
 def test_v0_1_6_version_identity_is_consistent() -> None:
-    package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
-    lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
-
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.6"
-    assert package["version"] == "0.1.6"
-    assert lock["version"] == "0.1.6"
-    assert lock["packages"][""]["version"] == "0.1.6"
-    assert V016_RELEASE_NOTES.exists()
+    _assert_v0_1_6_historical_identity(PROJECT_ROOT)
 
 
-def test_v0_1_6_changelog_freezes_unreleased_and_preserves_history() -> None:
+def test_v0_1_6_changelog_preserves_history() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
-    unreleased_heading = "## [Unreleased]"
     v0_1_6_heading = f"## [0.1.6] - {RELEASE_DATE}"
     v0_1_5_heading = "## [0.1.5] - 2026-07-18"
 
     assert v0_1_6_heading in changelog
-    assert changelog.index(unreleased_heading) < changelog.index(v0_1_6_heading)
     assert changelog.index(v0_1_6_heading) < changelog.index(v0_1_5_heading)
-    unreleased = changelog.split(unreleased_heading, 1)[1].split(
-        v0_1_6_heading,
-        1,
-    )[0]
-
     v0_1_6 = changelog.split(v0_1_6_heading, 1)[1].split(v0_1_5_heading, 1)[0]
-    privacy_safe_observation_heading = (
-        "### Privacy-safe observation contract"
-    )
-    assert privacy_safe_observation_heading in unreleased
-    assert privacy_safe_observation_heading not in v0_1_6
     for heading in (
         "### DeepSeek provider protocol",
         "### Frontend and CI maintenance",
@@ -246,49 +284,3 @@ def test_v0_1_6_release_notes_cover_truth_verification_and_non_claims() -> None:
         "immutable v0.1.6 release",
     ):
         assert phrase in known_limits
-
-
-def test_v0_1_6_release_discovery_and_security_truth_are_current() -> None:
-    readme = _read(PROJECT_ROOT / "README.md")
-    readme_cn = _read(PROJECT_ROOT / "README_CN.md")
-    docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
-    security = _read(PROJECT_ROOT / "SECURITY.md")
-    normalized_security = _collapsed(security)
-
-    assert "[v0.1.6 Release Notes](docs/releases/v0.1.6.md)" in readme
-    assert "[v0.1.6 Release Notes](docs/releases/v0.1.6.md)" in readme_cn
-    assert "[v0.1.6 Release Notes](releases/v0.1.6.md)" in docs_index
-    assert (
-        "- [v0.1.6 Release Notes](releases/v0.1.6.md) — current supported surface,"
-        in docs_index
-    )
-    assert (
-        "- [v0.1.5 Release Notes](releases/v0.1.5.md) — historical secure local"
-        in docs_index
-    )
-    assert docs_index.count("current supported surface") == 1
-
-    for phrase in (
-        "Decision Research Agent v0.1.6 ships",
-        "bounded live producer evaluation",
-        "official DeepSeek provider protocol",
-        "provider-free",
-        "canonical public HTTPS",
-        "source admission",
-        "does not certify source truth",
-        "not part of v0.1.6",
-    ):
-        assert phrase in normalized_security
-    assert "not part of v0.1.5" not in normalized_security
-
-    corpus = "\n".join(_read(path) for path in V016_PUBLIC_RELEASE_CORPUS).lower()
-    for pattern in (
-        r"\bv0\.1\.6 is published\b",
-        r"\bv0\.1\.6 tag (?:has been |was )?(?:created|published)\b",
-        r"\bgithub release (?:has been |was )?published\b",
-        r"\barchive smoke (?:has |was )?(?:passed|completed)\b",
-        r"\bdeployment (?:has been |was )?completed\b",
-        r"\bnight voyager live integration (?:has been |was )?completed\b",
-        r"\bcross-project business closure (?:has been |was )?completed\b",
-    ):
-        assert re.search(pattern, corpus) is None

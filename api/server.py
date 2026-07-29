@@ -2,13 +2,21 @@ import sys
 import os
 import asyncio
 import logging
+import re
 import sqlite3
 from functools import partial
 import uvicorn
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import (
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -73,7 +81,11 @@ from api.run_dispatch_repository import (
     start_run_dispatch,
 )
 from api.run_dispatch_worker import RunDispatchWorker
-from api.run_execution_models import RunExecutionOwnerBox, new_boot_id
+from api.run_execution_models import (
+    RunExecutionConflict,
+    RunExecutionOwnerBox,
+    new_boot_id,
+)
 from api.run_execution_repository import (
     activate_run_execution_boot,
     advance_run_execution_phase,
@@ -81,6 +93,11 @@ from api.run_execution_repository import (
 )
 from api.run_execution_writer_lock import acquire_run_execution_writer
 from api.run_creation_models import validate_idempotency_key
+from api.run_recovery_models import (
+    RunRecoveryConflict,
+    validate_recovery_key,
+)
+from api.run_recovery_repository import create_or_replay_run_recovery
 from api.run_result_service import (
     RunResultUnavailable,
     build_generic_result_artifact,
@@ -1156,6 +1173,101 @@ def _run_creation_conflict_response(code: str) -> JSONResponse:
     )
 
 
+class RunRecoveryBodyNotAllowed(RuntimeError):
+    """Bounded private signal for a nonempty explicit-recovery body."""
+
+
+_RUN_RECOVERY_ERRORS = {
+    "run_recovery_source_not_found": (
+        404,
+        "The recovery source run does not exist.",
+        "No ResearchRun matches the requested source identity.",
+        "Verify the source run ID before requesting a replacement.",
+        False,
+    ),
+    "run_recovery_not_eligible": (
+        409,
+        "The source run is not eligible for explicit replacement.",
+        "The source is not the exact interrupted terminal contract.",
+        "Inspect the source status and failure cause before requesting replacement.",
+        False,
+    ),
+    "run_recovery_exhausted": (
+        409,
+        "The recovery hop budget is exhausted.",
+        "The source is already a replacement run.",
+        "Inspect the existing replacement; v1 does not create a second hop.",
+        False,
+    ),
+    "run_recovery_conflict": (
+        409,
+        "The recovery request conflicts with an existing binding.",
+        "The key or source is bound to different canonical recovery content.",
+        "Retry the exact original source and key.",
+        False,
+    ),
+    "run_recovery_key_invalid": (
+        422,
+        "The recovery idempotency key is invalid.",
+        "Idempotency-Key failed the bounded public contract.",
+        "Use 8-128 allowed high-entropy ASCII characters.",
+        False,
+    ),
+    "run_recovery_body_not_allowed": (
+        422,
+        "The recovery request body is not allowed.",
+        "Explicit replacement accepts no request body bytes.",
+        "Remove the request body and retry with the same source and key.",
+        False,
+    ),
+    "run_recovery_unavailable": (
+        503,
+        "Durable run recovery is unavailable.",
+        "Recovery authority could not be read or committed safely.",
+        "Retry the exact source and key after service recovery.",
+        True,
+    ),
+}
+
+
+def _run_recovery_error(code: str) -> JSONResponse:
+    status, problem, cause, fix, retryable = _RUN_RECOVERY_ERRORS[code]
+    return _run_creation_error(
+        status,
+        code=code,
+        problem=problem,
+        cause=cause,
+        fix=fix,
+        retryable=retryable,
+    )
+
+
+async def _require_zero_recovery_body(request: Request) -> None:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        normalized = content_length.strip()
+        if (
+            len(normalized) > 20
+            or re.fullmatch(r"[0-9]+", normalized, flags=re.ASCII) is None
+            or int(normalized) != 0
+        ):
+            raise RunRecoveryBodyNotAllowed
+
+    async for chunk in request.stream():
+        if chunk:
+            raise RunRecoveryBodyNotAllowed
+
+
+def _exact_profile_is_available(
+    profile_id: str,
+    profile_version: str,
+) -> bool:
+    try:
+        return profile_registry.get(profile_id).version == profile_version
+    except KeyError:
+        return False
+
+
 @app.post("/api/runs")
 async def create_research_run(
     request: RunRequest,
@@ -1238,6 +1350,66 @@ async def create_research_run(
     await worker.dispatch_run(created["run_id"])
     worker.wake()
     return response
+
+
+@app.post(
+    "/api/runs/{source_run_id}/retries",
+    status_code=202,
+)
+async def retry_research_run(
+    source_run_id: str,
+    request: Request,
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key"),
+    ] = None,
+):
+    try:
+        await _require_zero_recovery_body(request)
+    except RunRecoveryBodyNotAllowed:
+        return _run_recovery_error("run_recovery_body_not_allowed")
+    if idempotency_key is None:
+        return _run_recovery_error("run_recovery_key_invalid")
+    try:
+        validated_key = validate_recovery_key(idempotency_key)
+    except ValueError:
+        return _run_recovery_error("run_recovery_key_invalid")
+
+    boot_id = app.state.run_execution_boot_id
+    if not isinstance(boot_id, str):
+        return _run_recovery_error("run_recovery_unavailable")
+    try:
+        acceptance = await asyncio.to_thread(
+            create_or_replay_run_recovery,
+            source_run_id=source_run_id,
+            idempotency_key=validated_key,
+            boot_id=boot_id,
+            exact_profile_is_available=_exact_profile_is_available,
+            db_path=sqlite_db_path(),
+        )
+    except RunRecoveryConflict as exc:
+        public_code = (
+            exc.code
+            if exc.code in _RUN_RECOVERY_ERRORS
+            else "run_recovery_unavailable"
+        )
+        return _run_recovery_error(public_code)
+    except (RunExecutionConflict, sqlite3.Error, ValidationError):
+        return _run_recovery_error("run_recovery_unavailable")
+
+    worker = app.state.run_dispatch_worker
+    try:
+        dispatched = await worker.dispatch_run(acceptance.run_id)
+        worker.wake()
+    except Exception:
+        logging.error("run_recovery_post_commit_wake_deferred")
+    else:
+        if not dispatched:
+            logging.info("run_recovery_post_commit_dispatch_deferred")
+    return JSONResponse(
+        status_code=202,
+        content=acceptance.model_dump(mode="json"),
+    )
 
 
 @app.get(

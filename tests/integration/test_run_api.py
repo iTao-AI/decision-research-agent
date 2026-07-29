@@ -142,6 +142,36 @@ def test_create_and_get_run_returns_distinct_thread_and_run_identity(
     assert fetched.json()["run_id"] == created["run_id"]
 
 
+def test_existing_run_surfaces_do_not_gain_recovery_authority_fields(
+    tmp_path,
+    monkeypatch,
+):
+    from api.run_repository import create_run
+
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", db_path)
+    created = create_run(
+        db_path=db_path,
+        thread_id="unchanged-surface",
+        query="query",
+    )
+    response = TestClient(app).get(
+        f"/api/runs/{created['run_id']}",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    for private_field in (
+        "recovery_reason",
+        "recovery_attempt",
+        "replacement_run_id",
+        "source_run_id",
+        "boot_id",
+        "owner_id",
+    ):
+        assert private_field not in response.json()
+
+
 def test_get_run_status_exposes_observed_failure_cause(tmp_path, monkeypatch):
     import api.run_repository as repository
     from api.run_failure_cause_models import RunFailureCauseWrite

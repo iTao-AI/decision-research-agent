@@ -5,8 +5,9 @@
 > `superpowers:executing-plans` to implement this plan task-by-task. Steps use
 > checkboxes for execution tracking.
 
-**Status:** Approved for bounded lifecycle-authority repair. Tasks 1-8 remain
-frozen; publication remains on hold.
+**Status:** Approved for bounded lifecycle-authority repair and its retained
+failure-precedence correction. Tasks 1-8 remain frozen; publication remains on
+hold.
 
 **Goal:** Close the live post-start process-death gap without runtime
 self-modification, heartbeat expiry, checkpoint replay, or automatic Agent
@@ -123,14 +124,22 @@ signal primitives.
     caller-retained input, outside recovery lineage.
 16. The completed Tasks 1-8 implementation candidate at
     `7617d02529e03cc4272d0bbe9f9a43c0e099c4e6` is frozen. The approved
-    lifecycle-authority spec amendment at
-    `17e235fadaf72c7a22dfca782be9b02902c5ab08` changes only the design
-    document. Task 9 begins only after this amended plan is mechanically
-    landed as one plan-only commit whose parent is that exact spec commit.
-17. Task 9 has a separate `REPAIR_BASE`. Its implementation diff is limited to
-    one project-specific classifier module and focused lifecycle verification
-    tests. Existing recovery API, schema, migration identity, runtime flow,
-    proof schema, docs, dependencies, and release surfaces remain unchanged.
+    lifecycle-authority spec amendment is
+    `17e235fadaf72c7a22dfca782be9b02902c5ab08`; the first mechanically landed
+    Task 9 plan authority is
+    `b3eb6fa03ab9c4ce273c8899d107e911c0c59446`. The retained full-suite RED
+    proved one stale exception-precedence expectation outside the first
+    six-path allowlist. This correction must be landed as one new plan-only
+    commit whose parent is exact `b3eb6fa03ab9c4ce273c8899d107e911c0c59446`,
+    while preserving the six current Task 9 WIP blobs byte-for-byte. That new
+    plan-only commit becomes the corrected `REPAIR_BASE`; no prior commit is
+    amended, squashed, reset, or rewritten.
+17. Task 9 has a separate corrected `REPAIR_BASE`. Its implementation diff is
+    limited to one project-specific classifier module, focused lifecycle
+    verification tests, and one retained publication-migration test whose only
+    semantic change is the asserted lowest-authority failure precedence.
+    Existing recovery API, schema, migration identity, runtime flow, proof
+    schema, public docs, dependencies, and release surfaces remain unchanged.
 18. The authority-owned black-box replay is a frozen input to Task 9, not a
     candidate-owned output. Its exact SHA-256 is
     `dc2673d494faa4ee8d10439c44ac22444fff013c7e31e9d1272851ac8c2ee62d`,
@@ -355,7 +364,7 @@ Current live callers are classified as follows:
 | `tests/unit/test_publication_service.py` | Replace its direct running transition with the real protected helper |
 | `tests/unit/test_review_repository.py` | Replace its direct running transition with the real protected helper |
 | `tests/unit/test_evidence_verification_container_fixture.py` | Activate a boot for the fixture worker and require the real owner for running finalization |
-| `tests/unit/test_publication_migrations.py` | Use the protected boot/owner helper for positive running fixtures |
+| `tests/unit/test_publication_migrations.py` | Use the protected boot/owner helper for positive running fixtures; preserve publication rejection for lifecycle-valid failed residue while asserting that an incoherent running lifecycle is rejected earlier by execution authority |
 | `tests/unit/test_publication_repository.py` | Keep the raw ownerless-running mutation only in the explicitly named corruption negative control; it must never become a reusable helper |
 | all other `finalize_run_transaction` callers | Pending-to-terminal fixture paths may stay ownerless; any path whose allowed prior state includes `running` must pass an exact owner |
 
@@ -3782,6 +3791,7 @@ Do not claim completion from pre-commit results.
 - Modify: `api/run_execution_migrations.py`
 - Modify: `tests/unit/test_run_execution_migrations.py`
 - Modify: `tests/unit/test_run_recovery_repository.py`
+- Modify: `tests/unit/test_publication_migrations.py`
 
 **Interfaces:**
 
@@ -3868,13 +3878,47 @@ The mechanically landed plan-only commit is the repair base:
 ```bash
 test "$(git branch --show-current)" = \
   "codex/crash-safe-startup-convergence-v1"
-test -z "$(git status --porcelain)"
 
 REPAIR_BASE="$(git rev-parse HEAD)"
 test "$(git rev-parse "${REPAIR_BASE}^")" = \
-  "17e235fadaf72c7a22dfca782be9b02902c5ab08"
+  "b3eb6fa03ab9c4ce273c8899d107e911c0c59446"
 test "$(git diff --name-only "${REPAIR_BASE}^".."${REPAIR_BASE}")" = \
   "docs/superpowers/plans/2026-07-29-crash-safe-startup-convergence-v1-implementation-plan.md"
+git diff --cached --quiet
+
+git diff --name-only | sort > /tmp/dra-repair-tracked-wip-actual.txt
+printf '%s\n' \
+  api/run_execution_migrations.py \
+  tests/unit/test_run_execution_migrations.py \
+  tests/unit/test_run_recovery_repository.py \
+  | sort > /tmp/dra-repair-tracked-wip-expected.txt
+cmp -s \
+  /tmp/dra-repair-tracked-wip-expected.txt \
+  /tmp/dra-repair-tracked-wip-actual.txt
+
+git ls-files --others --exclude-standard | sort \
+  > /tmp/dra-repair-untracked-wip-actual.txt
+printf '%s\n' \
+  api/run_recovery_lifecycle.py \
+  tests/integration/test_run_recovery_lifecycle_authority.py \
+  tests/unit/test_run_recovery_lifecycle.py \
+  | sort > /tmp/dra-repair-untracked-wip-expected.txt
+cmp -s \
+  /tmp/dra-repair-untracked-wip-expected.txt \
+  /tmp/dra-repair-untracked-wip-actual.txt
+
+test "$(shasum -a 256 api/run_execution_migrations.py | awk '{print $1}')" = \
+  "bcaac9e1aa9056ec6d03b0ab7d9cc4139930dbcd407b34df0983bcb7e76fd974"
+test "$(shasum -a 256 api/run_recovery_lifecycle.py | awk '{print $1}')" = \
+  "b6a7caf1a2dddd06ed926d1bc71dd6250d4529d7f533cda47f88dc57746a6a9e"
+test "$(shasum -a 256 tests/integration/test_run_recovery_lifecycle_authority.py | awk '{print $1}')" = \
+  "dc2673d494faa4ee8d10439c44ac22444fff013c7e31e9d1272851ac8c2ee62d"
+test "$(shasum -a 256 tests/unit/test_run_execution_migrations.py | awk '{print $1}')" = \
+  "2b4585260c259338fc732643a2fbbfd0c60adebddcdb126f0d77a11375b46702"
+test "$(shasum -a 256 tests/unit/test_run_recovery_lifecycle.py | awk '{print $1}')" = \
+  "b1b2ce576fc38cb9c202d153565df7fdd21f60f52e1ff7c4a93d031aac8bd310"
+test "$(shasum -a 256 tests/unit/test_run_recovery_repository.py | awk '{print $1}')" = \
+  "ef55ec063c81231ba05c31fc2e386ec4a746185377fb439e76287cb335c7b308"
 
 test "$(
   shasum -a 256 \
@@ -3883,9 +3927,11 @@ test "$(
 )" = "e80ca43d9c5174cc8c6088f60ccac847a7f09a61edf9ed5cd119cec2a043ad10"
 ```
 
-Record `REPAIR_BASE`, the plan SHA supplied by the authority handoff, and the
-existing frozen candidate `7617d02529e03cc4272d0bbe9f9a43c0e099c4e6`.
-Do not amend, squash, reset, or rewrite the prior implementation chain.
+Record corrected `REPAIR_BASE`, the plan SHA supplied by the authority handoff,
+and the existing frozen candidate
+`7617d02529e03cc4272d0bbe9f9a43c0e099c4e6`. The six WIP blobs above are the
+only accepted resume state. Do not amend, squash, reset, or rewrite the prior
+implementation chain.
 
 - [ ] **Step 2: Mechanically land the frozen authority replay and verify RED**
 
@@ -4017,12 +4063,67 @@ All positive fixtures must call production `create_run`,
 Direct SQL is permitted only after that producer transition to create a named
 negative mutation.
 
+In `tests/unit/test_publication_migrations.py`, import
+`RunExecutionConflict` from `api.run_execution_models` and split the old
+two-value parametrized residue test into two explicit authority-precedence
+tests:
+
+```python
+def test_publication_migration_rejects_failed_run_review_residue(tmp_path):
+    db_path, _ = _seed_revision_one_review_database(
+        tmp_path,
+        execution_status="failed",
+    )
+    before = _database_dump(db_path)
+
+    with pytest.raises(
+        PublicationConflict,
+        match="verification_publication_conflict",
+    ):
+        migrate_publication_with_backup(
+            db_path=db_path,
+            backup_path=str(tmp_path / "backup.db"),
+        )
+
+    assert _database_dump(db_path) == before
+
+
+def test_publication_migration_rejects_incoherent_running_lifecycle_first(
+    tmp_path,
+):
+    db_path, _ = _seed_revision_one_review_database(
+        tmp_path,
+        execution_status="running",
+    )
+    before = _database_dump(db_path)
+
+    with pytest.raises(
+        RunExecutionConflict,
+        match="run_execution_recovery_unavailable",
+    ):
+        migrate_publication_with_backup(
+            db_path=db_path,
+            backup_path=str(tmp_path / "backup.db"),
+        )
+
+    assert _database_dump(db_path) == before
+```
+
+The `failed` fixture remains a lifecycle-valid noncompleted run and must still
+reach the publication-layer residue rejection. The `running` fixture
+deliberately direct-writes `resolved / ready` plus an incoherent timestamp
+after a production start, so it must fail earlier at the execution lifecycle
+trust root. Both cases must preserve the exact pre-migration database dump.
+Do not weaken `ORDINARY_COMPATIBLE`, reorder production initializers, or mask
+either exception.
+
 Run:
 
 ```bash
 PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q \
   tests/unit/test_run_execution_migrations.py \
   tests/unit/test_run_recovery_repository.py \
+  tests/unit/test_publication_migrations.py \
   tests/integration/test_run_recovery_lifecycle_authority.py
 ```
 
@@ -4109,6 +4210,7 @@ PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q \
   tests/unit/test_run_recovery_lifecycle.py \
   tests/unit/test_run_execution_migrations.py \
   tests/unit/test_run_recovery_repository.py \
+  tests/unit/test_publication_migrations.py \
   tests/integration/test_run_recovery_lifecycle_authority.py
 
 test "$(
@@ -4168,13 +4270,16 @@ printf '%s\n' \
   tests/integration/test_run_recovery_lifecycle_authority.py \
   tests/unit/test_run_execution_migrations.py \
   tests/unit/test_run_recovery_lifecycle.py \
+  tests/unit/test_publication_migrations.py \
   tests/unit/test_run_recovery_repository.py \
   | sort > /tmp/dra-repair-expected.txt
 cmp -s /tmp/dra-repair-expected.txt /tmp/dra-repair-actual.txt
 ```
 
-Both audits must report status `ok`. The exact repair allowlist contains six
-paths. No docs, schema, repository API, proof, dependency, runtime, provider,
+Both audits must report status `ok`. The corrected implementation repair
+allowlist contains seven paths. The authority-only plan correction is the
+corrected `REPAIR_BASE` and therefore is not part of this implementation diff.
+No public docs, schema, repository API, proof, dependency, runtime, provider,
 frontend, Docker, version, release, or consumer surface may enter the repair
 diff.
 
@@ -4187,6 +4292,7 @@ git add \
   tests/integration/test_run_recovery_lifecycle_authority.py \
   tests/unit/test_run_execution_migrations.py \
   tests/unit/test_run_recovery_lifecycle.py \
+  tests/unit/test_publication_migrations.py \
   tests/unit/test_run_recovery_repository.py
 git diff --cached --check
 git diff --cached --name-status
@@ -4379,6 +4485,7 @@ The phase is complete only when:
 | 23 | Authority reset | Reject another local predicate patch and replace the loose verifier with one project-specific closed classifier | Auto-decided after repeated black-box false greens | The verifier is a trust root and must be simpler to validate than the state it approves | Three independent controls proved that individually plausible field checks still accepted impossible recovery replay states | Add more local `if` branches to `_verify_lifecycle_row` |
 | 24 | Authority reset | Freeze one public-boundary black-box replay outside candidate-owned unit tests | Auto-decided from live RED evidence | Candidate verification needs an independent retained root | The frozen five-case replay reproduces three current false greens without importing the private classifier or candidate fixtures | Rely only on tests written against the new classifier |
 | 25 | Authority reset | Preserve the real expired-lease reclaim path while rejecting invented first-attempt history | Auto-decided from producer audit | Legal families come from production transitions, not intuition | A later reclaimed lease can legitimately have attempt `2` and no prior error, while attempt `1` cannot invent one | Treat every later lease without an error as corrupt |
+| 26 | Authority repair | Bind rejection to the lowest deterministic authority while retaining the later-layer control | Auto-decided from the exact full-suite RED and a repository-external minimal reproduction | A trust root must reject incoherent state before a dependent migration interprets it | The running fixture direct-writes an impossible `running / resolved / ready` combination and now correctly fails at lifecycle verification; the lifecycle-valid failed fixture still proves publication residue rejection, and both retain exact DB immutability | Weaken the lifecycle classifier, reorder initializers, or treat the failing retained test as green |
 
 ## Lifecycle Authority Amendment Self-Review
 
@@ -4393,6 +4500,7 @@ The phase is complete only when:
 | Independent black-box verification root | Global Constraint 18 + Task 9 Steps 2, 7, 10 |
 | One-field mutation sensitivity | Task 9 Steps 3, 4, 7 |
 | Pairwise cross-family controls | Task 9 Steps 3, 4, 7 |
+| Lowest-authority failure precedence with retained publication rejection | Task 9 Steps 4, 7-10 |
 | Immutable candidate and rollback authority | Global Constraints 16-18 + Task 9 Step 1 |
 | No generic FSM, DSL, registry, runtime mutation, or automatic release | Global Constraints 1, 8, 17 + Task 9 Step 5 |
 
@@ -4416,6 +4524,10 @@ No amended spec requirement is deferred to execution-time design.
   rejected as mismatched carriers.
 - Stable main remains rollback authority; hosted CI and publication remain
   later human-owned gates.
+- Deterministic verification rejects incoherent execution state at the
+  lifecycle trust root before publication backfill. A separate lifecycle-valid
+  failed fixture retains the later publication rejection, so no safety gate is
+  weakened or silently bypassed.
 
 ### Plan quality checks
 
@@ -4423,17 +4535,19 @@ No amended spec requirement is deferred to execution-time design.
   implementation, focused GREEN, retained suite, safety audit, and one
   semantic commit.
 - File responsibilities and exact interfaces are consistent across the shared
-  matrix, Task 9 file map, implementation steps, allowlist, and Definition of
-  Done.
+  matrix, Task 9 file map, implementation steps, corrected seven-path
+  allowlist, and Definition of Done.
 - The frozen black-box identity, current false-green result, expected GREEN,
   exact error boundary, and allowed diff are explicit.
 - No placeholder, dependency, framework, provider, Docker, release, or
   consumer decision is left to the execution window.
 
 **Self-review verdict:** APPROVED for the bounded Task 9 lifecycle-authority
-repair. No AutoPlan rerun is required because the product architecture and
-public surface are unchanged; this amendment directly closes a reproduced
-verifier trust-root defect with an independent retained RED.
+repair and its retained failure-precedence correction. No AutoPlan rerun is
+required because the product architecture and public surface are unchanged;
+this correction preserves the stronger verifier, keeps the publication-layer
+negative control, and changes only one test-owned compatibility expectation
+after an exact full-suite RED.
 
 ## GSTACK REVIEW REPORT
 

@@ -114,6 +114,10 @@ recommendation-only rollback and requires `rollback_basis`,
 `rollback_evidence_ids`, `rollback_subject_candidate_id`, an earlier accepted
 candidate, and an immutable predecessor target.
 
+Canonical episode release dispositions remain historical reviewed outcomes.
+The v0.1.7 repository release is a later separate human decision and does not
+rewrite or execute those outcomes.
+
 ## Adding A Reviewed Case Of An Existing Kind
 
 | Change | Version rule | Required review |

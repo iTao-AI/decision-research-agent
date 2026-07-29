@@ -5,7 +5,6 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import subprocess
 
 import pytest
 
@@ -108,7 +107,7 @@ def test_recovery_runbook_locks_upgrade_collision_rollback_and_diagnostics() -> 
         "exact profile ID/version unavailable",
         "replacement used as recovery source",
         "ordinary keyed run",
-        "release remains `hold`",
+        "historical release `hold`",
     ):
         assert phrase.lower() in collapsed
     for forbidden in (
@@ -158,9 +157,16 @@ def test_recovery_docs_reject_automatic_or_production_overclaims() -> None:
         "No distributed lock or leader election",
         "No provider success",
         "No business impact",
-        "No published v0.1.7",
+        "No automatic release or rollback",
     ):
         assert nonclaim in runbook
+    for current_truth in (
+        "v0.1.7 release preparation includes this recovery surface",
+        "historical release `hold`",
+        "does not itself prove publication",
+    ):
+        assert current_truth in runbook
+    assert "No published v0.1.7." not in runbook
     assert "LangGraph checkpoint replay" in combined
     assert "may re-execute" in combined
 
@@ -647,23 +653,9 @@ def test_current_docs_do_not_advertise_removed_or_legacy_surfaces() -> None:
 
 
 def test_all_tracked_markdown_uses_public_neutral_presentation() -> None:
-    from scripts.final_presentation_audit import presentation_violations
+    from scripts.final_presentation_audit import markdown_content_violations
 
-    completed = subprocess.run(
-        ["git", "-C", str(PROJECT_ROOT), "ls-files", "-z", "*.md"],
-        capture_output=True,
-        check=True,
-    )
-    violations = []
-    for raw_path in completed.stdout.split(b"\0"):
-        if not raw_path:
-            continue
-        relative_path = raw_path.decode("utf-8")
-        text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
-        for rule in presentation_violations(text):
-            violations.append({"path": relative_path, "rule": rule})
-
-    assert violations == []
+    assert markdown_content_violations(PROJECT_ROOT) == []
 
 
 def test_docs_index_links_curated_project_planning_workspace() -> None:
@@ -940,7 +932,9 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
 
     assert "v0.1.5 Release Notes" in current_discovery
     assert "v0.1.6 Release Notes" in current_discovery
-    assert "Decision Research Agent v0.1.6" in current_discovery
+    assert "Decision Research Agent v0.1.7 release preparation includes" in (
+        current_discovery
+    )
 
 
 @pytest.mark.parametrize(
@@ -1164,6 +1158,13 @@ def test_operations_docs_cover_release_recovery_boundaries() -> None:
 
     for phrase in required_phrases:
         assert phrase in docs
+    recovery = RECOVERY_RUNBOOK.read_text(encoding="utf-8")
+    for phrase in (
+        "v0.1.7 release preparation includes this recovery surface",
+        "historical release `hold`",
+        "does not itself prove publication",
+    ):
+        assert phrase in recovery
 
     assert (
         "The current Console does not expose review controls and does not own review authority."
@@ -1364,8 +1365,6 @@ def test_run_dispatch_reconciliation_contract_is_public_and_bounded():
     ).read_text(encoding="utf-8")
     assert "crash_before_schedule_recovery: not_proven" in old_evidence
     assert "crash_before_schedule_recovery: proven" in new_evidence
-    assert (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.1.6"
-
     workflow = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     old_proof = "python scripts/run_creation_idempotency_proof.py check"
     new_proof = "python scripts/run_dispatch_reconciliation_proof.py check"
@@ -3013,6 +3012,8 @@ def test_sensitivity_gate_required_ci_inventory_is_value_equal_in_english_and_ch
     )
     assert english_commands == chinese_commands
     assert "python scripts/agent_evaluation_v2_gate.py check" in english_commands
+    assert "python scripts/evidence_gated_loop_gate.py check" in english_commands
+    assert "python scripts/run_execution_recovery_proof.py check" in english_commands
     workflow = (
         PROJECT_ROOT / ".github/workflows/ci.yml"
     ).read_text(encoding="utf-8")

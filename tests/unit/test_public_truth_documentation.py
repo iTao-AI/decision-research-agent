@@ -82,10 +82,14 @@ def test_ci_runs_loop_after_v2_and_before_remaining_proofs() -> None:
     assert "PYTHON_DOTENV_DISABLED: '1'" in text
 
 
-def test_crash_safe_recovery_is_unreleased_linked_and_provider_free() -> None:
+def test_crash_safe_recovery_is_v0_1_7_linked_and_provider_free() -> None:
     readme = _read("README.md")
     chinese = _read("README_CN.md")
-    changelog = _section(_read("CHANGELOG.md"), "## [Unreleased]", "## [0.1.6]")
+    changelog = _section(
+        _read("CHANGELOG.md"),
+        "## [0.1.7] - 2026-07-29",
+        "## [0.1.6] - 2026-07-24",
+    )
     docs_index = _read("docs/README.md")
     superpowers = _read("docs/superpowers/README.md")
     for text in (readme, chinese, changelog):
@@ -105,7 +109,7 @@ def test_crash_safe_recovery_is_unreleased_linked_and_provider_free() -> None:
         "2026-07-29-crash-safe-startup-convergence-v1-implementation-plan.md"
         in superpowers
     )
-    assert "released in v0.1.7" not in changelog
+    assert "release_disposition=hold" in changelog
 
 
 def test_recovery_getting_started_and_tool_client_truth_is_copyable() -> None:
@@ -127,13 +131,18 @@ def test_recovery_getting_started_and_tool_client_truth_is_copyable() -> None:
         assert literal in combined
 
 
-def test_loop_kernel_unreleased_truth_and_readme_contract() -> None:
+def test_loop_kernel_v0_1_7_truth_and_readme_contract() -> None:
     changelog = _read("CHANGELOG.md")
-    unreleased = _section(changelog, "## [Unreleased]", "## [0.1.6]")
-    normalized = " ".join(unreleased.split())
-    assert "Evidence-Gated Loop Kernel" in unreleased
-    assert "provider-free" in unreleased
-    assert "release remains on hold" in normalized
+    released = _section(
+        changelog,
+        "## [0.1.7] - 2026-07-29",
+        "## [0.1.6] - 2026-07-24",
+    )
+    normalized = " ".join(released.split())
+    assert "Evidence-Gated Loop Kernel" in released
+    assert "provider-free" in released
+    assert "release_disposition=hold" in normalized
+    assert "separate human-reviewed repository release decision" in normalized
     assert "not runtime self-modification" in normalized
     for text in (_read("README.md"), _read("README_CN.md")):
         for required in (
@@ -150,25 +159,65 @@ def test_loop_kernel_unreleased_truth_and_readme_contract() -> None:
             assert required in text
 
 
-def test_unreleased_changelog_does_not_claim_release_or_runtime_evolution() -> None:
+def test_v0_1_7_public_truth_is_current_and_bounded() -> None:
     changelog = _read("CHANGELOG.md")
-    unreleased = _section(changelog, "## [Unreleased]", "## [0.1.6]")
-    normalized = " ".join(unreleased.split())
-    assert "Evidence-Gated Loop Kernel" in unreleased
-    assert "provider-free" in unreleased
-    assert "release remains on hold" in normalized
+    released = _section(
+        changelog,
+        "## [0.1.7] - 2026-07-29",
+        "## [0.1.6] - 2026-07-24",
+    )
+    normalized = " ".join(released.split())
+    for phrase in (
+        "Context Reliability Regression",
+        "Privacy-safe observation contract",
+        "Agent evaluation sensitivity evidence",
+        "Strict exact-source citation profile",
+        "Evidence-Gated Loop Kernel",
+        "Crash-safe startup convergence",
+        "Immutable v0.1.6 release-lineage selector",
+    ):
+        assert phrase in released
+    assert released.count("### Immutable v0.1.6 release-lineage selector") == 1
+    unreleased = _section(
+        changelog,
+        "## [Unreleased]",
+        "## [0.1.7] - 2026-07-29",
+    )
+    assert "### Immutable v0.1.6 release-lineage selector" not in unreleased
+    assert "release_disposition=hold" in normalized
+    assert "separate human-reviewed repository release decision" in normalized
     assert "not runtime self-modification" in normalized
-    assert (
-        "not runtime self-modification, live-provider success, "
-        "or a v0.1.7 release"
-    ) in normalized
     for forbidden in (
         "autonomous self-improvement",
         "implements runtime self-modification",
         "demonstrates live-provider strict success",
-        "released in v0.1.7",
     ):
         assert forbidden not in normalized
+
+
+def test_v0_1_7_current_docs_do_not_claim_tag_publication() -> None:
+    corpus = "\n".join(
+        _read(path)
+        for path in (
+            "README.md",
+            "README_CN.md",
+            "SECURITY.md",
+            "docs/README.md",
+            "docs/releases/v0.1.7.md",
+        )
+    ).lower()
+    for pattern in (
+        r"\bv0\.1\.7 is published\b",
+        r"\bv0\.1\.7 tag (?:has been |was )?(?:created|published)\b",
+        r"\bgithub release (?:has been |was )?published\b",
+        r"\barchive smoke (?:has |was )?(?:passed|completed)\b",
+        r"\bdeployment (?:has been |was )?completed\b",
+        r"\blive-provider strict success (?:has been |was )?"
+        r"(?:achieved|completed|demonstrated|proved)\b",
+        r"\b(?:achieved|completed|demonstrated|proved) "
+        r"live-provider strict success\b",
+    ):
+        assert re.search(pattern, corpus) is None
 
 
 def test_readmes_link_commands_schemas_and_nonclaims() -> None:
@@ -188,10 +237,8 @@ def test_readmes_link_commands_schemas_and_nonclaims() -> None:
             "not runtime self-modification" in text
             or "不是运行时自修改" in text
         )
-        assert (
-            "not a v0.1.7 release" in text
-            or ("不证明" in text and "v0.1.7 已发布" in text)
-        )
+        assert "v0.1.7 release preparation" in text
+        assert "hold" in text
         assert '{"match":true,"record_status":"valid","status":"valid"}' in text
 
     english = _read("README.md")

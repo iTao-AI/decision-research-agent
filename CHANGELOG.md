@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-29
+
+### Context Reliability Regression
+
+- Added retained provider-free regressions that reject unknown and
+  production-incoherent resolver/persisted terminal-state combinations while
+  preserving application-owned state authority.
+
 ### Immutable v0.1.6 release-lineage selector
 
 - Corrected the fixed strict-consumer profile's final selector to verify the
@@ -22,9 +30,11 @@ All notable changes to this project are documented in this file.
 - Added a provider-free real-process, migration, replay, stale-writer, and
   rollback proof at
   `python scripts/run_execution_recovery_proof.py check`.
-- Release remains on hold. This is not automatic retry/resume, exactly-once
-  execution or side effects, heartbeat monitoring, production HA,
-  live-provider success, business impact, or a v0.1.7 release.
+- Historical `release_disposition=hold` remains unchanged. v0.1.7 is a later
+  separate human-reviewed repository release decision, not a kernel action.
+  This is not automatic retry/resume, exactly-once execution or side effects,
+  heartbeat monitoring, production HA, live-provider success, or business
+  impact.
 
 ### Evidence-Gated Loop Kernel
 
@@ -32,9 +42,10 @@ All notable changes to this project are documented in this file.
   failure and verification lineages, with fixed retained/safety profiles,
   immutable candidate and consumer identities, explicit reviewed verification,
   accept/reject/no-change decisions, and evidence-bound rollback semantics;
-  release remains on hold. This is not runtime self-modification,
-  live-provider success, or a v0.1.7 release. It also does not claim
-  historical-candidate execution.
+  historical `release_disposition=hold` remains unchanged. v0.1.7 is a later
+  separate human-reviewed repository release decision, not a kernel action.
+  This is not runtime self-modification or live-provider success. It also does
+  not claim historical-candidate execution.
 
 ### Strict exact-source citation profile
 

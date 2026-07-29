@@ -1,11 +1,15 @@
 # Security Policy
 
-Decision Research Agent v0.1.6 ships the FastAPI backend, Python Tool Client,
-single-node application-owned run dispatch reconciliation, durable
+Decision Research Agent v0.1.7 release preparation includes context reliability,
+privacy-safe observation, strict citation, evidence-gated offline verification,
+crash-safe single-node recovery, the FastAPI backend, Python Tool
+Client, single-node application-owned run dispatch reconciliation, durable
 failure cause projection, secure local runtime controls, bounded live producer
 evaluation, the official DeepSeek provider protocol, operator scripts, tests,
 documentation, and the separately built Agent Research Operations Console.
 The loopback-only console does not accept credentials and is not a publicly hosted service.
+Required verification remains provider-free. Hosted, multi-tenant, and
+multi-replica operation remains out of scope.
 
 ## Reporting A Vulnerability
 
@@ -55,7 +59,7 @@ independent feature-owned gates. The deterministic proof and required Docker
 lane use no live provider, model, or tool request and do not certify hosted or
 production security.
 
-Required v0.1.6 evaluation remains provider-free and does not run a provider,
+Required v0.1.7 evaluation remains provider-free and does not run a provider,
 search, `observe-live`, or remote LangSmith tracing. Generic search source
 admission accepts canonical public HTTPS URLs before model, monitor, or
 Evidence observation, and existing generic researcher and network-search
@@ -76,4 +80,4 @@ input.
 - Public bug bounty commitments.
 - Hosted service operations outside this repository.
 - Hosted console operations, RBAC, multi-tenant, or multi-replica deployments
-  that are not part of v0.1.6.
+  that are not part of the v0.1.7 release preparation.

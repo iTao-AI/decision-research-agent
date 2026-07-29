@@ -158,6 +158,28 @@ Required boundaries:
 - Docker uses explicit task ownership, inventory, bounded resources, and cleanup;
 - all current exact-head CI and CodeQL checks must succeed.
 
+Phase A has one narrow local Docker transport-blocker rule. It applies only
+when two bounded local builds both fail before container startup and before
+any Phase A behavior test runs, the Dockerfile-native retries are exhausted by
+`IncompleteRead` transport failures at different byte offsets or for different
+packages, and the candidate, diff, dependency pins, Dockerfile, Compose
+configuration, and CI configuration remain unchanged. The other local gates
+must pass, the exact Phase A scope must remain clean, and no task-owned Docker
+resource may remain.
+
+This state is an unresolved local environment observation, not a passing
+Docker result. It permits Phase A to proceed only to a Ready PR, where
+`Secure Local Runtime Containers` on the exact reviewed head becomes mandatory
+replacement acceptance evidence and must complete successfully. A missing,
+pending, skipped, cancelled, timed-out, or failed check blocks merge. A
+historical success on the base branch or `main` may support the environment
+diagnosis but does not satisfy exact-head acceptance.
+
+This exception applies only to the Phase A verifier bridge. It does not relax
+the Phase B or final release-candidate local Docker requirement, authorize a
+third local retry, or permit a dependency-pin, Dockerfile, Compose, CI, shared
+cache, Docker daemon, proxy, or host-configuration change.
+
 ## 7. Release artifact and publication gates
 
 The supported artifact remains the source repository and container configuration. This project does not claim a Python wheel or hosted service.
@@ -218,7 +240,10 @@ Stop and return to authority review if:
 - Phase A changes the intended strict-consumer invariant, timeout, coverage, failure code, episode binding, or case meaning while retaining profile version 1;
 - the release candidate modifies runtime, API, migration, database, or dependency pins;
 - a new metadata incompatibility appears;
-- any retained proof, Docker gate, frontend gate, hosted check, or CodeQL check fails;
+- any retained proof, frontend gate, hosted check, or CodeQL check fails;
+- a Docker gate fails outside the closed Phase A local transport-blocker rule,
+  or the exact reviewed-head `Secure Local Runtime Containers` replacement
+  check is not `completed/success`;
 - current and historical documentation cannot be separated without rewriting evidence;
 - the tag, commit, tree, or Release target disagree;
 - publication would require force-push, tag movement, or deletion;

@@ -729,6 +729,28 @@ Then:
 
 Expected: all commands pass, and the post-Docker inventory contains no task-owned residue.
 
+For Phase A only, record a `local Docker transport blocker` instead of a
+passing Docker result when all of these conditions hold:
+
+- two bounded local builds both fail before container startup and before any
+  Phase A behavior test runs;
+- the Dockerfile-native retries are exhausted by `IncompleteRead` transport
+  failures at different byte offsets or for different packages;
+- the candidate, diff, dependency pins, Dockerfile, Compose configuration, and
+  CI configuration remain unchanged;
+- every other local gate passes, the exact Phase A scope is clean, and no
+  task-owned Docker resource remains.
+
+This is an unresolved local environment observation, not Docker acceptance.
+Do not run a third local attempt or change a dependency pin, Dockerfile,
+Compose file, CI configuration, shared cache, Docker daemon, proxy, or host
+configuration. Phase A may continue to a Ready PR only under these conditions.
+The exact reviewed-head hosted `Secure Local Runtime Containers` check then
+becomes mandatory replacement acceptance evidence. A historical successful
+run on the base branch or `main` supports diagnosis only and does not satisfy
+acceptance. This rule does not apply to Phase B or the final release candidate,
+whose local Docker gate remains required.
+
 - [ ] **Step 4: Audit exact Phase A scope and private boundaries**
 
 Run:
@@ -816,6 +838,13 @@ Return:
 READY_FOR_PHASE_A_AUTHORITY_REVIEW
 ```
 
+If and only if the closed Phase A local Docker transport-blocker rule applies,
+return:
+
+```text
+READY_FOR_PHASE_A_AUTHORITY_REVIEW_WITH_LOCAL_DOCKER_TRANSPORT_BLOCKER
+```
+
 Include exact HEAD/tree, base, commits, changed paths, RED/GREEN evidence, focused/full/Docker/frontend results, generated artifact hashes, known metadata diagnostic, final clean status, and non-actions.
 
 Do not push or create a PR until separately authorized. Phase B must not begin until Phase A is reviewed, merged, and exact merge-SHA hosted CI/CodeQL succeeds.
@@ -835,6 +864,11 @@ After authority review and explicit authorization:
    `Analyze (javascript-typescript)`, and `Analyze (python)`. Every one must be
    `completed/success`; a missing, added-required, pending, skipped, cancelled,
    timed-out, or failed check blocks.
+   When the closed Phase A local Docker transport-blocker rule was used,
+   `Secure Local Runtime Containers` on that exact reviewed head is the
+   mandatory replacement Docker acceptance evidence. Base-branch or `main`
+   history cannot replace it, and any result other than `completed/success`
+   blocks merge.
 5. Re-read comments, reviews, inline comments, review threads, and changed files.
 6. Merge only after separate explicit merge authorization and exact-head match.
 7. Verify squash merge tree equals the reviewed tree.

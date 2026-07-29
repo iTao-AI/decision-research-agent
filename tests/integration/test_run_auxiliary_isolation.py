@@ -20,11 +20,20 @@ pytestmark = pytest.mark.usefixtures("authenticated_runtime_access")
 def route_dispatch_worker(monkeypatch):
     import api.server as server
     from api.database import sqlite_db_path
+    from tests.run_execution_helpers import activate_run_execution
+
+    boots = {}
 
     class RouteWorker:
         async def dispatch_run(self, run_id):
+            db_path = sqlite_db_path()
+            boot_id = boots.get(db_path)
+            if boot_id is None:
+                boot_id = activate_run_execution(db_path=db_path)
+                boots[db_path] = boot_id
             return await server.create_run_dispatch_worker(
-                sqlite_db_path()
+                db_path,
+                boot_id=boot_id,
             ).dispatch_run(run_id)
 
         def wake(self):

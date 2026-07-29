@@ -11,6 +11,7 @@ from agent.research import EvidenceEntry
 from agent.talent_contracts import ResearchPacket
 from api.evidence_verification_models import VerificationDecisionRequest
 from api.evidence_verification_repository import accept_verification_decision
+from api.run_execution_models import RunExecutionConflict
 from api.publication_repository import (
     PublicationConflict,
     count_current_publications,
@@ -34,6 +35,8 @@ from api.review_repository import (
     get_review_detail,
     resolve_review,
 )
+from api.run_execution_models import new_boot_id, new_owner_id
+from api.run_execution_repository import activate_run_execution_boot
 from api.run_repository import (
     _connect,
     create_run,
@@ -325,6 +328,12 @@ def _set_run_execution_status(
     if execution_status == "failed":
         _mark_run_failed_with_observed_cause(db_path, run_id=run_id)
         return
+    if execution_status == "running":
+        _force_corrupt_protected_running_state_for_test(
+            db_path=db_path,
+            run_id=run_id,
+        )
+        return
     connection = _connect(db_path)
     try:
         with connection:
@@ -335,6 +344,72 @@ def _set_run_execution_status(
                 WHERE run_id = ?
                 """,
                 (execution_status, run_id),
+            )
+    finally:
+        connection.close()
+
+
+def _force_corrupt_protected_running_state_for_test(
+    *,
+    db_path: str,
+    run_id: str,
+) -> None:
+    """Create a named negative-control state for publication fail-closed tests."""
+    boot_id = new_boot_id()
+    activate_run_execution_boot(db_path=db_path, boot_id=boot_id)
+    owner_id = new_owner_id()
+    connection = _connect(db_path)
+    try:
+        with connection:
+            run = connection.execute(
+                """
+                SELECT updated_at
+                FROM research_runs_v2
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            segment_id = connection.execute(
+                """
+                SELECT segment_id
+                FROM run_segments
+                WHERE run_id = ?
+                ORDER BY sequence
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()[0]
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET execution_status = 'running', state_version = 1
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            )
+            connection.execute(
+                """
+                UPDATE run_segments
+                SET status = 'running', updated_at = ?
+                WHERE segment_id = ?
+                """,
+                (run["updated_at"], segment_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO run_execution_owners_v1(
+                    run_id, segment_id, status, phase, boot_id, owner_id,
+                    created_at, phase_updated_at, closed_at, recovery_reason
+                ) VALUES (?, ?, 'active', 'execution', ?, ?, ?, ?, NULL, NULL)
+                """,
+                (
+                    run_id,
+                    segment_id,
+                    boot_id,
+                    owner_id,
+                    run["updated_at"],
+                    run["updated_at"],
+                ),
             )
     finally:
         connection.close()
@@ -391,10 +466,18 @@ def _fail_run_after_publication_write(
         connection.close()
 
 
-@pytest.mark.parametrize("execution_status", ["failed", "running"])
+@pytest.mark.parametrize(
+    ("execution_status", "expected_error", "expected_code"),
+    [
+        ("failed", PublicationConflict, "verification_publication_conflict"),
+        ("running", RunExecutionConflict, "run_execution_recovery_unavailable"),
+    ],
+)
 def test_noncompleted_run_cannot_stale_current_publication(
     tmp_path,
     execution_status,
+    expected_error,
+    expected_code,
 ):
     seeded = _seed_talent_run(tmp_path, migrate=True)
     _set_run_execution_status(
@@ -405,8 +488,8 @@ def test_noncompleted_run_cannot_stale_current_publication(
     before = _publication_tables(seeded.db_path)
 
     with pytest.raises(
-        PublicationConflict,
-        match="verification_publication_conflict",
+        expected_error,
+        match=expected_code,
     ):
         _accept_verification(seeded)
 

@@ -39,6 +39,51 @@ def test_ci_runs_loop_after_v2_and_before_remaining_proofs() -> None:
     assert "PYTHON_DOTENV_DISABLED: '1'" in text
 
 
+def test_crash_safe_recovery_is_unreleased_linked_and_provider_free() -> None:
+    readme = _read("README.md")
+    chinese = _read("README_CN.md")
+    changelog = _section(_read("CHANGELOG.md"), "## [Unreleased]", "## [0.1.6]")
+    docs_index = _read("docs/README.md")
+    superpowers = _read("docs/superpowers/README.md")
+    for text in (readme, chinese, changelog):
+        assert "run_execution_recovery_proof.py check" in text
+        assert "provider-free" in text
+        assert "startup-only" in text
+        assert "one-hop" in text
+        assert "release" in text.lower() or "发布" in text
+    for target in (
+        "operations/run-execution-recovery.md",
+        "superpowers/specs/2026-07-28-crash-safe-agent-run-recovery-v1-design.md",
+        "superpowers/plans/2026-07-29-crash-safe-startup-convergence-v1-implementation-plan.md",
+    ):
+        assert target in docs_index
+    assert "2026-07-28-crash-safe-agent-run-recovery-v1-design.md" in superpowers
+    assert (
+        "2026-07-29-crash-safe-startup-convergence-v1-implementation-plan.md"
+        in superpowers
+    )
+    assert "released in v0.1.7" not in changelog
+
+
+def test_recovery_getting_started_and_tool_client_truth_is_copyable() -> None:
+    getting_started = _read("docs/getting-started.md")
+    integration = _read("docs/AGENT_INTEGRATION.md")
+    combined = " ".join((getting_started + "\n" + integration).split())
+    for literal in (
+        ': "${SOURCE_RUN_ID:?set the immutable failed source run ID}"',
+        ': "${RECOVERY_KEY:?persist a high-entropy recovery key before POST}"',
+        ': "${DECISION_RESEARCH_AGENT_API_KEY:?set the configured local API key}"',
+        "--run-id \"${SOURCE_RUN_ID}\"",
+        "--idempotency-key \"${RECOVERY_KEY}\"",
+        "90 seconds",
+        "2 minutes",
+        "not latency",
+        "not",
+        "SLA",
+    ):
+        assert literal in combined
+
+
 def test_loop_kernel_unreleased_truth_and_readme_contract() -> None:
     changelog = _read("CHANGELOG.md")
     unreleased = _section(changelog, "## [Unreleased]", "## [0.1.6]")

@@ -14,6 +14,10 @@ from api.run_dispatch_models import (
     RunDispatchConflict,
 )
 from api.run_failure_cause_models import RunFailureCauseWrite
+from api.run_execution_models import (
+    RunExecutionOwnerHandle,
+    new_owner_id,
+)
 from api.run_repository import _connect, _now, init_run_schema
 
 
@@ -92,6 +96,7 @@ def claim_run_dispatch(
     *,
     db_path: str | None,
     worker_id: str,
+    boot_id: str,
     lease_seconds: int,
     run_id: str | None = None,
     now: datetime | None = None,
@@ -112,6 +117,14 @@ def claim_run_dispatch(
     connection = _connect(db_path)
     try:
         connection.execute("BEGIN IMMEDIATE")
+        current_boot = connection.execute(
+            "SELECT 1 FROM run_execution_boot_v1 "
+            "WHERE boot_scope='application' AND boot_id=?",
+            (boot_id,),
+        ).fetchone()
+        if current_boot is None:
+            connection.commit()
+            return None
         while True:
             candidate = _candidate_row(
                 connection,
@@ -182,6 +195,7 @@ def claim_run_dispatch(
                     "run_id": claimed["run_id"],
                     "thread_id": claimed["thread_id"],
                     "segment_id": claimed["segment_id"],
+                    "boot_id": boot_id,
                     "query": claimed["query"],
                     "profile_id": claimed["profile_id"],
                     "profile_version": claimed["profile_version"],
@@ -306,17 +320,26 @@ def start_run_dispatch(
     *,
     db_path: str | None,
     claim: RunDispatchClaim,
-) -> bool:
-    """Atomically win the exact dispatch, run, and initial-segment start fence."""
+) -> RunExecutionOwnerHandle | None:
+    """Atomically win dispatch/run/segment start and create its exact owner."""
     init_run_schema(db_path)
     connection = _connect(db_path)
     try:
         connection.execute("BEGIN IMMEDIATE")
+        current_boot = connection.execute(
+            "SELECT 1 FROM run_execution_boot_v1 "
+            "WHERE boot_scope='application' AND boot_id=?",
+            (claim.boot_id,),
+        ).fetchone()
+        if current_boot is None:
+            connection.commit()
+            return None
         row = _joined_claim_row(connection, run_id=claim.run_id)
         if row is None or row["segment_id"] is None or not _claim_matches_joined(row, claim):
             connection.commit()
-            return False
+            return None
         now = _now()
+        owner_id = new_owner_id()
         dispatch_cursor = connection.execute(
             """
             UPDATE run_dispatches_v1
@@ -350,9 +373,30 @@ def start_run_dispatch(
             or segment_cursor.rowcount != 1
         ):
             connection.rollback()
-            return False
+            return None
+        connection.execute(
+            """
+            INSERT INTO run_execution_owners_v1(
+                run_id, segment_id, status, phase, boot_id, owner_id,
+                created_at, phase_updated_at, closed_at, recovery_reason
+            ) VALUES (?, ?, 'active', 'execution', ?, ?, ?, ?, NULL, NULL)
+            """,
+            (
+                claim.run_id,
+                claim.segment_id,
+                claim.boot_id,
+                owner_id,
+                now,
+                now,
+            ),
+        )
         connection.commit()
-        return True
+        return RunExecutionOwnerHandle(
+            run_id=claim.run_id,
+            segment_id=claim.segment_id,
+            boot_id=claim.boot_id,
+            owner_id=owner_id,
+        )
     except Exception:
         connection.rollback()
         raise

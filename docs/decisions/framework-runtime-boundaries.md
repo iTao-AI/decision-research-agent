@@ -136,3 +136,17 @@ Framework upgrades must preserve the harness compatibility tests, profile
 boundaries, application-owned outcome contract, and release gates. Any change
 that moves business authority into a framework store, trace, Skill, VFS, or UI
 requires an explicit decision update.
+
+## Crash Recovery Boundary
+
+Crash-safe recovery remains application/Harness authority. A process-lifetime
+DB-scoped exclusive writer gate establishes the supported single-node writer;
+a private boot generation and owner fence converge abandoned running state at
+startup only. The application DB owns the immutable failed source, public
+`dra.run-failure-cause.v1` projection, and explicit replacement lineage.
+
+LangGraph checkpoint replay is deliberately not the recovery mechanism.
+Incomplete nodes, model calls, API calls, and tools may re-execute, while
+current external operations do not share a uniform idempotency contract.
+Framework checkpoints and traces therefore cannot authorize an automatic
+resume, retry, replacement, or external side-effect claim.

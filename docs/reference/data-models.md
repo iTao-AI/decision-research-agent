@@ -365,3 +365,26 @@ still does not write Evidence verification decisions.
 | 2026-06-20 | Controlled review 队列/详情是只读投影；review revision 与新 run 分别承接纠正语义 |
 | 2026-06-19 | Durable review 使用双数据库权威边界、四表模型、状态机和 blocked delivery |
 | 2026-05-19 | 初始数据模型文档 |
+
+## Crash-Safe Execution Recovery v1
+
+Migration `010_run_execution_recovery` uses a dedicated
+`.pre-run-execution-recovery.bak` backup and adds private application-authority
+tables:
+
+- `run_execution_boot_v1`: the one current application boot generation;
+- `run_execution_owners_v1`: one active/closed/interrupted owner fence per
+  protected initial run segment, with execution/finalization phase;
+- `run_recovery_retries_v1`: namespaced key hash, canonical request hash, and
+  immutable one-hop source/replacement lineage.
+
+Raw keys, owner capabilities, DB identity, and boot identity are not public.
+Closed/interrupted owners clear active boot and owner values. A pre-010 running
+row is converged under the stopped-writer upgrade assumption with private
+reason `pre_v1_running_without_owner`; later startup interruption uses
+`previous_boot_interrupted`.
+
+Public cause mapping remains the closed `dra.run-failure-cause.v1` contract:
+execution becomes `execution/execution_error`, and finalization becomes
+`finalization/run_finalization_failed`. Status and result schemas gain no
+recovery fields.

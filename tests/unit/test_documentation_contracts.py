@@ -42,9 +42,127 @@ LOOP_ADR = PROJECT_ROOT / "docs/decisions/evidence-gated-evolution-authority.md"
 ARCHITECTURE = PROJECT_ROOT / "docs/architecture.md"
 DOCS_INDEX = PROJECT_ROOT / "docs/README.md"
 EVIDENCE_INDEX = PROJECT_ROOT / "docs/evidence/README.md"
+RECOVERY_RUNBOOK = PROJECT_ROOT / "docs/operations/run-execution-recovery.md"
+RECOVERY_AUTHORITIES = [
+    PROJECT_ROOT / "docs/architecture.md",
+    PROJECT_ROOT / "docs/decisions/framework-runtime-boundaries.md",
+    PROJECT_ROOT / "docs/decisions/run-identity-boundaries.md",
+    PROJECT_ROOT / "docs/reference/api-contract.md",
+    PROJECT_ROOT / "docs/reference/data-models.md",
+    PROJECT_ROOT / "docs/reference/state-machines.md",
+    PROJECT_ROOT / "docs/AGENT_INTEGRATION.md",
+]
 
 def _combined_docs() -> str:
     return "\n\n".join(path.read_text(encoding="utf-8") for path in CURRENT_DOCS)
+
+
+def test_crash_safe_recovery_authorities_publish_exact_bounded_contract() -> None:
+    combined = "\n".join(
+        path.read_text(encoding="utf-8") for path in RECOVERY_AUTHORITIES
+    )
+    collapsed = _collapsed(combined)
+    for phrase in (
+        "startup-only convergence",
+        "process-lifetime DB-scoped exclusive writer gate",
+        "private boot generation",
+        "owner fence",
+        "immutable failed",
+        "execution/execution_error",
+        "finalization/run_finalization_failed",
+        "POST /api/runs/{source_run_id}/retries",
+        "Idempotency-Key",
+        "zero body bytes",
+        "new run, not resume",
+        "one-hop replacement",
+        "accepted is not started, completed, or successful",
+        "post-commit wake is best effort",
+        "invocation-local convenience",
+        "dra.run-recovery.v1",
+        "dra.run-failure-cause.v1",
+    ):
+        assert phrase in collapsed
+
+
+def test_recovery_runbook_locks_upgrade_collision_rollback_and_diagnostics() -> None:
+    text = RECOVERY_RUNBOOK.read_text(encoding="utf-8")
+    collapsed = _collapsed(text).lower()
+    for phrase in (
+        "stop all application writers",
+        "run_execution_writer_already_active",
+        "run_execution_writer_unavailable",
+        "shutdown does not complete",
+        "do not delete the empty lock file",
+        "dedicated migration backup",
+        "backup_already_exists",
+        "verified pre-010 backup",
+        "proven stale/wrong backup",
+        "never delete, overwrite, or rename automatically",
+        "stopped-writer upgrade",
+        "bfd744a5611c7673d9385a45bed0131d6cb47655",
+        "git cat-file -e",
+        "git archive --format=tar",
+        "python3.11 -I -",
+        "module.__file__",
+        "rollback_source_identity_invalid",
+        "exact profile ID/version unavailable",
+        "replacement used as recovery source",
+        "ordinary keyed run",
+        "release remains `hold`",
+    ):
+        assert phrase.lower() in collapsed
+    for forbidden in (
+        "drop only the new tables",
+        "delete the migration marker",
+        "edit owner rows",
+        "copy replacement rows into the old schema",
+    ):
+        assert f"Do not {forbidden}" in text
+
+
+def test_recovery_wire_examples_preserve_zero_body_and_secret_boundary() -> None:
+    api = (PROJECT_ROOT / "docs/reference/api-contract.md").read_text(
+        encoding="utf-8"
+    )
+    integration = (PROJECT_ROOT / "docs/AGENT_INTEGRATION.md").read_text(
+        encoding="utf-8"
+    )
+    for literal in (
+        'url = "http://127.0.0.1:8000/api/runs/${SOURCE_RUN_ID}/retries"',
+        'header = "X-API-Key: ${DECISION_RESEARCH_AGENT_API_KEY}"',
+        'header = "Idempotency-Key: ${RECOVERY_KEY}"',
+        "curl --config - <<EOF",
+    ):
+        assert literal in api
+    raw = _section_between(api, "curl --config - <<EOF", "EOF")
+    for forbidden in ("--data", "--json", "--form", "--upload", "Content-Type"):
+        assert forbidden not in raw
+    assert "--api-key" not in integration
+    assert "DECISION_RESEARCH_AGENT_API_KEY" in integration
+    assert "persist" in integration and "before network" in integration
+
+
+def test_recovery_docs_reject_automatic_or_production_overclaims() -> None:
+    runbook = RECOVERY_RUNBOOK.read_text(encoding="utf-8")
+    combined = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in RECOVERY_AUTHORITIES + [RECOVERY_RUNBOOK]
+    )
+    for nonclaim in (
+        "No automatic retry",
+        "No automatic resume",
+        "No exactly-once execution",
+        "No heartbeat monitoring",
+        "No periodic scanner",
+        "No production HA",
+        "No distributed lock or leader election",
+        "No provider success",
+        "No business impact",
+        "No published v0.1.7",
+    ):
+        assert nonclaim in runbook
+    assert "LangGraph checkpoint replay" in combined
+    assert "may re-execute" in combined
 
 
 def test_evidence_gated_loop_reference_locks_commands_and_nonclaims() -> None:

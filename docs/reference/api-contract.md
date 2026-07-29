@@ -333,3 +333,65 @@ New controlled APIs use stable bounded envelopes:
 
 Responses must not include local filesystem paths, secrets, checkpoint payloads,
 actor fingerprints, lease owners, raw tracebacks, or raw model/tool payloads.
+
+## Explicit Run Replacement
+
+```text
+POST /api/runs/{source_run_id}/retries
+X-API-Key: required by the configured local runtime
+Idempotency-Key: required
+body: exactly zero body bytes
+```
+
+Whitespace, JSON, form data, and any other byte are rejected with
+`422 run_recovery_body_not_allowed`. Authentication denial occurs before body
+observation or repository access. Success is asynchronous HTTP `202` with the
+closed ten-field `dra.run-recovery.v1` response:
+
+```json
+{
+  "schema_version": "dra.run-recovery.v1",
+  "status": "accepted",
+  "reason": "previous_boot_interrupted",
+  "interrupted_phase": "execution",
+  "source_run_id": "source",
+  "run_id": "replacement",
+  "thread_id": "caller-thread",
+  "segment_id": "replacement_seg_000",
+  "recovery_attempt": 1,
+  "idempotent_replay": false
+}
+```
+
+This is a new run, not resume. `accepted is not started, completed, or
+successful`; post-commit wake is best effort. Replaying the same source/key
+returns the same replacement with only `idempotent_replay=true`. Existing
+create/status/result and `dra.run-failure-cause.v1` schemas do not change.
+
+| Status | Code | Meaning |
+|---|---|---|
+| 404 | `run_recovery_source_not_found` | Source identity is absent |
+| 409 | `run_recovery_not_eligible` | Exact profile or source contract unavailable |
+| 409 | `run_recovery_exhausted` | Replacement cannot create a second hop |
+| 409 | `run_recovery_conflict` | Key or source already has different binding |
+| 422 | `run_recovery_key_invalid` | Key fails the bounded contract |
+| 422 | `run_recovery_body_not_allowed` | One or more body bytes were observed |
+| 503 | `run_recovery_unavailable` | Durable recovery authority is unavailable |
+
+Raw zero-body request example (headers are supplied through stdin rather than
+API-key command arguments):
+
+```bash
+curl --config - <<EOF
+url = "http://127.0.0.1:8000/api/runs/${SOURCE_RUN_ID}/retries"
+request = "POST"
+header = "X-API-Key: ${DECISION_RESEARCH_AGENT_API_KEY}"
+header = "Idempotency-Key: ${RECOVERY_KEY}"
+fail-with-body
+silent
+show-error
+EOF
+```
+
+The example intentionally supplies no body or content-type option. The
+recovery key deduplicates replacement creation only, not provider/tool effects.

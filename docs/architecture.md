@@ -315,3 +315,29 @@ later architecture decision expands the deployment model.
 
 Delivery is Markdown-only in v0.1.0. The result endpoint returns canonical
 Markdown artifacts and does not generate PDF files.
+
+## Crash-Safe Startup Convergence
+
+The run lifecycle now has four separate reliability boundaries:
+
+1. durable pending dispatch reconciliation before Agent invocation;
+2. a process-lifetime DB-scoped exclusive writer gate acquired before writable
+   startup and held through tracked-task drain;
+3. startup-only convergence using a private boot generation and exact owner
+   fence for application-owned `running` state;
+4. explicit authenticated creation of a one-hop replacement after the source
+   becomes immutable failed.
+
+The gate is a supported local-process capability, not a distributed lock or
+leader election. Repository helpers and proof scripts do not gain permission
+to write the live DB concurrently. A clean-checkout bootstrap may create only
+the missing canonical DB parent before the empty sibling lock; DB, backup,
+output, probe, migration, boot, and workers remain behind the gate.
+
+Execution interruption maps to `execution/execution_error`; finalization
+interruption maps to `finalization/run_finalization_failed`. External requests
+already in flight cannot be undone or deduplicated. LangGraph checkpoint replay
+is not used: incomplete graph nodes, model/API calls, and tools may re-execute,
+and the current tool set has no uniform external idempotency contract. This is
+Harness reliability and application authority, not runtime self-evolution,
+automatic retry/resume, or exactly-once execution.

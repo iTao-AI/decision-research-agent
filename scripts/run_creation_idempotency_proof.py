@@ -155,6 +155,9 @@ def _row_count(db_path: str, table: str) -> int:
 
 def _build_api_cases(db_path: str) -> tuple[dict[str, Any], dict[str, Any]]:
     from fastapi.testclient import TestClient
+    from api.run_execution_models import new_boot_id
+    from api.run_execution_repository import activate_run_execution_boot
+    from api.run_repository import init_run_schema
 
     with patch.dict(
         os.environ,
@@ -189,8 +192,12 @@ def _build_api_cases(db_path: str) -> tuple[dict[str, Any], dict[str, Any]]:
         server.app.state.runtime_access_policy = load_runtime_access_policy(
             {"API_SECRET": "proof-only-api-secret"}
         )
+        init_run_schema(db_path)
+        boot_id = new_boot_id()
+        activate_run_execution_boot(db_path=db_path, boot_id=boot_id)
         server.app.state.run_dispatch_worker = server.create_run_dispatch_worker(
-            db_path
+            db_path,
+            boot_id=boot_id,
         )
         try:
             client = TestClient(server.app)

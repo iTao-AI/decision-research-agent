@@ -2,13 +2,21 @@ import sys
 import os
 import asyncio
 import logging
+import re
 import sqlite3
 from functools import partial
 import uvicorn
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import (
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -44,9 +52,13 @@ from api.task_tracker import (
     FinalizationCheckpoint,
     TerminationOrigin,
     create_tracked_task,
+    close_tracked_task_admission,
+    drain_tracked_tasks,
+    open_tracked_task_admission,
     settle_shielded_task,
+    tracked_task_registry_is_empty,
 )
-from api.database import sqlite_db_path
+from api.database import application_db_path, sqlite_db_path
 from api.thread_ids import validate_thread_id
 from api.run_repository import (
     RunCreationConflict,
@@ -69,7 +81,23 @@ from api.run_dispatch_repository import (
     start_run_dispatch,
 )
 from api.run_dispatch_worker import RunDispatchWorker
+from api.run_execution_models import (
+    RunExecutionConflict,
+    RunExecutionOwnerBox,
+    new_boot_id,
+)
+from api.run_execution_repository import (
+    activate_run_execution_boot,
+    advance_run_execution_phase,
+    get_run_execution_owner_phase,
+)
+from api.run_execution_writer_lock import acquire_run_execution_writer
 from api.run_creation_models import validate_idempotency_key
+from api.run_recovery_models import (
+    RunRecoveryConflict,
+    validate_recovery_key,
+)
+from api.run_recovery_repository import create_or_replay_run_recovery
 from api.run_result_service import (
     RunResultUnavailable,
     build_generic_result_artifact,
@@ -220,9 +248,14 @@ def create_review_worker(
     )
 
 
-def create_run_dispatch_worker(application_db_path: str | Path) -> RunDispatchWorker:
+def create_run_dispatch_worker(
+    application_db_path: str | Path,
+    *,
+    boot_id: str,
+) -> RunDispatchWorker:
     return RunDispatchWorker(
         db_path=str(application_db_path),
+        boot_id=boot_id,
         scheduler=partial(
             _schedule_run_dispatch,
             db_path=str(application_db_path),
@@ -236,14 +269,23 @@ async def lifespan(app: FastAPI):
     worker = None
     run_dispatch_task = None
     run_dispatch_worker = None
+    writer = None
+    admission_opened = False
+    release_writer = False
+    shutdown_cancellation_requests = 0
+    shutdown_exception = None
+    primary_exception = None
     app.state.review_worker_task = None
     app.state.run_dispatch_worker = None
     app.state.run_dispatch_worker_task = None
     app.state.review_runtime_readiness = None
     app.state.evidence_verification_runtime_readiness = None
+    app.state.run_execution_boot_id = None
     _emit_runtime_access_warning_once(app)
     try:
-        application_db_path = sqlite_db_path()
+        configured_db_path = application_db_path()
+        writer = acquire_run_execution_writer(db_path=configured_db_path)
+        output_dir.mkdir(exist_ok=True)
         runtime = validate_review_runtime(output_dir=output_dir)
         verification_runtime = validate_evidence_verification_runtime(
             review_runtime=runtime,
@@ -251,8 +293,8 @@ async def lifespan(app: FastAPI):
         )
         try:
             migrate_with_backup(
-                db_path=application_db_path,
-                backup_path=f"{application_db_path}.pre-run-dispatch.bak",
+                db_path=str(configured_db_path),
+                backup_path=f"{configured_db_path}.pre-run-dispatch.bak",
             )
         except sqlite3.DatabaseError as exc:
             if runtime.enabled:
@@ -260,7 +302,24 @@ async def lifespan(app: FastAPI):
                     "review_runtime_not_ready"
                 ) from exc
             raise
-        run_dispatch_worker = create_run_dispatch_worker(application_db_path)
+        boot_id = new_boot_id()
+        activation = await asyncio.to_thread(
+            activate_run_execution_boot,
+            db_path=str(configured_db_path),
+            boot_id=boot_id,
+        )
+        logging.info(
+            "run_execution_boot_activated execution=%s finalization=%s",
+            activation.interrupted_execution_count,
+            activation.interrupted_finalization_count,
+        )
+        app.state.run_execution_boot_id = boot_id
+        open_tracked_task_admission()
+        admission_opened = True
+        run_dispatch_worker = create_run_dispatch_worker(
+            configured_db_path,
+            boot_id=boot_id,
+        )
         run_dispatch_task = asyncio.create_task(run_dispatch_worker.run_forever())
         await asyncio.sleep(0)
         if run_dispatch_task.done():
@@ -309,7 +368,12 @@ async def lifespan(app: FastAPI):
                 task.result()
             app.state.review_worker_task = task
         yield
+    except BaseException as exc:
+        primary_exception = exc
+        raise
     finally:
+        if admission_opened:
+            close_tracked_task_admission()
         app.state.review_worker_task = None
         app.state.run_dispatch_worker = None
         app.state.run_dispatch_worker_task = None
@@ -318,19 +382,57 @@ async def lifespan(app: FastAPI):
         if worker is not None:
             worker.stop()
         if task is not None:
-            if task.done():
-                if not task.cancelled():
-                    task.exception()
-            else:
-                await task
+            _, task_exception, task_cancellations = await settle_shielded_task(
+                task
+            )
+            shutdown_cancellation_requests = max(
+                shutdown_cancellation_requests,
+                task_cancellations,
+            )
+            if (
+                task_exception is not None
+                and not isinstance(task_exception, asyncio.CancelledError)
+            ):
+                shutdown_exception = task_exception
         if run_dispatch_worker is not None:
             run_dispatch_worker.stop()
         if run_dispatch_task is not None:
-            if run_dispatch_task.done():
-                if not run_dispatch_task.cancelled():
-                    run_dispatch_task.exception()
-            else:
-                await run_dispatch_task
+            _, dispatch_exception, dispatch_cancellations = (
+                await settle_shielded_task(run_dispatch_task)
+            )
+            shutdown_cancellation_requests = max(
+                shutdown_cancellation_requests,
+                dispatch_cancellations,
+            )
+            if (
+                dispatch_exception is not None
+                and not isinstance(dispatch_exception, asyncio.CancelledError)
+                and shutdown_exception is None
+            ):
+                shutdown_exception = dispatch_exception
+        if admission_opened:
+            drain_task = asyncio.create_task(drain_tracked_tasks())
+            _, drain_exception, cancellation_requests = (
+                await settle_shielded_task(drain_task)
+            )
+            if drain_exception is not None:
+                raise RuntimeError("run_execution_shutdown_unavailable") from None
+            if not tracked_task_registry_is_empty():
+                raise RuntimeError("run_execution_shutdown_unavailable")
+            app.state.run_execution_boot_id = None
+            release_writer = True
+            shutdown_cancellation_requests = max(
+                shutdown_cancellation_requests,
+                cancellation_requests,
+            )
+        elif writer is not None:
+            release_writer = True
+        if writer is not None and release_writer:
+            writer.release()
+        if shutdown_exception is not None and primary_exception is None:
+            raise RuntimeError("run_execution_shutdown_unavailable") from None
+        if shutdown_cancellation_requests and primary_exception is None:
+            raise asyncio.CancelledError
 
 
 app = FastAPI(
@@ -348,7 +450,6 @@ app.state.cors_configuration = cors_configuration
 app.state.runtime_access_warning_emitted = False
 
 output_dir = project_root / "output"
-output_dir.mkdir(exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -470,6 +571,7 @@ async def _run_started_v2_with_persistence(
     stage: _RunStage,
     termination_origin: TerminationOrigin,
     finalization_checkpoint: FinalizationCheckpoint,
+    owner_box: RunExecutionOwnerBox,
     profile_id: str = "generic",
     scope: dict | None = None,
 ) -> None:
@@ -487,10 +589,18 @@ async def _run_started_v2_with_persistence(
             profile_id=profile_id,
             scope=scope,
         )
-        stage.advance_to_finalization()
         execution_status = (
             "failed" if result.failure_kind is not None else "completed"
         )
+        if execution_status == "completed":
+            phase_won = await asyncio.to_thread(
+                advance_run_execution_phase,
+                db_path=db_path,
+                handle=owner_box.require(),
+            )
+            if not phase_won:
+                return
+            stage.advance_to_finalization()
         failure_cause = (
             _execution_failure_cause(result.failure_kind)
             if execution_status == "failed"
@@ -516,6 +626,7 @@ async def _run_started_v2_with_persistence(
                         run_id=run_id,
                         segment_id=segment_id,
                         expected_state_version=state_version,
+                        owner_handle=owner_box.require(),
                         db_path=db_path,
                     )
                     if not fence_is_current:
@@ -572,6 +683,7 @@ async def _run_started_v2_with_persistence(
             allowed_previous_statuses=allowed_previous_statuses,
             evidence_entries=outcome.evidence_entries if outcome is not None else [],
             failure_cause=_termination_failure_cause(stage, termination_origin),
+            owner_handle=owner_box.get(),
             db_path=db_path,
         )
         raise
@@ -584,6 +696,7 @@ async def _run_started_v2_with_persistence(
             allowed_previous_statuses=allowed_previous_statuses,
             evidence_entries=outcome.evidence_entries if outcome is not None else [],
             failure_cause=_stage_failure_cause(stage),
+            owner_handle=owner_box.get(),
             db_path=db_path,
         )
         raise
@@ -627,6 +740,7 @@ async def _run_started_v2_with_persistence(
             artifacts=terminal_artifacts,
             review_workflow=terminal_review_workflow,
             failure_cause=terminal_failure_cause,
+            owner_handle=owner_box.require(),
             db_path=db_path,
         )
     )
@@ -649,6 +763,7 @@ async def _run_started_v2_with_persistence(
             allowed_previous_statuses=allowed_previous_statuses,
             evidence_entries=result.evidence_entries,
             failure_cause=fallback_cause,
+            owner_handle=owner_box.get(),
             db_path=db_path,
         )
         current_task = asyncio.current_task()
@@ -671,6 +786,7 @@ async def _run_dispatched_with_persistence(
     stage: _RunStage,
     termination_origin: TerminationOrigin,
     finalization_checkpoint: FinalizationCheckpoint,
+    owner_box: RunExecutionOwnerBox,
 ) -> None:
     """Cross the application-owned start fence before invoking the Agent."""
     start_task = asyncio.create_task(
@@ -680,7 +796,7 @@ async def _run_dispatched_with_persistence(
             claim=claim,
         )
     )
-    started, start_exception, cancellation_requests = await settle_shielded_task(
+    handle, start_exception, cancellation_requests = await settle_shielded_task(
         start_task
     )
     if start_exception is not None:
@@ -702,10 +818,11 @@ async def _run_dispatched_with_persistence(
         if recovery_cancellations:
             raise asyncio.CancelledError
         return
-    if not started:
+    if handle is None:
         if cancellation_requests:
             raise asyncio.CancelledError
         return
+    owner_box.assign(handle)
     stage.advance_to_execution()
     if cancellation_requests or termination_origin.value != "unset":
         outcome = outcome_box.latest()
@@ -716,6 +833,7 @@ async def _run_dispatched_with_persistence(
             allowed_previous_statuses={"running"},
             evidence_entries=outcome.evidence_entries if outcome is not None else [],
             failure_cause=_termination_failure_cause(stage, termination_origin),
+            owner_handle=owner_box.require(),
             db_path=db_path,
         )
         raise asyncio.CancelledError
@@ -729,6 +847,7 @@ async def _run_dispatched_with_persistence(
         stage=stage,
         termination_origin=termination_origin,
         finalization_checkpoint=finalization_checkpoint,
+        owner_box=owner_box,
         profile_id=claim.profile_id,
         scope=claim.scope,
     )
@@ -742,6 +861,7 @@ async def _finalize_failed_run_v2(
     allowed_previous_statuses: set[str],
     evidence_entries: list,
     failure_cause: RunFailureCauseWrite,
+    owner_handle=None,
     db_path: str | None = None,
 ) -> bool:
     """Best-effort failure finalization that never masks the original error."""
@@ -756,6 +876,7 @@ async def _finalize_failed_run_v2(
             delivery_status="failed",
             evidence_entries=evidence_entries,
             failure_cause=failure_cause,
+            owner_handle=owner_handle,
             db_path=db_path,
         )
     )
@@ -779,6 +900,7 @@ async def _mark_run_timeout(
     outcome_box: OutcomeBox,
     db_path: str | None = None,
     stage: _RunStage | None = None,
+    owner_box: RunExecutionOwnerBox | None = None,
 ) -> None:
     """Fail-close a nonterminal ResearchRun after task tracker timeout."""
     run_task = asyncio.create_task(
@@ -796,6 +918,21 @@ async def _mark_run_timeout(
     previous_status = run["execution_status"]
     finalized_by_callback = False
     if previous_status in {"pending", "running"}:
+        owner_handle = owner_box.get() if owner_box is not None else None
+        if previous_status == "running" and owner_handle is None:
+            logging.error("run_execution_owner_unavailable")
+            return
+        persisted_phase = (
+            await asyncio.to_thread(
+                get_run_execution_owner_phase,
+                db_path=db_path or sqlite_db_path(),
+                handle=owner_handle,
+            )
+            if owner_handle is not None
+            else None
+        )
+        if previous_status == "running" and persisted_phase is None:
+            return
         finalized_by_callback = await _finalize_failed_run_v2(
             run_id=run_id,
             segment_id=segment_id,
@@ -804,12 +941,16 @@ async def _mark_run_timeout(
             evidence_entries=outcome.evidence_entries if outcome is not None else [],
             failure_cause=RunFailureCauseWrite(
                 phase=(
-                    "finalization"
-                    if stage is not None and stage.value == "finalization"
-                    else "execution"
+                    persisted_phase
+                    or (
+                        "finalization"
+                        if stage is not None and stage.value == "finalization"
+                        else "execution"
+                    )
                 ),
                 code="run_timeout",
             ),
+            owner_handle=owner_handle,
             db_path=db_path,
         )
 
@@ -835,6 +976,7 @@ async def _mark_dispatched_timeout(
     timeout_seconds: int,
     stage: _RunStage | None = None,
     termination_origin: TerminationOrigin | None = None,
+    owner_box: RunExecutionOwnerBox | None = None,
 ) -> None:
     """Fence timeout handling to the exact dispatch attempt."""
     if (
@@ -864,6 +1006,7 @@ async def _mark_dispatched_timeout(
         outcome_box=outcome_box,
         db_path=db_path,
         stage=stage,
+        owner_box=owner_box,
     )
 
 
@@ -874,6 +1017,7 @@ async def _mark_dispatched_cancellation(
     outcome_box: OutcomeBox,
     stage: _RunStage,
     termination_origin: TerminationOrigin,
+    owner_box: RunExecutionOwnerBox,
 ) -> None:
     """Fence cancellation handling to the exact dispatch attempt."""
     if termination_origin.value != "cancelled":
@@ -904,6 +1048,21 @@ async def _mark_dispatched_cancellation(
     previous_status = run["execution_status"]
     if previous_status not in {"pending", "running"}:
         return
+    owner_handle = owner_box.get()
+    if previous_status == "running" and owner_handle is None:
+        logging.error("run_execution_owner_unavailable")
+        return
+    persisted_phase = (
+        await asyncio.to_thread(
+            get_run_execution_owner_phase,
+            db_path=db_path,
+            handle=owner_handle,
+        )
+        if owner_handle is not None
+        else None
+    )
+    if previous_status == "running" and persisted_phase is None:
+        return
     outcome = outcome_box.latest()
     await _finalize_failed_run_v2(
         run_id=claim.run_id,
@@ -913,10 +1072,16 @@ async def _mark_dispatched_cancellation(
         evidence_entries=outcome.evidence_entries if outcome is not None else [],
         failure_cause=RunFailureCauseWrite(
             phase=(
-                "finalization" if stage.value == "finalization" else "execution"
+                persisted_phase
+                or (
+                    "finalization"
+                    if stage.value == "finalization"
+                    else "execution"
+                )
             ),
             code="cancelled",
         ),
+        owner_handle=owner_handle,
         db_path=db_path,
     )
 
@@ -926,6 +1091,7 @@ def _schedule_run_dispatch(claim: RunDispatchClaim, *, db_path: str) -> None:
     stage = _RunStage()
     termination_origin = TerminationOrigin()
     finalization_checkpoint = FinalizationCheckpoint()
+    owner_box = RunExecutionOwnerBox()
     coroutine = _run_dispatched_with_persistence(
         claim,
         db_path=db_path,
@@ -933,6 +1099,7 @@ def _schedule_run_dispatch(claim: RunDispatchClaim, *, db_path: str) -> None:
         stage=stage,
         termination_origin=termination_origin,
         finalization_checkpoint=finalization_checkpoint,
+        owner_box=owner_box,
     )
     task_id = f"{claim.run_id}:dispatch:{claim.attempt_count}"
     try:
@@ -946,6 +1113,7 @@ def _schedule_run_dispatch(claim: RunDispatchClaim, *, db_path: str) -> None:
                 timeout_seconds=timeout_seconds,
                 stage=stage,
                 termination_origin=termination_origin,
+                owner_box=owner_box,
             ),
             on_cancel=lambda _task_id: _mark_dispatched_cancellation(
                 claim,
@@ -953,6 +1121,7 @@ def _schedule_run_dispatch(claim: RunDispatchClaim, *, db_path: str) -> None:
                 outcome_box=outcome_box,
                 stage=stage,
                 termination_origin=termination_origin,
+                owner_box=owner_box,
             ),
             termination_origin=termination_origin,
             finalization_checkpoint=finalization_checkpoint,
@@ -1003,6 +1172,101 @@ def _run_creation_conflict_response(code: str) -> JSONResponse:
         fix="Retry the same request and key after the service is ready.",
         retryable=True,
     )
+
+
+class RunRecoveryBodyNotAllowed(RuntimeError):
+    """Bounded private signal for a nonempty explicit-recovery body."""
+
+
+_RUN_RECOVERY_ERRORS = {
+    "run_recovery_source_not_found": (
+        404,
+        "The recovery source run does not exist.",
+        "No ResearchRun matches the requested source identity.",
+        "Verify the source run ID before requesting a replacement.",
+        False,
+    ),
+    "run_recovery_not_eligible": (
+        409,
+        "The source run is not eligible for explicit replacement.",
+        "The source is not the exact interrupted terminal contract.",
+        "Inspect the source status and failure cause before requesting replacement.",
+        False,
+    ),
+    "run_recovery_exhausted": (
+        409,
+        "The recovery hop budget is exhausted.",
+        "The source is already a replacement run.",
+        "Inspect the existing replacement; v1 does not create a second hop.",
+        False,
+    ),
+    "run_recovery_conflict": (
+        409,
+        "The recovery request conflicts with an existing binding.",
+        "The key or source is bound to different canonical recovery content.",
+        "Retry the exact original source and key.",
+        False,
+    ),
+    "run_recovery_key_invalid": (
+        422,
+        "The recovery idempotency key is invalid.",
+        "Idempotency-Key failed the bounded public contract.",
+        "Use 8-128 allowed high-entropy ASCII characters.",
+        False,
+    ),
+    "run_recovery_body_not_allowed": (
+        422,
+        "The recovery request body is not allowed.",
+        "Explicit replacement accepts no request body bytes.",
+        "Remove the request body and retry with the same source and key.",
+        False,
+    ),
+    "run_recovery_unavailable": (
+        503,
+        "Durable run recovery is unavailable.",
+        "Recovery authority could not be read or committed safely.",
+        "Retry the exact source and key after service recovery.",
+        True,
+    ),
+}
+
+
+def _run_recovery_error(code: str) -> JSONResponse:
+    status, problem, cause, fix, retryable = _RUN_RECOVERY_ERRORS[code]
+    return _run_creation_error(
+        status,
+        code=code,
+        problem=problem,
+        cause=cause,
+        fix=fix,
+        retryable=retryable,
+    )
+
+
+async def _require_zero_recovery_body(request: Request) -> None:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        normalized = content_length.strip()
+        if (
+            len(normalized) > 20
+            or re.fullmatch(r"[0-9]+", normalized, flags=re.ASCII) is None
+            or int(normalized) != 0
+        ):
+            raise RunRecoveryBodyNotAllowed
+
+    async for chunk in request.stream():
+        if chunk:
+            raise RunRecoveryBodyNotAllowed
+
+
+def _exact_profile_is_available(
+    profile_id: str,
+    profile_version: str,
+) -> bool:
+    try:
+        return profile_registry.get(profile_id).version == profile_version
+    except KeyError:
+        return False
 
 
 @app.post("/api/runs")
@@ -1087,6 +1351,66 @@ async def create_research_run(
     await worker.dispatch_run(created["run_id"])
     worker.wake()
     return response
+
+
+@app.post(
+    "/api/runs/{source_run_id}/retries",
+    status_code=202,
+)
+async def retry_research_run(
+    source_run_id: str,
+    request: Request,
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key"),
+    ] = None,
+):
+    try:
+        await _require_zero_recovery_body(request)
+    except RunRecoveryBodyNotAllowed:
+        return _run_recovery_error("run_recovery_body_not_allowed")
+    if idempotency_key is None:
+        return _run_recovery_error("run_recovery_key_invalid")
+    try:
+        validated_key = validate_recovery_key(idempotency_key)
+    except ValueError:
+        return _run_recovery_error("run_recovery_key_invalid")
+
+    boot_id = app.state.run_execution_boot_id
+    if not isinstance(boot_id, str):
+        return _run_recovery_error("run_recovery_unavailable")
+    try:
+        acceptance = await asyncio.to_thread(
+            create_or_replay_run_recovery,
+            source_run_id=source_run_id,
+            idempotency_key=validated_key,
+            boot_id=boot_id,
+            exact_profile_is_available=_exact_profile_is_available,
+            db_path=sqlite_db_path(),
+        )
+    except RunRecoveryConflict as exc:
+        public_code = (
+            exc.code
+            if exc.code in _RUN_RECOVERY_ERRORS
+            else "run_recovery_unavailable"
+        )
+        return _run_recovery_error(public_code)
+    except (RunExecutionConflict, sqlite3.Error, ValidationError):
+        return _run_recovery_error("run_recovery_unavailable")
+
+    worker = app.state.run_dispatch_worker
+    try:
+        dispatched = await worker.dispatch_run(acceptance.run_id)
+        worker.wake()
+    except Exception:
+        logging.error("run_recovery_post_commit_wake_deferred")
+    else:
+        if not dispatched:
+            logging.info("run_recovery_post_commit_dispatch_deferred")
+    return JSONResponse(
+        status_code=202,
+        content=acceptance.model_dump(mode="json"),
+    )
 
 
 @app.get(

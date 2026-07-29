@@ -18,8 +18,9 @@ from api.run_repository import (
     _connect,
     create_run,
     finalize_run_transaction,
-    transition_run,
 )
+from api.run_execution_repository import advance_run_execution_phase
+from tests.run_execution_helpers import activate_and_start_created_run
 
 
 @dataclass
@@ -49,13 +50,11 @@ def _seed_publication_inputs(tmp_path) -> PersistedPublicationInputs:
         profile_version="1",
         scope=scope,
     )
-    assert transition_run(
+    started = activate_and_start_created_run(
         db_path=db_path,
         run_id=created["run_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
-        execution_status="running",
     )
+    assert advance_run_execution_phase(db_path=db_path, handle=started.handle)
     evidence = EvidenceEntry(
         thread_id="thread-publication-service",
         query_text="query",
@@ -103,6 +102,7 @@ def _seed_publication_inputs(tmp_path) -> PersistedPublicationInputs:
         delivery_status="ready",
         evidence_entries=[evidence],
         research_packets=[packet],
+        owner_handle=started.handle,
     )
     init_evidence_verification_schema(db_path)
     snapshot = finalize_verification_snapshot(

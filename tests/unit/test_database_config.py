@@ -16,3 +16,11 @@ def test_database_path_defaults_to_canonical_data_file(monkeypatch):
 
     assert path.name == "decision_research_agent.db"
     assert path.parent.name == "data"
+
+
+def test_pure_database_path_resolution_does_not_create_missing_parent(tmp_path):
+    from api.database import application_db_path
+
+    path = tmp_path / "missing" / "nested" / "runs.db"
+    assert application_db_path(path) == path.resolve()
+    assert not path.parent.exists()

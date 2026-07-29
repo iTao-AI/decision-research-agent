@@ -189,3 +189,32 @@ files or checkpoint state.
 Static Demo remains usable. For Live Backend, start both processes on
 `127.0.0.1`, configure the exact browser origin, and follow
 [Demo Console troubleshooting](demo-console.md#troubleshooting).
+
+## Explicit replacement after startup convergence
+
+When an already-running local service reports an immutable failed source
+caused by previous-boot interruption, persist a high-entropy recovery key in
+caller-owned durable state before network access:
+
+```bash
+: "${SOURCE_RUN_ID:?set the immutable failed source run ID}"
+: "${RECOVERY_KEY:?persist a high-entropy recovery key before POST}"
+: "${DECISION_RESEARCH_AGENT_API_KEY:?set the configured local API key}"
+
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  tools/decision_research_agent_tool.py \
+  retry \
+  --run-id "${SOURCE_RUN_ID}" \
+  --idempotency-key "${RECOVERY_KEY}"
+```
+
+The Tool Client reads authentication only from
+`DECISION_RESEARCH_AGENT_API_KEY`. Never put the API key in command-line
+arguments. `retry` creates a new one-hop replacement, not a resume. Without an
+explicit key the client generates an invocation-local convenience key and
+prints it; that cannot recover a client process that dies before output.
+
+The provider-free local journey test enforces budgets of 90 seconds to durable
+acceptance and 2 minutes for optional wait/result. These are test ceilings, not
+latency, completion, availability, or production SLA claims; no measured TTHW
+is published.

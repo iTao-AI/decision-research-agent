@@ -315,3 +315,38 @@ asynchronous: an accepted HTTP 200 keeps the existing response shape even if
 the immediate targeted attempt fails. Retry is bounded to three attempts and
 stops at `running`; callers should poll rather than infer execution from the
 acknowledgement.
+
+## Explicit one-hop replacement
+
+Startup-only convergence makes a previous-boot source immutable failed. A
+caller may then explicitly create a new run, not resume:
+
+```text
+POST /api/runs/{source_run_id}/retries
+Idempotency-Key: required
+body: exactly zero body bytes
+```
+
+The response schema is `dra.run-recovery.v1`. `accepted is not started,
+completed, or successful`; post-commit wake is best effort. The source and
+replacement have different `run_id` values. Existing `run`, status, result,
+review, and evidence commands never recover automatically.
+
+Use the authenticated Tool Client against an already-running local service:
+
+```bash
+: "${SOURCE_RUN_ID:?set the immutable failed source run ID}"
+: "${RECOVERY_KEY:?persist a high-entropy recovery key before POST}"
+: "${DECISION_RESEARCH_AGENT_API_KEY:?set the configured local API key}"
+
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python \
+  tools/decision_research_agent_tool.py \
+  retry \
+  --run-id "${SOURCE_RUN_ID}" \
+  --idempotency-key "${RECOVERY_KEY}"
+```
+
+Automation must persist and supply `RECOVERY_KEY` in caller-owned durable state
+before network access. The generated key is invocation-local convenience only.
+`--wait` and `--result` poll/fetch the returned replacement, never the source.
+The key deduplicates replacement creation, not provider/tool effects.

@@ -17,6 +17,7 @@ from api.run_repository import (
     finalize_run_transaction,
     get_run,
 )
+from tests.run_execution_helpers import activate_run_execution
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -43,8 +44,10 @@ def test_production_dispatch_can_invalidate_the_old_fixture_fence(
 ) -> None:
     db_path = str(tmp_path / "dispatch-race.db")
     created = _create_pending_run(db_path)
+    boot_id = activate_run_execution(db_path=db_path)
     worker = RunDispatchWorker(
         db_path=db_path,
+        boot_id=boot_id,
         worker_id="dispatch_worker_" + "a" * 32,
         scheduler=lambda claim: start_run_dispatch(
             db_path=db_path,
@@ -81,8 +84,9 @@ def test_test_only_worker_leaves_fixture_dispatch_unclaimed(
     assert hasattr(fixture, "create_fixture_worker")
     db_path = str(tmp_path / "idle-worker.db")
     created = _create_pending_run(db_path)
+    boot_id = activate_run_execution(db_path=db_path)
 
-    worker = fixture.create_fixture_worker(db_path)
+    worker = fixture.create_fixture_worker(db_path, boot_id=boot_id)
 
     assert asyncio.run(worker.run_once(run_id=created["run_id"])) is False
     pending = get_run(db_path=db_path, run_id=created["run_id"])
@@ -92,6 +96,7 @@ def test_test_only_worker_leaves_fixture_dispatch_unclaimed(
     assert claim_run_dispatch(
         db_path=db_path,
         worker_id="dispatch_worker_" + "b" * 32,
+        boot_id=boot_id,
         lease_seconds=30,
         run_id=created["run_id"],
     ) is not None

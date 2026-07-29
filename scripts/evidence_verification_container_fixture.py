@@ -43,11 +43,16 @@ def _forbid_dispatch(_claim: object) -> None:
     raise RuntimeError("fixture_dispatch_forbidden")
 
 
-def create_fixture_worker(db_path: str | Path) -> RunDispatchWorker:
+def create_fixture_worker(
+    db_path: str | Path,
+    *,
+    boot_id: str,
+) -> RunDispatchWorker:
     if not _enabled():
         raise RuntimeError("fixture_disabled")
     return _IdleRunDispatchWorker(
         db_path=str(db_path),
+        boot_id=boot_id,
         scheduler=_forbid_dispatch,
     )
 

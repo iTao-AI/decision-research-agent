@@ -53,6 +53,14 @@ jobs:
         run: python scripts/run_dispatch_reconciliation_proof.py check
       - name: Run failure cause proof
         run: python scripts/run_failure_cause_proof.py check
+      - name: Run secure local runtime proof
+        env:
+          PYTHON_DOTENV_DISABLED: '1'
+        run: python scripts/secure_local_runtime_proof.py check
+      - name: Run bounded live producer contract check
+        env:
+          PYTHON_DOTENV_DISABLED: '1'
+        run: python scripts/bounded_live_producer_proof.py check
       - name: Verify crash-safe rollback source identity
         env:
           ROLLBACK_REVISION: bfd744a5611c7673d9385a45bed0131d6cb47655
@@ -63,14 +71,6 @@ jobs:
         env:
           PYTHON_DOTENV_DISABLED: '1'
         run: python scripts/run_execution_recovery_proof.py check
-      - name: Run secure local runtime proof
-        env:
-          PYTHON_DOTENV_DISABLED: '1'
-        run: python scripts/secure_local_runtime_proof.py check
-      - name: Run bounded live producer contract check
-        env:
-          PYTHON_DOTENV_DISABLED: '1'
-        run: python scripts/bounded_live_producer_proof.py check
       - name: Run tests
         env:
           PYTHON_DOTENV_DISABLED: '1'

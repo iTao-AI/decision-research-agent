@@ -56,6 +56,12 @@ _LOCAL_ERROR_DETAILS: dict[str, tuple[str, str, str, bool]] = {
         "Check backend compatibility before creating another run.",
         False,
     ),
+    "run_recovery_response_invalid": (
+        "The run recovery response is invalid.",
+        "The service did not return the exact recovery acceptance contract.",
+        "Retain the source and key, then check backend compatibility before retrying.",
+        False,
+    ),
     "result_requires_wait": (
         "Canonical result retrieval requires --wait.",
         "The --result flag composes run creation, bounded waiting, and delivery.",
@@ -430,6 +436,66 @@ def start_run(
         payload=payload,
         headers=extra_headers,
     )
+
+
+def retry_run(
+    *,
+    source_run_id: str,
+    idempotency_key: str,
+    config: ToolConfig,
+) -> dict[str, Any]:
+    encoded = parse.quote(source_run_id, safe="")
+    return _request_json(
+        "POST",
+        _join_url(config.base_url, f"/api/runs/{encoded}/retries"),
+        config=config,
+        headers={"Idempotency-Key": idempotency_key},
+    )
+
+
+def validate_recovery_response(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    required = {
+        "schema_version",
+        "status",
+        "reason",
+        "interrupted_phase",
+        "source_run_id",
+        "run_id",
+        "thread_id",
+        "segment_id",
+        "recovery_attempt",
+        "idempotent_replay",
+    }
+    string_fields = {
+        "source_run_id",
+        "run_id",
+        "thread_id",
+        "segment_id",
+    }
+    valid = (
+        type(payload) is dict
+        and set(payload) == required
+        and payload.get("schema_version") == "dra.run-recovery.v1"
+        and payload.get("status") == "accepted"
+        and payload.get("reason")
+        in {"previous_boot_interrupted", "pre_v1_running_without_owner"}
+        and payload.get("interrupted_phase") in {"execution", "finalization"}
+        and all(
+            type(payload.get(field)) is str and bool(payload[field])
+            for field in string_fields
+        )
+        and payload.get("source_run_id") != payload.get("run_id")
+        and payload.get("segment_id")
+        == f"{payload.get('run_id')}_seg_000"
+        and type(payload.get("recovery_attempt")) is int
+        and payload.get("recovery_attempt") == 1
+        and type(payload.get("idempotent_replay")) is bool
+    )
+    if not valid:
+        raise ToolClientError("run_recovery_response_invalid")
+    return dict(payload)
 
 
 def get_run(run_id: str, config: ToolConfig) -> dict[str, Any]:
@@ -876,6 +942,32 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--poll-seconds", type=float, default=1)
     run.add_argument("--wait-timeout-seconds", type=float, default=600)
 
+    retry = subparsers.add_parser(
+        "retry",
+        description=(
+            "The command creates a new run from an immutable failed source. "
+            "Wait and result target the returned replacement."
+        ),
+        epilog=(
+            "Interactive callers should retain the key printed by the command. "
+            "Automation and crash-recoverable callers must generate and durably "
+            "retain the key before network access, then pass --idempotency-key. "
+            "Automatic generation is invocation-local convenience only and "
+            "cannot recover a key if the client dies before local output. "
+            "The key deduplicates replacement creation, not provider/tool effects."
+        ),
+    )
+    retry.add_argument(
+        "--run-id",
+        required=True,
+        help="immutable failed source run",
+    )
+    retry.add_argument("--idempotency-key")
+    retry.add_argument("--wait", action="store_true")
+    retry.add_argument("--result", action="store_true")
+    retry.add_argument("--poll-seconds", type=float, default=1)
+    retry.add_argument("--wait-timeout-seconds", type=float, default=600)
+
     result = subparsers.add_parser("result")
     result.add_argument("--run-id", required=True)
 
@@ -1025,6 +1117,77 @@ def main(argv: list[str] | None = None) -> int:
                         exc,
                         context={"run_id": run_id},
                     ) from exc
+        elif args.command == "retry":
+            if args.result and not args.wait:
+                raise ToolClientError("result_requires_wait")
+            idempotency_key = (
+                args.idempotency_key or f"run-recovery-{uuid.uuid4()}"
+            )
+            local_context = {
+                "source_run_id": args.run_id,
+                "idempotency_key": idempotency_key,
+            }
+            try:
+                raw_acceptance = retry_run(
+                    source_run_id=args.run_id,
+                    idempotency_key=idempotency_key,
+                    config=config,
+                )
+            except ToolClientHTTPError:
+                raise
+            except ToolClientError as exc:
+                if exc.payload.get("code") in {
+                    "invalid_json_response",
+                    "json_response_not_object",
+                }:
+                    raise ToolClientError(
+                        "run_recovery_response_invalid",
+                        context=local_context,
+                    ) from exc
+                raise _with_error_context(
+                    exc,
+                    context=local_context,
+                ) from exc
+            try:
+                acceptance = validate_recovery_response(raw_acceptance)
+            except ToolClientError as exc:
+                raise _with_error_context(
+                    exc,
+                    context=local_context,
+                ) from exc
+            if not args.wait:
+                result = {
+                    **acceptance,
+                    "idempotency_key": idempotency_key,
+                }
+            else:
+                replacement_id = acceptance["run_id"]
+                wait_context = {
+                    **local_context,
+                    "run_id": replacement_id,
+                }
+                try:
+                    terminal = wait_for_run(
+                        replacement_id,
+                        config,
+                        poll_seconds=args.poll_seconds,
+                        timeout_seconds=args.wait_timeout_seconds,
+                    )
+                    composed = (
+                        globals()["result"](replacement_id, config)
+                        if args.result
+                        else terminal
+                    )
+                except ToolClientError as exc:
+                    raise _with_error_context(
+                        exc,
+                        context=wait_context,
+                    ) from exc
+                result = {
+                    **composed,
+                    "source_run_id": args.run_id,
+                    "idempotency_key": idempotency_key,
+                }
         elif args.command == "result":
             result = globals()["result"](args.run_id, config)
         elif args.command == "review" and args.review_command == "list":

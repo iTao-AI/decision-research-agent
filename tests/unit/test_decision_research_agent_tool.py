@@ -1602,3 +1602,463 @@ def test_evidence_list_and_show_encode_requests(monkeypatch):
             None,
         ),
     ]
+
+
+def _recovery_payload(*, replay=False):
+    return {
+        "schema_version": "dra.run-recovery.v1",
+        "status": "accepted",
+        "reason": "previous_boot_interrupted",
+        "interrupted_phase": "execution",
+        "source_run_id": "run/source",
+        "run_id": "run_replacement",
+        "thread_id": "thread-1",
+        "segment_id": "run_replacement_seg_000",
+        "recovery_attempt": 1,
+        "idempotent_replay": replay,
+    }
+
+
+def test_retry_posts_zero_body_to_encoded_source_path_with_key(monkeypatch):
+    captured = []
+
+    def fake_urlopen(req, timeout):
+        captured.append(
+            {
+                "method": req.get_method(),
+                "url": req.full_url,
+                "data": req.data,
+                "key": req.get_header("Idempotency-key"),
+                "timeout": timeout,
+            }
+        )
+        return FakeResponse(_recovery_payload())
+
+    monkeypatch.setattr(tool.request, "urlopen", fake_urlopen)
+    config = tool.ToolConfig(base_url="http://127.0.0.1:9000")
+    result = tool.retry_run(
+        source_run_id="run/source",
+        idempotency_key="recovery-key-0001",
+        config=config,
+    )
+    assert result == _recovery_payload()
+    assert captured == [
+        {
+            "method": "POST",
+            "url": "http://127.0.0.1:9000/api/runs/run%2Fsource/retries",
+            "data": None,
+            "key": "recovery-key-0001",
+            "timeout": 10.0,
+        }
+    ]
+
+
+def test_retry_parser_requires_source_run_id():
+    with pytest.raises(SystemExit):
+        tool._build_parser().parse_args(["retry"])
+
+
+def test_retry_parser_has_optional_key_wait_result_and_bounds():
+    args = tool._build_parser().parse_args(
+        [
+            "retry",
+            "--run-id",
+            "run-source",
+            "--idempotency-key",
+            "recovery-key-0001",
+            "--wait",
+            "--result",
+            "--poll-seconds",
+            "0.25",
+            "--wait-timeout-seconds",
+            "9",
+        ]
+    )
+    assert args.run_id == "run-source"
+    assert args.idempotency_key == "recovery-key-0001"
+    assert args.wait is True
+    assert args.result is True
+    assert args.poll_seconds == 0.25
+    assert args.wait_timeout_seconds == 9
+
+
+def test_retry_result_requires_wait_before_network(monkeypatch, capsys):
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: pytest.fail("network must not be reached"),
+        raising=False,
+    )
+    assert tool.main(["retry", "--run-id", "run-source", "--result"]) == 1
+    assert json.loads(capsys.readouterr().out)["code"] == "result_requires_wait"
+
+
+def test_existing_run_result_review_and_evidence_parsers_are_unchanged():
+    parser = tool._build_parser()
+    run = parser.parse_args(["run", "--query", "q"])
+    result_args = parser.parse_args(["result", "--run-id", "run-1"])
+    review = parser.parse_args(["review", "show", "--run-id", "run-1"])
+    evidence = parser.parse_args(
+        ["evidence", "show", "--run-id", "run-1", "--evidence-id", "ev-1"]
+    )
+    assert (run.command, run.wait, run.result) == ("run", False, False)
+    assert (result_args.command, result_args.run_id) == ("result", "run-1")
+    assert (review.review_command, review.review_id) == ("show", None)
+    assert (evidence.evidence_command, evidence.evidence_id) == ("show", "ev-1")
+
+
+def test_retry_preserves_caller_supplied_key_exactly(monkeypatch, capsys):
+    received = []
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: received.append(kwargs["idempotency_key"])
+        or _recovery_payload(),
+        raising=False,
+    )
+    assert tool.main(
+        [
+            "retry",
+            "--run-id",
+            "run/source",
+            "--idempotency-key",
+            "recovery-key-Exact_0001",
+        ]
+    ) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert received == ["recovery-key-Exact_0001"]
+    assert output["idempotency_key"] == "recovery-key-Exact_0001"
+
+
+def test_retry_generates_run_recovery_uuid_key_when_absent(monkeypatch, capsys):
+    received = []
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: received.append(kwargs["idempotency_key"])
+        or _recovery_payload(),
+        raising=False,
+    )
+    assert tool.main(["retry", "--run-id", "run/source"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert received == [output["idempotency_key"]]
+    assert re.fullmatch(
+        r"run-recovery-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+        r"[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+        output["idempotency_key"],
+    )
+
+
+def test_retry_help_requires_automation_to_persist_key_before_network(capsys):
+    with pytest.raises(SystemExit):
+        tool._build_parser().parse_args(["retry", "--help"])
+    help_text = re.sub(r"\s+", " ", capsys.readouterr().out).lower()
+    assert "immutable failed source" in help_text
+    assert "creates a new run" in help_text
+    assert "returned replacement" in help_text
+    assert "retain the key" in help_text
+    assert "durably retain" in help_text
+    assert "invocation-local convenience" in help_text
+    assert "provider/tool effects" in help_text
+
+
+def test_retry_success_output_includes_source_replacement_and_key(
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: _recovery_payload(),
+        raising=False,
+    )
+    assert tool.main(
+        [
+            "retry",
+            "--run-id",
+            "run/source",
+            "--idempotency-key",
+            "recovery-key-0001",
+        ]
+    ) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["source_run_id"] == "run/source"
+    assert output["run_id"] == "run_replacement"
+    assert output["idempotency_key"] == "recovery-key-0001"
+
+
+def test_retry_validates_exact_success_schema_before_waiting():
+    assert tool.validate_recovery_response(_recovery_payload()) == _recovery_payload()
+    with pytest.raises(tool.ToolClientError, match="run_recovery_response_invalid"):
+        tool.validate_recovery_response({**_recovery_payload(), "extra": True})
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {},
+        {**_recovery_payload(), "recovery_attempt": "1"},
+        {**_recovery_payload(), "idempotent_replay": 0},
+        {**_recovery_payload(), "run_id": "run/source"},
+        {**_recovery_payload(), "segment_id": "wrong"},
+    ],
+)
+def test_invalid_json_nonobject_or_malformed_success_is_response_invalid(
+    monkeypatch,
+    capsys,
+    payload,
+):
+    error_code = (
+        "invalid_json_response"
+        if payload is None
+        else "json_response_not_object"
+        if payload == []
+        else None
+    )
+    if error_code is not None:
+        monkeypatch.setattr(
+            tool,
+            "retry_run",
+            lambda **kwargs: (_ for _ in ()).throw(
+                tool.ToolClientError(error_code)
+            ),
+            raising=False,
+        )
+    else:
+        monkeypatch.setattr(
+            tool,
+            "retry_run",
+            lambda **kwargs: payload,
+            raising=False,
+        )
+    assert tool.main(
+        [
+            "retry",
+            "--run-id",
+            "run/source",
+            "--idempotency-key",
+            "recovery-key-0001",
+        ]
+    ) == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["code"] == "run_recovery_response_invalid"
+    assert output["source_run_id"] == "run/source"
+    assert output["idempotency_key"] == "recovery-key-0001"
+
+
+@pytest.mark.parametrize("code", ["connection_failed", "request_timeout"])
+def test_ambiguous_failure_returns_source_and_same_key_without_second_post(
+    monkeypatch,
+    capsys,
+    code,
+):
+    calls = []
+
+    def fail(**kwargs):
+        calls.append(kwargs)
+        raise tool.ToolClientError(code)
+
+    monkeypatch.setattr(tool, "retry_run", fail, raising=False)
+    assert tool.main(
+        [
+            "retry",
+            "--run-id",
+            "run/source",
+            "--idempotency-key",
+            "recovery-key-0001",
+        ]
+    ) == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["code"] == code
+    assert output["source_run_id"] == "run/source"
+    assert output["idempotency_key"] == "recovery-key-0001"
+    assert len(calls) == 1
+
+
+def test_http_rejection_preserves_server_error_without_automatic_retry(
+    monkeypatch,
+    capsys,
+):
+    calls = []
+    payload = {
+        "code": "run_recovery_not_eligible",
+        "problem": "bounded",
+        "cause": "bounded",
+        "fix": "bounded",
+        "retryable": False,
+    }
+
+    def reject(**kwargs):
+        calls.append(kwargs)
+        raise tool.ToolClientHTTPError(409, payload)
+
+    monkeypatch.setattr(tool, "retry_run", reject, raising=False)
+    assert tool.main(["retry", "--run-id", "run/source"]) == 1
+    assert json.loads(capsys.readouterr().out)["code"] == payload["code"]
+    assert len(calls) == 1
+
+
+def test_retry_without_wait_returns_after_durable_acceptance(monkeypatch, capsys):
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: _recovery_payload(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda *args, **kwargs: pytest.fail("must not wait"),
+    )
+    assert tool.main(["retry", "--run-id", "run/source"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "accepted"
+
+
+def test_retry_wait_polls_replacement_not_source(monkeypatch, capsys):
+    polled = []
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: _recovery_payload(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda run_id, config, **kwargs: polled.append(run_id)
+        or {"run_id": run_id, "execution_status": "completed"},
+    )
+    assert tool.main(["retry", "--run-id", "run/source", "--wait"]) == 0
+    assert polled == ["run_replacement"]
+    assert json.loads(capsys.readouterr().out)["run_id"] == "run_replacement"
+
+
+def test_retry_wait_result_fetches_replacement_result_only(monkeypatch, capsys):
+    fetched = []
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: _recovery_payload(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda run_id, config, **kwargs: {
+            "run_id": run_id,
+            "execution_status": "completed",
+        },
+    )
+    monkeypatch.setattr(
+        tool,
+        "result",
+        lambda run_id, config: fetched.append(run_id)
+        or {"run_id": run_id, "artifact": {"artifact_id": "result"}},
+    )
+    assert tool.main(
+        ["retry", "--run-id", "run/source", "--wait", "--result"]
+    ) == 0
+    assert fetched == ["run_replacement"]
+    assert json.loads(capsys.readouterr().out)["run_id"] == "run_replacement"
+
+
+def test_retry_wait_timeout_retains_source_replacement_and_key(
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: _recovery_payload(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            tool.ToolClientError("run_wait_timeout")
+        ),
+    )
+    assert tool.main(
+        [
+            "retry",
+            "--run-id",
+            "run/source",
+            "--idempotency-key",
+            "recovery-key-0001",
+            "--wait",
+        ]
+    ) == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["source_run_id"] == "run/source"
+    assert output["run_id"] == "run_replacement"
+    assert output["idempotency_key"] == "recovery-key-0001"
+
+
+def test_run_wait_and_result_never_call_retry_run(monkeypatch, capsys):
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: pytest.fail("hidden recovery"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tool,
+        "start_run",
+        lambda **kwargs: {"run_id": "run-1", "status": "started"},
+    )
+    monkeypatch.setattr(
+        tool,
+        "wait_for_run",
+        lambda *args, **kwargs: {
+            "run_id": "run-1",
+            "execution_status": "completed",
+        },
+    )
+    monkeypatch.setattr(
+        tool,
+        "result",
+        lambda *args, **kwargs: {"run_id": "run-1"},
+    )
+    assert tool.main(["run", "--query", "q", "--wait", "--result"]) == 0
+    capsys.readouterr()
+    assert tool.main(["result", "--run-id", "run-1"]) == 0
+
+
+def test_failed_status_never_triggers_hidden_replacement(monkeypatch):
+    monkeypatch.setattr(
+        tool,
+        "retry_run",
+        lambda **kwargs: pytest.fail("hidden recovery"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tool,
+        "get_run",
+        lambda run_id, config: {
+            "run_id": run_id,
+            "execution_status": "failed",
+        },
+    )
+    assert tool.wait_for_run("run-failed", tool.ToolConfig())[
+        "execution_status"
+    ] == "failed"
+
+
+def test_malformed_success_does_not_generate_a_second_key_or_post(
+    monkeypatch,
+    capsys,
+):
+    calls = []
+
+    def malformed(**kwargs):
+        calls.append(kwargs["idempotency_key"])
+        return {**_recovery_payload(), "extra": True}
+
+    monkeypatch.setattr(tool, "retry_run", malformed, raising=False)
+    assert tool.main(["retry", "--run-id", "run/source"]) == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["code"] == "run_recovery_response_invalid"
+    assert calls == [output["idempotency_key"]]

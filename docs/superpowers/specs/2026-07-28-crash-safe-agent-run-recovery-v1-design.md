@@ -53,6 +53,8 @@ state, and external provider state do not acquire application authority.
   operation.
 - Preserve existing run creation, status, result, failure-cause, profile, and
   downstream consumer contracts.
+- Make recovery replay consume one producer-derived lifecycle authority that
+  rejects every unrecognized or mixed state combination by default.
 - Prove the process-loss boundary with provider-free real subprocess
   `SIGKILL` tests.
 - Keep the feature single-node, SQLite-backed, rollbackable, and bounded enough
@@ -74,6 +76,8 @@ state, and external provider state do not acquire application authority.
   consensus, hosted high availability, or production reliability claim.
 - No new Agent role, runtime self-modification, dynamic tool discovery, generic
   EvalOps platform, or automatic release/rollback.
+- No reusable workflow engine, generic finite-state-machine framework,
+  transition DSL, code generation layer, or runtime-selected verifier.
 - No change to the closed public `dra.run-failure-cause.v1` phase/code matrix.
 
 ## Live Gap And Evidence Boundary
@@ -181,6 +185,111 @@ The terms have exact meanings:
   explicit caller authorization.
 - **accepted:** the replacement and its pending dispatch intent are durably
   committed; it does not mean `running`, completed, or successful.
+
+## Lifecycle Verification Authority
+
+The recovery verifier is a trusted application boundary. It must not infer
+legality from a loose conjunction of individually plausible fields. It
+normalizes the current database projection into one immutable internal
+snapshot, assigns one closed role, and accepts the snapshot only when it
+matches exactly one complete legal family for that role.
+
+The internal roles are:
+
+| Role | Meaning | Compatibility boundary |
+| --- | --- | --- |
+| `ordinary` | The run is neither a recovery source nor a recovery replacement. | Existing pre-010 and direct pending-terminal compatibility remains governed by existing run, dispatch, failure, review, and publication validators. It cannot authorize recovery replay. |
+| `recovery_source` | The run is the immutable source of one lineage row. | It must satisfy the exact interrupted-source contract and cannot also be a replacement. |
+| `recovery_replacement` | The run is the replacement of one lineage row. | Same-key replay requires one exact reachable replacement family. Ordinary legacy escapes do not apply. |
+
+Role assignment is fail-closed:
+
+- a run cannot be both a source and a replacement;
+- duplicate, missing, or cross-linked lineage is invalid;
+- a replacement cannot become the source of another recovery;
+- an unknown role or more than one matching legal family is invalid.
+
+### Producer-derived replacement families
+
+Every positive replacement family must be created by a real production
+transition sequence. Hand-written row construction cannot be the sole
+positive evidence for a family.
+
+| Family | Exact coupled authority |
+| --- | --- |
+| `initial_pending` | Run `pending/not_required/pending` at version `0`; exact initial segment `pending`; dispatch `pending` at attempt `0` with no error; no owner or terminal cause. |
+| `retry_pending` | The same pending run and segment; dispatch `pending` after a real bounded release with attempt `1..MAX-1` and one bounded non-empty error; no owner or terminal cause. |
+| `leased` | The same pending run and segment; dispatch `leased` with a real worker identity, aware expiry, bounded attempt, and no start timestamp; attempt `1` has no prior error, while a later reclaimed attempt may preserve either no error or one bounded prior error according to the production lease path. |
+| `running_execution` | Dispatch `started`; run and segment `running` at version `1`; exact active current-boot owner in phase `execution`; no terminal cause. |
+| `running_finalization` | The same started/running authority with the exact active owner advanced to phase `finalization`; no terminal cause. |
+| `prestart_failed` | A producer-valid pending-state failure before execution ownership; terminal run and segment agree at version `1`; dispatch remains in one complete pre-start `pending` or `leased` family and never becomes `started`; the observed cause and terminal timestamps follow the pending finalization contract; no owner exists. A prestart success is not a legal replacement replay family. |
+| `dispatch_exhausted` | Dispatch `failed` at the exact attempt limit; run and segment are failed at version `1`; the dispatch error and observed dispatch cause are identical; no owner exists. |
+| `closed_terminal` | Dispatch `started`; run and segment share one terminal execution result; an exact closed owner exists; successful completion or fallback requires persisted phase `finalization`; failure uses the closed failure-code-to-phase rules already owned by the terminal transaction. |
+| `later_boot_interrupted` | Dispatch remains `started`; run and segment are failed at version `2`; the owner is interrupted with cleared private identities; recovery reason, persisted phase, phase-derived cause, and all terminal timestamps are exact. |
+
+The table describes authority relations, not a generic application workflow.
+Review, verification, publication, and delivery transitions after execution
+remain owned by their existing validators. The lifecycle verifier checks only
+the run fields required to bind execution ownership, dispatch, cause, and
+recovery lineage; it must not duplicate or weaken those adjacent authorities.
+
+### Exact-match classifier
+
+The implementation uses one project-internal, side-effect-free classifier:
+
+```text
+database projection
+-> immutable normalized lifecycle snapshot
+-> closed role assignment
+-> complete family match
+-> exactly one family or fail closed
+```
+
+The classifier has no database writes, network, model, provider, tool,
+configuration, plugin, or dynamic registration surface. Legal families are
+code-owned and closed. Callers cannot select a family, relax a field, provide
+a predicate, or override the rejection result.
+
+The connection verifier remains the only database entrypoint used by
+migration, boot activation, execution-owner operations, and recovery replay.
+Recovery replay may perform additional immutable source/request comparisons,
+but it must not keep a second weaker lifecycle predicate.
+
+### Independent verification root
+
+Candidate-owned unit tests are necessary but not sufficient. Acceptance uses
+two independent layers:
+
+1. committed RED/GREEN tests exercise the pure classifier and real repository
+   transitions;
+2. an authority-owned black-box replay mutates database state through public
+   tables and invokes the public recovery boundary without importing private
+   family matchers or candidate fixture builders.
+
+The black-box replay must retain the originally rejected cases and any new
+review-derived case. A candidate cannot change that replay, lower its
+threshold, remove a case, or reinterpret a rejection as success within the
+same implementation scope.
+
+### Mutation and cross-product coverage
+
+The retained evaluation set is generated from production-created legal
+snapshots and contains:
+
+- every positive family above;
+- one-field mutations for every authority-bearing field, with an explicit
+  allowlist only when the mutation forms another complete legal family;
+- pairwise cross-family substitutions across run, segment, dispatch, owner,
+  cause, boot, timestamp, and lineage groups;
+- exact lost-response replay after pending, lease, running, normal terminal,
+  prestart failure, dispatch exhaustion, and later-boot interruption;
+- the closed-owner/pending, incoherent replacement, pending-success
+  replacement, wrong completion phase, and cause/timestamp drift regressions.
+
+The suite must prove sensitivity, not merely case count: each negative control
+must fail for the expected lifecycle-authority reason, and every required
+family relation must have at least one retained control that changes that
+relation and turns RED.
 
 ## Migration 010
 
@@ -720,9 +829,11 @@ metrics.
 ## Implementation Boundary
 
 Implementation may add focused models and repositories for boot ownership and
-replacement lineage, and may update:
+replacement lineage, one pure internal lifecycle-classification module, and
+may update:
 
 - run migration and schema verification;
+- producer-derived lifecycle snapshot projection and classification;
 - dispatch start/worker boot propagation;
 - owner-aware run finalization and finalization fence;
 - Task Tracker owner-box propagation to timeout and cancellation callbacks;
@@ -744,7 +855,9 @@ Implementation must not change:
 
 The implementation plan must enumerate and migrate every current direct caller
 that can create `running` state or finalize from `running`. It must not add a
-production-only bypass to preserve an old fixture.
+production-only bypass to preserve an old fixture. The lifecycle classifier
+must stay project-specific and cannot become a framework, registry, DSL, or
+runtime extension point.
 
 ## Verification Strategy
 
@@ -800,6 +913,15 @@ controls before the full non-Docker suite.
   segment, and pending dispatch identity.
 - Dispatch `False` and wake exception after commit still return `202`; replay
   can request wake again.
+- Every legal replacement lifecycle is produced through real repository
+  transitions and same-key replay preserves the exact replacement identity.
+- A recovery replacement with pending or leased dispatch cannot replay as a
+  successful terminal run.
+- Normal successful completion requires the exact closed finalization owner.
+- One-field mutations and pairwise cross-family substitutions reject mixed
+  run, segment, dispatch, owner, cause, boot, timestamp, and lineage state.
+- The authority-owned black-box regressions reject independently of private
+  classifier helpers and candidate fixture builders.
 - Every public error has exact keys, messages, retryability, and privacy-safe
   values.
 
@@ -956,6 +1078,10 @@ The design is implemented only when all of the following are true:
 - explicit recovery creates exactly one new run and immutable one-hop lineage;
 - same source/key replay returns the same replacement and post-commit wake
   failure does not corrupt acceptance;
+- every recovery-role snapshot matches exactly one producer-derived legal
+  lifecycle family, while every unrecognized or mixed family fails closed;
+- committed mutation/cross-product regressions and the independent black-box
+  authority replay both detect lifecycle drift;
 - authorization, zero-body, success, error, CLI, privacy, and observability
   contracts are exact and tested;
 - no automatic Agent execution, checkpoint replay, or tool replay is added;

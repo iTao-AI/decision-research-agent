@@ -29,6 +29,49 @@ def test_readmes_publish_equivalent_bounded_loop_kernel_claim() -> None:
         assert "v0.1.6" in text
 
 
+def test_loop_selector_uses_immutable_v0_1_6_release_record() -> None:
+    exact = (
+        "The v0.1.6 selector verifies only the immutable v0.1.6 release "
+        "record; it does not execute historical release behavior."
+    )
+    old = "verifies current release metadata only"
+    english = _read("README.md")
+    reference = _read("docs/reference/evidence-gated-loop-kernel.md")
+    markdown = _read("docs/evidence/evidence-gated-loop-kernel-v1.md")
+    registry = _read("benchmarks/evidence-gated-loop-v1/registry.json")
+    report = _read("docs/evidence/evidence-gated-loop-kernel-v1.json")
+
+    for text in (english, reference, markdown, registry, report):
+        assert exact in text
+        assert old not in text
+
+    chinese = _read("README_CN.md")
+    assert (
+        "v0.1.6 selector 只验证不可变的 v0.1.6 release record，"
+        "不执行历史 release 行为。"
+    ) in chinese
+    assert "只验证当前 release metadata" not in chinese
+
+
+def test_loop_reference_bounds_compatible_verifier_maintenance() -> None:
+    reference = _read("docs/reference/evidence-gated-loop-kernel.md")
+    normalized = " ".join(reference.split())
+    for phrase in (
+        "compatible verifier maintenance",
+        "accidental dependency on mutable repository-root release identity",
+        "profile ID/version, argument vector, timeout, coverage, failure code, "
+        "episode binding, intended strict-consumer invariant, and canonical "
+        "case bytes remain unchanged",
+        "repository commit continues to distinguish the exact implementation",
+        "must land before the evaluated release candidate",
+    ):
+        assert phrase in normalized
+    assert (
+        "Any change to the intended invariant or listed profile contract "
+        "requires a profile-version and case-binding review."
+    ) in normalized
+
+
 def test_ci_runs_loop_after_v2_and_before_remaining_proofs() -> None:
     text = _read(".github/workflows/ci.yml")
     v2 = "python scripts/agent_evaluation_v2_gate.py check"

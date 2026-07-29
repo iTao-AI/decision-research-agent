@@ -535,6 +535,58 @@ SQLite's exact unique constraints on `source_run_id` and
 `replacement_run_id` provide the one-source/one-replacement/one-hop boundary.
 Do not add a second attempt table, queue, scanner, or mutable retry counter.
 
+## Shared Lifecycle Verification Matrix
+
+`verify_run_execution_recovery_connection` is the single current-state
+authority consumed by migration, startup activation, and recovery replay.
+Recovery replay validates immutable source, lineage, and replacement identity,
+then consumes this same verifier; it must not maintain a weaker or different
+partial lifecycle predicate.
+
+The verifier accepts exactly these lifecycle families:
+
+| Family | Run and segment | Dispatch | Owner and cause |
+| --- | --- | --- | --- |
+| Pending | run `pending` at version `0`; exact initial segment `pending` | `pending`, including retry-pending attempt/error states allowed by the live dispatch contract | no owner; no observed terminal cause |
+| Leased | run `pending` at version `0`; exact initial segment `pending` | exact `leased` state with bounded owner, expiry, attempt, timestamps, and error fields | no owner; no observed terminal cause |
+| Running | run `running` at version `1`; exact initial segment `running` | exact `started` state | exact active current-boot owner; no observed terminal cause |
+| Terminal | terminal run and matching terminal initial segment | exact `started` state | exact closed or interrupted owner and coherent cause when the terminal path requires one |
+| Dispatch exhausted | run and initial segment `failed` before start | exact `failed` dispatch | exact dispatch failure cause; no execution owner |
+| Interrupted replacement | replacement terminalized by a later boot | exact started dispatch | exact interrupted owner and phase-derived cause; replay from the original source/key remains valid, while using the replacement as a new recovery source remains exhausted |
+
+All mixed cross-products fail closed. This includes wrong run version,
+run/segment mismatch, pending or running state with a closed owner, terminal
+state with a nonterminal segment, illegal dispatch-owner combinations,
+incoherent cause mapping, and any required terminal timestamp mismatch.
+Normal lifecycle transitions must not be over-constrained: retry-pending,
+leased, running, dispatch-failed, normally terminal, and later-boot-interrupted
+replacement states are independently legal when every row in that family is
+coherent.
+
+Task 3 RED coverage must use a compact table-driven legal/illegal matrix and
+must name these authority failures:
+
+- closed owner attached to a pending/version-0 run and pending segment;
+- same-key replay of a mixed failed/version-1 replacement with completed
+  segment and started dispatch;
+- same-key lost-response replay while the replacement holds a real production
+  dispatch lease;
+- retry-pending, running, dispatch-exhausted, normal terminal, and
+  later-boot-interrupted positive replay families;
+- mixed status, version, owner, cause, and required timestamp negative
+  controls.
+
+Same-key replay returns the persisted replacement identity in every legal
+lifecycle family and skips current profile availability only after exact
+durable binding and legal current replacement state both verify.
+
+Task 7 must install fail-closed guards on the actual Agent/Harness entrypoint
+and the actual tool and provider entrypoints reachable from the proof route.
+Both zero counters must come from guards installed during that route. A test
+alias, direct guard invocation, or never-wired counter is not evidence; if an
+independent counter cannot be tied to a real callable boundary, the proof fails
+closed.
+
 ## Failure Mode Matrix
 
 | Window | Winning authority | Required result |

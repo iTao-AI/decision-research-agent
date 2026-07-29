@@ -5,7 +5,6 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import subprocess
 
 import pytest
 
@@ -654,23 +653,9 @@ def test_current_docs_do_not_advertise_removed_or_legacy_surfaces() -> None:
 
 
 def test_all_tracked_markdown_uses_public_neutral_presentation() -> None:
-    from scripts.final_presentation_audit import presentation_violations
+    from scripts.final_presentation_audit import markdown_content_violations
 
-    completed = subprocess.run(
-        ["git", "-C", str(PROJECT_ROOT), "ls-files", "-z", "*.md"],
-        capture_output=True,
-        check=True,
-    )
-    violations = []
-    for raw_path in completed.stdout.split(b"\0"):
-        if not raw_path:
-            continue
-        relative_path = raw_path.decode("utf-8")
-        text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
-        for rule in presentation_violations(text):
-            violations.append({"path": relative_path, "rule": rule})
-
-    assert violations == []
+    assert markdown_content_violations(PROJECT_ROOT) == []
 
 
 def test_docs_index_links_curated_project_planning_workspace() -> None:

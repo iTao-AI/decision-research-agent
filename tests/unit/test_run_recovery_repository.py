@@ -387,14 +387,15 @@ def test_same_key_replay_accepts_real_production_dispatch_lease(tmp_path):
         "initial_pending",
         "retry_pending",
         "leased",
-        "running",
-        "completed",
+        "running_execution",
+        "running_finalization",
+        "closed_terminal",
         "prestart_failed",
-        "dispatch_failed",
+        "dispatch_exhausted",
         "later_boot_interrupted",
     ],
 )
-def test_same_key_replay_uses_shared_legal_lifecycle_matrix(
+def test_same_key_replay_accepts_each_producer_derived_replacement_family(
     tmp_path,
     lifecycle,
 ):
@@ -411,14 +412,20 @@ def test_same_key_replay_uses_shared_legal_lifecycle_matrix(
                 )
                 == "retry"
             )
-        elif lifecycle in {"running", "completed", "later_boot_interrupted"}:
+        elif lifecycle in {
+            "running_execution",
+            "running_finalization",
+            "closed_terminal",
+            "later_boot_interrupted",
+        }:
             owner = start_run_dispatch(db_path=str(path), claim=claim)
             assert owner is not None
-            if lifecycle == "completed":
+            if lifecycle in {"running_finalization", "closed_terminal"}:
                 assert advance_run_execution_phase(
                     db_path=str(path),
                     handle=owner,
                 )
+            if lifecycle == "closed_terminal":
                 assert finalize_run_transaction(
                     run_id=accepted.run_id,
                     segment_id=accepted.segment_id,
@@ -437,7 +444,7 @@ def test_same_key_replay_uses_shared_legal_lifecycle_matrix(
                     boot_id=boot,
                 )
                 assert result.interrupted_execution_count == 1
-        elif lifecycle == "dispatch_failed":
+        elif lifecycle == "dispatch_exhausted":
             for attempt in range(1, 4):
                 assert claim.attempt_count == attempt
                 outcome = release_run_dispatch_for_retry(
@@ -497,7 +504,7 @@ def test_same_key_replay_uses_shared_legal_lifecycle_matrix(
         "interrupted_terminal_timestamp_drift",
     ],
 )
-def test_same_key_replay_rejects_shared_lifecycle_mixed_cross_products(
+def test_same_key_replay_rejects_each_pairwise_family_cross_product(
     tmp_path,
     mixed_case,
 ):
@@ -601,3 +608,86 @@ def test_same_key_replay_rejects_shared_lifecycle_mixed_cross_products(
 
     with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
         _recover(path, boot)
+
+
+def test_same_key_replay_rejects_pending_success_ordinary_escape(tmp_path):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    terminal = "2026-07-29T12:00:00+00:00"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            UPDATE research_runs_v2
+            SET execution_status='completed', delivery_status='ready',
+                state_version=1, updated_at=?
+            WHERE run_id=?
+            """,
+            (terminal, accepted.run_id),
+        )
+        connection.execute(
+            "UPDATE run_segments SET status='completed', updated_at=? "
+            "WHERE run_id=?",
+            (terminal, accepted.run_id),
+        )
+    with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
+        _recover(path, boot)
+
+
+def test_same_key_replay_rejects_completed_owner_phase_drift(tmp_path):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    claim = _claim_replacement(path, boot, accepted.run_id)
+    owner = start_run_dispatch(db_path=str(path), claim=claim)
+    assert owner is not None
+    assert advance_run_execution_phase(db_path=str(path), handle=owner)
+    assert finalize_run_transaction(
+        run_id=accepted.run_id,
+        segment_id=accepted.segment_id,
+        expected_state_version=1,
+        allowed_previous_statuses={"running"},
+        execution_status="completed",
+        delivery_status="ready",
+        evidence_entries=[],
+        owner_handle=owner,
+        db_path=str(path),
+    )
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE run_execution_owners_v1 SET phase='execution' "
+            "WHERE run_id=?",
+            (accepted.run_id,),
+        )
+    with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
+        _recover(path, boot)
+
+
+def test_same_key_replay_rejects_first_lease_with_prior_error(tmp_path):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    _claim_replacement(path, boot, accepted.run_id)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE run_dispatches_v1 "
+            "SET last_error_code='run_dispatch_schedule_failed' "
+            "WHERE run_id=?",
+            (accepted.run_id,),
+        )
+    with pytest.raises(RunRecoveryConflict, match="run_recovery_state_invalid"):
+        _recover(path, boot)
+
+
+def test_same_key_replay_accepts_reclaimed_lease_without_prior_error(tmp_path):
+    path, boot = _source(tmp_path)
+    accepted = _recover(path, boot)
+    first = _claim_replacement(path, boot, accepted.run_id, worker_hex="a")
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE run_dispatches_v1 SET lease_expires_at=? WHERE run_id=?",
+            ("2020-01-01T00:00:00+00:00", accepted.run_id),
+        )
+    second = _claim_replacement(path, boot, accepted.run_id, worker_hex="b")
+    assert first.attempt_count == 1
+    assert second.attempt_count == 2
+    replay = _recover(path, boot)
+    assert replay.run_id == accepted.run_id
+    assert replay.idempotent_replay is True

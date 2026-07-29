@@ -5,13 +5,26 @@ import sqlite3
 
 import pytest
 
+from api.run_dispatch_repository import claim_run_dispatch, start_run_dispatch
 from api.run_execution_migrations import (
     migrate_run_execution_recovery_with_backup,
     run_execution_recovery_marker_present,
+    verify_run_execution_recovery_connection,
     verify_run_execution_recovery_schema,
 )
-from api.run_execution_models import RunExecutionConflict
-from api.run_repository import _init_run_schema_unlocked
+from api.run_execution_models import RunExecutionConflict, new_boot_id
+from api.run_execution_repository import activate_run_execution_boot
+from api.run_recovery_models import (
+    RUN_RECOVERY_REQUEST_SCHEMA_VERSION,
+    recovery_key_hash,
+    run_recovery_request_hash,
+)
+from api.run_recovery_repository import create_or_replay_run_recovery
+from api.run_repository import (
+    _init_run_schema_unlocked,
+    create_run,
+    finalize_run_transaction,
+)
 
 
 def build_through_009_fixture(path: Path) -> None:
@@ -86,6 +99,41 @@ def _logical_database_snapshot(path: Path) -> tuple:
             connection.execute("PRAGMA integrity_check").fetchone()[0],
             tuple(connection.execute("PRAGMA foreign_key_check")),
         )
+
+
+def _recovery_lineage(path: Path):
+    source = create_run(
+        db_path=str(path),
+        thread_id="matrix-thread",
+        query="matrix-query",
+    )
+    first_boot = new_boot_id()
+    activate_run_execution_boot(db_path=str(path), boot_id=first_boot)
+    claim = claim_run_dispatch(
+        db_path=str(path),
+        worker_id=f"dispatch_worker_{'a' * 32}",
+        boot_id=first_boot,
+        lease_seconds=30,
+        run_id=source["run_id"],
+    )
+    assert claim is not None
+    assert start_run_dispatch(db_path=str(path), claim=claim) is not None
+    current_boot = new_boot_id()
+    assert (
+        activate_run_execution_boot(
+            db_path=str(path),
+            boot_id=current_boot,
+        ).interrupted_execution_count
+        == 1
+    )
+    accepted = create_or_replay_run_recovery(
+        source_run_id=source["run_id"],
+        idempotency_key="matrix-recovery-key",
+        boot_id=current_boot,
+        exact_profile_is_available=lambda *_: True,
+        db_path=str(path),
+    )
+    return source, current_boot, accepted
 
 
 def test_010_marker_tables_index_columns_foreign_keys_and_checks_are_exact(tmp_path):
@@ -449,3 +497,117 @@ def test_010_rejects_closed_owner_attached_to_pending_run_and_segment(tmp_path):
         )
     with pytest.raises(RunExecutionConflict):
         verify_run_execution_recovery_schema(db_path=str(path))
+
+
+def test_010_assigns_exactly_one_lifecycle_role(tmp_path):
+    path = _migrated(tmp_path)
+    _recovery_lineage(path)
+    report = verify_run_execution_recovery_schema(db_path=str(path))
+    assert report["lineage_rows"] == 1
+    assert report["owner_rows"] == 1
+
+
+def test_010_rejects_source_replacement_role_intersection(tmp_path):
+    path = _migrated(tmp_path)
+    _, _, accepted = _recovery_lineage(path)
+    second = create_run(
+        db_path=str(path),
+        thread_id="matrix-thread",
+        query="matrix-query",
+    )
+    timestamp = "2026-07-29T12:00:00+00:00"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            INSERT INTO run_recovery_retries_v1(
+                key_hash, request_schema_version, request_hash,
+                source_run_id, replacement_run_id, recovery_reason,
+                interrupted_phase, recovery_attempt, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'previous_boot_interrupted',
+                      'execution', 1, ?)
+            """,
+            (
+                recovery_key_hash("matrix-second-key"),
+                RUN_RECOVERY_REQUEST_SCHEMA_VERSION,
+                "invalid-cross-link",
+                accepted.run_id,
+                second["run_id"],
+                timestamp,
+            ),
+        )
+    with pytest.raises(RunExecutionConflict):
+        verify_run_execution_recovery_schema(db_path=str(path))
+
+
+def test_010_recovery_replacement_cannot_use_ordinary_pending_terminal_compatibility(
+    tmp_path,
+):
+    path = _migrated(tmp_path)
+    _, _, accepted = _recovery_lineage(path)
+    terminal = "2026-07-29T12:00:00+00:00"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            UPDATE research_runs_v2
+            SET execution_status='completed', delivery_status='ready',
+                state_version=1, updated_at=?
+            WHERE run_id=?
+            """,
+            (terminal, accepted.run_id),
+        )
+        connection.execute(
+            "UPDATE run_segments SET status='completed', updated_at=? "
+            "WHERE run_id=?",
+            (terminal, accepted.run_id),
+        )
+    with pytest.raises(RunExecutionConflict):
+        verify_run_execution_recovery_schema(db_path=str(path))
+
+
+def test_010_ordinary_pending_terminal_compatibility_remains_retained(tmp_path):
+    path = _migrated(tmp_path)
+    ordinary = create_run(
+        db_path=str(path),
+        thread_id="ordinary-thread",
+        query="ordinary-query",
+    )
+    assert finalize_run_transaction(
+        db_path=str(path),
+        run_id=ordinary["run_id"],
+        segment_id=ordinary["segment_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="completed",
+        delivery_status="ready",
+        evidence_entries=[],
+    )
+    verify_run_execution_recovery_schema(db_path=str(path))
+
+
+def test_010_connection_verifier_consumes_one_normalized_projection(
+    tmp_path,
+    monkeypatch,
+):
+    import api.run_execution_migrations as migrations
+
+    path = _migrated(tmp_path)
+    create_run(
+        db_path=str(path),
+        thread_id="projection-thread",
+        query="projection-query",
+    )
+    original = migrations.classify_recovery_lifecycle
+    seen = []
+
+    def record(snapshot, *, role, current_boot_id):
+        seen.append((snapshot.run_id, role))
+        return original(
+            snapshot,
+            role=role,
+            current_boot_id=current_boot_id,
+        )
+
+    monkeypatch.setattr(migrations, "classify_recovery_lifecycle", record)
+    with migrations._connect(str(path)) as connection:
+        verify_run_execution_recovery_connection(connection)
+    assert len(seen) == 1

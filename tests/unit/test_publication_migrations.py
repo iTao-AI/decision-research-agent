@@ -14,6 +14,7 @@ from api.publication_repository import (
     migrate_publication_with_backup,
     verify_publication_schema,
 )
+from api.run_execution_models import RunExecutionConflict
 from api.run_repository import create_run
 from tests.run_execution_helpers import activate_and_start_created_run
 
@@ -481,20 +482,37 @@ def test_publication_migration_backfills_revision_one_current_head(tmp_path):
     assert snapshot_count == 1
 
 
-@pytest.mark.parametrize("execution_status", ["failed", "running"])
-def test_publication_migration_rejects_noncompleted_run_review_residue(
-    tmp_path,
-    execution_status,
-):
+def test_publication_migration_rejects_failed_run_review_residue(tmp_path):
     db_path, _ = _seed_revision_one_review_database(
         tmp_path,
-        execution_status=execution_status,
+        execution_status="failed",
     )
     before = _database_dump(db_path)
 
     with pytest.raises(
         PublicationConflict,
         match="verification_publication_conflict",
+    ):
+        migrate_publication_with_backup(
+            db_path=db_path,
+            backup_path=str(tmp_path / "backup.db"),
+        )
+
+    assert _database_dump(db_path) == before
+
+
+def test_publication_migration_rejects_incoherent_running_lifecycle_first(
+    tmp_path,
+):
+    db_path, _ = _seed_revision_one_review_database(
+        tmp_path,
+        execution_status="running",
+    )
+    before = _database_dump(db_path)
+
+    with pytest.raises(
+        RunExecutionConflict,
+        match="run_execution_recovery_unavailable",
     ):
         migrate_publication_with_backup(
             db_path=db_path,

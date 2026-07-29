@@ -311,6 +311,7 @@ Current live callers are classified as follows:
 | `scripts/evidence_verification_container_fixture.py` | Construct its idle worker with an activated boot; retain provider/Agent prohibition |
 | `scripts/run_dispatch_reconciliation_proof.py` | Use boot-aware claims and owner-returning starts while keeping this proof's pre-start scope and public boundaries unchanged |
 | `scripts/run_failure_cause_proof.py` | Use boot-aware start and exact owner for every running finalizer; preserve the existing proof output |
+| `scripts/run_creation_idempotency_proof.py` | Activate a boot and construct the proof worker with that exact boot; retain the existing idempotency proof |
 | `scripts/agent_evaluation_replay.py` | Activate one isolated boot, open tracked-task admission, claim with that boot, pass the real owner box through the private dispatch path, then close/drain admission before returning; preserve Evaluation Sensitivity v2 semantics |
 | `scripts/downstream_consumer_contract.py` | Replace its direct pending-to-running transition with migration + boot + real dispatch start; keep pending/terminal fixture construction unchanged |
 | `scripts/durable_hitl_fixture.py` | Replace direct running transition with the real start path and pass the owner into its running finalizer |
@@ -324,6 +325,7 @@ Current live callers are classified as follows:
 | `tests/unit/test_task_tracker.py` | Make admission lifecycle explicit in every positive tracker test and prove teardown closes/drains rather than clearing a live registry |
 | `tests/integration/test_run_dispatch_api.py` | Carry the exact owner box/handle through start, timeout, cancellation, and stale-attempt races |
 | `tests/integration/test_run_api.py` | Replace direct running transition in the positive path; retain pending terminal fixtures |
+| `tests/integration/test_run_auxiliary_isolation.py` | Use a boot-aware route worker for each isolated DB |
 | `tests/integration/test_durable_review_lifecycle.py` | Activate a boot, open admission, make the private dispatch path boot/owner aware, then close/drain before fixture teardown |
 | `tests/integration/test_strict_citation_profile.py` | Migrate its direct running finalizers and private `_run_dispatched_with_persistence` entry to exact boot/owner authority |
 | `tests/integration/test_context_reliability_regression.py` | Pass the exact owner box/handle through its private dispatch persistence entry while preserving the retained context contract |
@@ -331,6 +333,7 @@ Current live callers are classified as follows:
 | `tests/unit/test_publication_service.py` | Replace its direct running transition with the real protected helper |
 | `tests/unit/test_review_repository.py` | Replace its direct running transition with the real protected helper |
 | `tests/unit/test_evidence_verification_container_fixture.py` | Activate a boot for the fixture worker and require the real owner for running finalization |
+| `tests/unit/test_publication_migrations.py` | Use the protected boot/owner helper for positive running fixtures |
 | `tests/unit/test_publication_repository.py` | Keep the raw ownerless-running mutation only in the explicitly named corruption negative control; it must never become a reusable helper |
 | all other `finalize_run_transaction` callers | Pending-to-terminal fixture paths may stay ownerless; any path whose allowed prior state includes `running` must pass an exact owner |
 
@@ -1337,6 +1340,7 @@ must become authoritative together.
 - Modify: `scripts/agent_evaluation_replay.py`
 - Modify: `scripts/run_dispatch_reconciliation_proof.py`
 - Modify: `scripts/run_failure_cause_proof.py`
+- Modify: `scripts/run_creation_idempotency_proof.py`
 - Modify: `scripts/downstream_consumer_contract.py`
 - Modify: `scripts/durable_hitl_fixture.py`
 
@@ -1354,11 +1358,14 @@ must become authoritative together.
 - Modify: `tests/unit/test_run_repository.py`
 - Modify: `tests/integration/test_run_dispatch_api.py`
 - Modify: `tests/integration/test_run_api.py`
+- Modify: `tests/integration/test_run_auxiliary_isolation.py`
 - Modify: `tests/integration/test_durable_review_lifecycle.py`
 - Modify: `tests/integration/test_bounded_live_producer_proof.py`
 - Modify: `tests/unit/test_publication_service.py`
 - Modify: `tests/unit/test_review_repository.py`
 - Modify: `tests/unit/test_evidence_verification_container_fixture.py`
+- Modify: `tests/unit/test_publication_migrations.py`
+- Modify: `tests/unit/test_publication_repository.py`
 - Create: `tests/integration/test_run_execution_recovery.py`
 - Modify: `tests/integration/test_strict_citation_profile.py`
 - Modify: `tests/integration/test_context_reliability_regression.py`

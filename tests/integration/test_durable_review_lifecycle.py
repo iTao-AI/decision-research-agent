@@ -9,6 +9,7 @@ from agent.run_result import AgentRunResult
 from agent.talent_contracts import ResearchPacket
 from api.run_dispatch_repository import claim_run_dispatch
 from api.run_repository import create_run, get_run
+from tests.run_execution_helpers import activate_run_execution
 
 
 DISPATCH_WORKER_ID = "dispatch_worker_00000000000000000000000000000001"
@@ -87,9 +88,11 @@ async def _finalize_talent_fixture(tmp_path, monkeypatch, *, enabled: bool):
         )
 
     monkeypatch.setattr(server, "run_deep_agent", capture_agent)
+    boot_id = activate_run_execution(db_path=db_path)
     claim = claim_run_dispatch(
         db_path=db_path,
         worker_id=DISPATCH_WORKER_ID,
+        boot_id=boot_id,
         lease_seconds=30,
         run_id=created["run_id"],
     )
@@ -97,6 +100,7 @@ async def _finalize_talent_fixture(tmp_path, monkeypatch, *, enabled: bool):
     stage = server._RunStage()
     termination_origin = server.TerminationOrigin()
     finalization_checkpoint = server.FinalizationCheckpoint()
+    owner_box = server.RunExecutionOwnerBox()
     coroutine = server._run_dispatched_with_persistence(
         claim,
         db_path=db_path,
@@ -104,7 +108,11 @@ async def _finalize_talent_fixture(tmp_path, monkeypatch, *, enabled: bool):
         stage=stage,
         termination_origin=termination_origin,
         finalization_checkpoint=finalization_checkpoint,
+        owner_box=owner_box,
     )
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
+    server.open_tracked_task_admission()
     task = server.create_tracked_task(
         coroutine,
         f"{claim.run_id}:dispatch:{claim.attempt_count}",
@@ -112,7 +120,23 @@ async def _finalize_talent_fixture(tmp_path, monkeypatch, *, enabled: bool):
         finalization_checkpoint=finalization_checkpoint,
     )
     await task
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
     return get_run(db_path=db_path, run_id=created["run_id"])
+
+
+@pytest.mark.asyncio
+async def test_durable_review_private_dispatch_uses_boot_owner_and_drains(
+    tmp_path,
+    monkeypatch,
+):
+    run = await _finalize_talent_fixture(
+        tmp_path,
+        monkeypatch,
+        enabled=False,
+    )
+    assert run["execution_status"] == "completed"
+    assert server.tracked_task_registry_is_empty()
 
 
 @pytest.mark.asyncio

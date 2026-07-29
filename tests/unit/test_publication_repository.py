@@ -34,6 +34,8 @@ from api.review_repository import (
     get_review_detail,
     resolve_review,
 )
+from api.run_execution_models import new_boot_id, new_owner_id
+from api.run_execution_repository import activate_run_execution_boot
 from api.run_repository import (
     _connect,
     create_run,
@@ -325,6 +327,12 @@ def _set_run_execution_status(
     if execution_status == "failed":
         _mark_run_failed_with_observed_cause(db_path, run_id=run_id)
         return
+    if execution_status == "running":
+        _force_corrupt_protected_running_state_for_test(
+            db_path=db_path,
+            run_id=run_id,
+        )
+        return
     connection = _connect(db_path)
     try:
         with connection:
@@ -335,6 +343,72 @@ def _set_run_execution_status(
                 WHERE run_id = ?
                 """,
                 (execution_status, run_id),
+            )
+    finally:
+        connection.close()
+
+
+def _force_corrupt_protected_running_state_for_test(
+    *,
+    db_path: str,
+    run_id: str,
+) -> None:
+    """Create a named negative-control state for publication fail-closed tests."""
+    boot_id = new_boot_id()
+    activate_run_execution_boot(db_path=db_path, boot_id=boot_id)
+    owner_id = new_owner_id()
+    connection = _connect(db_path)
+    try:
+        with connection:
+            run = connection.execute(
+                """
+                SELECT updated_at
+                FROM research_runs_v2
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            segment_id = connection.execute(
+                """
+                SELECT segment_id
+                FROM run_segments
+                WHERE run_id = ?
+                ORDER BY sequence
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()[0]
+            connection.execute(
+                """
+                UPDATE research_runs_v2
+                SET execution_status = 'running', state_version = 1
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            )
+            connection.execute(
+                """
+                UPDATE run_segments
+                SET status = 'running', updated_at = ?
+                WHERE segment_id = ?
+                """,
+                (run["updated_at"], segment_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO run_execution_owners_v1(
+                    run_id, segment_id, status, phase, boot_id, owner_id,
+                    created_at, phase_updated_at, closed_at, recovery_reason
+                ) VALUES (?, ?, 'active', 'execution', ?, ?, ?, ?, NULL, NULL)
+                """,
+                (
+                    run_id,
+                    segment_id,
+                    boot_id,
+                    owner_id,
+                    run["updated_at"],
+                    run["updated_at"],
+                ),
             )
     finally:
         connection.close()

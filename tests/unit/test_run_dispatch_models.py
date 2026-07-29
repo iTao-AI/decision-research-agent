@@ -18,6 +18,7 @@ def _valid_claim():
         "run_id": "run_0001",
         "thread_id": "thread-1",
         "segment_id": "run_0001_seg_000",
+        "boot_id": "boot_00000000000000000000000000000001",
         "query": "research",
         "profile_id": "generic",
         "profile_version": "1",
@@ -51,12 +52,19 @@ def test_claim_is_strict_frozen_and_forbids_extra():
         claim.attempt_count = 2
 
 
+def test_dispatch_claim_carries_exact_private_boot_identity():
+    claim = RunDispatchClaim.model_validate(_valid_claim(), strict=True)
+    assert claim.boot_id == "boot_00000000000000000000000000000001"
+    assert "boot_id" not in claim.scope
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("run_id", ""),
         ("thread_id", ""),
         ("segment_id", ""),
+        ("boot_id", "boot_invalid"),
         ("profile_id", ""),
         ("profile_version", ""),
         ("lease_owner", "caller_worker_00000000000000000000000000000001"),

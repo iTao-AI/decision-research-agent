@@ -18,11 +18,20 @@ TEST_WORKER_ID = "dispatch_worker_0000000000000000000000000000000a"
 def route_dispatch_worker(monkeypatch):
     import api.server as server
     from api.database import sqlite_db_path
+    from tests.run_execution_helpers import activate_run_execution
+
+    boots = {}
 
     class RouteWorker:
         async def dispatch_run(self, run_id):
+            db_path = sqlite_db_path()
+            boot_id = boots.get(db_path)
+            if boot_id is None:
+                boot_id = activate_run_execution(db_path=db_path)
+                boots[db_path] = boot_id
             return await server.create_run_dispatch_worker(
-                sqlite_db_path()
+                db_path,
+                boot_id=boot_id,
             ).dispatch_run(run_id)
 
         def wake(self):
@@ -46,10 +55,14 @@ async def _start_run_v2_with_dispatch(
 ):
     from api.database import sqlite_db_path
     from api.run_dispatch_repository import claim_run_dispatch
+    from tests.run_execution_helpers import activate_run_execution
 
+    db_path = sqlite_db_path()
+    boot_id = activate_run_execution(db_path=db_path)
     claim = claim_run_dispatch(
-        db_path=sqlite_db_path(),
+        db_path=db_path,
         worker_id=TEST_WORKER_ID,
+        boot_id=boot_id,
         lease_seconds=30,
         run_id=kwargs["run_id"],
     )
@@ -57,6 +70,10 @@ async def _start_run_v2_with_dispatch(
     stage = server._RunStage()
     origin = server.TerminationOrigin()
     checkpoint = server.FinalizationCheckpoint()
+    owner_box = server.RunExecutionOwnerBox()
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
+    server.open_tracked_task_admission()
     coroutine = server._run_dispatched_with_persistence(
         claim,
         db_path=sqlite_db_path(),
@@ -64,6 +81,7 @@ async def _start_run_v2_with_dispatch(
         stage=stage,
         termination_origin=origin,
         finalization_checkpoint=checkpoint,
+        owner_box=owner_box,
     )
     task = server.create_tracked_task(
         coroutine,
@@ -605,6 +623,7 @@ async def test_run_v2_maps_only_bounded_execution_failure_kinds(
     from agent.research import EvidenceEntry
     from agent.run_result import AgentRunResult
     from api.run_repository import create_run, get_run
+    from tests.run_execution_helpers import activate_run_execution
 
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
     created = create_run(
@@ -954,6 +973,7 @@ async def test_late_outer_cancel_during_failed_finalizer_preserves_committed_cau
     import api.server as server
     from api.run_dispatch_repository import claim_run_dispatch
     from api.run_repository import create_run, get_run
+    from tests.run_execution_helpers import activate_run_execution
 
     db_path = str(tmp_path / "tasks.db")
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", db_path)
@@ -976,13 +996,16 @@ async def test_late_outer_cancel_during_failed_finalizer_preserves_committed_cau
 
     monkeypatch.setattr(server, "run_deep_agent", explode)
     monkeypatch.setattr(server, "finalize_run_transaction", commit_failed_then_hold)
+    boot_id = activate_run_execution(db_path=db_path)
     claim = claim_run_dispatch(
         db_path=db_path,
         worker_id=TEST_WORKER_ID,
+        boot_id=boot_id,
         lease_seconds=30,
         run_id=created["run_id"],
     )
     assert claim is not None
+    owner_box = server.RunExecutionOwnerBox()
     task = asyncio.create_task(
         server._run_dispatched_with_persistence(
             claim,
@@ -991,6 +1014,7 @@ async def test_late_outer_cancel_during_failed_finalizer_preserves_committed_cau
             stage=server._RunStage(),
             termination_origin=server.TerminationOrigin(),
             finalization_checkpoint=server.FinalizationCheckpoint(),
+            owner_box=owner_box,
         )
     )
 
@@ -1107,6 +1131,7 @@ async def test_timeout_and_cancel_first_winner_owns_one_durable_cause(
     from api.run_dispatch_repository import claim_run_dispatch
     from api.run_repository import create_run, get_run
     from api.task_tracker import get_active_task
+    from tests.run_execution_helpers import activate_run_execution
 
     db_path = str(tmp_path / "tasks.db")
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", db_path)
@@ -1115,9 +1140,11 @@ async def test_timeout_and_cancel_first_winner_owns_one_durable_cause(
         thread_id=f"first-wins-{first_origin}",
         query="query",
     )
+    boot_id = activate_run_execution(db_path=db_path)
     claim = claim_run_dispatch(
         db_path=db_path,
         worker_id=TEST_WORKER_ID,
+        boot_id=boot_id,
         lease_seconds=30,
         run_id=created["run_id"],
     )
@@ -1147,6 +1174,7 @@ async def test_timeout_and_cancel_first_winner_owns_one_durable_cause(
     origin = server.TerminationOrigin()
     checkpoint = server.FinalizationCheckpoint()
     outcome_box = server.OutcomeBox()
+    owner_box = server.RunExecutionOwnerBox()
 
     async def on_timeout(_task_id, timeout_seconds):
         callbacks.append("timeout")
@@ -1159,6 +1187,7 @@ async def test_timeout_and_cancel_first_winner_owns_one_durable_cause(
             timeout_seconds=timeout_seconds,
             stage=stage,
             termination_origin=origin,
+            owner_box=owner_box,
         )
 
     async def on_cancel(_task_id):
@@ -1171,11 +1200,15 @@ async def test_timeout_and_cancel_first_winner_owns_one_durable_cause(
             outcome_box=outcome_box,
             stage=stage,
             termination_origin=origin,
+            owner_box=owner_box,
         )
 
     monkeypatch.setattr(server, "run_deep_agent", hangs)
     monkeypatch.setattr(server, "finalize_run_transaction", record_terminal_write)
     task_id = f"{claim.run_id}:first-wins:{claim.attempt_count}"
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
+    server.open_tracked_task_admission()
     task = server.create_tracked_task(
         server._run_dispatched_with_persistence(
             claim,
@@ -1184,6 +1217,7 @@ async def test_timeout_and_cancel_first_winner_owns_one_durable_cause(
             stage=stage,
             termination_origin=origin,
             finalization_checkpoint=checkpoint,
+            owner_box=owner_box,
         ),
         task_id,
         timeout_seconds=10,
@@ -1531,6 +1565,7 @@ async def test_stale_terminal_result_creates_no_fallback_cause(
                 phase="execution",
                 code="execution_error",
             ),
+            owner_handle=kwargs["owner_handle"],
             db_path=kwargs.get("db_path"),
         )
         return real_finalize(**kwargs)
@@ -1963,7 +1998,8 @@ async def test_mark_run_timeout_finalizes_nonterminal_run_with_frozen_evidence(
     import api.server as server
     from agent.research import EvidenceEntry
     from agent.run_result import AgentRunResult
-    from api.run_repository import create_run, get_run, transition_run
+    from api.run_repository import create_run, get_run
+    from tests.run_execution_helpers import activate_and_start_created_run
 
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
     events = []
@@ -1973,12 +2009,12 @@ async def test_mark_run_timeout_finalizes_nonterminal_run_with_frozen_evidence(
         lambda *args, **kwargs: events.append((args, kwargs)),
     )
     created = create_run(thread_id="timeout-thread", query="query")
-    assert transition_run(
+    started = activate_and_start_created_run(
+        db_path=str(tmp_path / "tasks.db"),
         run_id=created["run_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
-        execution_status="running",
     )
+    owner_box = server.RunExecutionOwnerBox()
+    owner_box.assign(started.handle)
     evidence = EvidenceEntry(
         thread_id="timeout-thread",
         query_text="query",
@@ -2014,6 +2050,7 @@ async def test_mark_run_timeout_finalizes_nonterminal_run_with_frozen_evidence(
         7,
         segment_id=created["segment_id"],
         outcome_box=outcome_box,
+        owner_box=owner_box,
     )
 
     run = get_run(run_id=created["run_id"])

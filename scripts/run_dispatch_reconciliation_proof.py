@@ -52,6 +52,21 @@ LIMITS = [
     "Recovery is proven only before application-owned execution start.",
     "Agent, provider, and tool side effects remain outside an exactly-once guarantee.",
 ]
+_BOOT_IDS: dict[str, str] = {}
+
+
+def _activate_boot(db_path: str) -> str:
+    from api.run_execution_models import new_boot_id
+    from api.run_execution_repository import activate_run_execution_boot
+
+    boot_id = new_boot_id()
+    activate_run_execution_boot(db_path=db_path, boot_id=boot_id)
+    _BOOT_IDS[db_path] = boot_id
+    return boot_id
+
+
+def _boot(db_path: str) -> str:
+    return _BOOT_IDS.get(db_path) or _activate_boot(db_path)
 EXPECTED_OBSERVATIONS: dict[str, dict[str, bool | int]] = {
     "atomic_create": {
         "run_pending": True,
@@ -209,6 +224,7 @@ def _claim(db_path: str, run_id: str, worker_suffix: str):
     return claim_run_dispatch(
         db_path=db_path,
         worker_id=f"dispatch_worker_{worker_suffix * 32}",
+        boot_id=_boot(db_path),
         lease_seconds=30,
         run_id=run_id,
     )
@@ -218,9 +234,9 @@ def _start_and_enter(db_path: str, claim, counter: list[int]) -> bool:
     from api.run_dispatch_repository import start_run_dispatch
 
     started = start_run_dispatch(db_path=db_path, claim=claim)
-    if started:
+    if started is not None:
         counter.append(1)
-    return started
+    return started is not None
 
 
 def _atomic_create_case(root: Path) -> dict[str, Any]:
@@ -296,7 +312,13 @@ async def _wait_for_completed(db_path: str, run_id: str) -> bool:
 
 
 async def _run_fresh_worker_until_completed(server, db_path: str, run_id: str) -> bool:
-    worker = server.create_run_dispatch_worker(db_path)
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
+    server.open_tracked_task_admission()
+    worker = server.create_run_dispatch_worker(
+        db_path,
+        boot_id=_activate_boot(db_path),
+    )
     worker_task = asyncio.create_task(worker.run_forever())
     worker.wake()
     try:
@@ -304,6 +326,8 @@ async def _run_fresh_worker_until_completed(server, db_path: str, run_id: str) -
     finally:
         worker.stop()
         await worker_task
+        server.close_tracked_task_admission()
+        await server.drain_tracked_tasks()
 
 
 def _recovery_cases(root: Path) -> list[dict[str, Any]]:
@@ -405,7 +429,10 @@ def _recovery_cases(root: Path) -> list[dict[str, Any]]:
                 abandoned.append(claim)
 
             with patch.object(server, "_schedule_run_dispatch", capture_abandoned):
-                first_worker = server.create_run_dispatch_worker(restart_db)
+                first_worker = server.create_run_dispatch_worker(
+                    restart_db,
+                    boot_id=_activate_boot(restart_db),
+                )
                 if not await first_worker.run_once(run_id=restarted["run_id"]):
                     raise ValueError("run_dispatch_proof_recovery_failed")
             _expire(restart_db, restarted["run_id"])
@@ -510,6 +537,7 @@ def _scheduler_exhaustion_case(root: Path) -> dict[str, Any]:
 
     worker = RunDispatchWorker(
         db_path=db_path,
+        boot_id=_activate_boot(db_path),
         scheduler=fail,
         worker_id="dispatch_worker_33333333333333333333333333333333",
     )
@@ -533,6 +561,7 @@ def _scheduler_exhaustion_case(root: Path) -> dict[str, Any]:
     abandoned: list[Any] = []
     expiring_worker = RunDispatchWorker(
         db_path=expired_db,
+        boot_id=_activate_boot(expired_db),
         scheduler=abandoned.append,
         worker_id="dispatch_worker_66666666666666666666666666666666",
     )
@@ -631,6 +660,9 @@ def _contract_case(root: Path) -> dict[str, Any]:
             claim = claim_run_dispatch(
                 db_path=environment["DECISION_RESEARCH_AGENT_DB_PATH"],
                 worker_id="dispatch_worker_55555555555555555555555555555555",
+                boot_id=_activate_boot(
+                    environment["DECISION_RESEARCH_AGENT_DB_PATH"]
+                ),
                 lease_seconds=30,
                 run_id=created["run_id"],
             )
@@ -654,6 +686,10 @@ def _contract_case(root: Path) -> dict[str, Any]:
                 stage = server._RunStage()
                 termination_origin = server.TerminationOrigin()
                 finalization_checkpoint = server.FinalizationCheckpoint()
+                owner_box = server.RunExecutionOwnerBox()
+                server.close_tracked_task_admission()
+                await server.drain_tracked_tasks()
+                server.open_tracked_task_admission()
                 coroutine = server._run_dispatched_with_persistence(
                     claim,
                     db_path=environment["DECISION_RESEARCH_AGENT_DB_PATH"],
@@ -661,6 +697,7 @@ def _contract_case(root: Path) -> dict[str, Any]:
                     stage=stage,
                     termination_origin=termination_origin,
                     finalization_checkpoint=finalization_checkpoint,
+                    owner_box=owner_box,
                 )
                 task = server.create_tracked_task(
                     coroutine,
@@ -669,6 +706,8 @@ def _contract_case(root: Path) -> dict[str, Any]:
                     finalization_checkpoint=finalization_checkpoint,
                 )
                 await task
+                server.close_tracked_task_admission()
+                await server.drain_tracked_tasks()
 
             with patch.object(server, "run_deep_agent", fake_agent):
                 asyncio.run(run_tracked_claim())

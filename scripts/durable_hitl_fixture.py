@@ -30,7 +30,12 @@ from api.run_repository import (
     create_run,
     finalize_run_transaction,
     get_run,
-    transition_run,
+)
+from api.run_dispatch_repository import claim_run_dispatch, start_run_dispatch
+from api.run_execution_models import new_boot_id
+from api.run_execution_repository import (
+    activate_run_execution_boot,
+    advance_run_execution_phase,
 )
 from api.talent_artifacts import build_talent_artifacts
 
@@ -72,13 +77,19 @@ def create_required_review_fixture(
         profile_id="talent-hiring-signal",
         scope=scope,
     )
-    assert transition_run(
+    boot_id = new_boot_id()
+    activate_run_execution_boot(db_path=db_path, boot_id=boot_id)
+    claim = claim_run_dispatch(
         db_path=db_path,
+        worker_id="dispatch_worker_" + "d" * 32,
+        boot_id=boot_id,
         run_id=created["run_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
-        execution_status="running",
+        lease_seconds=30,
     )
+    assert claim is not None
+    owner_handle = start_run_dispatch(db_path=db_path, claim=claim)
+    assert owner_handle is not None
+    assert advance_run_execution_phase(db_path=db_path, handle=owner_handle)
     packet = ResearchPacket.model_validate(
         {
             "packet_id": f"packet-{fixture_suffix}",
@@ -143,6 +154,7 @@ def create_required_review_fixture(
                 review.revision,
             ),
         },
+        owner_handle=owner_handle,
     )
     request = ReviewDecisionRequest(
         decision_id="decision_fixture_001",

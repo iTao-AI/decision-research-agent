@@ -124,6 +124,7 @@ async def _execute(
     from api.run_dispatch_repository import claim_run_dispatch
     from api.run_repository import create_run, get_run
     from api.run_result_service import RunResultUnavailable, resolve_run_result
+    from tests.run_execution_helpers import activate_run_execution
 
     db_path = str(tmp_path / "runs.db")
     created = create_run(
@@ -169,15 +170,21 @@ async def _execute(
         model,
         raising=False,
     )
+    boot_id = activate_run_execution(db_path=db_path)
     claim = claim_run_dispatch(
         db_path=db_path,
         worker_id=WORKER_ID,
+        boot_id=boot_id,
         lease_seconds=60,
         run_id=created["run_id"],
     )
     assert claim is not None
     checkpoint = server.FinalizationCheckpoint()
     termination_origin = server.TerminationOrigin()
+    owner_box = server.RunExecutionOwnerBox()
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
+    server.open_tracked_task_admission()
     task = server.create_tracked_task(
         server._run_dispatched_with_persistence(
             claim,
@@ -186,6 +193,7 @@ async def _execute(
             stage=server._RunStage(),
             termination_origin=termination_origin,
             finalization_checkpoint=checkpoint,
+            owner_box=owner_box,
         ),
         task_id=created["run_id"],
         timeout_seconds=timeout_seconds,
@@ -208,6 +216,7 @@ async def _execute(
             execution_status="completed",
             delivery_status="ready",
             evidence_entries=[],
+            owner_handle=owner_box.require(),
         )
         model.release.set()
     task_error = None
@@ -218,6 +227,8 @@ async def _execute(
         if not capture_error:
             raise
     await asyncio.sleep(0)
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
     try:
         resolved = resolve_run_result(
             db_path=db_path,
@@ -347,6 +358,7 @@ async def test_false_fence_stops_after_preparation_without_model_call(
             execution_status="completed",
             delivery_status="ready",
             evidence_entries=[],
+            owner_handle=kwargs["owner_handle"],
         )
         return original_fence(**kwargs)
 

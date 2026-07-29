@@ -3,9 +3,47 @@
 import asyncio
 
 import pytest
+import pytest_asyncio
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _tracked_task_admission():
+    from api.task_tracker import (
+        close_tracked_task_admission,
+        drain_tracked_tasks,
+        open_tracked_task_admission,
+    )
+
+    close_tracked_task_admission()
+    await drain_tracked_tasks()
+    open_tracked_task_admission()
+    yield
+    close_tracked_task_admission()
+    await drain_tracked_tasks()
 
 
 class TestTaskTracker:
+    @pytest.mark.asyncio
+    async def test_tracker_positive_fixture_opens_then_closes_and_drains_admission(
+        self,
+    ):
+        from api.task_tracker import (
+            close_tracked_task_admission,
+            create_tracked_task,
+            drain_tracked_tasks,
+            open_tracked_task_admission,
+            tracked_task_registry_is_empty,
+        )
+
+        close_tracked_task_admission()
+        await drain_tracked_tasks()
+        open_tracked_task_admission()
+        task = create_tracked_task(asyncio.sleep(0), "positive-fixture")
+        await task
+        close_tracked_task_admission()
+        await drain_tracked_tasks()
+        assert tracked_task_registry_is_empty()
+
     @pytest.mark.asyncio
     async def test_create_tracked_task(self):
         """创建的任务在运行期间可查询，完成后返回原始结果。"""
@@ -73,10 +111,14 @@ class TestTaskTracker:
 
     @pytest.mark.asyncio
     async def test_clear_active_tasks(self):
-        """显式清理只移除跟踪条目，不遗留本测试创建的运行任务。"""
-        from api.task_tracker import active_tasks, clear_active_tasks, create_tracked_task
+        """关闭 admission 后 drain 不会抹除仍在运行的 wrapper。"""
+        from api.task_tracker import (
+            active_tasks,
+            close_tracked_task_admission,
+            create_tracked_task,
+            drain_tracked_tasks,
+        )
 
-        clear_active_tasks()
         started = [asyncio.Event(), asyncio.Event()]
         finish = asyncio.Event()
 
@@ -91,11 +133,12 @@ class TestTaskTracker:
         await asyncio.gather(*(event.wait() for event in started))
 
         assert len(active_tasks) == 2
-        clear_active_tasks()
+        close_tracked_task_admission()
+        await drain_tracked_tasks()
         assert active_tasks == {}
 
         finish.set()
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def test_termination_origin_first_claim_wins():

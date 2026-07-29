@@ -115,10 +115,24 @@ def _seed_pre_009_runs(db_path, *, statuses=()):
     connection = sqlite3.connect(db_path)
     try:
         with connection:
+            if "running" in statuses:
+                connection.execute(
+                    """
+                    INSERT INTO run_execution_boot_v1(
+                        boot_scope, boot_id, activated_at
+                    ) VALUES ('application', ?, ?)
+                    """,
+                    (
+                        "boot_" + "1" * 32,
+                        "2026-07-15T00:00:00+00:00",
+                    ),
+                )
             for index, status in enumerate(statuses):
                 run_id = f"run_{status}_{index}"
                 now = f"2026-07-15T00:00:0{index}+00:00"
-                state_version = 3 if status == "failed" else 0
+                state_version = (
+                    3 if status == "failed" else 1 if status == "running" else 0
+                )
                 delivery_status = (
                     "ready"
                     if status in {"completed", "completed_with_fallback"}
@@ -155,6 +169,25 @@ def _seed_pre_009_runs(db_path, *, statuses=()):
                     """,
                     (f"{run_id}_seg_000", run_id, status, now, now),
                 )
+                if status == "running":
+                    connection.execute(
+                        """
+                        INSERT INTO run_execution_owners_v1(
+                            run_id, segment_id, status, phase, boot_id, owner_id,
+                            created_at, phase_updated_at, closed_at,
+                            recovery_reason
+                        ) VALUES (?, ?, 'active', 'execution', ?, ?, ?, ?,
+                                  NULL, NULL)
+                        """,
+                        (
+                            run_id,
+                            f"{run_id}_seg_000",
+                            "boot_" + "1" * 32,
+                            "owner_" + "1" * 32,
+                            now,
+                            now,
+                        ),
+                    )
     finally:
         connection.close()
 

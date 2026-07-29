@@ -35,12 +35,14 @@ class RunDispatchWorker:
         *,
         db_path: str | None,
         scheduler: Callable[[RunDispatchClaim], None],
+        boot_id: str,
         worker_id: str | None = None,
         lease_seconds: int = 30,
         poll_seconds: float = 1.0,
     ) -> None:
         self.db_path = db_path
         self.scheduler = scheduler
+        self.boot_id = boot_id
         self.worker_id = worker_id or f"dispatch_worker_{uuid.uuid4().hex}"
         self.lease_seconds = lease_seconds
         self.poll_seconds = poll_seconds
@@ -65,6 +67,7 @@ class RunDispatchWorker:
         claim = await _claim_in_thread(
             db_path=self.db_path,
             worker_id=self.worker_id,
+            boot_id=self.boot_id,
             lease_seconds=self.lease_seconds,
             run_id=run_id,
         )

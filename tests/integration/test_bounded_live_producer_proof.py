@@ -3705,7 +3705,7 @@ def test_live_cli_rejects_unapproved_or_partial_arguments(
     assert json.loads(captured.err)["phase"] == "input"
 
 
-def test_container_fixture_uses_production_dispatch_fence_and_finalization(
+def test_bounded_producer_claim_and_fixture_worker_share_exact_boot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3744,6 +3744,7 @@ def test_container_fixture_uses_production_dispatch_fence_and_finalization(
     from api.run_dispatch_repository import claim_run_dispatch
     from api.run_repository import create_or_replay_run, get_run
     from api.run_result_service import resolve_run_result
+    from tests.run_execution_helpers import activate_run_execution
 
     db_path = str(tmp_path / "fixture.db")
     accepted = create_or_replay_run(
@@ -3755,14 +3756,16 @@ def test_container_fixture_uses_production_dispatch_fence_and_finalization(
         profile_version="1",
         scope={},
     )
+    boot_id = activate_run_execution(db_path=db_path)
     claim = claim_run_dispatch(
         db_path=db_path,
         worker_id="dispatch_worker_" + "a" * 32,
+        boot_id=boot_id,
         lease_seconds=30,
         run_id=accepted.run_id,
     )
     assert claim is not None
-    worker = module.create_fixture_worker(db_path)
+    worker = module.create_fixture_worker(db_path, boot_id=boot_id)
     worker.scheduler(claim)
 
     status = get_run(db_path=db_path, run_id=accepted.run_id)

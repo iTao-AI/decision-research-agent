@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from threading import Lock
 from typing import Annotated
-import uuid
+import secrets
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -64,8 +64,8 @@ class RunExecutionOwnerBox:
 
 
 def new_boot_id() -> str:
-    return f"boot_{uuid.uuid4().hex}"
+    return f"boot_{secrets.token_hex(16)}"
 
 
 def new_owner_id() -> str:
-    return f"owner_{uuid.uuid4().hex}"
+    return f"owner_{secrets.token_hex(16)}"

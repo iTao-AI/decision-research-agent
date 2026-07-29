@@ -19,6 +19,7 @@ from agent.run_result import ExecutionOutcome
 from api.run_dispatch_models import RunDispatchClaim
 from api.run_dispatch_repository import start_run_dispatch
 from api.run_dispatch_worker import RunDispatchWorker
+from api.run_execution_repository import advance_run_execution_phase
 from api.run_repository import finalize_run_transaction
 from api.run_result_service import build_generic_result_artifact
 
@@ -68,9 +69,14 @@ def finalize_fixture_claim(db_path: str, claim: RunDispatchClaim) -> None:
 
     if not _enabled():
         raise RuntimeError("fixture_disabled")
-    started = start_run_dispatch(db_path=db_path, claim=claim)
-    if started is not True:
+    owner_handle = start_run_dispatch(db_path=db_path, claim=claim)
+    if owner_handle is None:
         raise RuntimeError("fixture_start_fence_failed")
+    if not advance_run_execution_phase(
+        db_path=db_path,
+        handle=owner_handle,
+    ):
+        raise RuntimeError("fixture_phase_fence_failed")
     evidence = _fixture_evidence(claim)
     evidence_ids = [
         f"ev_{claim.run_id}_{entry.evidence_fingerprint}" for entry in evidence
@@ -108,6 +114,7 @@ def finalize_fixture_claim(db_path: str, claim: RunDispatchClaim) -> None:
         delivery_status="ready",
         evidence_entries=evidence,
         artifacts=[artifact],
+        owner_handle=owner_handle,
     )
     if finalized is not True:
         raise RuntimeError("fixture_finalization_failed")
@@ -115,12 +122,17 @@ def finalize_fixture_claim(db_path: str, claim: RunDispatchClaim) -> None:
         raise RuntimeError("fixture_agent_path_called")
 
 
-def create_fixture_worker(db_path: str | Path) -> RunDispatchWorker:
+def create_fixture_worker(
+    db_path: str | Path,
+    *,
+    boot_id: str,
+) -> RunDispatchWorker:
     if not _enabled():
         raise RuntimeError("fixture_disabled")
     normalized = str(db_path)
     return RunDispatchWorker(
         db_path=normalized,
+        boot_id=boot_id,
         scheduler=lambda claim: finalize_fixture_claim(normalized, claim),
     )
 

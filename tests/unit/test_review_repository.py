@@ -37,8 +37,9 @@ from api.run_repository import (
     create_run,
     finalize_run_transaction,
     get_run,
-    transition_run,
 )
+from api.run_execution_repository import advance_run_execution_phase
+from tests.run_execution_helpers import activate_and_start_created_run
 
 
 @dataclass(frozen=True)
@@ -64,13 +65,11 @@ def _required_review_run(
         query="query",
         profile_id="talent-hiring-signal",
     )
-    assert transition_run(
+    started = activate_and_start_created_run(
         db_path=db_path,
         run_id=created["run_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
-        execution_status="running",
     )
+    assert advance_run_execution_phase(db_path=db_path, handle=started.handle)
     evidence = EvidenceSnapshot(
         evidence_id="ev_1",
         source_url="https://example.com",
@@ -161,6 +160,7 @@ def _required_review_run(
                 review.revision,
             ),
         },
+        owner_handle=started.handle,
     )
     connection = _connect(db_path)
     try:

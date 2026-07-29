@@ -243,6 +243,9 @@ class _TaskTrackerOwners:
     get_active_task: Any
     FinalizationCheckpoint: type[Any]
     TerminationOrigin: type[Any]
+    open_admission: Any
+    close_admission: Any
+    drain: Any
 
 
 @dataclass(frozen=True)
@@ -288,6 +291,9 @@ def _load_production_modules() -> _ProductionModules:
             get_active_task=tracker_module.get_active_task,
             FinalizationCheckpoint=server.FinalizationCheckpoint,
             TerminationOrigin=server.TerminationOrigin,
+            open_admission=tracker_module.open_tracked_task_admission,
+            close_admission=tracker_module.close_tracked_task_admission,
+            drain=tracker_module.drain_tracked_tasks,
         ),
         server=server,
     )
@@ -502,6 +508,11 @@ def _scheduled_worker(
     suffix: str,
     scheduler: Any | None = None,
 ) -> Any:
+    from api.run_execution_models import new_boot_id
+    from api.run_execution_repository import activate_run_execution_boot
+
+    boot_id = new_boot_id()
+    activate_run_execution_boot(db_path=db_path, boot_id=boot_id)
     if scheduler is None:
         scheduler = lambda claim: modules.server._schedule_run_dispatch(
             claim,
@@ -509,6 +520,7 @@ def _scheduled_worker(
         )
     return modules.worker.RunDispatchWorker(
         db_path=db_path,
+        boot_id=boot_id,
         scheduler=scheduler,
         worker_id=f"dispatch_worker_{suffix * 32}",
         lease_seconds=30,
@@ -1595,24 +1607,35 @@ def _start_invariant_run(
     db_path: str,
     thread_id: str,
 ) -> tuple[dict[str, Any], Any]:
+    from api.run_execution_models import new_boot_id
+    from api.run_execution_repository import activate_run_execution_boot
+
     created = modules.repository.create_run(
         db_path=db_path,
         thread_id=thread_id,
         query="synthetic invariant query",
     )
+    boot_id = new_boot_id()
+    activate_run_execution_boot(db_path=db_path, boot_id=boot_id)
     claim = modules.dispatch.claim_run_dispatch(
         db_path=db_path,
         worker_id="dispatch_worker_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        boot_id=boot_id,
         lease_seconds=30,
         run_id=created["run_id"],
         now=datetime.fromisoformat(FIXED_TIME),
     )
-    if claim is None or not modules.dispatch.start_run_dispatch(
-        db_path=db_path,
-        claim=claim,
-    ):
+    handle = (
+        None
+        if claim is None
+        else modules.dispatch.start_run_dispatch(
+            db_path=db_path,
+            claim=claim,
+        )
+    )
+    if handle is None:
         raise ValueError("run_failure_cause_proof_invariant_start_missing")
-    return created, claim
+    return created, handle
 
 
 def _prove_transaction_rollback(
@@ -1622,7 +1645,7 @@ def _prove_transaction_rollback(
     from api.run_failure_cause_models import RunFailureCauseWrite
 
     db_path = str(root / "invariant-rollback.db")
-    created, _ = _start_invariant_run(
+    created, owner_handle = _start_invariant_run(
         modules,
         db_path=db_path,
         thread_id="proof-invariant-rollback-thread",
@@ -1661,6 +1684,7 @@ def _prove_transaction_rollback(
                 phase="execution",
                 code="execution_error",
             ),
+            owner_handle=owner_handle,
         )
     except Exception:
         failed = True
@@ -1750,7 +1774,7 @@ def _prove_immutable_winner_and_restart(
     from api.run_failure_cause_models import RunFailureCauseWrite
 
     db_path = str(root / "invariant-immutable.db")
-    created, _ = _start_invariant_run(
+    created, owner_handle = _start_invariant_run(
         modules,
         db_path=db_path,
         thread_id="proof-invariant-immutable-thread",
@@ -1766,6 +1790,7 @@ def _prove_immutable_winner_and_restart(
         delivery_status="failed",
         evidence_entries=[],
         failure_cause=cause,
+        owner_handle=owner_handle,
     ):
         raise ValueError("run_failure_cause_proof_winner_missing")
     first = _raw_snapshot(
@@ -1786,6 +1811,7 @@ def _prove_immutable_winner_and_restart(
             phase="execution",
             code="run_timeout",
         ),
+        owner_handle=owner_handle,
     )
     second = _raw_snapshot(
         modules,
@@ -2151,8 +2177,12 @@ async def _build_production_cases(
     modules: _ProductionModules,
     root: Path,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    cases = [
-        await _completed_case(modules, root),
+    modules.tracker.close_admission()
+    await modules.tracker.drain()
+    modules.tracker.open_admission()
+    try:
+        cases = [
+            await _completed_case(modules, root),
         _historical_case(modules, root),
         await _schedule_failure_case(modules, root),
         await _start_failure_case(modules, root),
@@ -2194,15 +2224,18 @@ async def _build_production_cases(
             case_id="execution_error",
             finalization_failure=False,
         ),
-        await _raised_task_case(
-            modules,
-            root,
-            case_id="finalization_failed",
-            finalization_failure=True,
-        ),
-    ]
-    invariants = await _prove_invariants(modules, root, cases)
-    return cases, invariants
+            await _raised_task_case(
+                modules,
+                root,
+                case_id="finalization_failed",
+                finalization_failure=True,
+            ),
+        ]
+        invariants = await _prove_invariants(modules, root, cases)
+        return cases, invariants
+    finally:
+        modules.tracker.close_admission()
+        await modules.tracker.drain()
 
 
 def _invalid_report() -> None:

@@ -40,6 +40,11 @@ from api.run_failure_cause_models import (
     RUN_FAILURE_CAUSE_MIGRATION_VERSION,
     RunFailureCauseConflict,
 )
+from api.run_execution_models import (
+    RUN_EXECUTION_RECOVERY_MIGRATION_CHECKSUM,
+    RUN_EXECUTION_RECOVERY_MIGRATION_VERSION,
+)
+from api.run_execution_migrations import verify_run_execution_recovery_connection
 
 
 REQUIRED_TABLES = {
@@ -55,12 +60,16 @@ REQUIRED_TABLES = {
     "run_create_idempotency_v1",
     "run_dispatches_v1",
     "run_failure_causes_v1",
+    "run_execution_boot_v1",
+    "run_execution_owners_v1",
+    "run_recovery_retries_v1",
 }
 REQUIRED_INDEXES = {
     "idx_research_runs_v2_thread",
     "idx_review_workflows_status_lease",
     "idx_review_decisions_run",
     "idx_run_dispatches_status_lease_created",
+    "idx_run_execution_owners_status_boot_created",
 }
 EXPECTED_MIGRATIONS = {
     MIGRATION_VERSION: "run-identity-backbone-v1",
@@ -68,6 +77,7 @@ EXPECTED_MIGRATIONS = {
     RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION: RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
     RUN_DISPATCH_MIGRATION_VERSION: RUN_DISPATCH_MIGRATION_CHECKSUM,
     RUN_FAILURE_CAUSE_MIGRATION_VERSION: RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,
+    RUN_EXECUTION_RECOVERY_MIGRATION_VERSION: RUN_EXECUTION_RECOVERY_MIGRATION_CHECKSUM,
 }
 REQUIRED_COLUMNS = {
     "research_runs_v2": {
@@ -164,6 +174,34 @@ REQUIRED_COLUMNS = {
         "phase",
         "code",
         "recorded_at",
+    },
+    "run_execution_boot_v1": {
+        "boot_scope",
+        "boot_id",
+        "activated_at",
+    },
+    "run_execution_owners_v1": {
+        "run_id",
+        "segment_id",
+        "status",
+        "phase",
+        "boot_id",
+        "owner_id",
+        "created_at",
+        "phase_updated_at",
+        "closed_at",
+        "recovery_reason",
+    },
+    "run_recovery_retries_v1": {
+        "key_hash",
+        "request_schema_version",
+        "request_hash",
+        "source_run_id",
+        "replacement_run_id",
+        "recovery_reason",
+        "interrupted_phase",
+        "recovery_attempt",
+        "created_at",
     },
 }
 VERIFICATION_TABLES = {
@@ -456,6 +494,7 @@ def verify_run_schema(
                 f",missing_foreign_keys={missing_foreign_keys}"
                 f",missing_constraints={missing_constraints}"
             )
+        verify_run_execution_recovery_connection(conn)
         if include_publication:
             verify_publication_schema(db_path=db_path)
         return {
@@ -495,6 +534,7 @@ def _migration_markers(db_path: str) -> dict[str, str]:
         RUN_CREATE_IDEMPOTENCY_MIGRATION_VERSION: RUN_CREATE_IDEMPOTENCY_MIGRATION_CHECKSUM,
         RUN_DISPATCH_MIGRATION_VERSION: RUN_DISPATCH_MIGRATION_CHECKSUM,
         RUN_FAILURE_CAUSE_MIGRATION_VERSION: RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM,
+        RUN_EXECUTION_RECOVERY_MIGRATION_VERSION: RUN_EXECUTION_RECOVERY_MIGRATION_CHECKSUM,
     }
     invalid = [
         version
@@ -527,6 +567,10 @@ def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
     failure_cause_applied = (
         markers.get(RUN_FAILURE_CAUSE_MIGRATION_VERSION)
         == RUN_FAILURE_CAUSE_MIGRATION_CHECKSUM
+    )
+    recovery_applied = (
+        markers.get(RUN_EXECUTION_RECOVERY_MIGRATION_VERSION)
+        == RUN_EXECUTION_RECOVERY_MIGRATION_CHECKSUM
     )
 
     if not publication_applied:
@@ -563,6 +607,8 @@ def migrate_with_backup(*, db_path: str, backup_path: str) -> dict:
             restore_database(backup_path=backup_path, db_path=db_path)
             raise
     elif not failure_cause_applied:
+        init_run_schema(db_path)
+    elif not recovery_applied:
         init_run_schema(db_path)
 
     try:

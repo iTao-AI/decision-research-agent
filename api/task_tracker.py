@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import logging
 import os
+from threading import RLock
 from collections.abc import Awaitable, Callable
 from typing import Any, Dict, Literal
 
@@ -14,6 +15,8 @@ DEFAULT_TASK_TIMEOUT = int(os.getenv("AGENT_TASK_TIMEOUT_SECONDS", "1800"))
 
 # 活跃任务字典: task_id -> (asyncio.Task, timeout_seconds, start_time)
 active_tasks: Dict[str, tuple] = {}
+_active_tasks_lock = RLock()
+_task_admission_open = False
 TimeoutCallback = Callable[[str, int], Awaitable[Any] | Any]
 CancelCallback = Callable[[str], Awaitable[Any] | Any]
 TerminationKind = Literal["unset", "timeout", "cancelled"]
@@ -150,9 +153,19 @@ def create_tracked_task(
 ) -> asyncio.Task:
     """创建并跟踪任务，按单调终止来源完成有序清理。"""
 
+    with _active_tasks_lock:
+        if not _task_admission_open:
+            close = getattr(coroutine, "close", None)
+            if close is not None:
+                close()
+            raise RuntimeError("task_tracker_closed")
+
     origin = termination_origin or TerminationOrigin()
+    coroutine_started = False
 
     async def _with_timeout():
+        nonlocal coroutine_started
+        coroutine_started = True
         loop = asyncio.get_running_loop()
         deadline_at = loop.time() + timeout_seconds
         owning_task = asyncio.current_task()
@@ -299,17 +312,31 @@ def create_tracked_task(
             raise inner_exception
         return inner_result
 
-    task = asyncio.create_task(_with_timeout())
-    start_time = asyncio.get_event_loop().time()
-    active_tasks[task_id] = (task, timeout_seconds, start_time)
-    task.add_done_callback(lambda tracked_task: _on_task_done(tracked_task, task_id))
+    with _active_tasks_lock:
+        if not _task_admission_open:
+            close = getattr(coroutine, "close", None)
+            if close is not None:
+                close()
+            raise RuntimeError("task_tracker_closed")
+        task = asyncio.create_task(_with_timeout())
+        start_time = asyncio.get_event_loop().time()
+        active_tasks[task_id] = (task, timeout_seconds, start_time)
+        def complete_tracked_task(tracked_task):
+            if not coroutine_started:
+                close = getattr(coroutine, "close", None)
+                if close is not None:
+                    close()
+            _on_task_done(tracked_task, task_id)
+
+        task.add_done_callback(complete_tracked_task)
     return task
 
 
 def _on_task_done(task: asyncio.Task, task_id: str):
     """任务完成回调。"""
 
-    active_tasks.pop(task_id, None)
+    with _active_tasks_lock:
+        active_tasks.pop(task_id, None)
 
     try:
         exc = task.exception()
@@ -327,11 +354,55 @@ def _on_task_done(task: asyncio.Task, task_id: str):
 def get_active_task(task_id: str) -> asyncio.Task | None:
     """获取指定任务。"""
 
-    entry = active_tasks.get(task_id)
+    with _active_tasks_lock:
+        entry = active_tasks.get(task_id)
     return entry[0] if entry else None
 
 
-def clear_active_tasks():
-    """清理所有活跃任务（测试用）。"""
+def open_tracked_task_admission() -> None:
+    """Open scheduling only from a closed and empty tracker."""
+    global _task_admission_open
+    with _active_tasks_lock:
+        if _task_admission_open or active_tasks:
+            raise RuntimeError("task_tracker_not_empty")
+        _task_admission_open = True
 
-    active_tasks.clear()
+
+def close_tracked_task_admission() -> None:
+    """Synchronously stop new tracked-task admission."""
+    global _task_admission_open
+    with _active_tasks_lock:
+        _task_admission_open = False
+
+
+async def drain_tracked_tasks() -> None:
+    """Cancel and settle every task after admission has closed."""
+    with _active_tasks_lock:
+        if _task_admission_open:
+            raise RuntimeError("task_tracker_admission_open")
+        tasks = [entry[0] for entry in active_tasks.values()]
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
+    for task in tasks:
+        await settle_shielded_task(task)
+
+    await asyncio.sleep(0)
+    with _active_tasks_lock:
+        if active_tasks:
+            raise RuntimeError("task_tracker_drain_incomplete")
+
+
+def tracked_task_registry_is_empty() -> bool:
+    with _active_tasks_lock:
+        return not active_tasks
+
+
+def clear_active_tasks():
+    """清理已结束任务（旧测试兼容；不得抹除活跃 registry）。"""
+
+    with _active_tasks_lock:
+        if any(not entry[0].done() for entry in active_tasks.values()):
+            raise RuntimeError("task_tracker_live_tasks")
+        active_tasks.clear()

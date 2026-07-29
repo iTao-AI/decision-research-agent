@@ -203,6 +203,29 @@ def run_execution_owner_fence_is_current(
     )
 
 
+def get_run_execution_owner_phase(
+    *, db_path: str, handle: RunExecutionOwnerHandle
+) -> str | None:
+    with _connect(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT owner.phase
+            FROM run_execution_owners_v1 AS owner
+            JOIN run_execution_boot_v1 AS boot
+              ON boot.boot_scope='application' AND boot.boot_id=owner.boot_id
+            WHERE owner.run_id=? AND owner.segment_id=? AND owner.boot_id=?
+              AND owner.owner_id=? AND owner.status='active'
+            """,
+            (
+                handle.run_id,
+                handle.segment_id,
+                handle.boot_id,
+                handle.owner_id,
+            ),
+        ).fetchone()
+        return None if row is None else str(row["phase"])
+
+
 def close_run_execution_owner(
     connection: sqlite3.Connection,
     handle: RunExecutionOwnerHandle,
@@ -210,10 +233,6 @@ def close_run_execution_owner(
     expected_phase: str,
     closed_at: str,
 ) -> bool:
-    if not run_execution_owner_fence_is_current(
-        connection, handle, expected_phase=expected_phase
-    ):
-        return False
     updated = connection.execute(
         """
         UPDATE run_execution_owners_v1
@@ -221,6 +240,10 @@ def close_run_execution_owner(
             phase_updated_at=?, closed_at=?, recovery_reason=NULL
         WHERE run_id=? AND segment_id=? AND boot_id=? AND owner_id=?
           AND status='active' AND phase=?
+          AND EXISTS (
+            SELECT 1 FROM run_execution_boot_v1
+            WHERE boot_scope='application' AND boot_id=?
+          )
         """,
         (
             closed_at,
@@ -230,6 +253,7 @@ def close_run_execution_owner(
             handle.boot_id,
             handle.owner_id,
             expected_phase,
+            handle.boot_id,
         ),
     )
     return updated.rowcount == 1

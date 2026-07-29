@@ -465,6 +465,7 @@ async def _run_persisted_lane(
     from api.run_dispatch_repository import claim_run_dispatch
     from api.run_repository import create_run, get_run
     from api.run_result_service import resolve_run_result
+    from tests.run_execution_helpers import activate_run_execution
 
     service = ResearchExecutionService(
         harness=harness,
@@ -492,9 +493,11 @@ async def _run_persisted_lane(
         thread_id=thread_id,
         query=FIXED_QUERY,
     )
+    boot_id = activate_run_execution(db_path=db_path)
     claim = claim_run_dispatch(
         db_path=db_path,
         worker_id=WORKER_ID,
+        boot_id=boot_id,
         lease_seconds=30,
         run_id=created["run_id"],
     )
@@ -502,6 +505,10 @@ async def _run_persisted_lane(
     stage = server._RunStage()
     origin = server.TerminationOrigin()
     checkpoint = server.FinalizationCheckpoint()
+    owner_box = server.RunExecutionOwnerBox()
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
+    server.open_tracked_task_admission()
     task = server.create_tracked_task(
         server._run_dispatched_with_persistence(
             claim,
@@ -510,6 +517,7 @@ async def _run_persisted_lane(
             stage=stage,
             termination_origin=origin,
             finalization_checkpoint=checkpoint,
+            owner_box=owner_box,
         ),
         f"{claim.run_id}:context-reliability:{claim.attempt_count}",
         timeout_seconds=30,
@@ -517,6 +525,8 @@ async def _run_persisted_lane(
         finalization_checkpoint=checkpoint,
     )
     await task
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
     persisted = get_run(db_path=db_path, run_id=created["run_id"])
     assert persisted is not None
     resolved = resolve_run_result(

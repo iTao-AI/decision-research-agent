@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from api.run_execution_models import BootId
+
 
 RUN_DISPATCH_MIGRATION_VERSION = "008_run_dispatch_reconciliation"
 RUN_DISPATCH_MIGRATION_CHECKSUM = "run-dispatch-reconciliation-v1"
@@ -30,6 +32,7 @@ class RunDispatchClaim(BaseModel):
     run_id: str = Field(min_length=1, max_length=128)
     thread_id: str = Field(min_length=1, max_length=256)
     segment_id: str = Field(min_length=1, max_length=160)
+    boot_id: BootId
     query: str
     profile_id: str = Field(min_length=1, max_length=128)
     profile_version: str = Field(min_length=1, max_length=64)

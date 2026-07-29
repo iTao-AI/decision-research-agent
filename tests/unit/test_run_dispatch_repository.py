@@ -15,17 +15,24 @@ from api.run_dispatch_repository import (
     start_run_dispatch,
 )
 from api.run_repository import create_run
+from tests.run_execution_helpers import activate_run_execution
 
 
 NOW = datetime(2026, 7, 14, tzinfo=timezone.utc)
 WORKER_1 = "dispatch_worker_00000000000000000000000000000001"
 WORKER_2 = "dispatch_worker_00000000000000000000000000000002"
+_BOOTS = {}
 
 
 def _claim(db_path, run_id=None, worker_id=WORKER_1, now=NOW):
+    boot_id = _BOOTS.get(db_path)
+    if boot_id is None:
+        boot_id = activate_run_execution(db_path=db_path)
+        _BOOTS[db_path] = boot_id
     return claim_run_dispatch(
         db_path=db_path,
         worker_id=worker_id,
+        boot_id=boot_id,
         lease_seconds=30,
         run_id=run_id,
         now=now,
@@ -162,11 +169,11 @@ def test_same_worker_old_attempt_cannot_start_after_reclaim(tmp_path):
     )
 
     assert second.attempt_count == first.attempt_count + 1
-    assert start_run_dispatch(db_path=db_path, claim=first) is False
-    assert start_run_dispatch(db_path=db_path, claim=second) is True
+    assert start_run_dispatch(db_path=db_path, claim=first) is None
+    assert start_run_dispatch(db_path=db_path, claim=second) is not None
 
 
-def test_start_fence_atomically_starts_dispatch_run_and_segment(tmp_path):
+def test_start_fence_atomically_writes_dispatch_run_segment_and_owner(tmp_path):
     db_path = str(tmp_path / "tasks.db")
     created = create_run(
         db_path=db_path,
@@ -176,7 +183,8 @@ def test_start_fence_atomically_starts_dispatch_run_and_segment(tmp_path):
     )
     claim = _claim(db_path, run_id=created["run_id"])
 
-    assert start_run_dispatch(db_path=db_path, claim=claim) is True
+    handle = start_run_dispatch(db_path=db_path, claim=claim)
+    assert handle is not None
     assert dispatch_attempt_is_started(db_path=db_path, claim=claim) is True
 
     connection = sqlite3.connect(db_path)
@@ -194,6 +202,14 @@ def test_start_fence_atomically_starts_dispatch_run_and_segment(tmp_path):
             "SELECT status FROM run_segments WHERE segment_id = ?",
             (created["segment_id"],),
         ).fetchone()
+        owner = connection.execute(
+            """
+            SELECT run_id, segment_id, status, phase, boot_id, owner_id
+            FROM run_execution_owners_v1
+            WHERE run_id = ?
+            """,
+            (created["run_id"],),
+        ).fetchone()
     finally:
         connection.close()
 
@@ -203,6 +219,100 @@ def test_start_fence_atomically_starts_dispatch_run_and_segment(tmp_path):
     assert dispatch[4] is None
     assert run == ("running", 1)
     assert segment == ("running",)
+    assert owner == (
+        handle.run_id,
+        handle.segment_id,
+        "active",
+        "execution",
+        handle.boot_id,
+        handle.owner_id,
+    )
+
+
+def test_start_fence_returns_exact_owner_handle_after_commit(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+    claim = _claim(db_path, run_id=created["run_id"])
+
+    handle = start_run_dispatch(db_path=db_path, claim=claim)
+
+    assert handle is not None
+    assert handle.run_id == created["run_id"]
+    assert handle.segment_id == created["segment_id"]
+    assert handle.boot_id == claim.boot_id
+    assert handle.owner_id.startswith("owner_")
+
+
+def test_stale_boot_cannot_claim_or_start_after_new_activation(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    first = create_run(db_path=db_path, thread_id="thread-1", query="first")
+    second = create_run(db_path=db_path, thread_id="thread-2", query="second")
+    stale_boot = activate_run_execution(db_path=db_path)
+    stale_claim = claim_run_dispatch(
+        db_path=db_path,
+        worker_id=WORKER_1,
+        boot_id=stale_boot,
+        lease_seconds=30,
+        run_id=first["run_id"],
+        now=NOW,
+    )
+    assert stale_claim is not None
+    current_boot = activate_run_execution(db_path=db_path)
+    assert current_boot != stale_boot
+
+    assert start_run_dispatch(db_path=db_path, claim=stale_claim) is None
+    assert claim_run_dispatch(
+        db_path=db_path,
+        worker_id=WORKER_2,
+        boot_id=stale_boot,
+        lease_seconds=30,
+        run_id=second["run_id"],
+        now=NOW,
+    ) is None
+
+
+def test_owner_insert_or_boot_check_failure_rolls_back_all_start_writes(tmp_path):
+    db_path = str(tmp_path / "tasks.db")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+    claim = _claim(db_path, run_id=created["run_id"])
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            """
+            CREATE TRIGGER reject_execution_owner
+            BEFORE INSERT ON run_execution_owners_v1
+            BEGIN
+                SELECT RAISE(ABORT, 'owner insert rejected');
+            END
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    with pytest.raises(sqlite3.IntegrityError, match="owner insert rejected"):
+        start_run_dispatch(db_path=db_path, claim=claim)
+
+    connection = sqlite3.connect(db_path)
+    try:
+        assert connection.execute(
+            "SELECT status FROM run_dispatches_v1 WHERE run_id=?",
+            (created["run_id"],),
+        ).fetchone() == ("leased",)
+        assert connection.execute(
+            "SELECT execution_status, state_version FROM research_runs_v2 WHERE run_id=?",
+            (created["run_id"],),
+        ).fetchone() == ("pending", 0)
+        assert connection.execute(
+            "SELECT status FROM run_segments WHERE segment_id=?",
+            (created["segment_id"],),
+        ).fetchone() == ("pending",)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM run_execution_owners_v1 WHERE run_id=?",
+            (created["run_id"],),
+        ).fetchone() == (0,)
+    finally:
+        connection.close()
 
 
 def test_start_rejects_stale_owner_and_claim_payload_mismatch(tmp_path):
@@ -212,8 +322,8 @@ def test_start_rejects_stale_owner_and_claim_payload_mismatch(tmp_path):
     stale_owner = claim.model_copy(update={"lease_owner": WORKER_2})
     changed_query = claim.model_copy(update={"query": "different"})
 
-    assert start_run_dispatch(db_path=db_path, claim=stale_owner) is False
-    assert start_run_dispatch(db_path=db_path, claim=changed_query) is False
+    assert start_run_dispatch(db_path=db_path, claim=stale_owner) is None
+    assert start_run_dispatch(db_path=db_path, claim=changed_query) is None
     assert get_run_dispatch(db_path=db_path, run_id=created["run_id"])["status"] == "leased"
 
 
@@ -441,7 +551,7 @@ def test_expired_third_claim_is_failed_before_scanning_next_pending_run(tmp_path
         snapshot,
         code="run_dispatch_lease_expired",
     )
-    assert start_run_dispatch(db_path=db_path, claim=claims[-1]) is False
+    assert start_run_dispatch(db_path=db_path, claim=claims[-1]) is None
     assert _claim(
         db_path,
         run_id=exhausted["run_id"],
@@ -610,7 +720,7 @@ def test_started_timeout_and_cancellation_report_started_without_dispatch_cause(
     db_path = str(tmp_path / "tasks.db")
     created = create_run(db_path=db_path, thread_id="thread-1", query="research")
     claim = _claim(db_path, run_id=created["run_id"])
-    assert start_run_dispatch(db_path=db_path, claim=claim) is True
+    assert start_run_dispatch(db_path=db_path, claim=claim) is not None
     before = _dispatch_snapshot(
         db_path,
         run_id=created["run_id"],

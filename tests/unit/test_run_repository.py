@@ -3,6 +3,12 @@ import sqlite3
 
 import pytest
 
+from api.run_failure_cause_models import (
+    RunFailureCauseConflict,
+    RunFailureCauseWrite,
+)
+from api.run_repository import create_run, finalize_run_transaction, get_run
+
 
 FIXED_TERMINAL_TIME = "2026-07-16T00:00:00+00:00"
 
@@ -365,23 +371,22 @@ def test_transition_rejects_stale_state_version(tmp_path):
     db_path = str(tmp_path / "runs.db")
     created = create_run(db_path=db_path, thread_id="thread-1", query="query")
 
-    assert transition_run(
-        db_path=db_path,
-        run_id=created["run_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
-        execution_status="running",
-    )
-    assert not transition_run(
-        db_path=db_path,
-        run_id=created["run_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
-        execution_status="completed",
-    )
+    from api.run_failure_cause_models import RunFailureCauseConflict
+
+    with pytest.raises(
+        RunFailureCauseConflict,
+        match="run_execution_owner_transition_invalid",
+    ):
+        transition_run(
+            db_path=db_path,
+            run_id=created["run_id"],
+            expected_state_version=0,
+            allowed_previous_statuses={"pending"},
+            execution_status="running",
+        )
     run = get_run(db_path=db_path, run_id=created["run_id"])
-    assert run["execution_status"] == "running"
-    assert run["state_version"] == 1
+    assert run["execution_status"] == "pending"
+    assert run["state_version"] == 0
 
 
 def test_unknown_status_transition_is_rejected(tmp_path):
@@ -937,8 +942,9 @@ def test_required_review_finalization_seeds_workflow_atomically(tmp_path):
         create_run,
         finalize_run_transaction,
         get_run,
-        transition_run,
     )
+    from api.run_execution_repository import advance_run_execution_phase
+    from tests.run_execution_helpers import activate_and_start_created_run
 
     db_path = str(tmp_path / "runs.db")
     created = create_run(
@@ -947,13 +953,11 @@ def test_required_review_finalization_seeds_workflow_atomically(tmp_path):
         query="query",
         profile_id="talent-hiring-signal",
     )
-    assert transition_run(
+    started = activate_and_start_created_run(
         db_path=db_path,
         run_id=created["run_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
-        execution_status="running",
     )
+    assert advance_run_execution_phase(db_path=db_path, handle=started.handle)
     review = ReviewBundle(
         review_id="review_1",
         run_id=created["run_id"],
@@ -981,6 +985,7 @@ def test_required_review_finalization_seeds_workflow_atomically(tmp_path):
         review_status="required",
         delivery_status="review_required",
         evidence_entries=[],
+        owner_handle=started.handle,
         review_bundle=review,
         review_workflow={
             "workflow_id": workflow_id,
@@ -1004,8 +1009,9 @@ def test_review_workflow_seed_failure_rolls_back_finalization(tmp_path):
         create_run,
         finalize_run_transaction,
         get_run,
-        transition_run,
     )
+    from api.run_execution_repository import advance_run_execution_phase
+    from tests.run_execution_helpers import activate_and_start_created_run
 
     db_path = str(tmp_path / "runs.db")
     created = create_run(
@@ -1014,13 +1020,11 @@ def test_review_workflow_seed_failure_rolls_back_finalization(tmp_path):
         query="query",
         profile_id="talent-hiring-signal",
     )
-    assert transition_run(
+    started = activate_and_start_created_run(
         db_path=db_path,
         run_id=created["run_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
-        execution_status="running",
     )
+    assert advance_run_execution_phase(db_path=db_path, handle=started.handle)
     review = ReviewBundle(
         review_id="review_1",
         run_id=created["run_id"],
@@ -1044,6 +1048,7 @@ def test_review_workflow_seed_failure_rolls_back_finalization(tmp_path):
             review_status="required",
             delivery_status="review_required",
             evidence_entries=[],
+            owner_handle=started.handle,
             review_bundle=review,
             review_workflow={
                 "workflow_id": "rwf_broken",
@@ -1380,18 +1385,15 @@ def test_nonfailed_run_projects_null_failure_cause(tmp_path, execution_status):
         create_run,
         finalize_run_transaction,
         get_run,
-        transition_run,
     )
+    from tests.run_execution_helpers import activate_and_start_created_run
 
     db_path = str(tmp_path / f"{execution_status}.db")
     created = create_run(db_path=db_path, thread_id="thread-1", query="query")
     if execution_status == "running":
-        assert transition_run(
+        activate_and_start_created_run(
             db_path=db_path,
             run_id=created["run_id"],
-            expected_state_version=0,
-            allowed_previous_statuses={"pending"},
-            execution_status="running",
         )
     elif execution_status in {"completed", "completed_with_fallback"}:
         assert finalize_run_transaction(
@@ -1411,15 +1413,13 @@ def test_nonfailed_run_projects_null_failure_cause(tmp_path, execution_status):
 
 
 def test_finalization_fence_is_current_only_for_exact_running_identity(tmp_path):
-    from api.run_dispatch_repository import (
-        claim_run_dispatch,
-        start_run_dispatch,
-    )
+    from api.run_execution_repository import advance_run_execution_phase
     from api.run_repository import (
         create_run,
         finalize_run_transaction,
         run_finalization_fence_is_current,
     )
+    from tests.run_execution_helpers import activate_and_start_created_run
 
     db_path = str(tmp_path / "runs.db")
     created = create_run(
@@ -1428,44 +1428,46 @@ def test_finalization_fence_is_current_only_for_exact_running_identity(tmp_path)
         query="query",
         profile_id="generic-strict-citation",
     )
+    started = activate_and_start_created_run(
+        db_path=db_path,
+        run_id=created["run_id"],
+    )
     assert not run_finalization_fence_is_current(
         db_path=db_path,
         run_id=created["run_id"],
         segment_id=created["segment_id"],
-        expected_state_version=0,
+        expected_state_version=1,
+        owner_handle=started.handle,
     )
-    claim = claim_run_dispatch(
-        db_path=db_path,
-        worker_id="dispatch_worker_11111111111111111111111111111111",
-        lease_seconds=60,
-        run_id=created["run_id"],
-    )
-    assert claim is not None
-    assert start_run_dispatch(db_path=db_path, claim=claim)
+    assert advance_run_execution_phase(db_path=db_path, handle=started.handle)
 
     assert run_finalization_fence_is_current(
         db_path=db_path,
         run_id=created["run_id"],
         segment_id=created["segment_id"],
         expected_state_version=1,
+        owner_handle=started.handle,
     )
     assert not run_finalization_fence_is_current(
         db_path=db_path,
         run_id="run_wrong111111111111111111111111111",
         segment_id=created["segment_id"],
         expected_state_version=1,
+        owner_handle=started.handle,
     )
     assert not run_finalization_fence_is_current(
         db_path=db_path,
         run_id=created["run_id"],
         segment_id="wrong-segment",
         expected_state_version=1,
+        owner_handle=started.handle,
     )
     assert not run_finalization_fence_is_current(
         db_path=db_path,
         run_id=created["run_id"],
         segment_id=created["segment_id"],
         expected_state_version=0,
+        owner_handle=started.handle,
     )
     assert finalize_run_transaction(
         db_path=db_path,
@@ -1476,12 +1478,14 @@ def test_finalization_fence_is_current_only_for_exact_running_identity(tmp_path)
         execution_status="completed",
         delivery_status="ready",
         evidence_entries=[],
+        owner_handle=started.handle,
     )
     assert not run_finalization_fence_is_current(
         db_path=db_path,
         run_id=created["run_id"],
         segment_id=created["segment_id"],
         expected_state_version=1,
+        owner_handle=started.handle,
     )
 
     failed = create_run(
@@ -1500,12 +1504,6 @@ def test_finalization_fence_is_current_only_for_exact_running_identity(tmp_path)
         delivery_status="failed",
         evidence_entries=[],
         failure_cause=_execution_error_cause(),
-    )
-    assert not run_finalization_fence_is_current(
-        db_path=db_path,
-        run_id=failed["run_id"],
-        segment_id=failed["segment_id"],
-        expected_state_version=0,
     )
 
 
@@ -1714,3 +1712,181 @@ def test_failure_cause_projection_maps_row_shape_errors_to_bounded_conflict():
                 "updated_at": FIXED_TERMINAL_TIME,
             }
         )
+
+
+def _owner_row(db_path: str, run_id: str):
+    connection = sqlite3.connect(db_path)
+    try:
+        return connection.execute(
+            """
+            SELECT status, phase, boot_id, owner_id, closed_at
+            FROM run_execution_owners_v1
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def test_normal_completion_closes_exact_owner_in_terminal_transaction(tmp_path):
+    from api.run_execution_repository import advance_run_execution_phase
+    from tests.run_execution_helpers import activate_and_start_created_run
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(db_path=db_path, thread_id="thread", query="query")
+    started = activate_and_start_created_run(
+        db_path=db_path,
+        run_id=created["run_id"],
+    )
+    assert advance_run_execution_phase(db_path=db_path, handle=started.handle)
+
+    assert finalize_run_transaction(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=1,
+        allowed_previous_statuses={"running"},
+        execution_status="completed",
+        delivery_status="ready",
+        evidence_entries=[],
+        owner_handle=started.handle,
+    )
+    assert _owner_row(db_path, created["run_id"])[0:4] == (
+        "closed",
+        "finalization",
+        None,
+        None,
+    )
+
+
+def test_execution_exception_closes_exact_execution_owner(tmp_path):
+    from tests.run_execution_helpers import activate_and_start_created_run
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(db_path=db_path, thread_id="thread", query="query")
+    started = activate_and_start_created_run(
+        db_path=db_path,
+        run_id=created["run_id"],
+    )
+
+    assert finalize_run_transaction(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=1,
+        allowed_previous_statuses={"running"},
+        execution_status="failed",
+        delivery_status="failed",
+        evidence_entries=[],
+        failure_cause=RunFailureCauseWrite(
+            phase="execution",
+            code="execution_error",
+        ),
+        owner_handle=started.handle,
+    )
+    assert _owner_row(db_path, created["run_id"])[0:4] == (
+        "closed",
+        "execution",
+        None,
+        None,
+    )
+
+
+def test_finalization_exception_closes_exact_finalization_owner(tmp_path):
+    from api.run_execution_repository import advance_run_execution_phase
+    from tests.run_execution_helpers import activate_and_start_created_run
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(db_path=db_path, thread_id="thread", query="query")
+    started = activate_and_start_created_run(
+        db_path=db_path,
+        run_id=created["run_id"],
+    )
+    assert advance_run_execution_phase(db_path=db_path, handle=started.handle)
+
+    assert finalize_run_transaction(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=1,
+        allowed_previous_statuses={"running"},
+        execution_status="failed",
+        delivery_status="failed",
+        evidence_entries=[],
+        failure_cause=RunFailureCauseWrite(
+            phase="finalization",
+            code="run_finalization_failed",
+        ),
+        owner_handle=started.handle,
+    )
+    assert _owner_row(db_path, created["run_id"])[0:4] == (
+        "closed",
+        "finalization",
+        None,
+        None,
+    )
+
+
+def test_owner_close_failure_rolls_back_every_business_and_terminal_write(
+    tmp_path,
+    monkeypatch,
+):
+    from api.run_execution_repository import advance_run_execution_phase
+    from tests.run_execution_helpers import activate_and_start_created_run
+
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(db_path=db_path, thread_id="thread", query="query")
+    started = activate_and_start_created_run(
+        db_path=db_path,
+        run_id=created["run_id"],
+    )
+    assert advance_run_execution_phase(db_path=db_path, handle=started.handle)
+    monkeypatch.setattr(
+        "api.run_execution_repository.close_run_execution_owner",
+        lambda *args, **kwargs: False,
+    )
+
+    with pytest.raises(
+        RunFailureCauseConflict,
+        match="run_execution_owner_close_failed",
+    ):
+        finalize_run_transaction(
+            db_path=db_path,
+            run_id=created["run_id"],
+            segment_id=created["segment_id"],
+            expected_state_version=1,
+            allowed_previous_statuses={"running"},
+            execution_status="completed",
+            delivery_status="ready",
+            evidence_entries=[],
+            owner_handle=started.handle,
+        )
+
+    run = get_run(db_path=db_path, run_id=created["run_id"])
+    assert run["execution_status"] == "running"
+    assert run["state_version"] == 1
+    assert run["evidence"] == []
+    assert run["artifacts"] == []
+    assert _owner_row(db_path, created["run_id"])[0] == "active"
+
+
+def test_pending_dispatch_failure_remains_ownerless_and_compatible(tmp_path):
+    db_path = str(tmp_path / "runs.db")
+    created = create_run(db_path=db_path, thread_id="thread", query="query")
+
+    assert finalize_run_transaction(
+        db_path=db_path,
+        run_id=created["run_id"],
+        segment_id=created["segment_id"],
+        expected_state_version=0,
+        allowed_previous_statuses={"pending"},
+        execution_status="failed",
+        delivery_status="failed",
+        evidence_entries=[],
+        failure_cause=RunFailureCauseWrite(
+            phase="dispatch",
+            code="run_dispatch_start_failed",
+        ),
+    )
+    assert _owner_row(db_path, created["run_id"]) is None

@@ -15,6 +15,7 @@ from api.publication_repository import (
     verify_publication_schema,
 )
 from api.run_repository import create_run
+from tests.run_execution_helpers import activate_and_start_created_run
 
 
 NOW = "2026-06-23T00:00:00+00:00"
@@ -59,6 +60,8 @@ def _seed_revision_one_review_database(
         },
     )
     run_id = created["run_id"]
+    if execution_status == "running":
+        activate_and_start_created_run(db_path=db_path, run_id=run_id)
     review_id = "review_revision_1"
     decision_id = "decision_revision_1"
     connection = _connect(db_path)
@@ -70,7 +73,7 @@ def _seed_revision_one_review_database(
                 SET execution_status = ?,
                     review_status = ?,
                     delivery_status = ?,
-                    state_version = 3,
+                    state_version = ?,
                     updated_at = ?
                 WHERE run_id = ?
                 """,
@@ -80,6 +83,7 @@ def _seed_revision_one_review_database(
                     or ("resolved" if with_resolution else "required"),
                     delivery_status
                     or ("ready" if with_resolution else "review_required"),
+                    1 if execution_status == "running" else 3,
                     NOW,
                     run_id,
                 ),

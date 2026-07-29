@@ -5,21 +5,65 @@ import threading
 
 from fastapi.testclient import TestClient
 import pytest
+import pytest_asyncio
 
 from api.run_dispatch_repository import (
-    claim_run_dispatch,
+    claim_run_dispatch as _claim_run_dispatch,
     get_run_dispatch,
     start_run_dispatch,
 )
-from api.run_dispatch_worker import RunDispatchWorker
+from api.run_dispatch_worker import RunDispatchWorker as _RunDispatchWorker
 from api.run_repository import create_run, get_run
 from api.server import app
+from tests.run_execution_helpers import activate_run_execution
 
 
 AUTH_HEADERS = {"X-API-Key": "test-integration-key"}
 pytestmark = pytest.mark.usefixtures("authenticated_runtime_access")
 WORKER_1 = "dispatch_worker_00000000000000000000000000000001"
 WORKER_2 = "dispatch_worker_00000000000000000000000000000002"
+_BOOTS = {}
+
+
+def _boot(db_path):
+    boot_id = _BOOTS.get(db_path)
+    if boot_id is None:
+        boot_id = activate_run_execution(db_path=db_path)
+        _BOOTS[db_path] = boot_id
+    return boot_id
+
+
+def claim_run_dispatch(*, db_path, boot_id=None, **kwargs):
+    return _claim_run_dispatch(
+        db_path=db_path,
+        boot_id=boot_id or _boot(db_path),
+        **kwargs,
+    )
+
+
+def RunDispatchWorker(*, db_path, boot_id=None, **kwargs):
+    return _RunDispatchWorker(
+        db_path=db_path,
+        boot_id=boot_id or _boot(db_path),
+        **kwargs,
+    )
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _closed_task_tracker_boundary():
+    import api.server as server
+
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
+    yield
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
+
+
+async def _open_task_tracker(server):
+    server.close_tracked_task_admission()
+    await server.drain_tracked_tasks()
+    server.open_tracked_task_admission()
 
 
 def _runtime_owners(server):
@@ -39,6 +83,7 @@ async def _run_dispatched(server, claim, *, db_path, outcome_box=None):
         stage=stage,
         termination_origin=origin,
         finalization_checkpoint=checkpoint,
+        owner_box=server.RunExecutionOwnerBox(),
     )
 
 
@@ -136,8 +181,20 @@ async def test_lifespan_unconditionally_starts_and_stops_dispatch_worker(
     monkeypatch.setattr(
         server,
         "create_run_dispatch_worker",
-        lambda application_db_path: worker,
+        lambda application_db_path, *, boot_id: worker,
         raising=False,
+    )
+    monkeypatch.setattr(
+        server,
+        "activate_run_execution_boot",
+        lambda **kwargs: type(
+            "Activation",
+            (),
+            {
+                "interrupted_execution_count": 0,
+                "interrupted_finalization_count": 0,
+            },
+        )(),
     )
 
     async with server.lifespan(server.app):
@@ -321,7 +378,7 @@ async def test_stale_timeout_does_not_change_newer_started_attempt(tmp_path, mon
         run_id=created["run_id"],
         now=now + timedelta(minutes=1),
     )
-    assert start_run_dispatch(db_path=db_path, claim=second) is True
+    assert start_run_dispatch(db_path=db_path, claim=second) is not None
     monkeypatch.setattr(
         server,
         "_mark_run_timeout",
@@ -358,9 +415,12 @@ async def test_same_attempt_start_between_timeout_read_and_release_is_not_orphan
         lease_seconds=30,
         run_id=created["run_id"],
     )
+    owner_box = server.RunExecutionOwnerBox()
 
     def start_before_timeout_reconciliation(**kwargs):
-        assert start_run_dispatch(db_path=db_path, claim=claim) is True
+        handle = start_run_dispatch(db_path=db_path, claim=claim)
+        assert handle is not None
+        owner_box.assign(handle)
         return real_timeout_reconciliation(**kwargs)
 
     monkeypatch.setattr(
@@ -374,6 +434,7 @@ async def test_same_attempt_start_between_timeout_read_and_release_is_not_orphan
         db_path=db_path,
         outcome_box=server.OutcomeBox(),
         timeout_seconds=1,
+        owner_box=owner_box,
     )
 
     snapshot = _dispatch_failure_snapshot(
@@ -479,7 +540,12 @@ def test_route_post_commit_dispatch_failure_still_returns_ack(tmp_path, monkeypa
             self.stop_event.set()
 
     worker = NonSchedulingWorker()
-    monkeypatch.setattr(server, "create_run_dispatch_worker", lambda _path: worker, raising=False)
+    monkeypatch.setattr(
+        server,
+        "create_run_dispatch_worker",
+        lambda _path, *, boot_id: worker,
+        raising=False,
+    )
 
     with TestClient(app) as client:
         response = client.post(
@@ -645,6 +711,7 @@ async def test_scheduler_created_task_reaches_real_finalization_checkpoint(
     monkeypatch.setattr(server, "finalize_run_transaction", record_terminal_write)
 
     task_id = f"{claim.run_id}:dispatch:{claim.attempt_count}"
+    await _open_task_tracker(server)
     server._schedule_run_dispatch(claim, db_path=db_path)
     task = get_active_task(task_id)
     assert task is not None
@@ -715,10 +782,11 @@ async def test_late_committed_start_uses_post_start_cancellation_semantics(
     real_start = server.start_run_dispatch
 
     def commit_then_hold(**kwargs):
-        assert real_start(**kwargs) is True
+        handle = real_start(**kwargs)
+        assert handle is not None
         start_committed.set()
         assert release_start.wait(timeout=3)
-        return True
+        return handle
 
     monkeypatch.setattr(server, "start_run_dispatch", commit_then_hold)
     monkeypatch.setattr(
@@ -728,7 +796,9 @@ async def test_late_committed_start_uses_post_start_cancellation_semantics(
     )
     stage, origin, checkpoint = _runtime_owners(server)
     outcome_box = server.OutcomeBox()
+    owner_box = server.RunExecutionOwnerBox()
     task_id = f"{claim.run_id}:dispatch:{claim.attempt_count}"
+    await _open_task_tracker(server)
     task = create_tracked_task(
         server._run_dispatched_with_persistence(
             claim,
@@ -737,6 +807,7 @@ async def test_late_committed_start_uses_post_start_cancellation_semantics(
             stage=stage,
             termination_origin=origin,
             finalization_checkpoint=checkpoint,
+            owner_box=owner_box,
         ),
         task_id,
         on_cancel=lambda _task_id: server._mark_dispatched_cancellation(
@@ -745,6 +816,7 @@ async def test_late_committed_start_uses_post_start_cancellation_semantics(
             outcome_box=outcome_box,
             stage=stage,
             termination_origin=origin,
+            owner_box=owner_box,
         ),
         termination_origin=origin,
         finalization_checkpoint=checkpoint,
@@ -799,11 +871,12 @@ async def test_late_committed_start_uses_post_start_timeout_semantics(
     real_start = server.start_run_dispatch
 
     def commit_then_expire_deadline(**kwargs):
-        assert real_start(**kwargs) is True
+        handle = real_start(**kwargs)
+        assert handle is not None
         offset[0] = 100.0
         start_committed.set()
         assert release_start.wait(timeout=3)
-        return True
+        return handle
 
     monkeypatch.setattr(server, "start_run_dispatch", commit_then_expire_deadline)
     monkeypatch.setattr(
@@ -813,6 +886,8 @@ async def test_late_committed_start_uses_post_start_timeout_semantics(
     )
     stage, origin, checkpoint = _runtime_owners(server)
     outcome_box = server.OutcomeBox()
+    owner_box = server.RunExecutionOwnerBox()
+    await _open_task_tracker(server)
     task = create_tracked_task(
         server._run_dispatched_with_persistence(
             claim,
@@ -821,6 +896,7 @@ async def test_late_committed_start_uses_post_start_timeout_semantics(
             stage=stage,
             termination_origin=origin,
             finalization_checkpoint=checkpoint,
+            owner_box=owner_box,
         ),
         f"{claim.run_id}:dispatch:{claim.attempt_count}",
         timeout_seconds=10,
@@ -831,6 +907,7 @@ async def test_late_committed_start_uses_post_start_timeout_semantics(
             timeout_seconds=timeout_seconds,
             stage=stage,
             termination_origin=origin,
+            owner_box=owner_box,
         ),
         termination_origin=origin,
         finalization_checkpoint=checkpoint,
@@ -904,11 +981,13 @@ async def test_pre_start_cancellation_retries_or_defers_without_public_cause(
     def held_uncommitted_start(**_kwargs):
         start_entered.set()
         assert release_start.wait(timeout=3)
-        return False
+        return None
 
     monkeypatch.setattr(server, "start_run_dispatch", held_uncommitted_start)
     stage, origin, checkpoint = _runtime_owners(server)
     outcome_box = server.OutcomeBox()
+    owner_box = server.RunExecutionOwnerBox()
+    await _open_task_tracker(server)
     task = create_tracked_task(
         server._run_dispatched_with_persistence(
             claim,
@@ -917,6 +996,7 @@ async def test_pre_start_cancellation_retries_or_defers_without_public_cause(
             stage=stage,
             termination_origin=origin,
             finalization_checkpoint=checkpoint,
+            owner_box=owner_box,
         ),
         f"{claim.run_id}:dispatch:{claim.attempt_count}",
         on_cancel=lambda _task_id: server._mark_dispatched_cancellation(
@@ -925,6 +1005,7 @@ async def test_pre_start_cancellation_retries_or_defers_without_public_cause(
             outcome_box=outcome_box,
             stage=stage,
             termination_origin=origin,
+            owner_box=owner_box,
         ),
         termination_origin=origin,
         finalization_checkpoint=checkpoint,
@@ -976,7 +1057,7 @@ async def test_cancelled_callback_waits_for_reconciliation_thread_settlement(
     def held_uncommitted_start(**_kwargs):
         start_entered.set()
         assert release_start.wait(timeout=3)
-        return False
+        return None
 
     def reconcile_then_hold(**kwargs):
         result = real_reconcile(**kwargs)
@@ -992,6 +1073,8 @@ async def test_cancelled_callback_waits_for_reconciliation_thread_settlement(
     )
     stage, origin, checkpoint = _runtime_owners(server)
     outcome_box = server.OutcomeBox()
+    owner_box = server.RunExecutionOwnerBox()
+    await _open_task_tracker(server)
     task = create_tracked_task(
         server._run_dispatched_with_persistence(
             claim,
@@ -1000,6 +1083,7 @@ async def test_cancelled_callback_waits_for_reconciliation_thread_settlement(
             stage=stage,
             termination_origin=origin,
             finalization_checkpoint=checkpoint,
+            owner_box=owner_box,
         ),
         f"{claim.run_id}:dispatch:{claim.attempt_count}",
         on_cancel=lambda _task_id: server._mark_dispatched_cancellation(
@@ -1008,6 +1092,7 @@ async def test_cancelled_callback_waits_for_reconciliation_thread_settlement(
             outcome_box=outcome_box,
             stage=stage,
             termination_origin=origin,
+            owner_box=owner_box,
         ),
         termination_origin=origin,
         finalization_checkpoint=checkpoint,
@@ -1067,7 +1152,8 @@ async def test_stale_cancellation_callback_cannot_replace_terminal_winner(
         run_id=created["run_id"],
         now=now + timedelta(minutes=1),
     )
-    assert start_run_dispatch(db_path=db_path, claim=second) is True
+    owner_handle = start_run_dispatch(db_path=db_path, claim=second)
+    assert owner_handle is not None
     assert finalize_run_transaction(
         db_path=db_path,
         run_id=created["run_id"],
@@ -1081,6 +1167,7 @@ async def test_stale_cancellation_callback_cannot_replace_terminal_winner(
             phase="execution",
             code="execution_error",
         ),
+        owner_handle=owner_handle,
     )
     before = _dispatch_failure_snapshot(
         db_path,
@@ -1090,6 +1177,7 @@ async def test_stale_cancellation_callback_cannot_replace_terminal_winner(
     stage, origin, _ = _runtime_owners(server)
     stage.advance_to_execution()
     assert origin.claim_cancelled()
+    owner_box = server.RunExecutionOwnerBox()
 
     await server._mark_dispatched_cancellation(
         first,
@@ -1097,6 +1185,7 @@ async def test_stale_cancellation_callback_cannot_replace_terminal_winner(
         outcome_box=server.OutcomeBox(),
         stage=stage,
         termination_origin=origin,
+        owner_box=owner_box,
     )
 
     assert _dispatch_failure_snapshot(
@@ -1147,6 +1236,7 @@ async def test_completed_stale_attempt_cannot_remove_newer_tracked_attempt(
         await releases[claim.attempt_count].wait()
 
     monkeypatch.setattr(server, "_run_dispatched_with_persistence", hold_attempt)
+    await _open_task_tracker(server)
     server._schedule_run_dispatch(first, db_path=db_path)
     server._schedule_run_dispatch(second, db_path=db_path)
     first_id = f"{created['run_id']}:dispatch:1"

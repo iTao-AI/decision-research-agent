@@ -19,9 +19,16 @@ def application_db_path(db_path: str | Path | None = None) -> Path:
     """
     raw = str(db_path) if db_path is not None else os.getenv(APPLICATION_DB_ENV)
     path = Path(raw).expanduser() if raw else DEFAULT_APPLICATION_DB_PATH
-    resolved = path.resolve()
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    return resolved
+    return path.resolve()
+
+
+def prepare_application_db_parent(db_path: Path) -> Path:
+    """Create only the canonical configured DB parent before writer locking."""
+    canonical = db_path.expanduser().resolve()
+    canonical.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if not canonical.parent.is_dir() or canonical != db_path.expanduser().resolve():
+        raise RuntimeError("application_db_parent_invalid")
+    return canonical
 
 
 def sqlite_db_path(db_path: str | Path | None = None) -> str:
@@ -37,6 +44,7 @@ def sqlite_db_path(db_path: str | Path | None = None) -> str:
 
 def backup_database(*, db_path: str, backup_path: str) -> None:
     """Create a transactionally consistent SQLite backup."""
+    prepare_application_db_parent(Path(db_path))
     Path(backup_path).parent.mkdir(parents=True, exist_ok=True)
     source = sqlite3.connect(sqlite_db_path(db_path))
     destination = sqlite3.connect(backup_path)
@@ -49,7 +57,7 @@ def backup_database(*, db_path: str, backup_path: str) -> None:
 
 def restore_database(*, backup_path: str, db_path: str) -> None:
     """Restore a SQLite backup without copying WAL sidecar files."""
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    prepare_application_db_parent(Path(db_path))
     source = sqlite3.connect(backup_path)
     destination = sqlite3.connect(sqlite_db_path(db_path))
     try:

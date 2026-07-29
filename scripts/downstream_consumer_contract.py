@@ -688,8 +688,10 @@ def _seed_source_cases(db_path: str) -> list[tuple[str, dict[str, Any]]]:
         create_run,
         finalize_run_transaction,
         get_run,
-        transition_run,
     )
+    from api.run_dispatch_repository import claim_run_dispatch, start_run_dispatch
+    from api.run_execution_models import new_boot_id
+    from api.run_execution_repository import activate_run_execution_boot
 
     definitions = [
         "pending",
@@ -711,12 +713,18 @@ def _seed_source_cases(db_path: str) -> list[tuple[str, dict[str, Any]]]:
         )
 
     running = created["running"]
-    if not transition_run(
-        run_id=running["run_id"],
-        expected_state_version=0,
-        allowed_previous_statuses={"pending"},
+    boot_id = new_boot_id()
+    activate_run_execution_boot(db_path=db_path, boot_id=boot_id)
+    running_claim = claim_run_dispatch(
         db_path=db_path,
-        execution_status="running",
+        worker_id="dispatch_worker_" + "c" * 32,
+        boot_id=boot_id,
+        lease_seconds=30,
+        run_id=running["run_id"],
+    )
+    if (
+        running_claim is None
+        or start_run_dispatch(db_path=db_path, claim=running_claim) is None
     ):
         raise RuntimeError("deterministic running transition failed")
 

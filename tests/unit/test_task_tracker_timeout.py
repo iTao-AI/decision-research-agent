@@ -6,6 +6,117 @@ import logging
 import os
 
 import pytest
+import pytest_asyncio
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _tracked_task_admission():
+    from api.task_tracker import (
+        close_tracked_task_admission,
+        drain_tracked_tasks,
+        open_tracked_task_admission,
+    )
+
+    close_tracked_task_admission()
+    await drain_tracked_tasks()
+    open_tracked_task_admission()
+    yield
+    close_tracked_task_admission()
+    await drain_tracked_tasks()
+
+
+@pytest.mark.asyncio
+async def test_close_task_admission_rejects_new_coroutine_without_scheduling():
+    from api.task_tracker import (
+        close_tracked_task_admission,
+        create_tracked_task,
+    )
+
+    async def never_scheduled():
+        await asyncio.sleep(0)
+
+    coroutine = never_scheduled()
+    close_tracked_task_admission()
+    with pytest.raises(RuntimeError, match="task_tracker_closed"):
+        create_tracked_task(coroutine, "closed-admission")
+    assert coroutine.cr_frame is None
+
+
+@pytest.mark.asyncio
+async def test_close_and_drain_snapshots_after_admission_is_closed():
+    from api.task_tracker import (
+        close_tracked_task_admission,
+        create_tracked_task,
+        drain_tracked_tasks,
+        tracked_task_registry_is_empty,
+    )
+
+    tasks = [
+        create_tracked_task(asyncio.Event().wait(), f"drain-snapshot-{index}")
+        for index in range(2)
+    ]
+    await asyncio.sleep(0)
+    close_tracked_task_admission()
+    await drain_tracked_tasks()
+    assert tracked_task_registry_is_empty()
+    assert all(task.cancelled() for task in tasks)
+
+
+@pytest.mark.asyncio
+async def test_drain_cancels_and_settles_each_task_and_callback_once():
+    from api.task_tracker import (
+        close_tracked_task_admission,
+        create_tracked_task,
+        drain_tracked_tasks,
+    )
+
+    callbacks = []
+    tasks = [
+        create_tracked_task(
+            asyncio.Event().wait(),
+            f"drain-callback-{index}",
+            on_cancel=lambda task_id: callbacks.append(task_id),
+        )
+        for index in range(2)
+    ]
+    await asyncio.sleep(0)
+    close_tracked_task_admission()
+    await drain_tracked_tasks()
+    assert sorted(callbacks) == ["drain-callback-0", "drain-callback-1"]
+    assert all(task.done() for task in tasks)
+
+
+@pytest.mark.asyncio
+async def test_drain_returns_only_after_active_registry_is_empty():
+    from api.task_tracker import (
+        active_tasks,
+        close_tracked_task_admission,
+        create_tracked_task,
+        drain_tracked_tasks,
+    )
+
+    create_tracked_task(asyncio.Event().wait(), "drain-empty")
+    await asyncio.sleep(0)
+    close_tracked_task_admission()
+    await drain_tracked_tasks()
+    assert active_tasks == {}
+
+
+@pytest.mark.asyncio
+async def test_open_task_admission_requires_an_empty_closed_registry():
+    from api.task_tracker import (
+        close_tracked_task_admission,
+        create_tracked_task,
+        drain_tracked_tasks,
+        open_tracked_task_admission,
+    )
+
+    create_tracked_task(asyncio.Event().wait(), "open-requires-empty")
+    close_tracked_task_admission()
+    with pytest.raises(RuntimeError, match="task_tracker_not_empty"):
+        open_tracked_task_admission()
+    await drain_tracked_tasks()
+    open_tracked_task_admission()
 
 
 @pytest.mark.asyncio

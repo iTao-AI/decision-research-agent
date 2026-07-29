@@ -28,12 +28,17 @@ from agent.runtime_context import ResearchRuntimeContext
 from api import task_tracker
 from api.research_execution_service import ResearchExecutionService
 from api.run_dispatch_repository import claim_run_dispatch
+from api.run_execution_models import RunExecutionOwnerBox, new_boot_id
+from api.run_execution_repository import activate_run_execution_boot
 from api.run_repository import create_run, get_run
 from api.run_result_service import resolve_run_result
 from api.task_tracker import (
     FinalizationCheckpoint,
     TerminationOrigin,
     create_tracked_task,
+    close_tracked_task_admission,
+    drain_tracked_tasks,
+    open_tracked_task_admission,
 )
 from scripts.agent_evaluation_context import (
     compare_context_reliability_outcomes,
@@ -474,9 +479,15 @@ async def run_persisted_lane(
                     isinstance(identity.get("run_id"), str)
                     and isinstance(identity.get("segment_id"), str),
                 )
+                boot_id = new_boot_id()
+                activate_run_execution_boot(
+                    db_path=str(db_path),
+                    boot_id=boot_id,
+                )
                 claim = claim_run_dispatch(
                     db_path=str(db_path),
                     worker_id=_WORKER_ID,
+                    boot_id=boot_id,
                     lease_seconds=REPLAY_TIMEOUT_SECONDS,
                     run_id=identity["run_id"],
                 )
@@ -491,6 +502,10 @@ async def run_persisted_lane(
                 stage = _RunStage()
                 termination_origin = TerminationOrigin()
                 finalization_checkpoint = FinalizationCheckpoint()
+                owner_box = RunExecutionOwnerBox()
+                close_tracked_task_admission()
+                await drain_tracked_tasks()
+                open_tracked_task_admission()
                 tracked = create_tracked_task(
                     _run_dispatched_with_persistence(
                         claim,
@@ -499,6 +514,7 @@ async def run_persisted_lane(
                         stage=stage,
                         termination_origin=termination_origin,
                         finalization_checkpoint=finalization_checkpoint,
+                        owner_box=owner_box,
                     ),
                     task_id=identity["run_id"],
                     timeout_seconds=REPLAY_TIMEOUT_SECONDS,
@@ -510,8 +526,12 @@ async def run_persisted_lane(
                     identity["run_id"] in task_tracker.active_tasks
                     and task_tracker.active_tasks[identity["run_id"]][0] is tracked,
                 )
-                await tracked
-                await asyncio.sleep(0)
+                try:
+                    await tracked
+                    await asyncio.sleep(0)
+                finally:
+                    close_tracked_task_admission()
+                    await drain_tracked_tasks()
                 if termination_origin.value == "timeout":
                     _fail()
                 if termination_origin.value != "unset":

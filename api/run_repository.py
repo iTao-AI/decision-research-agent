@@ -600,27 +600,33 @@ def init_run_schema(db_path: str | None = None) -> None:
         marker_present = _inspect_run_failure_cause_marker(db_path)
         if marker_present:
             _init_run_schema_unlocked(db_path)
-            return
-
-        failure_backup_path = Path(
-            f"{sqlite_db_path(db_path)}.pre-run-failure-cause.bak"
-        )
-        if failure_backup_path.exists():
-            raise RuntimeError(
-                "run_failure_cause_migration_backup_already_exists"
+        else:
+            failure_backup_path = Path(
+                f"{sqlite_db_path(db_path)}.pre-run-failure-cause.bak"
             )
-        backup_database(
-            db_path=sqlite_db_path(db_path),
-            backup_path=str(failure_backup_path),
-        )
-        try:
-            _init_run_schema_unlocked(db_path)
-        except Exception:
-            restore_database(
-                backup_path=str(failure_backup_path),
+            if failure_backup_path.exists():
+                raise RuntimeError(
+                    "run_failure_cause_migration_backup_already_exists"
+                )
+            backup_database(
                 db_path=sqlite_db_path(db_path),
+                backup_path=str(failure_backup_path),
             )
-            raise
+            try:
+                _init_run_schema_unlocked(db_path)
+            except Exception:
+                restore_database(
+                    backup_path=str(failure_backup_path),
+                    db_path=sqlite_db_path(db_path),
+                )
+                raise
+        from api.run_execution_migrations import (
+            migrate_run_execution_recovery_with_backup,
+        )
+
+        migrate_run_execution_recovery_with_backup(
+            db_path=sqlite_db_path(db_path)
+        )
 
 
 def _ensure_baseline_origin_column(
@@ -837,8 +843,14 @@ def create_or_replay_run(
             return RunCreationAcceptance(**created, idempotent_replay=False)
     except RunCreationConflict:
         raise
-    except sqlite3.Error as exc:
-        raise RunCreationConflict("run_idempotency_unavailable") from exc
+    except Exception as exc:
+        from api.run_execution_models import RunExecutionConflict
+
+        if isinstance(exc, RunExecutionConflict):
+            raise RunCreationConflict("run_idempotency_unavailable") from exc
+        if isinstance(exc, sqlite3.Error):
+            raise RunCreationConflict("run_idempotency_unavailable") from exc
+        raise
     finally:
         if connection is not None:
             connection.close()
@@ -1215,12 +1227,28 @@ def run_finalization_fence_is_current(
     run_id: str,
     segment_id: str,
     expected_state_version: int,
+    owner_handle,
     db_path: str | None = None,
 ) -> bool:
     """Return whether the exact running run/segment finalization fence is current."""
     init_run_schema(db_path)
     conn = _connect(db_path)
     try:
+        from api.run_execution_repository import (
+            run_execution_owner_fence_is_current,
+        )
+
+        if (
+            owner_handle.run_id != run_id
+            or owner_handle.segment_id != segment_id
+        ):
+            return False
+        if not run_execution_owner_fence_is_current(
+            conn,
+            owner_handle,
+            expected_phase="finalization",
+        ):
+            return False
         row = conn.execute(
             """
             SELECT 1
@@ -1256,6 +1284,7 @@ def finalize_run_transaction(
     delivery_status: str,
     evidence_entries: list[Any],
     failure_cause: RunFailureCauseWrite | None = None,
+    owner_handle=None,
     db_path: str | None = None,
     review_status: str = "not_required",
     research_packets: list[Any] | None = None,
@@ -1277,6 +1306,14 @@ def finalize_run_transaction(
         raise RunFailureCauseConflict(
             "run_failure_cause_transition_invalid"
         )
+    if allowed_previous_statuses == {"running"}:
+        if owner_handle is None:
+            raise RunFailureCauseConflict("run_execution_owner_required")
+    elif allowed_previous_statuses == {"pending"}:
+        if owner_handle is not None:
+            raise RunFailureCauseConflict("run_execution_owner_forbidden")
+    else:
+        raise RunFailureCauseConflict("run_execution_owner_transition_invalid")
     if execution_status == "failed" and failure_cause is None:
         raise RunFailureCauseConflict("run_failure_cause_required")
     if execution_status != "failed" and failure_cause is not None:
@@ -1299,6 +1336,39 @@ def finalize_run_transaction(
     placeholders = ", ".join("?" for _ in allowed_previous_statuses)
     try:
         with conn:
+            owner_phase = None
+            if owner_handle is not None:
+                from api.run_execution_repository import (
+                    run_execution_owner_fence_is_current,
+                )
+
+                if (
+                    owner_handle.run_id != run_id
+                    or owner_handle.segment_id != segment_id
+                ):
+                    return False
+                for candidate_phase in ("execution", "finalization"):
+                    if run_execution_owner_fence_is_current(
+                        conn,
+                        owner_handle,
+                        expected_phase=candidate_phase,
+                    ):
+                        owner_phase = candidate_phase
+                        break
+                if owner_phase is None:
+                    return False
+                if (
+                    execution_status in {"completed", "completed_with_fallback"}
+                    and owner_phase != "finalization"
+                ):
+                    return False
+                if failure_cause is not None:
+                    if failure_cause.code in {"run_timeout", "cancelled"}:
+                        if failure_cause.phase != owner_phase:
+                            return False
+                    elif failure_cause.code == "run_finalization_failed":
+                        if owner_phase != "finalization":
+                            return False
             cursor = conn.execute(
                 f"""
                 UPDATE research_runs_v2
@@ -1471,6 +1541,18 @@ def finalize_run_transaction(
                     raise RunFailureCauseConflict(
                         "run_failure_cause_conflict"
                     ) from exc
+            if owner_handle is not None:
+                from api.run_execution_repository import close_run_execution_owner
+
+                if not close_run_execution_owner(
+                    conn,
+                    owner_handle,
+                    expected_phase=owner_phase,
+                    closed_at=now,
+                ):
+                    raise RunFailureCauseConflict(
+                        "run_execution_owner_close_failed"
+                    )
             return True
     finally:
         conn.close()
@@ -1513,6 +1595,10 @@ def transition_run(
     if execution_status == "failed" or "failed" in allowed_previous_statuses:
         raise RunFailureCauseConflict(
             "run_failure_cause_transition_invalid"
+        )
+    if execution_status == "running" or "running" in allowed_previous_statuses:
+        raise RunFailureCauseConflict(
+            "run_execution_owner_transition_invalid"
         )
 
     updates = ["state_version = state_version + 1", "updated_at = ?"]

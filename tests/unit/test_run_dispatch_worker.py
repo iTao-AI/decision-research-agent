@@ -7,6 +7,7 @@ import pytest
 from api.run_dispatch_repository import get_run_dispatch
 from api.run_dispatch_worker import RunDispatchWorker, bounded_dispatch_error_code
 from api.run_repository import create_run
+from tests.run_execution_helpers import activate_run_execution
 
 
 WORKER_ID = "dispatch_worker_00000000000000000000000000000001"
@@ -31,9 +32,11 @@ async def test_run_once_claims_oldest_and_schedules_once(tmp_path):
     finally:
         connection.close()
     scheduled = []
+    boot_id = activate_run_execution(db_path=db_path)
     worker = RunDispatchWorker(
         db_path=db_path,
         scheduler=scheduled.append,
+        boot_id=boot_id,
         worker_id=WORKER_ID,
     )
 
@@ -50,9 +53,11 @@ async def test_dispatch_run_targets_requested_run(tmp_path):
     first = create_run(db_path=db_path, thread_id="thread-1", query="first")
     second = create_run(db_path=db_path, thread_id="thread-2", query="second")
     scheduled = []
+    boot_id = activate_run_execution(db_path=db_path)
     worker = RunDispatchWorker(
         db_path=db_path,
         scheduler=scheduled.append,
+        boot_id=boot_id,
         worker_id=WORKER_ID,
     )
 
@@ -73,9 +78,11 @@ async def test_scheduler_failure_releases_claim_without_sensitive_text(
     def fail_scheduler(_claim):
         raise RuntimeError("credential=/private/token")
 
+    boot_id = activate_run_execution(db_path=db_path)
     worker = RunDispatchWorker(
         db_path=db_path,
         scheduler=fail_scheduler,
+        boot_id=boot_id,
         worker_id=WORKER_ID,
         lease_seconds=30,
         poll_seconds=0.01,
@@ -99,9 +106,11 @@ async def test_third_scheduler_failure_terminalizes_dispatch(tmp_path):
     def fail_scheduler(_claim):
         raise RuntimeError("raw provider failure")
 
+    boot_id = activate_run_execution(db_path=db_path)
     worker = RunDispatchWorker(
         db_path=db_path,
         scheduler=fail_scheduler,
+        boot_id=boot_id,
         worker_id=WORKER_ID,
     )
 
@@ -126,9 +135,11 @@ async def test_wake_runs_pending_dispatch_and_stop_terminates_loop(tmp_path):
         claims.append(claim)
         scheduled.set()
 
+    boot_id = activate_run_execution(db_path=db_path)
     worker = RunDispatchWorker(
         db_path=db_path,
         scheduler=scheduler,
+        boot_id=boot_id,
         worker_id=WORKER_ID,
         poll_seconds=60,
     )
@@ -165,9 +176,12 @@ async def test_wake_between_empty_claim_and_wait_is_not_lost(tmp_path, monkeypat
 
     monkeypatch.setattr(worker_module, "_claim_in_thread", claim_adapter)
     scheduled = asyncio.Event()
+    create_run(db_path=db_path, thread_id="thread-bootstrap", query="bootstrap")
+    boot_id = activate_run_execution(db_path=db_path)
     worker = RunDispatchWorker(
         db_path=db_path,
         scheduler=lambda _claim: scheduled.set(),
+        boot_id=boot_id,
         worker_id=WORKER_ID,
         poll_seconds=60,
     )
@@ -200,9 +214,13 @@ async def test_run_forever_survives_sqlite_error_with_bounded_log(
         return None
 
     monkeypatch.setattr(worker_module, "claim_run_dispatch", fail_then_empty)
+    db_path = str(tmp_path / "tasks.db")
+    create_run(db_path=db_path, thread_id="thread-bootstrap", query="bootstrap")
+    boot_id = activate_run_execution(db_path=db_path)
     worker = RunDispatchWorker(
-        db_path=str(tmp_path / "tasks.db"),
+        db_path=db_path,
         scheduler=lambda _claim: None,
+        boot_id=boot_id,
         worker_id=WORKER_ID,
         poll_seconds=0.01,
     )

@@ -414,6 +414,25 @@ post-v0.1.6 kernel.
 - Completed implementation history is retained in Git. Active public-neutral
   project plans remain in the curated Superpowers workspace.
 
+### Crash-safe startup convergence
+
+The unreleased recovery slice adds a process-lifetime DB-scoped exclusive
+writer gate, startup-only convergence for application-owned running state, and
+an explicit authenticated one-hop replacement. The original source becomes
+immutable failed; replacement creates a new run, not resume. There is no
+automatic retry, checkpoint replay, heartbeat scanner, exactly-once external
+effect, production HA, or live-provider claim.
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python \
+  scripts/run_execution_recovery_proof.py check
+```
+
+This provider-free real-process proof includes execution/finalization
+`SIGKILL`, stale-owner fencing, keyed replay, migration restore, and old-source
+rollback verification. It does not publish a release; release remains on hold.
+See the [operator runbook](docs/operations/run-execution-recovery.md).
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).

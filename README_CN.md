@@ -374,6 +374,25 @@ PYTHON_DOTENV_DISABLED=1 python scripts/evidence_gated_loop_gate.py check
 strict success、生产可靠性或 v0.1.7 已发布；不可变的 v0.1.6 release 不包含这一
 post-v0.1.6 kernel。
 
+### Crash-safe startup convergence
+
+未发布的 recovery slice 增加 process-lifetime DB-scoped exclusive writer
+gate、application-owned `running` 状态的 startup-only convergence，以及显式、
+认证、one-hop replacement。原 source 会成为 immutable failed；replacement
+创建 new run, not resume。它没有 automatic retry、checkpoint replay、
+heartbeat scanner、外部 side effect exactly-once、production HA 或
+live-provider 成功 claim。
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python \
+  scripts/run_execution_recovery_proof.py check
+```
+
+该 provider-free real-process proof 覆盖 execution/finalization `SIGKILL`、
+stale-owner fencing、keyed replay、migration restore 与 old-source rollback
+verification。它不发布 release；release 继续 hold。操作边界见
+[runbook](docs/operations/run-execution-recovery.md)。
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).

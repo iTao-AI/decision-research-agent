@@ -237,3 +237,29 @@ snapshot and may create a new publication revision.
 |---|---|
 | 2026-05-19 | Initial state-machine document |
 | 2026-06-26 | Replaced removed coordinator/workspace model with canonical run, review, verification, and delivery state machines |
+
+## Crash-Safe Startup And Replacement
+
+```text
+pending + pending dispatch
+  -> atomic start: running + active current-boot owner
+  -> normal terminal transaction: terminal run + closed exact owner
+
+running + previous-boot active owner
+  -> startup-only convergence
+  -> immutable failed source + interrupted owner
+     execution -> execution/execution_error
+     finalization -> finalization/run_finalization_failed
+
+immutable failed eligible source + explicit keyed POST
+  -> accepted one-hop replacement (pending + pending dispatch)
+```
+
+The process-lifetime DB-scoped exclusive writer gate is acquired before
+migration/boot/worker mutation and released only after tracked-task drain.
+Writer contention and unsupported locking fail closed. A stale generation
+cannot start, change phase, or finalize after a new boot wins.
+
+Replacement is a new run, not resume. `accepted is not started, completed, or
+successful`; post-commit wake is best effort. There is no heartbeat monitoring,
+periodic scanner, automatic retry, automatic resume, or second recovery hop.

@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Crash-safe startup convergence and explicit replacement
+
+- Added a process-lifetime DB-scoped exclusive writer gate, private boot/owner
+  fencing, and startup-only convergence of abandoned application-owned
+  `running` state.
+- Added authenticated, idempotent, one-hop replacement creation: the source is
+  immutable failed and recovery creates a new run, not resume.
+- Added a provider-free real-process, migration, replay, stale-writer, and
+  rollback proof at
+  `python scripts/run_execution_recovery_proof.py check`.
+- Release remains on hold. This is not automatic retry/resume, exactly-once
+  execution or side effects, heartbeat monitoring, production HA,
+  live-provider success, business impact, or a v0.1.7 release.
+
 ### Evidence-Gated Loop Kernel
 
 - Added a provider-free offline verification kernel for three reviewed DRA

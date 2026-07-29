@@ -41,3 +41,17 @@ do not.
 The application database owns these identities as business facts. LangGraph
 checkpoint configuration and LangSmith trace correlation do not replace the
 ResearchRun ledger.
+
+## Interruption And Replacement Identity
+
+A boot generation is private process-generation authority. Each newly running
+`run_id` receives one exact owner fence bound to its initial `segment_id`.
+Startup-only convergence never revives that identity: the original source
+becomes immutable failed with either `execution/execution_error` or
+`finalization/run_finalization_failed`.
+
+`POST /api/runs/{source_run_id}/retries` creates a new run identity and one-hop
+lineage. The source and replacement keep the exact immutable thread, query,
+profile/version, and canonical scope, but they remain distinct executions.
+Recovery acceptance is not execution success, and existing status/result
+schemas expose neither boot/owner identity nor lineage.

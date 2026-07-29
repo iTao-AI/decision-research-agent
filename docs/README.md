@@ -108,6 +108,20 @@ external evaluation of the public contract surface.
 - [Real-Source Proof](evidence/real-source-proof.md) and
   [JSON report](evidence/real-source-proof.json) — bounded proof and limitations.
 
+## Crash-Safe Run Recovery
+
+- [Operator Runbook](operations/run-execution-recovery.md) — single-writer
+  startup, migration, diagnostics, explicit replacement, and rollback.
+- [Architecture](architecture.md), [API](reference/api-contract.md),
+  [Data Models](reference/data-models.md), and
+  [State Machines](reference/state-machines.md) — current authorities.
+- [Approved Spec](superpowers/specs/2026-07-28-crash-safe-agent-run-recovery-v1-design.md)
+  and
+  [Approved Implementation Plan](superpowers/plans/2026-07-29-crash-safe-startup-convergence-v1-implementation-plan.md)
+  — retained public-neutral design and implementation record.
+- Canonical provider-free proof:
+  `python scripts/run_execution_recovery_proof.py check`.
+
 ## Release
 
 - [v0.1.6 Release Notes](releases/v0.1.6.md) — current supported surface,

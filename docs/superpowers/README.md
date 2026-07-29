@@ -18,3 +18,12 @@ solely because they are complete.
 
 Private rationale, raw prompts, transcripts, local paths, generated review
 artifacts, and tool-specific restore data never belong in this directory.
+
+## Current Crash-Safe Recovery Records
+
+- [Approved design](specs/2026-07-28-crash-safe-agent-run-recovery-v1-design.md)
+- [Approved implementation plan](plans/2026-07-29-crash-safe-startup-convergence-v1-implementation-plan.md)
+- [Current operator runbook](../operations/run-execution-recovery.md)
+
+The spec and plan are implementation records; current code, tests, ADRs,
+reference contracts, and the runbook remain authoritative.

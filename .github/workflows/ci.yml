@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
@@ -51,6 +53,16 @@ jobs:
         run: python scripts/run_dispatch_reconciliation_proof.py check
       - name: Run failure cause proof
         run: python scripts/run_failure_cause_proof.py check
+      - name: Verify crash-safe rollback source identity
+        env:
+          ROLLBACK_REVISION: bfd744a5611c7673d9385a45bed0131d6cb47655
+        run: |
+          git cat-file -e "$ROLLBACK_REVISION^{commit}"
+          git archive --format=tar "$ROLLBACK_REVISION" >/dev/null
+      - name: Run crash-safe execution recovery proof
+        env:
+          PYTHON_DOTENV_DISABLED: '1'
+        run: python scripts/run_execution_recovery_proof.py check
       - name: Run secure local runtime proof
         env:
           PYTHON_DOTENV_DISABLED: '1'

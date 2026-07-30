@@ -932,7 +932,7 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
 
     assert "v0.1.5 Release Notes" in current_discovery
     assert "v0.1.6 Release Notes" in current_discovery
-    assert "Decision Research Agent v0.1.7 release preparation includes" in (
+    assert "Decision Research Agent v0.1.8 release preparation includes" in (
         current_discovery
     )
 

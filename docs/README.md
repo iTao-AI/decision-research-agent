@@ -124,7 +124,10 @@ external evaluation of the public contract surface.
 
 ## Release
 
-- [v0.1.7 Release Notes](releases/v0.1.7.md) — current supported surface,
+- [v0.1.8 Release Notes](releases/v0.1.8.md) — current tool-safety, SELECT-only
+  database authority, bounded output/time, dependency closure, migration,
+  rollback, verification, and explicit limits.
+- [v0.1.7 Release Notes](releases/v0.1.7.md) — historical supported surface,
   including evidence-governed reliability, privacy-safe observation, strict
   citation, Loop verification, crash-safe recovery, migration, rollback,
   verification, and explicit limits.

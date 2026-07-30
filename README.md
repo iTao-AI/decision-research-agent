@@ -366,6 +366,7 @@ decision while canonical episode hold decisions remain historical evidence.
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
 - [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.8 Release Notes](docs/releases/v0.1.8.md)
 - [v0.1.7 Release Notes](docs/releases/v0.1.7.md)
 - [v0.1.6 Release Notes](docs/releases/v0.1.6.md)
 - [v0.1.5 Release Notes](docs/releases/v0.1.5.md)
@@ -390,8 +391,12 @@ decision while canonical episode hold decisions remain historical evidence.
   billing, downstream acceptance, hosted deployment, or an SLA.
 - The source launcher supports credential-free use only on the direct-loopback
   boundary. Compose is authenticated, publishes backend/MySQL only on
-  `127.0.0.1`, and uses required secrets, health declarations, warning-level
-  logging, dropped capabilities, and `no-new-privileges`. The image retains its
+  `127.0.0.1`, and separates MySQL server, one-shot SELECT-only principal
+  bootstrap, and backend credentials. Backend startup attests exact grants;
+  custom queries are capped at 100 rows, 65,536 bytes, and a configurable
+  100–30,000 ms statement limit (default 5,000 ms). It also uses required
+  secrets, health declarations, warning-level logging, dropped capabilities,
+  and `no-new-privileges`. The image retains its
   root UID for existing-volume compatibility. Deterministic proof, the required
   Docker lane, and any later tag-archive smoke are separate local evidence;
   none claims TLS, identity/RBAC, hosted deployment, non-root operation, or

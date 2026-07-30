@@ -22,10 +22,10 @@ def test_external_services_reference_matches_resilience_contract() -> None:
         "`timeout=120`",
         "3 total attempts",
         "terminal on timeout",
-        "SELECT-only textual guard",
+        "one-statement SELECT/CTE",
         "table whitelist",
-        "least-privilege read-only account",
-        "not an AST or parameter-binding authority",
+        "SELECT-only principal",
+        "not a general SQL parser or parameter-binding authority",
     ]
     forbidden = [
         "~99%",

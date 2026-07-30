@@ -17,6 +17,14 @@ authority. The immutable `v0.1.6` release and
 raw observation `args`, `result`, and `error` semantics are intentionally
 hardened in place and first included in the v0.1.7 release preparation.
 
+v0.1.8 extends the same closed failure projection to affected MySQL, RAGFlow,
+Tavily, harness, research-execution, and task-callback paths. Logger records,
+ToolMessage/model context, monitor, telemetry, canonical artifacts, REST, and
+WebSocket surfaces receive only a stable code, fixed message, bounded
+exception class, and validated correlation fields. Raw exception text,
+`args`, stack traces, and hostile string conversion never become an observation
+or business artifact authority.
+
 ## Monitor envelope
 
 Valid exact identity and timestamp values remain unchanged. Invalid values

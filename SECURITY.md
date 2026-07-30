@@ -1,6 +1,7 @@
 # Security Policy
 
-Decision Research Agent v0.1.7 release preparation includes context reliability,
+Decision Research Agent v0.1.8 release preparation includes tool safety and
+runtime closure alongside context reliability,
 privacy-safe observation, strict citation, evidence-gated offline verification,
 crash-safe single-node recovery, the FastAPI backend, Python Tool
 Client, single-node application-owned run dispatch reconciliation, durable
@@ -43,8 +44,11 @@ credentials are not emitted by info-level WebSocket transport logging. Compose
 requires non-empty `API_SECRET`, `MYSQL_ROOT_PASSWORD`, and `MYSQL_PASSWORD`,
 and publishes backend/MySQL only on host `127.0.0.1`; the backend's
 container-internal `0.0.0.0` listener remains inside the Compose network. The
-MySQL root credential value is delivered only to MySQL; the backend explicitly
-receives an empty `MYSQL_ROOT_PASSWORD` value.
+MySQL root credential value is delivered only to MySQL and the one-shot
+bootstrap; the backend explicitly receives an empty `MYSQL_ROOT_PASSWORD`
+value. The bootstrap reconciles an exact schema-scoped SELECT-only principal
+before backend startup, and the backend attests `CURRENT_USER()` plus exact
+grants before creating its pool.
 
 Compose declares bounded backend/MySQL health, drops all backend capabilities,
 and enables `no-new-privileges`. The health response proves process/service
@@ -59,7 +63,7 @@ independent feature-owned gates. The deterministic proof and required Docker
 lane use no live provider, model, or tool request and do not certify hosted or
 production security.
 
-Required v0.1.7 evaluation remains provider-free and does not run a provider,
+Required v0.1.8 evaluation remains provider-free and does not run a provider,
 search, `observe-live`, or remote LangSmith tracing. Generic search source
 admission accepts canonical public HTTPS URLs before model, monitor, or
 Evidence observation, and existing generic researcher and network-search
@@ -80,4 +84,4 @@ input.
 - Public bug bounty commitments.
 - Hosted service operations outside this repository.
 - Hosted console operations, RBAC, multi-tenant, or multi-replica deployments
-  that are not part of the v0.1.7 release preparation.
+  that are not part of the v0.1.8 release preparation.

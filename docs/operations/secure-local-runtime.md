@@ -37,6 +37,13 @@ mysql:   127.0.0.1:3306:3306
 Container-internal listening does not widen the host publication boundary.
 Neither launch form is a supported hosted deployment.
 
+Compose has three credential authorities: `mysql` owns the server/root
+credential, the one-shot `mysql-bootstrap` service owns principal
+reconciliation, and `backend` receives only the application credential. The
+backend does not start until bootstrap completes and then attests
+`CURRENT_USER()` plus the exact schema-scoped SELECT-only grant before creating
+its pool.
+
 ## Prepare Required Values
 
 The default repository `.env` workflow remains supported. Generate the three
@@ -106,7 +113,10 @@ docker compose ps
 ```
 
 Missing or empty required values fail closed during `docker compose config
---quiet`. MySQL must become healthy before the backend starts. The backend
+--quiet`. MySQL must become healthy and `mysql-bootstrap` must complete
+successfully before the backend starts. The bootstrap reruns on every Compose
+startup so retained MySQL volumes converge to the same application principal
+contract. The backend
 image declares an exact stdlib health check whose successful response is:
 
 ```json
@@ -115,7 +125,14 @@ image declares an exact stdlib health check whose successful response is:
 
 The response establishes bounded backend process/service identity. It is not
 evidence of database, provider, model, tool, or research readiness. MySQL
-readiness remains a separate Compose dependency condition.
+readiness and bootstrap completion remain separate Compose dependency
+conditions.
+
+Custom SQL is limited to one scanner-approved SELECT/CTE statement. The
+runtime tightens the depth-zero numeric LIMIT to 101, returns at most 100 rows,
+fetches in batches of 25, and caps serialized output at 65,536 bytes with
+stable truncation metadata. `MYSQL_QUERY_TIMEOUT_MS` defaults to `5000` and
+accepts only `100` through `30000`; invalid values fail before execution.
 
 The backend container uses warning-level Uvicorn logging. Compose also applies:
 
@@ -168,16 +185,19 @@ TLS, identity, RBAC, hosted security, or production deployment.
 ## Migration And Existing Volumes
 
 This container hardening adds no database migration, table change, volume
-format change, dependency change, or application API change. Existing named
+format change, or application API change. Existing named
 SQLite/MySQL, `data`, and `output` volumes remain compatible; the retained root
 UID avoids an unapproved ownership migration.
 
 Compose users must replace legacy or example API and database values with
 explicit local values before configuration succeeds. Changing
-`MYSQL_ROOT_PASSWORD` or `MYSQL_PASSWORD` in an env file does not by itself
-rotate credentials inside an already initialized MySQL data volume; use a
-database-authorized rotation procedure and update the application value as one
-coordinated operation.
+`MYSQL_ROOT_PASSWORD` for an initialized MySQL volume still requires an
+operator-owned database-authorized rotation procedure. Updating
+`MYSQL_PASSWORD` and restarting the Compose stack causes the one-shot bootstrap
+to apply that application credential and revoke any broadened application
+grant before backend readiness. Inspect a failed bootstrap without printing
+its environment, correct the authorized credential/grant source, and rerun it;
+do not bypass the dependency or grant attestation.
 
 A future non-root image requires a separate migration proving fresh and
 existing volume ownership, preserved sentinel data, custom mounts, restart,
@@ -195,6 +215,10 @@ Use normal version-controlled configuration rollback, then re-run `docker
 compose config --quiet` before restart. No database or volume-format rollback
 is required by this change, and rollback does not generate, rotate, persist,
 or destroy key material.
+
+Rollback must restore an approved source/lock/configuration tuple. Do not
+weaken the SELECT-only grant, bypass attestation, or move a published tag to
+make an older backend start against incompatible authority.
 
 Do not add `-v` unless discarding the task's named volumes is explicit and the
 data has been handled separately. Do not use `docker system prune` or a global

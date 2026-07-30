@@ -12,6 +12,7 @@ from api.strict_citation_finalization import StrictCitationFinalizationError
 from tools.error_projection import classify_exception, safe_log
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 # 默认任务超时（秒）— 30 分钟
 DEFAULT_TASK_TIMEOUT = int(os.getenv("AGENT_TASK_TIMEOUT_SECONDS", "1800"))

@@ -567,10 +567,10 @@ async def test_callback_shapes_share_task_settlement_boundary(callback_kind, cap
     assert callback_tasks[0] is not task
     assert callback_tasks[0].done()
     if callback_kind == "sync-raising":
-        assert "Task termination callback failed" in caplog.text
-        assert "callback failed" in caplog.text
+        assert "task_termination_callback_failed code=execution_failed" in caplog.text
+        assert "callback failed" not in caplog.text
     else:
-        assert "Task termination callback failed" not in caplog.text
+        assert "task_termination_callback_failed" not in caplog.text
 
 
 @pytest.mark.asyncio

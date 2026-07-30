@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import secrets
 import subprocess
+import textwrap
 import time
 from typing import Any
 
@@ -230,6 +231,166 @@ def _wait_health(client: ProofHttpClient, deadline: ActiveDeadline) -> None:
             time.sleep(deadline.remaining(1))
 
 
+def _root_sql(
+    project: ManagedComposeProject,
+    sql: str,
+    deadline: ActiveDeadline,
+) -> str:
+    mysql_id = _container_id(project, "mysql", deadline)
+    return _project_output(
+        project,
+        (
+            "docker",
+            "exec",
+            mysql_id,
+            "sh",
+            "-c",
+            'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --batch --skip-column-names --silent --execute "$1"',
+            "dra-v018-test",
+            sql,
+        ),
+        deadline,
+    )
+
+
+def _backend_mysql_probe(
+    project: ManagedComposeProject,
+    deadline: ActiveDeadline,
+) -> dict[str, Any]:
+    backend_id = _container_id(project, "backend", deadline)
+    script = textwrap.dedent(
+        """
+        import json
+        import os
+
+        import mysql.connector
+
+        from tools import mysql_tools
+        from tools.db_connection import MySQLConnectionManager
+
+        os.environ["MYSQL_QUERY_TIMEOUT_MS"] = "100"
+        manager = MySQLConnectionManager(mysql_tools.get_db_config())
+        assert manager.create_pool() == ""
+
+        connection = manager.get_connection()
+        assert not isinstance(connection, str)
+        cursor = connection.cursor()
+        cursor.execute("SELECT CURRENT_USER()")
+        principal = cursor.fetchone()[0]
+        cursor.execute("SHOW GRANTS FOR CURRENT_USER()")
+        grants = [row[0] for row in cursor.fetchall()]
+        manager._validate_grants((principal,), [(grant,) for grant in grants])
+        cursor.close()
+        manager.release_connection(connection)
+
+        unsafe = (
+            "SELECT 1; SELECT 2",
+            "SELECT 1 /* comment */",
+            "DELIMITER // SELECT 1",
+            "RENAME TABLE v018_fixture TO v018_renamed",
+            "CALL v018_probe()",
+            "SELECT 1 INTO OUTFILE '/tmp/x'",
+            "SELECT GET_LOCK('x', 1)",
+            "SELECT * FROM v018_fixture FOR UPDATE",
+        )
+        assert all(
+            "code=unsafe_statement" in mysql_tools.execute_sql_query.invoke({"query": query})
+            for query in unsafe
+        )
+
+        connection_ids = []
+        for _ in range(20):
+            result = mysql_tools.execute_sql_query.invoke({"query": "SELECT CONNECTION_ID()"})
+            connection_ids.append(result.splitlines()[1])
+        assert len(set(connection_ids)) <= 5
+
+        row_result = mysql_tools.execute_sql_query.invoke(
+            {"query": "SELECT id FROM v018_fixture ORDER BY id LIMIT 101"}
+        )
+        assert "reason=row_limit" in row_result
+        assert "rows_returned=100" in row_result
+        byte_result = mysql_tools.execute_sql_query.invoke(
+            {"query": "SELECT payload FROM v018_fixture ORDER BY id LIMIT 80"}
+        )
+        assert "reason=byte_limit" in byte_result
+        assert len(byte_result.encode("utf-8")) <= 65_536
+
+        denied = []
+        connection = manager.get_connection()
+        assert not isinstance(connection, str)
+        cursor = connection.cursor()
+        for statement in (
+            "INSERT INTO v018_fixture VALUES (2048, 'blocked')",
+            "UPDATE v018_fixture SET payload = 'blocked' WHERE id = 1",
+            "DELETE FROM v018_fixture WHERE id = 1",
+            "CREATE TABLE v018_created(id INT)",
+            "DROP TABLE v018_fixture",
+            "ALTER TABLE v018_fixture ADD COLUMN blocked INT",
+            "RENAME TABLE v018_fixture TO v018_renamed",
+            "CALL v018_probe()",
+            "SELECT * FROM v018_other.v018_other",
+        ):
+            try:
+                cursor.execute(statement)
+            except mysql.connector.Error as exc:
+                denied.append(exc.errno)
+            else:
+                raise AssertionError("mutation_or_cross_schema_was_not_denied")
+        cursor.close()
+        manager.release_connection(connection)
+        assert set(denied).issubset({1142, 1370}) and len(denied) == 9
+
+        timeout_result = mysql_tools.execute_sql_query.invoke(
+            {
+                "query": (
+                    "SELECT SUM(CRC32(CONCAT(a.payload,b.payload,c.payload))) "
+                    "FROM v018_fixture a CROSS JOIN v018_fixture b "
+                    "CROSS JOIN v018_fixture c"
+                )
+            }
+        )
+        assert "code=timeout" in timeout_result
+        assert "max_execution_ms=100" in timeout_result
+        assert "1" in mysql_tools.execute_sql_query.invoke({"query": "SELECT 1"})
+
+        class CancellationProbe(BaseException):
+            pass
+
+        for failure in (RuntimeError("probe"), CancellationProbe("probe")):
+            connection = manager.get_connection()
+            assert not isinstance(connection, str)
+            cursor = connection.cursor()
+            try:
+                raise failure
+            except BaseException:
+                pass
+            finally:
+                assert mysql_tools._close(cursor, connection) is None
+            connection = manager.get_connection()
+            assert not isinstance(connection, str)
+            manager.release_connection(connection)
+
+        print(json.dumps({
+            "byte_count": len(byte_result.encode("utf-8")),
+            "denied_count": len(denied),
+            "grant_count": len(grants),
+            "pool_queries": len(connection_ids),
+            "pool_unique_connections": len(set(connection_ids)),
+            "principal": principal,
+            "row_limit": 100,
+            "timeout_ms": 100,
+        }, sort_keys=True))
+        """
+    )
+    return json.loads(
+        _project_output(
+            project,
+            ("docker", "exec", backend_id, "python", "-c", script),
+            deadline,
+        )
+    )
+
+
 def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> None:
     assert subprocess.run(
         ["git", "status", "--porcelain=v1", "--untracked-files=all"],
@@ -312,6 +473,89 @@ def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> N
             remaining_seconds=active.remaining,
         )
         _wait_health(client, active)
+        _root_sql(
+            project,
+            """
+            SET SESSION cte_max_recursion_depth = 2048;
+            DROP TABLE IF EXISTS decision_research.v018_fixture;
+            CREATE TABLE decision_research.v018_fixture (
+              id INT PRIMARY KEY,
+              payload TEXT NOT NULL
+            );
+            INSERT INTO decision_research.v018_fixture (id, payload)
+            WITH RECURSIVE seq(n) AS (
+              SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 1024
+            )
+            SELECT n, REPEAT(CHAR(65 + MOD(n, 26)), 1024) FROM seq;
+            CREATE DATABASE IF NOT EXISTS v018_other;
+            DROP TABLE IF EXISTS v018_other.v018_other;
+            CREATE TABLE v018_other.v018_other (id INT PRIMARY KEY);
+            INSERT INTO v018_other.v018_other VALUES (1);
+            DROP PROCEDURE IF EXISTS decision_research.v018_probe;
+            CREATE PROCEDURE decision_research.v018_probe() SELECT 1;
+            """,
+            active,
+        )
+        before_hash = _root_sql(
+            project,
+            (
+                "SELECT COUNT(*), SUM(id), SUM(CRC32(payload)) "
+                "FROM decision_research.v018_fixture"
+            ),
+            active,
+        )
+        mysql_probe = _backend_mysql_probe(project, active)
+        assert mysql_probe == {
+            "byte_count": mysql_probe["byte_count"],
+            "denied_count": 9,
+            "grant_count": 2,
+            "pool_queries": 20,
+            "pool_unique_connections": mysql_probe["pool_unique_connections"],
+            "principal": "decision_research@%",
+            "row_limit": 100,
+            "timeout_ms": 100,
+        }
+        assert 0 < mysql_probe["byte_count"] <= 65_536
+        assert 1 <= mysql_probe["pool_unique_connections"] <= 5
+        assert _root_sql(
+            project,
+            (
+                "SELECT COUNT(*), SUM(id), SUM(CRC32(payload)) "
+                "FROM decision_research.v018_fixture"
+            ),
+            active,
+        ) == before_hash
+
+        _root_sql(
+            project,
+            "GRANT INSERT ON decision_research.* TO 'decision_research'@'%'",
+            active,
+        )
+        project._invoke(("stop", "backend"), active, compose=True)
+        project._invoke(
+            ("up", "--force-recreate", "mysql-bootstrap"),
+            active,
+            compose=True,
+        )
+        project.start_fixture_backend(active)
+        backend_port = _loopback_port(project, "backend", 8000, active)
+        client = ProofHttpClient(
+            port=backend_port,
+            api_key=api_secret,
+            remaining_seconds=active.remaining,
+        )
+        _wait_health(client, active)
+        converged_probe = _backend_mysql_probe(project, active)
+        assert converged_probe["grant_count"] == 2
+        assert converged_probe["principal"] == "decision_research@%"
+        assert _root_sql(
+            project,
+            (
+                "SELECT COUNT(*), SUM(id), SUM(CRC32(payload)) "
+                "FROM decision_research.v018_fixture"
+            ),
+            active,
+        ) == before_hash
         thread_id = "fixture-thread-" + secrets.token_hex(16)
         request_bytes = json.dumps(
             {

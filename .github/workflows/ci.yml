@@ -31,6 +31,10 @@ jobs:
             constraints.txt
       - name: Install dependencies
         run: pip install --no-deps -r constraints.txt
+      - name: Verify dependency compatibility and runtime imports
+        run: |
+          python scripts/check_dependency_compatibility.py
+          python -c "import greenlet, sqlalchemy, langchain_community, langchain_classic; print('DRA_RUNTIME_IMPORT_CLOSURE_OK')"
       - name: Run deterministic Agent evaluation gate
         env:
           PYTHON_DOTENV_DISABLED: '1'
@@ -91,6 +95,10 @@ jobs:
             constraints.txt
       - name: Install dependencies
         run: pip install --no-deps -r constraints.txt
+      - name: Verify dependency compatibility and runtime imports
+        run: |
+          python scripts/check_dependency_compatibility.py
+          python -c "import greenlet, sqlalchemy, langchain_community, langchain_classic; print('DRA_RUNTIME_IMPORT_CLOSURE_OK')"
       - name: Run required container tests
         env:
           PYTHON_DOTENV_DISABLED: '1'

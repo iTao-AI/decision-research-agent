@@ -156,7 +156,9 @@ async def test_lifespan_unconditionally_starts_and_stops_dispatch_worker(
 
     db_path = str(tmp_path / "tasks.db")
     monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", db_path)
+    monkeypatch.setattr(server, "output_dir", tmp_path / "output")
     migrations = []
+    startup_events = []
 
     class FakeWorker:
         def __init__(self):
@@ -176,7 +178,13 @@ async def test_lifespan_unconditionally_starts_and_stops_dispatch_worker(
     monkeypatch.setattr(
         server,
         "migrate_with_backup",
-        lambda **kwargs: migrations.append(kwargs) or {},
+        lambda **kwargs: startup_events.append("migration") or migrations.append(kwargs) or {},
+    )
+    monkeypatch.setattr(
+        server,
+        "initialize_mysql_runtime",
+        lambda: startup_events.append("mysql_attestation"),
+        raising=False,
     )
     monkeypatch.setattr(
         server,
@@ -203,6 +211,7 @@ async def test_lifespan_unconditionally_starts_and_stops_dispatch_worker(
         assert server.app.state.run_dispatch_worker_task is not None
 
     assert worker.stopped is True
+    assert startup_events[0] == "mysql_attestation"
     assert migrations == [
         {
             "db_path": db_path,

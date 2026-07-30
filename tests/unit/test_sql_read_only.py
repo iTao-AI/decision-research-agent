@@ -87,6 +87,10 @@ def test_numeric_outer_limits_are_preserved_or_tightened(query, suffix):
         "SELECT * FROM items LIMIT value",
         "SELECT * FROM items LIMIT 1 LIMIT 2",
         "SELECT * FROM items LIMIT 1, 2 OFFSET 3",
+        "SELECT 1 LIMIT +999",
+        "SELECT 1 LIMIT -999",
+        "SELECT 1 LIMIT .999",
+        "SELECT @x := 1",
     ],
 )
 def test_unsafe_or_ambiguous_queries_fail_closed_before_execution(query):

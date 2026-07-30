@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
+from threading import Condition
 
 import mysql.connector
 from mysql.connector import Error, pooling
 
-from tools.error_projection import classify_exception, projection_for
+from tools.error_projection import ErrorProjection, classify_exception, projection_for
 
 
 class PrivilegeContractError(RuntimeError):
@@ -21,7 +22,8 @@ class MySQLConnectionManager:
         self.config = config
         self._pool = None
         self.state = "uninitialized"
-        self._failure_message: str | None = None
+        self._failure_projection: ErrorProjection | None = None
+        self._condition = Condition()
 
     def _required_config_present(self) -> bool:
         return all(self.config.get(key) for key in ("user", "password", "host", "port", "database"))
@@ -74,23 +76,33 @@ class MySQLConnectionManager:
         if required_select not in observed or not set(observed).issubset(allowed):
             raise PrivilegeContractError("grant set")
 
-    def create_pool(self) -> str:
-        if self.state == "ready":
-            return ""
-        if self.state == "failed":
-            return self._failure_message or projection_for(
-                operation="mysql_connect", code="execution_failed"
-            ).message
-        if not self._required_config_present():
-            self.state = "failed"
-            self._failure_message = projection_for(
-                operation="mysql_connect", code="configuration_missing"
-            ).message
-            return self._failure_message
-        self.state = "attesting"
+    def configure_and_create_pool(self, config: dict) -> ErrorProjection | None:
+        with self._condition:
+            if self.state == "uninitialized":
+                self.config = config
+        return self.create_pool()
+
+    def create_pool(self) -> ErrorProjection | None:
+        with self._condition:
+            while self.state == "attesting":
+                self._condition.wait()
+            if self.state == "ready":
+                return None
+            if self.state == "failed":
+                return self._failure_projection or projection_for(
+                    operation="mysql_connect", code="execution_failed"
+                )
+            if not self._required_config_present():
+                self.state = "failed"
+                self._failure_projection = projection_for(
+                    operation="mysql_connect", code="configuration_missing"
+                )
+                self._condition.notify_all()
+                return self._failure_projection
+            self.state = "attesting"
         try:
             self._attest_read_only_principal()
-            self._pool = pooling.MySQLConnectionPool(
+            pool = pooling.MySQLConnectionPool(
                 pool_name="decision_research_pool",
                 pool_size=5,
                 pool_reset_session=True,
@@ -98,29 +110,37 @@ class MySQLConnectionManager:
                 **self.config,
             )
         except PrivilegeContractError:
-            self.state = "failed"
-            self._failure_message = projection_for(
+            projection = projection_for(
                 operation="mysql_connect", code="privilege_contract_invalid"
-            ).message
-            return self._failure_message
+            )
         except BaseException as exc:
-            self.state = "failed"
             if not isinstance(exc, Exception):
+                with self._condition:
+                    self.state = "failed"
+                    self._condition.notify_all()
                 raise
-            self._failure_message = classify_exception(exc, operation="mysql_connect").message
-            return self._failure_message
-        self.state = "ready"
-        return ""
+            projection = classify_exception(exc, operation="mysql_connect")
+        else:
+            with self._condition:
+                self._pool = pool
+                self.state = "ready"
+                self._condition.notify_all()
+            return None
+        with self._condition:
+            self.state = "failed"
+            self._failure_projection = projection
+            self._condition.notify_all()
+        return projection
 
     def get_connection(self):
         if self._pool is None:
-            if self._failure_message is not None:
-                return self._failure_message
-            return projection_for(operation="mysql_connect", code="configuration_missing").message
+            if self._failure_projection is not None:
+                return self._failure_projection
+            return projection_for(operation="mysql_connect", code="configuration_missing")
         try:
             return self._pool.get_connection()
         except Exception as exc:
-            return classify_exception(exc, operation="mysql_connect").message
+            return classify_exception(exc, operation="mysql_connect")
 
     def release_connection(self, connection) -> None:
         if connection is not None:

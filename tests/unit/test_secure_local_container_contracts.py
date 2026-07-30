@@ -174,9 +174,11 @@ def test_mysql_bootstrap_script_is_fail_closed_and_secret_safe() -> None:
     assert script.startswith("#!/bin/sh\nset -eu\n")
     assert "set -x" not in script
     assert "[!A-Za-z0-9_]*" in script
-    assert "CREATE USER IF NOT EXISTS" in script
-    assert "ALTER USER" in script
-    assert "REVOKE ALL PRIVILEGES, GRANT OPTION" in script
+    assert "DROP USER IF EXISTS" in script
+    assert "CREATE USER" in script
+    assert "CREATE USER IF NOT EXISTS" not in script
+    assert "ALTER USER" not in script
+    assert "REVOKE ALL PRIVILEGES, GRANT OPTION" not in script
     assert "GRANT SELECT ON" in script
     assert "--batch --skip-column-names --silent" in script
     assert '-p"$MYSQL_ROOT_PASSWORD"' not in script

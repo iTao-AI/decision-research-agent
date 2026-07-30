@@ -93,8 +93,11 @@ provider SLA。
   在连接获取前拒绝 comment、多 statement 与危险 read-side construct。
 - Custom query 最多返回 100 rows，以 25-row batch 获取，serialized output
   不超过 65,536 bytes；row/byte/time truncation metadata 为稳定 contract。
-- Compose 通过 one-shot bootstrap 收敛 exact schema-scoped SELECT-only
-  principal，backend 在创建 pool 前校验 `CURRENT_USER()` 与 `SHOW GRANTS`。
+- Compose 通过 one-shot bootstrap drop/recreate application account，清除
+  direct grants、grant option、granted/default roles，再收敛 exact
+  schema-scoped SELECT-only principal；backend 在 runtime admission 前校验
+  `CURRENT_USER()` 与 `SHOW GRANTS`，成功后才创建 pool。完全未配置 MySQL
+  时保持 optional runtime，partial configuration 则 startup fail closed。
   External MySQL operator 必须提供同等 exact grant。
 - 该 scanner is not a general SQL parser or parameter-binding authority。模型
   生成的任意 SQL 仍应视为不可信输入；数据库 SELECT-only principal 是最终

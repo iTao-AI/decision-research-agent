@@ -54,10 +54,11 @@ class TestRAGFlowTools:
         ragflow_tools = importlib.import_module("tools.ragflow_tools")
 
         result = ragflow_tools.get_assistant_list.invoke({"dummy_arg": ""})
-        assert "错误" in result
+        assert "code=configuration_missing" in result
         ragflow_tools.monitor.report_end.assert_called_once_with(
             "ragflow_assistant_list",
             error="configuration_missing",
+            error_type="Exception",
         )
 
     def test_create_ask_delete_reports_resource_not_found(self):
@@ -69,15 +70,17 @@ class TestRAGFlowTools:
             return_value=None,
         ):
             result = ragflow_tools.create_ask_delete.invoke({
-                "assistant_name": "missing",
+                "assistant_name": "DRA_ERROR_EGRESS_SENTINEL",
                 "question": "question",
             })
 
-        assert result == "没有找到name:missing的聊天助手！"
+        assert "code=resource_not_found" in result
         ragflow_tools.monitor.report_end.assert_called_once_with(
             "ragflow_question",
             error="resource_not_found",
+            error_type="Exception",
         )
+        assert "DRA_ERROR_EGRESS_SENTINEL" not in result
 
     def test_create_ask_delete_session_cleanup_on_success(self):
         """正常流程应删除 session"""

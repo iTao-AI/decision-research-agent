@@ -19,8 +19,7 @@ MYSQL_PWD=$MYSQL_ROOT_PASSWORD mysql \
   --user=root \
   --batch --skip-column-names --silent <<SQL
 SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES';
-CREATE USER IF NOT EXISTS \`$MYSQL_USER\`@'%' IDENTIFIED BY '$escaped_password';
-ALTER USER \`$MYSQL_USER\`@'%' IDENTIFIED BY '$escaped_password';
-REVOKE ALL PRIVILEGES, GRANT OPTION FROM \`$MYSQL_USER\`@'%';
+DROP USER IF EXISTS \`$MYSQL_USER\`@'%';
+CREATE USER \`$MYSQL_USER\`@'%' IDENTIFIED BY '$escaped_password';
 GRANT SELECT ON \`$MYSQL_DATABASE\`.* TO \`$MYSQL_USER\`@'%';
 SQL

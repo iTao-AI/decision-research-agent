@@ -122,6 +122,8 @@ def _scan(sql: str) -> list[_Token]:
             raise SqlAdmissionError("unsafe_statement")
         if char == ";":
             raise SqlAdmissionError("unsafe_statement")
+        if char == "@" or sql.startswith(":=", i):
+            raise SqlAdmissionError("unsafe_statement")
         if char == "(":
             tokens.append(_Token(char, i, i + 1, depth))
             depth += 1
@@ -192,6 +194,12 @@ def _bounded_limit(sql: str, tokens: list[_Token]) -> str:
     elif len(tail) == 3 and tail[1].value == "OFFSET" and tail[2].value.isdigit():
         pass
     else:
+        raise SqlAdmissionError("unsafe_statement")
+    clause = [top[index], *tail]
+    for left, right in zip(clause, clause[1:]):
+        if sql[left.end : right.start].strip():
+            raise SqlAdmissionError("unsafe_statement")
+    if sql[clause[-1].end :].strip():
         raise SqlAdmissionError("unsafe_statement")
     count = int(count_token.value)
     if count <= 101:

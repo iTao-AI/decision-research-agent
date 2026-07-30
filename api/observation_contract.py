@@ -8,22 +8,13 @@ import re
 
 from agent.token_tracking import TokenUsageData
 from api.thread_ids import validate_thread_id
+from tools.error_projection import RUNTIME_ERROR_CODES
 
 
 MAX_OBSERVATION_COUNT = 10_000
 MONITOR_SCHEMA = "dra.monitor-event.v1"
 TELEMETRY_SCHEMA = "dra.telemetry-record.v1"
-ERROR_CODES = frozenset(
-    {
-        "configuration_missing",
-        "input_invalid",
-        "resource_not_found",
-        "timeout",
-        "service_unavailable",
-        "execution_failed",
-        "retryable_failure",
-    }
-)
+ERROR_CODES = RUNTIME_ERROR_CODES
 ERROR_TYPE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$", re.ASCII)
 ISO_TIMESTAMP_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"

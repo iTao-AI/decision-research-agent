@@ -30,7 +30,7 @@ def _mock_dependencies():
 
 def _setup_pool_mock(mock_cm, mock_conn, mock_cursor=None):
     """统一设置 ConnectionManager mock: pool 创建成功，返回连接"""
-    mock_cm.create_pool.return_value = ""
+    mock_cm.configure_and_create_pool.return_value = None
     mock_cm.get_connection.return_value = mock_conn
     if mock_cursor is None:
         mock_cursor = MagicMock()
@@ -53,7 +53,7 @@ class TestMySQLToolsWithConnectionManager:
             from tools.mysql_tools import list_sql_tables
             result = list_sql_tables.invoke({})
 
-            mock_cm.create_pool.assert_called_once()
+            mock_cm.configure_and_create_pool.assert_called_once()
             mock_cm.get_connection.assert_called_once()
             assert "users" in result
             assert "orders" in result
@@ -61,12 +61,15 @@ class TestMySQLToolsWithConnectionManager:
     def test_list_sql_tables_missing_config_returns_error(self):
         """配置缺失时 list_sql_tables 应返回错误字符串"""
         with patch("tools.mysql_tools._connection_manager") as mock_cm:
-            mock_cm.create_pool.return_value = "错误：MySQL 配置缺失"
+            from tools.error_projection import projection_for
+            mock_cm.configure_and_create_pool.return_value = projection_for(
+                operation="mysql_connect", code="configuration_missing"
+            )
 
             from tools.mysql_tools import list_sql_tables
             result = list_sql_tables.invoke({})
 
-            assert "错误" in result
+            assert "code=configuration_missing" in result
 
     def test_get_table_data_uses_connection_manager(self):
         """get_table_data 应使用 ConnectionManager"""
@@ -108,17 +111,20 @@ class TestMySQLToolsWithConnectionManager:
     def test_execute_sql_query_returns_error_string_not_exception(self):
         """execute_sql_query 应返回错误字符串而非抛异常"""
         with patch("tools.mysql_tools._connection_manager") as mock_cm:
-            mock_cm.create_pool.return_value = "错误：连接失败"
+            from tools.error_projection import projection_for
+            mock_cm.configure_and_create_pool.return_value = projection_for(
+                operation="mysql_connect", code="service_unavailable"
+            )
 
             from tools.mysql_tools import execute_sql_query
             result = execute_sql_query.invoke({"query": "SELECT * FROM users"})
 
-            assert "错误" in result
+            assert "code=service_unavailable" in result
 
     def test_error_returns_string_not_raises(self):
         """所有工具函数应返回错误字符串，不抛异常"""
         with patch("tools.mysql_tools._connection_manager") as mock_cm:
-            mock_cm.create_pool.return_value = ""
+            mock_cm.configure_and_create_pool.return_value = None
             mock_cm.get_connection.side_effect = Exception("DB error")
 
             from tools.mysql_tools import execute_sql_query

@@ -3108,8 +3108,10 @@ EXPECTED_DESCRIPTOR_ROWS = [
     ["subclass or other object", "present=True, kind=opaque"],
 ]
 EXPECTED_OBSERVATION_ERROR_CODES = {
-    "configuration_missing", "input_invalid", "resource_not_found", "timeout",
-    "service_unavailable", "execution_failed", "retryable_failure",
+    "configuration_missing", "input_invalid", "unsafe_statement",
+    "resource_not_found", "timeout", "service_unavailable",
+    "privilege_contract_invalid", "pool_exhausted", "cleanup_failed",
+    "execution_failed", "retryable_failure",
 }
 EXPECTED_OBSERVATION_ALIASES = {
     "agent_name": ({"main"}, "unknown_agent"),

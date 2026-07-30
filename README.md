@@ -392,7 +392,9 @@ decision while canonical episode hold decisions remain historical evidence.
 - The source launcher supports credential-free use only on the direct-loopback
   boundary. Compose is authenticated, publishes backend/MySQL only on
   `127.0.0.1`, and separates MySQL server, one-shot SELECT-only principal
-  bootstrap, and backend credentials. Backend startup attests exact grants;
+  bootstrap, and backend credentials. A runtime with no MySQL variables remains
+  optional; partial configuration fails startup closed. Fully configured
+  backend startup attests exact grants before opening runtime admission;
   custom queries are capped at 100 rows, 65,536 bytes, and a configurable
   100–30,000 ms statement limit (default 5,000 ms). It also uses required
   secrets, health declarations, warning-level logging, dropped capabilities,

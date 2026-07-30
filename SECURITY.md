@@ -46,9 +46,11 @@ and publishes backend/MySQL only on host `127.0.0.1`; the backend's
 container-internal `0.0.0.0` listener remains inside the Compose network. The
 MySQL root credential value is delivered only to MySQL and the one-shot
 bootstrap; the backend explicitly receives an empty `MYSQL_ROOT_PASSWORD`
-value. The bootstrap reconciles an exact schema-scoped SELECT-only principal
-before backend startup, and the backend attests `CURRENT_USER()` plus exact
-grants before creating its pool.
+value. The bootstrap drops and recreates the application account so direct
+grants, grant options, granted roles, and default roles are removed, then
+establishes an exact schema-scoped SELECT-only principal before backend
+startup. The backend attests `CURRENT_USER()` plus exact grants before creating
+its pool.
 
 Compose declares bounded backend/MySQL health, drops all backend capabilities,
 and enables `no-new-privileges`. The health response proves process/service

@@ -29,6 +29,15 @@ RAGFLOW_ASSISTANT_LIST = "ragflow_assistant_list"
 RAGFLOW_QUESTION = "ragflow_question"
 
 
+def _project_failure(tool_name: str, projection) -> str:
+    monitor.report_end(
+        tool_name,
+        error=projection.code,
+        error_type=projection.error_type,
+    )
+    return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
+
+
 def _load_ragflow_env() -> Tuple[Optional[str], Optional[str]]:
     """Load RAGFlow environment variables."""
     return os.getenv("RAGFLOW_API_KEY"), os.getenv("RAGFLOW_API_URL")
@@ -108,11 +117,10 @@ def get_assistant_list(dummy_arg: str = "") -> str:
     api_key, base_url = _load_ragflow_env()
 
     if not api_key or not base_url:
-        monitor.report_end(
+        return _project_failure(
             RAGFLOW_ASSISTANT_LIST,
-            error="configuration_missing",
+            projection_for(operation="ragflow", code="configuration_missing"),
         )
-        return "错误：RAGFlow 环境变量未配置（需设置 RAGFLOW_API_URL 与 RAGFLOW_API_KEY）"
 
     try:
         def _do_list():
@@ -135,30 +143,11 @@ def get_assistant_list(dummy_arg: str = "") -> str:
         monitor.report_end(RAGFLOW_ASSISTANT_LIST, output)
         return output
 
-    except TimeoutError as e:
-        projection = classify_exception(e, operation="ragflow")
-        monitor.report_end(
-            RAGFLOW_ASSISTANT_LIST,
-            error="timeout",
-            error_type=type(e).__name__,
-        )
-        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
-    except (ConnectionError, OSError) as e:
-        monitor.report_end(
-            RAGFLOW_ASSISTANT_LIST,
-            error="service_unavailable",
-            error_type=type(e).__name__,
-        )
-        projection = classify_exception(e, operation="ragflow")
-        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     except Exception as e:
-        monitor.report_end(
+        return _project_failure(
             RAGFLOW_ASSISTANT_LIST,
-            error="execution_failed",
-            error_type=type(e).__name__,
+            classify_exception(e, operation="ragflow"),
         )
-        projection = classify_exception(e, operation="ragflow")
-        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
 
 
 @tool
@@ -171,11 +160,10 @@ def create_ask_delete(assistant_name: str, question: str) -> str:
     api_key, base_url = _load_ragflow_env()
 
     if not api_key or not base_url:
-        monitor.report_end(
+        return _project_failure(
             RAGFLOW_QUESTION,
-            error="configuration_missing",
+            projection_for(operation="ragflow", code="configuration_missing"),
         )
-        return "错误：RAGFlow 环境变量未配置（需设置 RAGFLOW_API_URL 与 RAGFLOW_API_KEY）"
 
     session = None
     chat = None
@@ -188,11 +176,10 @@ def create_ask_delete(assistant_name: str, question: str) -> str:
 
         chat = _retry_with_timeout(_find_chat, service_name="ragflow-find-chat")
         if chat is None:
-            monitor.report_end(
+            return _project_failure(
                 RAGFLOW_QUESTION,
-                error="resource_not_found",
+                projection_for(operation="ragflow", code="resource_not_found"),
             )
-            return f"没有找到name:{assistant_name}的聊天助手！"
 
         # Step 2: Create a temporary session
         def _create_session():
@@ -214,30 +201,11 @@ def create_ask_delete(assistant_name: str, question: str) -> str:
         monitor.report_end(RAGFLOW_QUESTION, full_answer)
         return full_answer
 
-    except TimeoutError as e:
-        projection = classify_exception(e, operation="ragflow")
-        monitor.report_end(
-            RAGFLOW_QUESTION,
-            error="timeout",
-            error_type=type(e).__name__,
-        )
-        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
-    except (ConnectionError, OSError) as e:
-        monitor.report_end(
-            RAGFLOW_QUESTION,
-            error="service_unavailable",
-            error_type=type(e).__name__,
-        )
-        projection = classify_exception(e, operation="ragflow")
-        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     except Exception as e:
-        monitor.report_end(
+        return _project_failure(
             RAGFLOW_QUESTION,
-            error="execution_failed",
-            error_type=type(e).__name__,
+            classify_exception(e, operation="ragflow"),
         )
-        projection = classify_exception(e, operation="ragflow")
-        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     finally:
         if session and hasattr(session, "id") and chat is not None:
             try:

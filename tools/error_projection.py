@@ -18,9 +18,10 @@ ErrorCode = Literal[
     "pool_exhausted",
     "cleanup_failed",
     "execution_failed",
+    "retryable_failure",
 ]
 
-_CODES = {
+RUNTIME_ERROR_CODES = frozenset({
     "configuration_missing",
     "input_invalid",
     "unsafe_statement",
@@ -31,7 +32,8 @@ _CODES = {
     "pool_exhausted",
     "cleanup_failed",
     "execution_failed",
-}
+    "retryable_failure",
+})
 _OPERATIONS = {
     "mysql_connect": "Database connection",
     "mysql_query": "Database query",
@@ -54,6 +56,7 @@ _CODE_MESSAGES = {
     "pool_exhausted": "has no connection available.",
     "cleanup_failed": "could not release a resource safely.",
     "execution_failed": "failed.",
+    "retryable_failure": "encountered a retryable failure.",
 }
 _ERROR_TYPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
@@ -65,7 +68,7 @@ class ErrorProjection:
     error_type: str
 
     def __post_init__(self) -> None:
-        if self.code not in _CODES:
+        if self.code not in RUNTIME_ERROR_CODES:
             raise ValueError("unsupported error code")
         if not self.message or len(self.message.encode("utf-8")) > 160:
             raise ValueError("invalid fixed error message")

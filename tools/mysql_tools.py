@@ -11,7 +11,7 @@ from langchain_core.tools import tool
 
 from api.monitor import monitor
 from tools.db_connection import MySQLConnectionManager
-from tools.error_projection import classify_exception, projection_for
+from tools.error_projection import ErrorProjection, classify_exception, projection_for
 from tools.sql_read_only import ReadOnlyStatement, SqlAdmissionError, admit_read_only_query
 
 
@@ -34,18 +34,35 @@ def get_db_config():
 
 
 _connection_manager = MySQLConnectionManager(get_db_config())
-_pool_created = False
 
 
-def _ensure_pool():
-    global _pool_created
-    if not _pool_created:
-        _connection_manager.config = get_db_config()
-        error = _connection_manager.create_pool()
-        if error:
-            return error
-        _pool_created = True
-    return ""
+class MySQLRuntimeStartupError(RuntimeError):
+    """Fixed-message startup failure for configured MySQL runtimes."""
+
+
+def _mysql_configuration_state(config: dict) -> str:
+    values = [config.get(key) for key in ("user", "password", "host", "port", "database")]
+    if not any(values):
+        return "absent"
+    return "complete" if all(values) else "partial"
+
+
+def _ensure_pool() -> ErrorProjection | None:
+    return _connection_manager.configure_and_create_pool(get_db_config())
+
+
+def initialize_mysql_runtime() -> None:
+    config = get_db_config()
+    state = _mysql_configuration_state(config)
+    if state == "absent":
+        return
+    projection = (
+        projection_for(operation="mysql_connect", code="configuration_missing")
+        if state == "partial"
+        else _connection_manager.configure_and_create_pool(config)
+    )
+    if projection is not None:
+        raise MySQLRuntimeStartupError(projection.message)
 
 
 def _validate_sql_type_with_category(query: str) -> tuple[str, str | None]:
@@ -68,9 +85,9 @@ def _validate_table_name_with_category(table_name: str) -> tuple[str, str | None
         return "错误：无效的表名", "input_invalid"
     if re.search(r"[;'\"\\/\s]", table_name):
         return "错误：无效的表名", "input_invalid"
-    whitelist, error = _get_table_whitelist()
-    if error and not whitelist:
-        return error, "service_unavailable"
+    whitelist, projection = _get_table_whitelist()
+    if projection is not None and not whitelist:
+        return _error_result(projection), projection.code
     if table_name not in whitelist:
         return "错误：无效的表名", "input_invalid"
     return "", None
@@ -144,40 +161,40 @@ def _close(cursor, connection) -> BaseException | None:
     return cleanup_error
 
 
-def _get_table_whitelist() -> tuple[list[str], str]:
-    error = _ensure_pool()
-    if error:
-        return [], error
+def _get_table_whitelist() -> tuple[list[str], ErrorProjection | None]:
+    projection = _ensure_pool()
+    if projection is not None:
+        return [], projection
     connection = None
     cursor = None
     primary = None
     tables: list[str] = []
     try:
         connection = _connection_manager.get_connection()
-        if isinstance(connection, str):
+        if isinstance(connection, ErrorProjection):
             return [], connection
         cursor = connection.cursor()
         cursor.execute("SHOW TABLES")
         tables = [row[0] for row in cursor.fetchall()]
     except BaseException as exc:
         primary = exc
-    cleanup = _close(cursor, connection if not isinstance(connection, str) else None)
+    cleanup = _close(cursor, connection if not isinstance(connection, ErrorProjection) else None)
     failure = primary or cleanup
     if failure is not None:
         if not isinstance(failure, Exception):
             raise failure
-        return [], classify_exception(failure, operation="mysql_query").message
-    return tables, ""
+        return [], classify_exception(failure, operation="mysql_query")
+    return tables, None
 
 
 @tool
 def list_sql_tables() -> str:
     """Query all available tables in the database."""
     monitor.report_tool(MYSQL_LIST_TABLES)
-    tables, error = _get_table_whitelist()
-    if error:
-        monitor.report_end(MYSQL_LIST_TABLES, error="service_unavailable")
-        return error
+    tables, projection = _get_table_whitelist()
+    if projection is not None:
+        monitor.report_end(MYSQL_LIST_TABLES, error=projection.code, error_type=projection.error_type)
+        return _error_result(projection)
     result = f"可用数据表:{','.join(tables)}" if tables else "数据库没有查询到任何表！"
     monitor.report_end(MYSQL_LIST_TABLES, result)
     return result
@@ -189,34 +206,50 @@ def get_table_data(table_name: str) -> str:
     monitor.report_tool(MYSQL_TABLE_DATA, {"table_name": table_name})
     error, code = _validate_table_name_with_category(table_name)
     if error:
-        monitor.report_end(MYSQL_TABLE_DATA, error=code)
-        return error
-    return execute_sql_query.invoke({"query": f"SELECT * FROM `{table_name}` LIMIT 100"})
+        projection = projection_for(operation="mysql_query", code=code)
+        monitor.report_end(
+            MYSQL_TABLE_DATA,
+            error=projection.code,
+            error_type=projection.error_type,
+        )
+        return _error_result(projection)
+    result, projection = _execute_query(f"SELECT * FROM `{table_name}` LIMIT 100")
+    if projection is not None:
+        monitor.report_end(MYSQL_TABLE_DATA, error=projection.code, error_type=projection.error_type)
+    else:
+        monitor.report_end(MYSQL_TABLE_DATA, result)
+    return result
 
 
 @tool
 def execute_sql_query(query: str) -> str:
     """Execute one admitted, bounded, read-only custom SQL query."""
     monitor.report_tool(MYSQL_QUERY)
+    result, projection = _execute_query(query)
+    if projection is not None:
+        monitor.report_end(MYSQL_QUERY, error=projection.code, error_type=projection.error_type)
+    else:
+        monitor.report_end(MYSQL_QUERY, result)
+    return result
+
+
+def _execute_query(query: str) -> tuple[str, ErrorProjection | None]:
     try:
         statement = admit_read_only_query(query, environ=os.environ)
     except SqlAdmissionError as exc:
         projection = projection_for(operation="mysql_query", code=exc.code)
-        monitor.report_end(MYSQL_QUERY, error=projection.code)
-        return _error_result(projection)
-    error = _ensure_pool()
-    if error:
-        monitor.report_end(MYSQL_QUERY, error="service_unavailable")
-        return error
+        return _error_result(projection), projection
+    projection = _ensure_pool()
+    if projection is not None:
+        return _error_result(projection), projection
     connection = None
     cursor = None
     primary: BaseException | None = None
     result: str | None = None
     try:
         connection = _connection_manager.get_connection()
-        if isinstance(connection, str):
-            monitor.report_end(MYSQL_QUERY, error="service_unavailable")
-            return connection
+        if isinstance(connection, ErrorProjection):
+            return _error_result(connection), connection
         cursor = connection.cursor(buffered=False)
         cursor.execute(statement.sql)
         if not cursor.description:
@@ -236,13 +269,12 @@ def execute_sql_query(query: str) -> str:
                 result = _serialize_bounded(columns, rows, statement)
     except BaseException as exc:
         primary = exc
-    cleanup = _close(cursor, connection if not isinstance(connection, str) else None)
+    cleanup = _close(cursor, connection if not isinstance(connection, ErrorProjection) else None)
     if primary is not None:
         if not isinstance(primary, Exception):
             raise primary
         projection = classify_exception(primary, operation="mysql_query")
-        monitor.report_end(MYSQL_QUERY, error=projection.code, error_type=projection.error_type)
-        return _error_result(projection, timeout_ms=statement.timeout_ms)
+        return _error_result(projection, timeout_ms=statement.timeout_ms), projection
     if cleanup is not None:
         if not isinstance(cleanup, Exception):
             raise cleanup
@@ -251,8 +283,6 @@ def execute_sql_query(query: str) -> str:
             code="cleanup_failed",
             error_type=type(cleanup).__name__,
         )
-        monitor.report_end(MYSQL_QUERY, error=projection.code, error_type=projection.error_type)
-        return _error_result(projection)
+        return _error_result(projection), projection
     assert result is not None
-    monitor.report_end(MYSQL_QUERY, result)
-    return result
+    return result, None

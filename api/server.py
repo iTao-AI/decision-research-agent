@@ -81,6 +81,7 @@ from api.run_dispatch_repository import (
     start_run_dispatch,
 )
 from api.run_dispatch_worker import RunDispatchWorker
+from tools.mysql_tools import initialize_mysql_runtime
 from api.run_execution_models import (
     RunExecutionConflict,
     RunExecutionOwnerBox,
@@ -283,6 +284,7 @@ async def lifespan(app: FastAPI):
     app.state.run_execution_boot_id = None
     _emit_runtime_access_warning_once(app)
     try:
+        await asyncio.to_thread(initialize_mysql_runtime)
         configured_db_path = application_db_path()
         writer = acquire_run_execution_writer(db_path=configured_db_path)
         output_dir.mkdir(exist_ok=True)

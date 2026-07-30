@@ -52,7 +52,7 @@ def invoke(monkeypatch, cursor, query="SELECT id FROM items"):
     from tools import mysql_tools
 
     connection = FakeConnection(cursor)
-    monkeypatch.setattr(mysql_tools, "_ensure_pool", lambda: "")
+    monkeypatch.setattr(mysql_tools, "_ensure_pool", lambda: None)
     monkeypatch.setattr(mysql_tools._connection_manager, "get_connection", lambda: connection)
     monkeypatch.setattr(mysql_tools._connection_manager, "release_connection", lambda value: value.close())
     monkeypatch.setattr(mysql_tools.monitor, "report_tool", lambda *args, **kwargs: None)
@@ -66,7 +66,7 @@ def test_validation_happens_before_pool_or_connection(monkeypatch):
     from tools import mysql_tools
 
     touched = []
-    monkeypatch.setattr(mysql_tools, "_ensure_pool", lambda: touched.append(True) or "")
+    monkeypatch.setattr(mysql_tools, "_ensure_pool", lambda: touched.append(True) or None)
     monkeypatch.setattr(mysql_tools.monitor, "report_tool", lambda *args, **kwargs: None)
     monkeypatch.setattr(mysql_tools.monitor, "report_end", lambda *args, **kwargs: None)
 
@@ -165,3 +165,69 @@ def test_base_exception_releases_cursor_and_wrapper_once(monkeypatch):
     with pytest.raises(KeyboardInterrupt):
         invoke(monkeypatch, cursor)
     assert cursor.close_count == 1
+
+
+@pytest.mark.parametrize(
+    ("projection_code", "expected"),
+    [
+        ("configuration_missing", "configuration_missing"),
+        ("privilege_contract_invalid", "privilege_contract_invalid"),
+        ("pool_exhausted", "pool_exhausted"),
+    ],
+)
+def test_manager_projection_reaches_tool_result_and_monitor(monkeypatch, projection_code, expected):
+    from tools import mysql_tools
+    from tools.error_projection import projection_for
+
+    projection = projection_for(operation="mysql_connect", code=projection_code)
+    monkeypatch.setattr(mysql_tools, "_ensure_pool", lambda: projection)
+    monkeypatch.setattr(mysql_tools.monitor, "report_tool", lambda *args, **kwargs: None)
+    reports = []
+    monkeypatch.setattr(mysql_tools.monitor, "report_end", lambda *args, **kwargs: reports.append((args, kwargs)))
+
+    result = mysql_tools.execute_sql_query.invoke({"query": "SELECT 1"})
+
+    assert f"code={expected}" in result
+    assert reports == [(("mysql_query",), {"error": expected, "error_type": "Exception"})]
+
+
+def test_get_table_data_emits_one_paired_end_on_success(monkeypatch):
+    from tools import mysql_tools
+
+    monkeypatch.setattr(mysql_tools, "_validate_table_name_with_category", lambda value: ("", None))
+    monkeypatch.setattr(mysql_tools, "_execute_query", lambda query: ("id\n1", None))
+    monkeypatch.setattr(mysql_tools.monitor, "report_tool", lambda *args, **kwargs: None)
+    reports = []
+    monkeypatch.setattr(mysql_tools.monitor, "report_end", lambda *args, **kwargs: reports.append((args, kwargs)))
+
+    assert mysql_tools.get_table_data.invoke({"table_name": "items"}) == "id\n1"
+    assert reports == [(("mysql_table_data", "id\n1"), {})]
+
+
+def test_mysql_startup_is_optional_only_when_all_required_config_is_absent(monkeypatch):
+    from tools import mysql_tools
+
+    monkeypatch.setattr(mysql_tools, "get_db_config", lambda: {
+        "user": None, "password": None, "host": None, "port": None, "database": None
+    })
+    touched = []
+    monkeypatch.setattr(
+        mysql_tools._connection_manager,
+        "configure_and_create_pool",
+        lambda config: touched.append(config),
+    )
+
+    assert mysql_tools.initialize_mysql_runtime() is None
+    assert touched == []
+
+
+def test_mysql_startup_fails_closed_on_partial_config(monkeypatch):
+    from tools import mysql_tools
+
+    monkeypatch.setattr(mysql_tools, "get_db_config", lambda: {
+        "user": "reader", "password": None, "host": "mysql", "port": "3306", "database": "db"
+    })
+
+    with pytest.raises(mysql_tools.MySQLRuntimeStartupError) as caught:
+        mysql_tools.initialize_mysql_runtime()
+    assert str(caught.value) == "Database connection is not configured."

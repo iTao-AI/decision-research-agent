@@ -8,6 +8,7 @@ from threading import RLock
 from collections.abc import Awaitable, Callable
 from typing import Any, Dict, Literal
 
+from api.strict_citation_finalization import StrictCitationFinalizationError
 from tools.error_projection import classify_exception, safe_log
 
 logger = logging.getLogger(__name__)
@@ -349,13 +350,21 @@ def _on_task_done(task: asyncio.Task, task_id: str):
                 logger.info("Task %s was cancelled (possibly due to timeout)", task_id)
             else:
                 projection = classify_exception(exc, operation="task_callback")
-                safe_log(
-                    logger,
-                    logging.ERROR,
-                    event="task_failed",
-                    projection=projection,
-                    correlation=task_id,
-                )
+                if isinstance(exc, StrictCitationFinalizationError):
+                    logger.error(
+                        "task_failed code=%s error_type=%s correlation=%s",
+                        exc.code,
+                        projection.error_type,
+                        task_id,
+                    )
+                else:
+                    safe_log(
+                        logger,
+                        logging.ERROR,
+                        event="task_failed",
+                        projection=projection,
+                        correlation=task_id,
+                    )
     except asyncio.CancelledError:
         logger.info("Task %s was cancelled", task_id)
     except Exception:

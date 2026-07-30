@@ -245,7 +245,7 @@ def _root_sql(
             mysql_id,
             "sh",
             "-c",
-            'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --batch --skip-column-names --silent --execute "$1"',
+            'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot --batch --skip-column-names --silent --execute "$1"',
             "dra-v018-test",
             sql,
         ),

@@ -10,6 +10,9 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
+      MYSQL_USER: ${MYSQL_USER:-decision_research}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-decision_research}
       DECISION_RESEARCH_AGENT_DB_PATH: /app/data/decision_research_agent.db
       DECISION_RESEARCH_AGENT_CHECKPOINT_DB_PATH: /app/data/review_checkpoints.db
       DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL: ${DECISION_RESEARCH_AGENT_ENABLE_DURABLE_HITL:-false}
@@ -22,6 +25,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      mysql-bootstrap:
+        condition: service_completed_successfully
     cap_drop:
       - ALL
     security_opt:
@@ -37,8 +42,6 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-decision_research}
-      MYSQL_USER: ${MYSQL_USER:-decision_research}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
     healthcheck:
       test:
         - CMD-SHELL
@@ -49,6 +52,29 @@ services:
       start_period: 20s
     volumes:
       - mysql_data:/var/lib/mysql
+    networks:
+      - app-network
+
+  mysql-bootstrap:
+    image: mysql:8.0
+    restart: "no"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-decision_research}
+      MYSQL_USER: ${MYSQL_USER:-decision_research}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./scripts/mysql_read_only_bootstrap.sh:/usr/local/bin/mysql_read_only_bootstrap.sh:ro
+    entrypoint:
+      - /bin/sh
+      - /usr/local/bin/mysql_read_only_bootstrap.sh
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - app-network
 

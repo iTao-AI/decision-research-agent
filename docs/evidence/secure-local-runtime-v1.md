@@ -20,8 +20,8 @@ Status: valid deterministic local production-path contract proof.
 | `websocket_invalid_origin_rejected` | passed | `decision_code=origin_not_allowed`<br>`close_code=1008`<br>`run_lookup_observed=false`<br>`connection_observed=false` |
 | `cors_invalid_origin_rejected` | passed | `configuration_code=cors_origin_invalid`<br>`construction_rejected=true` |
 | `cors_empty_secret_remote_origin_rejected` | passed | `configuration_code=cors_origin_requires_authenticated_runtime`<br>`construction_rejected=true` |
-| `compose_loopback_required_secrets` | passed | `backend_host_ip=127.0.0.1`<br>`mysql_host_ip=127.0.0.1`<br>`backend_default_host_port=8000`<br>`mysql_default_host_port=3306`<br>`test_host_ports_parameterized=true`<br>`api_secret_required=true`<br>`mysql_root_password_required=true`<br>`mysql_password_required=true`<br>`backend_root_password_suppressed=true`<br>`service_env_file_parameterized=true` |
-| `container_health_privilege_contract` | passed | `backend_healthcheck_declared=true`<br>`mysql_healthcheck_declared=true`<br>`cap_drop_all_declared=true`<br>`no_new_privileges_declared=true`<br>`uvicorn_log_level=warning`<br>`container_runtime_scope=separate_required_lane` |
+| `compose_loopback_required_secrets` | passed | `backend_host_ip=127.0.0.1`<br>`mysql_host_ip=127.0.0.1`<br>`backend_default_host_port=8000`<br>`mysql_default_host_port=3306`<br>`test_host_ports_parameterized=true`<br>`api_secret_required=true`<br>`mysql_root_password_required=true`<br>`mysql_password_required=true`<br>`backend_root_password_suppressed=true`<br>`service_env_file_parameterized=true`<br>`compose_service_count=3`<br>`credential_authority_separated=true`<br>`bootstrap_completion_required=true` |
+| `container_health_privilege_contract` | passed | `backend_healthcheck_declared=true`<br>`mysql_healthcheck_declared=true`<br>`cap_drop_all_declared=true`<br>`no_new_privileges_declared=true`<br>`bootstrap_cap_drop_all_declared=true`<br>`bootstrap_no_new_privileges_declared=true`<br>`bootstrap_read_only_bind_declared=true`<br>`uvicorn_log_level=warning`<br>`container_runtime_scope=separate_required_lane` |
 
 ## Boundaries
 

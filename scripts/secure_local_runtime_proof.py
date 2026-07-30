@@ -658,9 +658,13 @@ def _observe_container_artifacts() -> list[dict[str, Any]]:
         services = compose["services"]
         backend = services["backend"]
         mysql = services["mysql"]
+        bootstrap = services["mysql-bootstrap"]
     except (KeyError, TypeError, yaml.YAMLError):
         _invalid()
-    if any(type(value) is not dict for value in (compose, services, backend, mysql)):
+    if set(services) != {"backend", "mysql", "mysql-bootstrap"} or any(
+        type(value) is not dict
+        for value in (compose, services, backend, mysql, bootstrap)
+    ):
         _invalid()
 
     backend_ports = backend.get("ports")
@@ -700,10 +704,11 @@ def _observe_container_artifacts() -> list[dict[str, Any]]:
             "MYSQL_ROOT_PASSWORD",
         )
     )
+    bootstrap_environment = bootstrap.get("environment")
     mysql_password_required = (
-        type(mysql_environment) is dict
+        type(bootstrap_environment) is dict
         and _required_interpolation(
-            mysql_environment.get("MYSQL_PASSWORD"),
+            bootstrap_environment.get("MYSQL_PASSWORD"),
             "MYSQL_PASSWORD",
         )
     )
@@ -719,6 +724,9 @@ def _observe_container_artifacts() -> list[dict[str, Any]]:
         type(depends_on) is not dict
         or type(depends_on.get("mysql")) is not dict
         or depends_on["mysql"].get("condition") != "service_healthy"
+        or type(depends_on.get("mysql-bootstrap")) is not dict
+        or depends_on["mysql-bootstrap"].get("condition")
+        != "service_completed_successfully"
     ):
         _invalid()
 
@@ -785,6 +793,22 @@ def _observe_container_artifacts() -> list[dict[str, Any]]:
     no_new_privileges = backend.get("security_opt") == [
         "no-new-privileges:true"
     ]
+    credential_authority_separated = (
+        set(mysql_environment or {}) == {"MYSQL_ROOT_PASSWORD", "MYSQL_DATABASE"}
+        and set(bootstrap_environment or {})
+        == {"MYSQL_ROOT_PASSWORD", "MYSQL_DATABASE", "MYSQL_USER", "MYSQL_PASSWORD"}
+        and set(backend_environment or {}) >= {
+            "MYSQL_ROOT_PASSWORD",
+            "MYSQL_DATABASE",
+            "MYSQL_USER",
+            "MYSQL_PASSWORD",
+        }
+        and backend_environment.get("MYSQL_ROOT_PASSWORD") == ""
+    )
+    bootstrap_volumes = bootstrap.get("volumes")
+    bootstrap_read_only_bind = bootstrap_volumes == [
+        "./scripts/mysql_read_only_bootstrap.sh:/usr/local/bin/mysql_read_only_bootstrap.sh:ro"
+    ]
     _validate_env_template()
     _validate_build_context()
 
@@ -804,6 +828,9 @@ def _observe_container_artifacts() -> list[dict[str, Any]]:
                     backend_root_password_suppressed
                 ),
                 "service_env_file_parameterized": env_file_parameterized,
+                "compose_service_count": len(services),
+                "credential_authority_separated": credential_authority_separated,
+                "bootstrap_completion_required": True,
             },
         ),
         _case(
@@ -813,6 +840,10 @@ def _observe_container_artifacts() -> list[dict[str, Any]]:
                 "mysql_healthcheck_declared": mysql_health,
                 "cap_drop_all_declared": cap_drop,
                 "no_new_privileges_declared": no_new_privileges,
+                "bootstrap_cap_drop_all_declared": bootstrap.get("cap_drop") == ["ALL"],
+                "bootstrap_no_new_privileges_declared": bootstrap.get("security_opt")
+                == ["no-new-privileges:true"],
+                "bootstrap_read_only_bind_declared": bootstrap_read_only_bind,
                 "uvicorn_log_level": uvicorn_log_level,
                 "container_runtime_scope": "separate_required_lane",
             },

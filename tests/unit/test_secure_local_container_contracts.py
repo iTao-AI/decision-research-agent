@@ -99,6 +99,7 @@ def test_compose_declares_secure_local_container_boundary() -> None:
     compose = yaml.safe_load(compose_text)
     backend = compose["services"]["backend"]
     mysql = compose["services"]["mysql"]
+    bootstrap = compose["services"]["mysql-bootstrap"]
 
     assert backend["ports"] == [
         "127.0.0.1:${DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT:-8000}:8000"
@@ -111,7 +112,13 @@ def test_compose_declares_secure_local_container_boundary() -> None:
     )
     assert backend["environment"]["MYSQL_HOST"] == "mysql"
     assert backend["environment"]["MYSQL_ROOT_PASSWORD"] == ""
-    assert backend["depends_on"]["mysql"]["condition"] == "service_healthy"
+    assert backend["depends_on"] == {
+        "mysql": {"condition": "service_healthy"},
+        "mysql-bootstrap": {"condition": "service_completed_successfully"},
+    }
+    assert backend["environment"]["MYSQL_USER"] == "${MYSQL_USER:-decision_research}"
+    assert backend["environment"]["MYSQL_PASSWORD"] == "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
+    assert backend["environment"]["MYSQL_DATABASE"] == "${MYSQL_DATABASE:-decision_research}"
     assert backend["cap_drop"] == ["ALL"]
     assert backend["security_opt"] == ["no-new-privileges:true"]
 
@@ -123,9 +130,23 @@ def test_compose_declares_secure_local_container_boundary() -> None:
             "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"
         ),
         "MYSQL_DATABASE": "${MYSQL_DATABASE:-decision_research}",
+    }
+    assert bootstrap["image"] == "mysql:8.0"
+    assert bootstrap["restart"] == "no"
+    assert bootstrap["depends_on"] == {"mysql": {"condition": "service_healthy"}}
+    assert bootstrap["cap_drop"] == ["ALL"]
+    assert bootstrap["security_opt"] == ["no-new-privileges:true"]
+    assert "ports" not in bootstrap
+    assert bootstrap["networks"] == ["app-network"]
+    assert bootstrap["environment"] == {
+        "MYSQL_ROOT_PASSWORD": "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}",
+        "MYSQL_DATABASE": "${MYSQL_DATABASE:-decision_research}",
         "MYSQL_USER": "${MYSQL_USER:-decision_research}",
         "MYSQL_PASSWORD": "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}",
     }
+    assert bootstrap["volumes"] == [
+        "./scripts/mysql_read_only_bootstrap.sh:/usr/local/bin/mysql_read_only_bootstrap.sh:ro"
+    ]
     assert mysql["healthcheck"] == {
         "test": [
             "CMD-SHELL",
@@ -145,6 +166,23 @@ def test_compose_declares_secure_local_container_boundary() -> None:
     assert "$${MYSQL_ROOT_PASSWORD}" in compose_text
     assert "rootpassword" not in compose_text
     assert "decision_research_password" not in compose_text
+
+
+def test_mysql_bootstrap_script_is_fail_closed_and_secret_safe() -> None:
+    script = (PROJECT_ROOT / "scripts/mysql_read_only_bootstrap.sh").read_text(encoding="utf-8")
+
+    assert script.startswith("#!/bin/sh\nset -eu\n")
+    assert "set -x" not in script
+    assert "[!A-Za-z0-9_]*" in script
+    assert "DROP USER IF EXISTS" in script
+    assert "CREATE USER" in script
+    assert "CREATE USER IF NOT EXISTS" not in script
+    assert "ALTER USER" not in script
+    assert "REVOKE ALL PRIVILEGES, GRANT OPTION" not in script
+    assert "GRANT SELECT ON" in script
+    assert "--batch --skip-column-names --silent" in script
+    assert '-p"$MYSQL_ROOT_PASSWORD"' not in script
+    assert "MYSQL_PWD=$MYSQL_ROOT_PASSWORD" in script
 
 
 def test_environment_template_is_safe_and_non_operational() -> None:

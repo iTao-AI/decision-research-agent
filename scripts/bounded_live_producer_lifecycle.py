@@ -1172,7 +1172,11 @@ def sanitize_compose_projection(
         if type(project_name) is not str or not _PROJECT_RE.fullmatch(project_name):
             raise ValueError
         services = payload.get("services")
-        if type(services) is not dict or set(services) != {"backend", "mysql"}:
+        if type(services) is not dict or set(services) != {
+            "backend",
+            "mysql",
+            "mysql-bootstrap",
+        }:
             raise ValueError
         sanitized_services: dict[str, object] = {}
         specifications = {
@@ -1304,16 +1308,26 @@ def sanitize_compose_projection(
                 safe_service["cap_drop"] = ["ALL"]
                 safe_service["security_opt"] = ["no-new-privileges:true"]
                 depends_on = service.get("depends_on")
-                if depends_on not in (
-                    {"mysql": {"condition": "service_healthy", "required": True}},
-                    {"mysql": {"condition": "service_healthy"}},
+                expected_dependencies = {
+                    "mysql": "service_healthy",
+                    "mysql-bootstrap": "service_completed_successfully",
+                }
+                if type(depends_on) is not dict or set(depends_on) != set(
+                    expected_dependencies
+                ) or any(
+                    type(depends_on[name]) is not dict
+                    or depends_on[name].get("condition") != condition
+                    or set(depends_on[name]) - {"condition", "required", "restart"}
+                    for name, condition in expected_dependencies.items()
                 ):
                     raise ValueError
-                safe_service["depends_on"] = {"mysql": "service_healthy"}
+                safe_service["depends_on"] = expected_dependencies
             else:
                 if service.get("command") is not None:
                     raise ValueError
                 if service.get("image") != "mysql:8.0":
+                    raise ValueError
+                if set(environment) != {"MYSQL_ROOT_PASSWORD", "MYSQL_DATABASE"}:
                     raise ValueError
                 healthcheck = service.get("healthcheck")
                 if healthcheck != {
@@ -1330,6 +1344,98 @@ def sanitize_compose_projection(
                 safe_service["image"] = "mysql:8.0"
                 safe_service["healthcheck"] = "<approved-healthcheck>"
             sanitized_services[service_name] = safe_service
+        bootstrap = services["mysql-bootstrap"]
+        bootstrap_allowed = {
+            "image",
+            "restart",
+            "environment",
+            "depends_on",
+            "volumes",
+            "entrypoint",
+            "cap_drop",
+            "security_opt",
+            "networks",
+            "command",
+        }
+        if type(bootstrap) is not dict or set(bootstrap) - bootstrap_allowed:
+            raise ValueError
+        if bootstrap.get("image") != "mysql:8.0" or bootstrap.get("restart") not in {
+            None,
+            "no",
+        }:
+            raise ValueError
+        bootstrap_environment = bootstrap.get("environment")
+        if type(bootstrap_environment) is not dict or set(bootstrap_environment) != {
+            "MYSQL_ROOT_PASSWORD",
+            "MYSQL_DATABASE",
+            "MYSQL_USER",
+            "MYSQL_PASSWORD",
+        }:
+            raise ValueError
+        bootstrap_depends = bootstrap.get("depends_on")
+        if type(bootstrap_depends) is not dict or set(bootstrap_depends) != {"mysql"}:
+            raise ValueError
+        mysql_dependency = bootstrap_depends["mysql"]
+        if (
+            type(mysql_dependency) is not dict
+            or mysql_dependency.get("condition") != "service_healthy"
+            or set(mysql_dependency) - {"condition", "required", "restart"}
+        ):
+            raise ValueError
+        if bootstrap.get("entrypoint") != [
+            "/bin/sh",
+            "/usr/local/bin/mysql_read_only_bootstrap.sh",
+        ] or bootstrap.get("command") is not None:
+            raise ValueError
+        if bootstrap.get("cap_drop") != ["ALL"] or bootstrap.get("security_opt") != [
+            "no-new-privileges:true"
+        ]:
+            raise ValueError
+        bootstrap_networks = bootstrap.get("networks")
+        if not (
+            bootstrap_networks == ["app-network"]
+            or (
+                type(bootstrap_networks) is dict
+                and set(bootstrap_networks) == {"app-network"}
+                and bootstrap_networks["app-network"] in (None, {})
+            )
+        ):
+            raise ValueError
+        bootstrap_volumes = bootstrap.get("volumes")
+        if type(bootstrap_volumes) is not list or len(bootstrap_volumes) != 1:
+            raise ValueError
+        bind = bootstrap_volumes[0]
+        if (
+            type(bind) is not dict
+            or bind.get("type") != "bind"
+            or bind.get("target") != "/usr/local/bin/mysql_read_only_bootstrap.sh"
+            or bind.get("read_only") is not True
+            or type(bind.get("source")) is not str
+            or not bind["source"].endswith("/scripts/mysql_read_only_bootstrap.sh")
+            or set(bind) - {"type", "source", "target", "read_only", "bind"}
+        ):
+            raise ValueError
+        sanitized_services["mysql-bootstrap"] = {
+            "image": "mysql:8.0",
+            "restart": "no",
+            "environment": {
+                key: "<secret>" if key in _SECRET_ENV else bootstrap_environment[key]
+                for key in sorted(bootstrap_environment)
+            },
+            "depends_on": {"mysql": "service_healthy"},
+            "volumes": [
+                {
+                    "type": "bind",
+                    "source": "<tracked-bootstrap-script>",
+                    "target": "/usr/local/bin/mysql_read_only_bootstrap.sh",
+                    "read_only": True,
+                }
+            ],
+            "entrypoint": ["/bin/sh", "/usr/local/bin/mysql_read_only_bootstrap.sh"],
+            "cap_drop": ["ALL"],
+            "security_opt": ["no-new-privileges:true"],
+            "networks": ["app-network"],
+        }
         volumes = payload.get("volumes")
         networks = payload.get("networks")
         if type(volumes) is not dict or set(volumes) != {
@@ -1902,6 +2008,7 @@ class ManagedComposeProject:
             )
             raise ValueError(message)
         self._invoke(("up", "-d", "mysql"), deadline, compose=True)
+        self._invoke(("up", "mysql-bootstrap"), deadline, compose=True)
 
     def start_backend(self, deadline: ActiveDeadline) -> None:
         if self.fixture_mode:

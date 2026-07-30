@@ -99,15 +99,20 @@ class TestTaskTracker:
 
         clear_active_tasks()
 
+        sentinel = "DRA_ERROR_EGRESS_SENTINEL"
+
         async def failing_task():
-            raise ValueError("test error")
+            raise ValueError(sentinel)
 
         task = create_tracked_task(failing_task(), "test-3")
-        with pytest.raises(ValueError, match="test error"):
+        with pytest.raises(ValueError, match=sentinel):
             await task
 
         assert get_active_task("test-3") is None
-        assert "Task test-3 failed with exception: test error" in caplog.text
+        assert sentinel not in caplog.text
+        assert "code=execution_failed" in caplog.text
+        assert "error_type=ValueError" in caplog.text
+        assert all(record.exc_info is None for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_clear_active_tasks(self):

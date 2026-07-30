@@ -11,6 +11,7 @@ from api.context import get_run_context, get_thread_context
 from api.monitor import monitor
 from tools.retry_utils import TIMEOUTS, retry_async
 from tools.cache import cached_tool
+from tools.error_projection import classify_exception, projection_for
 
 
 async def _tavily_search(
@@ -48,6 +49,15 @@ async def _tavily_search(
 
 # Cache TTL for Tavily: 5 minutes (300s) — balances API cost savings with result freshness
 TAVILY_CACHE_TTL = 300
+
+
+def _project_failure(projection):
+    monitor.report_end(
+        "tavily_search",
+        error=projection.code,
+        error_type=projection.error_type,
+    )
+    return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
 
 
 @cached_tool(ttl=TAVILY_CACHE_TTL, tool_name="tavily_search")
@@ -111,8 +121,9 @@ def _internet_search_impl(
     monitor.report_tool(tool_name, {"query": query})
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
-        monitor.report_end(tool_name, error="configuration_missing")
-        return "Error: TAVILY_API_KEY is not configured."
+        return _project_failure(
+            projection_for(operation="tavily", code="configuration_missing")
+        )
 
     try:
         results = asyncio.run(
@@ -122,27 +133,8 @@ def _internet_search_impl(
         )
         monitor.report_end(tool_name, results)
         return results
-    except (TimeoutError, asyncio.TimeoutError) as e:
-        monitor.report_end(
-            tool_name,
-            error="timeout",
-            error_type=type(e).__name__,
-        )
-        return "Error: internet search timed out after 3 retries"
-    except (ConnectionError, OSError) as e:
-        monitor.report_end(
-            tool_name,
-            error="service_unavailable",
-            error_type=type(e).__name__,
-        )
-        return f"Error: internet search failed after retries — {e}"
     except Exception as e:
-        monitor.report_end(
-            tool_name,
-            error="execution_failed",
-            error_type=type(e).__name__,
-        )
-        return f"Error: internet search failed after retries — {e}"
+        return _project_failure(classify_exception(e, operation="tavily"))
 
 
 # Per-thread search result cache for de-duplication within a task

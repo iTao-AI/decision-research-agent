@@ -5,6 +5,30 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+class TimeoutShapedOSError(OSError):
+    pass
+
+
+def test_timeout_shaped_oserror_uses_one_projection_for_result_and_monitor(monkeypatch):
+    from tools import tavily_tools
+
+    monkeypatch.setenv("TAVILY_API_KEY", "synthetic")
+    monkeypatch.setattr(
+        tavily_tools,
+        "_cached_search_with_resilience",
+        lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutShapedOSError("hostile")),
+    )
+    monkeypatch.setattr(tavily_tools.asyncio, "run", lambda value: value)
+    monkeypatch.setattr(tavily_tools.monitor, "report_tool", lambda *args, **kwargs: None)
+    reports = []
+    monkeypatch.setattr(tavily_tools.monitor, "report_end", lambda *args, **kwargs: reports.append((args, kwargs)))
+
+    result = tavily_tools._internet_search_impl("hostile")
+
+    assert "code=timeout" in result
+    assert reports == [(("tavily_search",), {"error": "timeout", "error_type": "TimeoutShapedOSError"})]
+
+
 def test_internet_search_returns_results(monkeypatch):
     from tools import tavily_tools
 
@@ -90,10 +114,11 @@ def test_internet_search_without_api_key_returns_error(monkeypatch):
     monkeypatch.setattr(tavily_tools.monitor, "report_tool", MagicMock())
 
     result = tavily_tools.internet_search.invoke({"query": "test"})
-    assert result == "Error: TAVILY_API_KEY is not configured."
+    assert "code=configuration_missing" in result
     report_end.assert_called_once_with(
         "tavily_search",
         error="configuration_missing",
+        error_type="Exception",
     )
 
 
@@ -132,6 +157,25 @@ def test_observation_error_mapping_uses_ordered_exception_classes(
         error=expected_code,
         error_type=expected_type,
     )
+
+
+def test_hostile_exception_is_absent_from_tavily_model_result(monkeypatch):
+    from tools import tavily_tools
+
+    sentinel = "DRA_ERROR_EGRESS_SENTINEL"
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setattr(
+        tavily_tools,
+        "_cached_search_with_resilience",
+        AsyncMock(side_effect=RuntimeError(sentinel)),
+    )
+    monkeypatch.setattr(tavily_tools.monitor, "report_end", MagicMock())
+    monkeypatch.setattr(tavily_tools.monitor, "report_tool", MagicMock())
+
+    result = tavily_tools._internet_search_impl(sentinel)
+
+    assert sentinel not in result
+    assert "execution_failed" in result
 
 
 @pytest.mark.asyncio

@@ -82,13 +82,7 @@ def _sections(notes: str) -> dict[str, str]:
     }
 
 
-def test_v0_1_7_version_identity_is_consistent() -> None:
-    package = json.loads(_read(PROJECT_ROOT / "frontend/package.json"))
-    lock = json.loads(_read(PROJECT_ROOT / "frontend/package-lock.json"))
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.7"
-    assert package["version"] == "0.1.7"
-    assert lock["version"] == "0.1.7"
-    assert lock["packages"][""]["version"] == "0.1.7"
+def test_v0_1_7_historical_release_identity_is_retained() -> None:
     assert V017_RELEASE_NOTES.exists()
 
 

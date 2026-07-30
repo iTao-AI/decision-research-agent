@@ -3,6 +3,20 @@ from datetime import datetime, timezone
 
 import pytest
 
+
+@pytest.mark.parametrize(
+    "code",
+    ["unsafe_statement", "privilege_contract_invalid", "pool_exhausted", "cleanup_failed"],
+)
+def test_runtime_error_codes_are_preserved_by_observation_projector(code):
+    from api.observation_contract import projector
+
+    status, projected, error_type = projector.normalize_error(
+        status="error", error=code, error_type="RuntimeError"
+    )
+
+    assert (status, projected, error_type) == ("error", code, "RuntimeError")
+
 from api.observation_contract import projector
 from api.thread_ids import validate_thread_id
 

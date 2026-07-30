@@ -123,6 +123,8 @@ def _compose_projection() -> dict[str, object]:
                     "OPENAI_API_KEY": "provider-secret",
                     "TAVILY_API_KEY": "search-secret",
                     "MYSQL_PASSWORD": "mysql-secret",
+                    "MYSQL_USER": "decision_research",
+                    "MYSQL_DATABASE": "decision_research",
                     "MYSQL_ROOT_PASSWORD": "",
                     "MYSQL_HOST": "mysql",
                     "MYSQL_PORT": "3306",
@@ -147,7 +149,13 @@ def _compose_projection() -> dict[str, object]:
                 "networks": {"app-network": None},
                 "cap_drop": ["ALL"],
                 "security_opt": ["no-new-privileges:true"],
-                "depends_on": {"mysql": {"condition": "service_healthy", "required": True}},
+                "depends_on": {
+                    "mysql": {"condition": "service_healthy", "required": True},
+                    "mysql-bootstrap": {
+                        "condition": "service_completed_successfully",
+                        "required": True,
+                    },
+                },
             },
             "mysql": {
                 "command": None,
@@ -156,8 +164,6 @@ def _compose_projection() -> dict[str, object]:
                 "environment": {
                     "MYSQL_ROOT_PASSWORD": "root-secret",
                     "MYSQL_DATABASE": "decision_research",
-                    "MYSQL_USER": "decision_research",
-                    "MYSQL_PASSWORD": "mysql-secret",
                 },
                 "ports": [{"target": 3306, "published": "0", "host_ip": "127.0.0.1", "protocol": "tcp", "mode": "ingress"}],
                 "healthcheck": {
@@ -179,6 +185,36 @@ def _compose_projection() -> dict[str, object]:
                     }
                 ],
                 "networks": {"app-network": None},
+            },
+            "mysql-bootstrap": {
+                "command": None,
+                "entrypoint": [
+                    "/bin/sh",
+                    "/usr/local/bin/mysql_read_only_bootstrap.sh",
+                ],
+                "image": "mysql:8.0",
+                "restart": "no",
+                "environment": {
+                    "MYSQL_ROOT_PASSWORD": "root-secret",
+                    "MYSQL_DATABASE": "decision_research",
+                    "MYSQL_USER": "decision_research",
+                    "MYSQL_PASSWORD": "mysql-secret",
+                },
+                "depends_on": {
+                    "mysql": {"condition": "service_healthy", "required": True}
+                },
+                "volumes": [
+                    {
+                        "type": "bind",
+                        "source": "/task/snapshot/scripts/mysql_read_only_bootstrap.sh",
+                        "target": "/usr/local/bin/mysql_read_only_bootstrap.sh",
+                        "read_only": True,
+                        "bind": {"create_host_path": True},
+                    }
+                ],
+                "networks": {"app-network": None},
+                "cap_drop": ["ALL"],
+                "security_opt": ["no-new-privileges:true"],
             },
         },
         "volumes": {
@@ -1521,6 +1557,8 @@ def test_managed_compose_project_uses_exact_paths_services_ports_and_ownership(
     assert "--project-name dra-proof-0123456789abcdef0123456789abcdef" in flattened
     assert "build backend" in flattened
     assert "up -d mysql" in flattened
+    assert "up mysql-bootstrap" in flattened
+    assert "up --no-deps mysql-bootstrap" not in flattened
     assert "up -d backend" in flattened
     assert project.port_overrides == {
         "DECISION_RESEARCH_AGENT_BACKEND_HOST_PORT": "0",
@@ -1602,12 +1640,17 @@ def test_live_project_requires_shared_locked_image_secure_check_before_services(
         for index, command in enumerate(commands)
         if command[-3:] == ("up", "-d", "mysql")
     )
+    bootstrap_index = next(
+        index
+        for index, command in enumerate(commands)
+        if command[-2:] == ("up", "mysql-bootstrap")
+    )
     backend_index = next(
         index
         for index, command in enumerate(commands)
         if command[-3:] == ("up", "-d", "backend")
     )
-    assert build_index < secure_index < mysql_index < backend_index
+    assert build_index < secure_index < mysql_index < bootstrap_index < backend_index
 
 
 def test_managed_compose_project_refuses_preexisting_exact_project_resource(

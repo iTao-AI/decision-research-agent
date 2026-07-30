@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-07-30
+
+### Tool safety and runtime closure
+
+- Added a fail-closed one-statement SELECT/CTE scanner, dangerous construct
+  rejection, bounded 100-row/65,536-byte custom query output, and configurable
+  100–30,000 ms server statement time limits (default 5,000 ms).
+- Separated Compose MySQL server, one-shot SELECT-only principal bootstrap, and
+  backend credential authority; startup now attests `CURRENT_USER()` and exact
+  grants, including convergence for retained volumes.
+- Closed exception delivery across tool, logger, observation, API, harness,
+  task, and affected provider-adapter boundaries with stable codes and fixed
+  messages.
+- Returned Connector/Python pooled wrappers through public `close()` paths and
+  added reuse coverage beyond the five-connection pool size.
+- Added `greenlet==3.5.4` to the exact transitive lock and a fail-closed
+  dependency compatibility checker for the one approved RAGFlow/pytest
+  metadata diagnostic.
+- Prepared provider-free v0.1.8 documentation and release verification. No
+  deployment, provider, hosted, multi-tenant, or business impact claim is made.
+
 ## [0.1.7] - 2026-07-29
 
 ### Context Reliability Regression

@@ -303,6 +303,7 @@ business acceptance、provider billing、exactly-once、production readiness
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
 - [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.8 Release Notes](docs/releases/v0.1.8.md)
 - [v0.1.7 Release Notes](docs/releases/v0.1.7.md)
 - [v0.1.6 Release Notes](docs/releases/v0.1.6.md)
 - [v0.1.5 Release Notes](docs/releases/v0.1.5.md)
@@ -327,7 +328,10 @@ business acceptance、provider billing、exactly-once、production readiness
   deployment 或 SLA。
 - Source launcher 仅在 direct-loopback 边界支持 credential-free 访问。
   Compose 要求认证，只把 backend/MySQL 发布到 `127.0.0.1`，并使用 required
-  secrets、health declarations、warning-level logging、capability drop 与
+  secrets，同时分离 MySQL server、一次性 SELECT-only principal bootstrap 与
+  backend credential authority。Backend 启动时校验 exact grants；custom query
+  最多返回 100 rows、65,536 bytes，statement limit 可配置为 100–30,000 ms
+  （默认 5,000 ms）。Compose 继续使用 health declarations、warning-level logging、capability drop 与
   `no-new-privileges`。为兼容现有 volume，image 仍保留 root UID。
   Deterministic proof、required Docker lane 与后续 tag-archive smoke 是三层
   独立 local evidence；均不构成 TLS、identity/RBAC、hosted deployment、

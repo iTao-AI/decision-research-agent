@@ -85,13 +85,23 @@ provider SLA。
 ## MySQL
 
 - 环境变量：`MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`,
-  `MYSQL_DATABASE`, `MYSQL_PORT`。
-- 连接池配置连接超时 10s、读取/查询超时 30s。
-- 表浏览使用 table whitelist；自定义查询使用 SELECT-only textual guard，并
-  拒绝常见写入关键字和 `SELECT INTO`。
-- 该文本校验 is not an AST or parameter-binding authority。模型生成的任意 SQL
-  仍应视为不可信输入；部署时应使用 least-privilege read-only account，并在
-  数据库权限层拒绝写入和越权读取。
+  `MYSQL_DATABASE`, `MYSQL_PORT`, `MYSQL_QUERY_TIMEOUT_MS`。
+- `MYSQL_QUERY_TIMEOUT_MS` 默认 `5000`，仅接受 `100..30000`。应用注入
+  `MAX_EXECUTION_TIME`，由 MySQL server 有界终止 SELECT；连接读取超时仍是
+  response ceiling。
+- 表浏览使用 table whitelist；custom query 只接受 one-statement SELECT/CTE，
+  在连接获取前拒绝 comment、多 statement 与危险 read-side construct。
+- Custom query 最多返回 100 rows，以 25-row batch 获取，serialized output
+  不超过 65,536 bytes；row/byte/time truncation metadata 为稳定 contract。
+- Compose 通过 one-shot bootstrap drop/recreate application account，清除
+  direct grants、grant option、granted/default roles，再收敛 exact
+  schema-scoped SELECT-only principal；backend 在 runtime admission 前校验
+  `CURRENT_USER()` 与 `SHOW GRANTS`，成功后才创建 pool。完全未配置 MySQL
+  时保持 optional runtime，partial configuration 则 startup fail closed。
+  External MySQL operator 必须提供同等 exact grant。
+- 该 scanner is not a general SQL parser or parameter-binding authority。模型
+  生成的任意 SQL 仍应视为不可信输入；数据库 SELECT-only principal 是最终
+  write protection，application scanner 是独立的 fail-closed 前置边界。
 
 ## 安全注意事项
 

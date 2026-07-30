@@ -20,6 +20,7 @@ V014_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.4.md"
 V015_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
 V016_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.6.md"
 V017_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.7.md"
+V018_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.8.md"
 V015_RELEASE_NOTES_SHA256 = (
     "61cbac951a6513a3eb8f160647b9f16b95ca6ed96a4cca8bea80786462a90b6b"
 )
@@ -130,10 +131,11 @@ def test_current_release_version_is_consistent() -> None:
     package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
     lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
 
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.7"
-    assert package["version"] == "0.1.7"
-    assert lock["version"] == "0.1.7"
-    assert lock["packages"][""]["version"] == "0.1.7"
+    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.8"
+    assert package["version"] == "0.1.8"
+    assert lock["version"] == "0.1.8"
+    assert lock["packages"][""]["version"] == "0.1.8"
+    assert V018_RELEASE_NOTES.exists()
     assert V017_RELEASE_NOTES.exists()
     assert V016_RELEASE_NOTES.exists()
     assert V015_RELEASE_NOTES.exists()
@@ -383,7 +385,7 @@ def test_security_policy_matches_current_release_surface() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
 
     required = [
-        "Decision Research Agent v0.1.7 release preparation includes",
+        "Decision Research Agent v0.1.8 release preparation includes",
         "context reliability",
         "privacy-safe observation",
         "strict citation",
@@ -404,12 +406,12 @@ def test_security_policy_matches_current_release_surface() -> None:
         assert phrase in security
 
 
-def test_security_policy_publishes_v0_1_7_preparation_runtime_controls() -> None:
+def test_security_policy_publishes_current_preparation_runtime_controls() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
     normalized = " ".join(security.split())
 
-    assert "Decision Research Agent v0.1.7 release preparation includes" in normalized
-    assert "Decision Research Agent v0.1.7 ships" not in normalized
+    assert "Decision Research Agent v0.1.8 release preparation includes" in normalized
+    assert "Decision Research Agent v0.1.8 ships" not in normalized
     assert "The source template uses `API_SECRET=`" in normalized
     assert "Compose requires non-empty" in normalized
     assert "drops all backend capabilities" in normalized
@@ -623,10 +625,13 @@ def test_v0_1_5_release_notes_cover_secure_local_runtime_and_limits() -> None:
         assert phrase in notes
 
 
-def test_v0_1_7_release_is_current_and_history_remains_discoverable() -> None:
+def test_current_release_and_history_remain_discoverable() -> None:
     readme = _read(PROJECT_ROOT / "README.md")
     readme_cn = _read(PROJECT_ROOT / "README_CN.md")
     docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
+    assert "[v0.1.8 Release Notes](docs/releases/v0.1.8.md)" in readme
+    assert "[v0.1.8 Release Notes](docs/releases/v0.1.8.md)" in readme_cn
+    assert "[v0.1.8 Release Notes](releases/v0.1.8.md)" in docs_index
     assert "[v0.1.7 Release Notes](docs/releases/v0.1.7.md)" in readme
     assert "[v0.1.7 Release Notes](docs/releases/v0.1.7.md)" in readme_cn
     assert "[v0.1.7 Release Notes](releases/v0.1.7.md)" in docs_index
@@ -652,9 +657,10 @@ def test_v0_1_7_release_is_current_and_history_remains_discoverable() -> None:
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
     assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
     assert (
-        "- [v0.1.7 Release Notes](releases/v0.1.7.md) — current supported surface,"
+        "- [v0.1.8 Release Notes](releases/v0.1.8.md) — current tool-safety,"
         in docs_index
     )
+    assert "- [v0.1.7 Release Notes](releases/v0.1.7.md) — historical" in docs_index
     assert (
         "- [v0.1.6 Release Notes](releases/v0.1.6.md) — historical"
         in docs_index
@@ -680,7 +686,7 @@ def test_v0_1_7_release_is_current_and_history_remains_discoverable() -> None:
         in docs_index
     )
     assert "downstream-consumer and Agent evaluation contract gates." in docs_index
-    assert docs_index.count("current supported surface") == 1
+    assert docs_index.count("current tool-safety") == 1
     assert (
         "[v0.1.6 Release Notes](releases/v0.1.6.md) — current supported surface"
         not in docs_index

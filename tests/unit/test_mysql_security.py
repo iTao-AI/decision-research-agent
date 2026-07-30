@@ -114,21 +114,21 @@ class TestTableNameWhitelist:
             "mysql_table_data",
             {"table_name": "bad;table"},
             "_get_table_whitelist",
-            ([], ""),
+            ([], None),
             "input_invalid",
         ),
         (
             "mysql_query",
             {"query": "DELETE FROM users"},
             "_ensure_pool",
-            "",
-            "input_invalid",
+            None,
+            "unsafe_statement",
         ),
         (
             "mysql_list_tables",
             {},
             "_ensure_pool",
-            "pool unavailable OBS_MARKER",
+            "service_unavailable",
             "service_unavailable",
         ),
     ],
@@ -142,8 +142,14 @@ def test_observation_error_categories_are_structured_and_message_independent(
     expected,
 ):
     from tools import mysql_tools
+    from tools.error_projection import projection_for
 
-    monkeypatch.setattr(mysql_tools, patched_name, lambda: patched_value)
+    value = (
+        projection_for(operation="mysql_connect", code=patched_value)
+        if patched_name == "_ensure_pool" and patched_value is not None
+        else patched_value
+    )
+    monkeypatch.setattr(mysql_tools, patched_name, lambda: value)
     report_end = MagicMock()
     monkeypatch.setattr(mysql_tools.monitor, "report_end", report_end)
     monkeypatch.setattr(mysql_tools.monitor, "report_tool", MagicMock())
@@ -156,4 +162,8 @@ def test_observation_error_categories_are_structured_and_message_independent(
     result = tools[tool_name].invoke(invoke_args)
 
     assert type(result) is str
-    report_end.assert_called_once_with(tool_name, error=expected)
+    report_end.assert_called_once_with(
+        tool_name,
+        error=expected,
+        error_type="Exception",
+    )

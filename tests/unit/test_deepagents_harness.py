@@ -657,6 +657,11 @@ async def test_installed_native_limit_signals_reach_bounded_harness_mapping(
         if expected_diagnostic is not None
         else None
     )
+    assert "bounded recursion" not in str(raised.value)
+    assert str(raised.value) in {
+        "Agent execution exceeded the configured call budget.",
+        "Agent execution exceeded the configured recursion limit.",
+    }
 
 
 @pytest.mark.asyncio

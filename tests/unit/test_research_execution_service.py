@@ -108,6 +108,25 @@ async def test_execution_service_writer_failure_cannot_change_frozen_outcome(
     outcome = await service.execute("query", "thread-1", run_id="run-1")
 
     assert outcome.failure_kind == "call_budget_exceeded"
-    assert outcome.error_message == "native public-compatible message"
+    assert outcome.error_message == "Agent execution exceeded the configured call budget."
     assert "private filesystem details" not in repr(outcome)
     assert "call_budget_diagnostic_write_failed" in outcome.diagnostics
+
+
+@pytest.mark.asyncio
+async def test_execution_service_does_not_project_harness_raw_message(tmp_path: Path) -> None:
+    sentinel = "DRA_ERROR_EGRESS_SENTINEL"
+    service = ResearchExecutionService(
+        harness=FailingHarness(
+            HarnessExecutionError(
+                failure_kind="recursion_limit_exceeded",
+                message=sentinel,
+            )
+        ),
+        project_root=tmp_path,
+    )
+
+    outcome = await service.execute("safe query", "thread-1", run_id="run-1")
+
+    assert outcome.error_message == "Agent execution exceeded the configured recursion limit."
+    assert sentinel not in repr(outcome)

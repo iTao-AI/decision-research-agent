@@ -17,6 +17,14 @@ authority. The immutable `v0.1.6` release and
 raw observation `args`, `result`, and `error` semantics are intentionally
 hardened in place and first included in the v0.1.7 release preparation.
 
+v0.1.8 extends the same closed failure projection to affected MySQL, RAGFlow,
+Tavily, harness, research-execution, and task-callback paths. Logger records,
+ToolMessage/model context, monitor, telemetry, canonical artifacts, REST, and
+WebSocket surfaces receive only a stable code, fixed message, bounded
+exception class, and validated correlation fields. Raw exception text,
+`args`, stack traces, and hostile string conversion never become an observation
+or business artifact authority.
+
 ## Monitor envelope
 
 Valid exact identity and timestamp values remain unchanged. Invalid values
@@ -85,9 +93,13 @@ or content hashes.
 | --- | --- |
 | configuration_missing | Required local configuration is absent |
 | input_invalid | Structured input validation failed |
+| unsafe_statement | A database statement failed the read-only admission policy |
 | resource_not_found | A requested resource is absent |
 | timeout | A caught timeout class ended the operation |
 | service_unavailable | A caught connection class or explicit service category failed |
+| privilege_contract_invalid | The database principal failed exact read-only grant attestation |
+| pool_exhausted | No database connection was available from the bounded pool |
+| cleanup_failed | A runtime resource could not be released safely |
 | execution_failed | An unclassified failure occurred |
 | retryable_failure | A retry follows a caught retryable exception |
 

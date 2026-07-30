@@ -44,6 +44,24 @@ def test_verified_constraints_are_used_by_docker_and_ci():
     assert "pip install --no-deps -r constraints.txt" in ci
 
 
+def test_dependency_compatibility_gate_runs_in_image_and_both_ci_lanes():
+    constraints = (PROJECT_ROOT / "constraints.txt").read_text(encoding="utf-8")
+    dockerfile = (PROJECT_ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+    ci = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert constraints.splitlines().count("greenlet==3.5.4") == 1
+    checker_copy = "COPY scripts/check_dependency_compatibility.py scripts/check_dependency_compatibility.py"
+    checker_run = "python scripts/check_dependency_compatibility.py"
+    dependency_install = "-r constraints.txt"
+    selective_scripts_copy = "COPY scripts/ scripts/"
+    assert checker_copy in dockerfile
+    assert dockerfile.index(checker_copy) < dockerfile.index(dependency_install)
+    assert dockerfile.index(dependency_install) < dockerfile.index(checker_run)
+    assert dockerfile.index(checker_run) < dockerfile.index(selective_scripts_copy)
+    assert ci.count(checker_run) == 2
+    assert ci.count("import greenlet, sqlalchemy, langchain_community, langchain_classic") == 2
+
+
 def test_backend_image_packages_durable_hitl_gate_report():
     dockerfile = (PROJECT_ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
     dockerignore = (PROJECT_ROOT / ".dockerignore").read_text(encoding="utf-8")

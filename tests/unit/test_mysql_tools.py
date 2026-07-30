@@ -204,6 +204,40 @@ def test_get_table_data_emits_one_paired_end_on_success(monkeypatch):
     assert reports == [(("mysql_table_data", "id\n1"), {})]
 
 
+@pytest.mark.parametrize(
+    ("code", "error_type", "message"),
+    [
+        ("pool_exhausted", "PoolError", "Database connection has no connection available."),
+        (
+            "privilege_contract_invalid",
+            "PrivilegeContractError",
+            "Database connection failed the read-only privilege check.",
+        ),
+    ],
+)
+def test_get_table_data_preserves_whitelist_setup_projection(
+    monkeypatch,
+    code,
+    error_type,
+    message,
+):
+    from tools import mysql_tools
+    from tools.error_projection import projection_for
+
+    projection = projection_for(operation="mysql_connect", code=code, error_type=error_type)
+    monkeypatch.setattr(mysql_tools, "_get_table_whitelist", lambda: ([], projection))
+    starts = []
+    ends = []
+    monkeypatch.setattr(mysql_tools.monitor, "report_tool", lambda *args, **kwargs: starts.append((args, kwargs)))
+    monkeypatch.setattr(mysql_tools.monitor, "report_end", lambda *args, **kwargs: ends.append((args, kwargs)))
+
+    result = mysql_tools.get_table_data.invoke({"table_name": "items"})
+
+    assert result == f"[tool_error code={code} error_type={error_type}] {message}"
+    assert starts == [(("mysql_table_data", {"table_name": "items"}), {})]
+    assert ends == [(("mysql_table_data",), {"error": code, "error_type": error_type})]
+
+
 def test_mysql_startup_is_optional_only_when_all_required_config_is_absent(monkeypatch):
     from tools import mysql_tools
 

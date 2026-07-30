@@ -78,7 +78,9 @@ def _validate_sql_type(query: str) -> str:
     return _validate_sql_type_with_category(query)[0]
 
 
-def _validate_table_name_with_category(table_name: str) -> tuple[str, str | None]:
+def _validate_table_name_with_category(
+    table_name: str,
+) -> tuple[str, str | ErrorProjection | None]:
     if not table_name or not table_name.strip():
         return "错误：表名不能为空", "input_invalid"
     if re.search(r"\b(UNION|SELECT|DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE)\b", table_name.upper()):
@@ -87,7 +89,7 @@ def _validate_table_name_with_category(table_name: str) -> tuple[str, str | None
         return "错误：无效的表名", "input_invalid"
     whitelist, projection = _get_table_whitelist()
     if projection is not None and not whitelist:
-        return _error_result(projection), projection.code
+        return _error_result(projection), projection
     if table_name not in whitelist:
         return "错误：无效的表名", "input_invalid"
     return "", None
@@ -204,9 +206,13 @@ def list_sql_tables() -> str:
 def get_table_data(table_name: str) -> str:
     """Query first 100 rows of a validated table, returned as CSV."""
     monitor.report_tool(MYSQL_TABLE_DATA, {"table_name": table_name})
-    error, code = _validate_table_name_with_category(table_name)
+    error, category = _validate_table_name_with_category(table_name)
     if error:
-        projection = projection_for(operation="mysql_query", code=code)
+        projection = (
+            category
+            if isinstance(category, ErrorProjection)
+            else projection_for(operation="mysql_query", code=category)
+        )
         monitor.report_end(
             MYSQL_TABLE_DATA,
             error=projection.code,

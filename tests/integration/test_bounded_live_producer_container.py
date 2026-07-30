@@ -382,13 +382,12 @@ def _backend_mysql_probe(
         }, sort_keys=True))
         """
     )
-    return json.loads(
-        _project_output(
-            project,
-            ("docker", "exec", backend_id, "python", "-c", script),
-            deadline,
-        )
+    output = _project_output(
+        project,
+        ("docker", "exec", backend_id, "python", "-c", script),
+        deadline,
     )
+    return json.loads(output.splitlines()[-1])
 
 
 def test_provider_free_bounded_producer_container_lifecycle(tmp_path: Path) -> None:

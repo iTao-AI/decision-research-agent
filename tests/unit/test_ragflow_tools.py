@@ -137,7 +137,7 @@ class TestRAGFlowTools:
             })
 
             mock_chat.delete_sessions.assert_called_once_with(ids=["session_456"])
-            assert "失败" in result
+            assert "code=execution_failed" in result
 
 
 class TestRAGFlowTimeoutAndRetry:
@@ -173,7 +173,7 @@ class TestRAGFlowTimeoutAndRetry:
         with patch("tools.ragflow_tools.RAGFlow", return_value=mock_rag):
             from tools.ragflow_tools import get_assistant_list
             result = get_assistant_list.invoke({"dummy_arg": ""})
-            assert "unavailable after retries" in result
+            assert "code=service_unavailable" in result
     def test_ask_timeout_raises_without_retry(self):
         """提问 helper 超时后应抛出 TimeoutError（不返回错误字符串）"""
         from tools import ragflow_tools
@@ -220,7 +220,7 @@ class TestRAGFlowTimeoutAndRetry:
             ragflow_tools.TIMEOUTS["ragflow"] = old_val
 
         assert elapsed < 2.0, f"Waited {elapsed:.1f}s"
-        assert result == "Error: knowledge base query timed out after retries"
+        assert "code=timeout" in result
 
     def test_ask_real_blocking_timeout_returns_structured_error(self):
         """提问入口遇到真实阻塞时应返回 timeout 错误，而不是继续使用错误字符串"""
@@ -256,7 +256,7 @@ class TestRAGFlowTimeoutAndRetry:
             ragflow_tools.TIMEOUTS["ragflow"] = old_val
 
         assert elapsed < 2.0, f"Waited {elapsed:.1f}s"
-        assert result == "Error: knowledge base query timed out after retries"
+        assert "code=timeout" in result
         mock_chat.delete_sessions.assert_called_once_with(ids=["sess_timeout"])
 
     def test_ask_connection_error_returns_structured_error(self):
@@ -275,7 +275,7 @@ class TestRAGFlowTimeoutAndRetry:
                 "assistant_name": "TestBot",
                 "question": "Hello",
             })
-            assert "unavailable after retries" in result
+            assert "code=service_unavailable" in result
 
     def test_cleanup_on_timeout(self):
         """超时后应仍执行 session 清理"""
@@ -371,7 +371,7 @@ def test_only_observed_tool_aliases_and_no_duplicate_answer_event():
             ValueError("same message"),
             "execution_failed",
             "ValueError",
-            "获取助手列表失败",
+            "execution_failed",
         ),
     ],
 )
@@ -396,3 +396,28 @@ def test_observation_reporter_error_mappings_are_exact(
         error=expected_code,
         error_type=expected_type,
     )
+
+
+def test_hostile_exception_is_absent_from_ragflow_result_and_retry_logs(caplog):
+    ragflow_tools = importlib.import_module("tools.ragflow_tools")
+    sentinel = "DRA_ERROR_EGRESS_SENTINEL"
+
+    with patch.object(
+        ragflow_tools,
+        "_retry_with_timeout",
+        side_effect=ValueError(sentinel),
+    ):
+        result = ragflow_tools.get_assistant_list.invoke({"dummy_arg": ""})
+
+    assert sentinel not in result
+    assert "execution_failed" in result
+
+    with patch.object(ragflow_tools.time, "sleep", return_value=None):
+        with pytest.raises(ValueError):
+            ragflow_tools._retry_with_timeout(
+                lambda: (_ for _ in ()).throw(ValueError(sentinel)),
+                service_name="ragflow-test",
+                max_retries=2,
+            )
+    assert sentinel not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)

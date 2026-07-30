@@ -34,8 +34,7 @@ def _setup_pool_mock(mock_cm, mock_conn, mock_cursor=None):
     mock_cm.get_connection.return_value = mock_conn
     if mock_cursor is None:
         mock_cursor = MagicMock()
-    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    mock_conn.cursor.return_value = mock_cursor
     return mock_cursor
 
 
@@ -74,7 +73,7 @@ class TestMySQLToolsWithConnectionManager:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.description = [("id",), ("name",)]
-        mock_cursor.fetchall.return_value = [(1, "Alice"), (2, "Bob")]
+        mock_cursor.fetchmany.side_effect = [[(1, "Alice"), (2, "Bob")], []]
 
         with patch("tools.mysql_tools._connection_manager") as mock_cm:
             _setup_pool_mock(mock_cm, mock_conn, mock_cursor)
@@ -94,7 +93,7 @@ class TestMySQLToolsWithConnectionManager:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.description = [("id",), ("name",)]
-        mock_cursor.fetchall.return_value = [(1, "Alice")]
+        mock_cursor.fetchmany.side_effect = [[(1, "Alice")], []]
 
         with patch("tools.mysql_tools._connection_manager") as mock_cm:
             _setup_pool_mock(mock_cm, mock_conn, mock_cursor)

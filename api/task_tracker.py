@@ -8,6 +8,8 @@ from threading import RLock
 from collections.abc import Awaitable, Callable
 from typing import Any, Dict, Literal
 
+from tools.error_projection import classify_exception, safe_log
+
 logger = logging.getLogger(__name__)
 
 # 默认任务超时（秒）— 30 分钟
@@ -131,13 +133,15 @@ async def _settle_callback(
         callback_task
     )
     if callback_exception is not None:
-        logger.error(
-            "Task termination callback failed",
-            exc_info=(
-                type(callback_exception),
-                callback_exception,
-                callback_exception.__traceback__,
-            ),
+        projection = classify_exception(
+            callback_exception,
+            operation="task_callback",
+        )
+        safe_log(
+            logger,
+            logging.ERROR,
+            event="task_termination_callback_failed",
+            projection=projection,
         )
     return cancellation_requests
 
@@ -344,7 +348,14 @@ def _on_task_done(task: asyncio.Task, task_id: str):
             if isinstance(exc, asyncio.CancelledError):
                 logger.info("Task %s was cancelled (possibly due to timeout)", task_id)
             else:
-                logger.error("Task %s failed with exception: %s", task_id, exc)
+                projection = classify_exception(exc, operation="task_callback")
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    event="task_failed",
+                    projection=projection,
+                    correlation=task_id,
+                )
     except asyncio.CancelledError:
         logger.info("Task %s was cancelled", task_id)
     except Exception:

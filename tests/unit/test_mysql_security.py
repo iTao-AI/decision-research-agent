@@ -122,7 +122,7 @@ class TestTableNameWhitelist:
             {"query": "DELETE FROM users"},
             "_ensure_pool",
             "",
-            "input_invalid",
+            "unsafe_statement",
         ),
         (
             "mysql_list_tables",

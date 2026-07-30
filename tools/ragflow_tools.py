@@ -21,6 +21,7 @@ from langchain_core.tools import tool
 from ragflow_sdk import RAGFlow
 
 from api.monitor import monitor
+from tools.error_projection import classify_exception, projection_for, safe_log
 from tools.retry_utils import TIMEOUTS
 
 logger = logging.getLogger(__name__)
@@ -73,12 +74,25 @@ def _retry_with_timeout(func, max_retries: int = 3, service_name: str = "ragflow
             raise TimeoutError(f"{service_name} timed out after {timeout}s")
         except Exception as e:
             last_error = e
+            projection = classify_exception(e, operation="ragflow")
             if attempt < max_retries - 1:
                 wait_time = min((2 ** attempt) * backoff_factor, max_wait)
-                logger.warning(f"[{service_name}] Attempt {attempt + 1}/{max_retries} failed: {e}. Retrying in {wait_time}s...")
+                safe_log(
+                    logger,
+                    logging.WARNING,
+                    event=f"{service_name}_retry",
+                    projection=projection,
+                    attempt=attempt + 1,
+                )
                 time.sleep(wait_time)
             else:
-                logger.error(f"[{service_name}] All {max_retries} attempts failed. Last error: {e}")
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    event=f"{service_name}_failed",
+                    projection=projection,
+                    attempt=max_retries,
+                )
 
     raise last_error
 
@@ -122,26 +136,29 @@ def get_assistant_list(dummy_arg: str = "") -> str:
         return output
 
     except TimeoutError as e:
+        projection = classify_exception(e, operation="ragflow")
         monitor.report_end(
             RAGFLOW_ASSISTANT_LIST,
             error="timeout",
             error_type=type(e).__name__,
         )
-        return "Error: knowledge base query timed out after retries"
+        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     except (ConnectionError, OSError) as e:
         monitor.report_end(
             RAGFLOW_ASSISTANT_LIST,
             error="service_unavailable",
             error_type=type(e).__name__,
         )
-        return f"Error: knowledge base service unavailable after retries"
+        projection = classify_exception(e, operation="ragflow")
+        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     except Exception as e:
         monitor.report_end(
             RAGFLOW_ASSISTANT_LIST,
             error="execution_failed",
             error_type=type(e).__name__,
         )
-        return f"获取助手列表失败：{str(e)}"
+        projection = classify_exception(e, operation="ragflow")
+        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
 
 
 @tool
@@ -198,26 +215,29 @@ def create_ask_delete(assistant_name: str, question: str) -> str:
         return full_answer
 
     except TimeoutError as e:
+        projection = classify_exception(e, operation="ragflow")
         monitor.report_end(
             RAGFLOW_QUESTION,
             error="timeout",
             error_type=type(e).__name__,
         )
-        return "Error: knowledge base query timed out after retries"
+        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     except (ConnectionError, OSError) as e:
         monitor.report_end(
             RAGFLOW_QUESTION,
             error="service_unavailable",
             error_type=type(e).__name__,
         )
-        return f"Error: knowledge base service unavailable after retries"
+        projection = classify_exception(e, operation="ragflow")
+        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     except Exception as e:
         monitor.report_end(
             RAGFLOW_QUESTION,
             error="execution_failed",
             error_type=type(e).__name__,
         )
-        return f"提问过程失败：{str(e)}"
+        projection = classify_exception(e, operation="ragflow")
+        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     finally:
         if session and hasattr(session, "id") and chat is not None:
             try:
@@ -228,8 +248,18 @@ def create_ask_delete(assistant_name: str, question: str) -> str:
                     future.result(timeout=10)
                 except concurrent.futures.TimeoutError:
                     executor.shutdown(wait=False)
-                    logger.warning("RAGFlow session cleanup timed out")
+                    projection = projection_for(
+                        operation="ragflow_cleanup",
+                        code="cleanup_failed",
+                        error_type="TimeoutError",
+                    )
+                    safe_log(logger, logging.WARNING, event="ragflow_cleanup_failed", projection=projection)
                 finally:
                     executor.shutdown(wait=False)
             except Exception as e:
-                logger.warning(f"Failed to delete RAGFlow session: {e}")
+                projection = projection_for(
+                    operation="ragflow_cleanup",
+                    code="cleanup_failed",
+                    error_type=type(e).__name__,
+                )
+                safe_log(logger, logging.WARNING, event="ragflow_cleanup_failed", projection=projection)

@@ -134,6 +134,25 @@ def test_observation_error_mapping_uses_ordered_exception_classes(
     )
 
 
+def test_hostile_exception_is_absent_from_tavily_model_result(monkeypatch):
+    from tools import tavily_tools
+
+    sentinel = "DRA_ERROR_EGRESS_SENTINEL"
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setattr(
+        tavily_tools,
+        "_cached_search_with_resilience",
+        AsyncMock(side_effect=RuntimeError(sentinel)),
+    )
+    monkeypatch.setattr(tavily_tools.monitor, "report_end", MagicMock())
+    monkeypatch.setattr(tavily_tools.monitor, "report_tool", MagicMock())
+
+    result = tavily_tools._internet_search_impl(sentinel)
+
+    assert sentinel not in result
+    assert "execution_failed" in result
+
+
 @pytest.mark.asyncio
 async def test_search_with_resilience_retries_transient_failures(monkeypatch):
     from tools import tavily_tools

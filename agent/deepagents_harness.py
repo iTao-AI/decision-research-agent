@@ -152,13 +152,13 @@ class DeepAgentsHarness:
         ) as exc:
             raise HarnessExecutionError(
                 failure_kind="call_budget_exceeded",
-                message=str(exc),
+                message="Agent execution exceeded the configured call budget.",
                 call_budget_diagnostic=_call_budget_diagnostic(exc),
             ) from exc
         except GraphRecursionError as exc:
             raise HarnessExecutionError(
                 failure_kind="recursion_limit_exceeded",
-                message=str(exc),
+                message="Agent execution exceeded the configured recursion limit.",
             ) from exc
         return observer.snapshot_outcome()
 

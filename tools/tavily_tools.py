@@ -11,6 +11,7 @@ from api.context import get_run_context, get_thread_context
 from api.monitor import monitor
 from tools.retry_utils import TIMEOUTS, retry_async
 from tools.cache import cached_tool
+from tools.error_projection import classify_exception
 
 
 async def _tavily_search(
@@ -123,26 +124,29 @@ def _internet_search_impl(
         monitor.report_end(tool_name, results)
         return results
     except (TimeoutError, asyncio.TimeoutError) as e:
+        projection = classify_exception(e, operation="tavily")
         monitor.report_end(
             tool_name,
             error="timeout",
             error_type=type(e).__name__,
         )
-        return "Error: internet search timed out after 3 retries"
+        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     except (ConnectionError, OSError) as e:
         monitor.report_end(
             tool_name,
             error="service_unavailable",
             error_type=type(e).__name__,
         )
-        return f"Error: internet search failed after retries — {e}"
+        projection = classify_exception(e, operation="tavily")
+        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
     except Exception as e:
         monitor.report_end(
             tool_name,
             error="execution_failed",
             error_type=type(e).__name__,
         )
-        return f"Error: internet search failed after retries — {e}"
+        projection = classify_exception(e, operation="tavily")
+        return f"[tool_error code={projection.code} error_type={projection.error_type}] {projection.message}"
 
 
 # Per-thread search result cache for de-duplication within a task

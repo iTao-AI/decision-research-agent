@@ -455,17 +455,26 @@ class ResearchExecutionService:
                     accumulator.diagnostics.append(
                         "call_budget_diagnostic_write_failed"
                     )
+            fixed_failure_messages = {
+                "call_budget_exceeded": "Agent execution exceeded the configured call budget.",
+                "recursion_limit_exceeded": "Agent execution exceeded the configured recursion limit.",
+                "cancelled": "Research execution was cancelled.",
+                "execution_error": "Research execution failed.",
+            }
             return self._freeze_outcome(
                 observer,
                 outcome_box,
-                error_message=str(exc),
+                error_message=fixed_failure_messages.get(
+                    exc.failure_kind,
+                    "Research execution failed.",
+                ),
                 failure_kind=exc.failure_kind,
             )
-        except asyncio.CancelledError as exc:
+        except asyncio.CancelledError:
             self._freeze_outcome(
                 observer,
                 outcome_box,
-                error_message=str(exc) or "Agent execution cancelled.",
+                error_message="Research execution was cancelled.",
                 failure_kind="cancelled",
                 cancellation_state="cancelled",
             )
@@ -475,7 +484,7 @@ class ResearchExecutionService:
             self._freeze_outcome(
                 observer,
                 outcome_box,
-                error_message=str(exc),
+                error_message="Research execution failed.",
                 failure_kind="execution_error",
             )
             raise

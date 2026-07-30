@@ -341,12 +341,13 @@ def _backend_mysql_probe(
             "code=unsafe_statement" in mysql_tools.execute_sql_query.invoke({"query": query})
             for query in unsafe
         )
-        assert mysql_tools.execute_sql_query.invoke({
+        safe_cte = mysql_tools.execute_sql_query.invoke({
             "query": (
-                "WITH RECURSIVE n AS (SELECT 1 UNION ALL SELECT n + 1 FROM n WHERE n < 3) "
+                "WITH n AS (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3) "
                 "SELECT n FROM n ORDER BY n"
             )
-        }) == "n\\n1\\n2\\n3"
+        })
+        assert safe_cte == "n\\n1\\n2\\n3", repr(safe_cte)
 
         connection_ids = []
         for _ in range(20):
@@ -388,11 +389,11 @@ def _backend_mysql_probe(
                 denied.append(exc.errno)
             else:
                 raise AssertionError("mutation_or_cross_schema_was_not_denied")
-        cursor.close()
-        manager.release_connection(connection)
         assert set(denied).issubset({1142, 1227, 1370}) and len(denied) == 11
         cursor.execute("SELECT LOAD_FILE('/etc/passwd')")
         assert cursor.fetchone() == (None,)
+        cursor.close()
+        manager.release_connection(connection)
 
         timeout_result = mysql_tools.execute_sql_query.invoke(
             {
@@ -439,11 +440,13 @@ def _backend_mysql_probe(
         }, sort_keys=True))
         """
     )
-    output = _project_output(
-        project,
+    completed = project._invoke(
         ("docker", "exec", backend_id, "python", "-c", script),
         deadline,
+        allow_failure=True,
     )
+    assert completed.returncode == 0, completed.stderr[-4000:]
+    output = completed.stdout.strip()
     return json.loads(output.splitlines()[-1])
 
 

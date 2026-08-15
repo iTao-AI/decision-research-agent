@@ -20,6 +20,135 @@ health service identifier use `decision-research-agent`.
 
 ## What It Does
 
+Decision Research Agent turns an open research question into source-backed,
+reviewable Evidence and a bounded canonical result.
+
+The Agent Research Operations Console makes that path legible without becoming
+the business authority. Its Static Demo is deterministic; its optional Live
+Backend mode consumes service-owned state through the existing API contract.
+
+## Research Delivery Flow
+
+1. **Question** — frame one bounded research question and its decision context.
+2. **Plan** — make the comparison dimensions and source boundary explicit.
+3. **Tool work** — collect source observations and attach run-scoped Evidence refs.
+4. **Judgment** — review claims, citations, and verification separately.
+5. **Delivery** — return the canonical result only when the service-owned gate allows it.
+
+## Showcase Frames
+
+The three frames below are deterministic, synthetic Static Demo states captured
+from the same frontend implementation. They show the normal path, the
+claim/source review checkpoint, and a recovery state that remains
+`review_required` and `not_delivered`.
+
+![Research workspace overview](docs/assets/console-showcase/research-workspace-overview.png)
+
+![Research evidence review](docs/assets/console-showcase/research-evidence-review.png)
+
+![Research blocked recovery](docs/assets/console-showcase/research-blocked-recovery.png)
+
+The capture source, viewport, locale, route/state mapping, disclosure, and
+SHA-256 values are recorded in the [showcase manifest](docs/assets/console-showcase/manifest.json).
+
+## Engineering Judgments
+
+- **Service-owned facts stay authoritative.** The UI composes a readable
+  projection; the application database, API, and canonical result endpoint
+  remain the source of business state. See
+  [`App.tsx`](frontend/src/App.tsx), the console projection tests, and the
+  [demo console contract](tests/unit/test_demo_console_contracts.py).
+- **Evidence, citation, and verification are different gates.** A cited claim
+  is not automatically verified, and the UI does not turn a visual state into
+  a decision. See [`consoleProjection.ts`](frontend/src/consoleProjection.ts)
+  and the [showcase contract tests](tests/unit/test_console_showcase_contracts.py).
+- **Failure stays visible and non-delivered.** Insufficient Evidence, invalid
+  citation, and tool failure remain review-required; the blocked frame cannot
+  manufacture a canonical result. See the blocked fixture and
+  [`App.test.tsx`](frontend/src/App.test.tsx).
+
+## Quick Start
+
+```bash
+git clone https://github.com/iTao-AI/decision-research-agent.git
+cd decision-research-agent
+cp .env.example .env
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install --no-deps -r constraints.txt
+python api/server.py
+```
+
+```bash
+curl --fail --silent http://127.0.0.1:8000/health
+python tools/decision_research_agent_tool.py doctor
+python tools/decision_research_agent_tool.py run \
+  --query "Compare the evidence behind the proposed decision" \
+  --wait \
+  --result
+python tools/decision_research_agent_tool.py result \
+  --run-id "$RUN_ID"
+```
+
+For the deterministic frontend path, run `cd frontend && npm ci && npm run dev
+-- --host 127.0.0.1`, then open `http://127.0.0.1:5173`. The detailed
+[Getting Started tutorial](docs/getting-started.md) covers readiness,
+troubleshooting, and authenticated local runtime boundaries.
+
+## Authority And Runtime
+
+- LangChain is the Agent Framework; DeepAgents is the research harness;
+  LangGraph is the durable workflow runtime; LangSmith is privacy-first
+  diagnostics; the Application DB is business authority.
+- `run_id` scopes execution and persisted delivery while `thread_id` remains a
+  caller-compatibility identity.
+- The console consumes canonical API and result contracts. It does not add
+  backend state, database tables, API paths, credentials, review controls,
+  verification authority, public online execution, or a tenant model.
+- Live Backend remains loopback-only and the browser does not accept or store
+  API credentials. See [Demo Console](docs/demo-console.md) and the
+  [API Contract](docs/reference/api-contract.md).
+
+## Engineering Depth
+
+The implementation separates interface clients from application-owned
+ResearchRun, EvidenceLedger, review, verification, publication, and result
+authority. Terminal states use fenced finalization, while release evidence is
+bounded by explicit tests, proof scripts, benchmark reports, and feature-flag
+limits.
+
+## Architecture
+
+The [Architecture Deep Dive](docs/architecture.md) maps Interfaces, Application
+Services, Domain Authority, Framework Runtime, Verification, and the local
+deployment boundary. The [Demo Console Design](DESIGN.md) records the
+presentation and non-authority boundaries.
+
+## Evaluation And Release
+
+Evaluation remains provider-free where the repository says so, and every
+benchmark or release record keeps its own evidence boundary. Start with the
+[evaluation references](docs/reference/agent-evaluation-regression-gate.md),
+[evidence index](docs/evidence/README.md), and current
+[v0.1.8 release notes](docs/releases/v0.1.8.md); historical release records are
+not rewritten by the showcase.
+
+## Verification
+
+The proportional local checks for this surface are:
+
+```bash
+python -m pytest tests/unit/test_console_showcase_contracts.py \
+  tests/unit/test_demo_console_contracts.py -q
+cd frontend && npm run test && npm run lint && npm run build
+cd .. && python scripts/console_showcase_contracts.py check --root .
+```
+
+The full CI proof inventory remains documented in the detailed sections and
+the [CI workflow](.github/workflows/ci.yml).
+
+## Detailed Capability Reference
+
 - Runs research through canonical `run_id` scoped execution.
 - Persists ResearchRun, EvidenceLedger, review, verification, publication, and
   canonical result state in the application database.
@@ -41,7 +170,7 @@ showing the existing EvidenceLedger, review, verification, and authority
 boundaries. It keeps a static fallback for reliable demos and does not add
 backend state or become business authority.
 
-## Engineering Depth
+## Engineering Depth Details
 
 - The service separates interface clients from application-owned ResearchRun,
   EvidenceLedger, review, verification, publication, and result authority.
@@ -56,7 +185,7 @@ backend state or become business authority.
 - Release evidence is bounded by explicit verification scripts, docs contracts,
   benchmark reports, and feature-flag limits.
 
-## Architecture
+## Architecture Reference
 
 ```mermaid
 flowchart TB
@@ -128,7 +257,7 @@ The demo videos are deterministic loopback contract demos. They are not live
 provider research recordings, not a public production service, and not evidence
 of an online multi-user deployment.
 
-## Quick Start
+## Runtime Quick Start Details
 
 Clone the repository, create a local environment file, install the pinned
 runtime, start the backend, check health, then create a run and retrieve its
@@ -258,7 +387,7 @@ DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false
 Both features are supported only within the documented single-node SQLite
 boundary unless a later rollout expands the deployment model.
 
-## Verification
+## Verification Details
 
 Current release work keeps verification evidence in PRs and operator reports.
 The commands below are a

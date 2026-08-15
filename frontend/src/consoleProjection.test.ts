@@ -159,6 +159,33 @@ describe("console projection source separation", () => {
     expectDeepFrozen(projection);
   });
 
+  it("keeps the blocked Static Demo at review-required and without delivery", () => {
+    const projection = buildStaticConsoleProjection("blocked");
+
+    expect(projection.command.run).toMatchObject({
+      kind: "observed",
+      value: {
+        executionStatus: { kind: "observed", value: "failed" },
+        reviewStatus: { kind: "observed", value: "review_required" },
+        deliveryStatus: { kind: "observed", value: "not_delivered" }
+      }
+    });
+    expect(observedValue(projection.evidence)).toMatchObject([
+      expect.objectContaining({
+        citationStatus: { kind: "observed", value: "citation_invalid" },
+        verificationStatus: "citation_invalid"
+      })
+    ]);
+    expect(projection.result).toEqual({ kind: "not_applicable" });
+    expectDeepFrozen(projection);
+  });
+
+  it("keeps the blocked Static Demo CLI golden path free of diff markers", () => {
+    const projection = buildStaticConsoleProjection("blocked");
+
+    expect(projection.architecture.cliGoldenPath).not.toMatch(/^\+\s/m);
+  });
+
   it("returns an empty Live projection with no Static Demo identifiers", () => {
     const projection = buildLiveConsoleProjection(emptyLiveInput());
 

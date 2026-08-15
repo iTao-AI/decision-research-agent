@@ -16,6 +16,127 @@ Decision Research Agent 是一个长任务研究服务：围绕来源证据生�
 
 ## 当前能力
 
+Decision Research Agent 把开放研究问题转化为有来源支撑、可复核的 Evidence
+和有界 canonical result。
+
+Agent Research Operations Console 只负责把这条路径讲清楚，不成为业务事实源。
+Static Demo 是确定性的；可选 Live Backend 只消费现有 API contract 的
+service-owned state。
+
+## Research Delivery Flow
+
+1. **问题**：明确一个有界的研究问题与决策语境。
+2. **计划**：固定比较维度和可审查的来源边界。
+3. **工具工作**：收集来源观察，并附加 run-scoped Evidence refs。
+4. **判断**：分别复核 claim、citation 和 verification。
+5. **交付**：只有 service-owned gate 允许时才返回 canonical result。
+
+## Showcase Frames
+
+以下三张图来自同一个 frontend implementation 的 deterministic synthetic
+Static Demo，依次展示正常路径、claim/source review checkpoint，以及仍保持
+`review_required`、`not_delivered` 的恢复状态。
+
+![研究工作区总览](docs/assets/console-showcase/research-workspace-overview.png)
+
+![研究 Evidence 复核](docs/assets/console-showcase/research-evidence-review.png)
+
+![研究阻断恢复](docs/assets/console-showcase/research-blocked-recovery.png)
+
+capture source、viewport、locale、route/state mapping、disclosure 和
+SHA-256 记录在 [showcase manifest](docs/assets/console-showcase/manifest.json)。
+
+## 三个工程判断
+
+- **Service-owned facts 保持权威。** UI 只组合可读 projection；application
+  database、API 和 canonical result endpoint 仍是业务状态源。见
+  [`App.tsx`](frontend/src/App.tsx)、console projection tests 和
+  [demo console contract](tests/unit/test_demo_console_contracts.py)。
+- **Evidence、citation、verification 是不同 gate。** 被引用不等于已核验，
+  UI 不把视觉状态变成 decision。见
+  [`consoleProjection.ts`](frontend/src/consoleProjection.ts) 和
+  [showcase contract tests](tests/unit/test_console_showcase_contracts.py)。
+- **失败保持可见且不交付。** Evidence 不足、citation 无效或 tool failure
+  会保持 review-required；blocked frame 不能制造 canonical result。见
+  blocked fixture 与 [`App.test.tsx`](frontend/src/App.test.tsx)。
+
+## 快速开始
+
+```bash
+git clone https://github.com/iTao-AI/decision-research-agent.git
+cd decision-research-agent
+cp .env.example .env
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install --no-deps -r constraints.txt
+python api/server.py
+```
+
+```bash
+curl --fail --silent http://127.0.0.1:8000/health
+python tools/decision_research_agent_tool.py doctor
+python tools/decision_research_agent_tool.py run \
+  --query "Compare the evidence behind the proposed decision" \
+  --wait \
+  --result
+python tools/decision_research_agent_tool.py result \
+  --run-id "$RUN_ID"
+```
+
+要运行 deterministic frontend path，可执行 `cd frontend && npm ci && npm run
+dev -- --host 127.0.0.1`，再打开 `http://127.0.0.1:5173`。完整的
+[Getting Started tutorial](docs/getting-started.md) 说明 readiness、故障处理
+和 authenticated local runtime 边界。
+
+## Authority And Runtime
+
+- LangChain 是 Agent Framework；DeepAgents 是 research harness；LangGraph 是
+  durable workflow runtime；LangSmith 是 privacy-first diagnostics；Application
+  DB 是 business authority。
+- `run_id` 约束 execution 和持久化交付；`thread_id` 保持调用方兼容身份。
+- Console 消费 canonical API 与 result contract，不新增 backend state、DB
+  table、API path、credential、review control、verification authority、public
+  online execution 或 tenant model。
+- Live Backend 仍限于 loopback，浏览器不接收或保存 API credential。详见
+  [Demo Console](docs/demo-console.md) 与 [API Contract](docs/reference/api-contract.md)。
+
+## Engineering Depth
+
+实现将 interface clients 与应用拥有的 ResearchRun、EvidenceLedger、review、
+verification、publication 和 result authority 分离。终态使用 fenced
+finalization；release evidence 由显式 tests、proof scripts、benchmark reports
+和 feature-flag limits 约束。
+
+## 架构
+
+[Architecture Deep Dive](docs/architecture.md) 映射 Interfaces、Application
+Services、Domain Authority、Framework Runtime、Verification 和 local
+deployment boundary。[Demo Console Design](DESIGN.md) 记录 presentation 与
+non-authority 边界。
+
+## 评估与发布
+
+评估在仓库声明的范围内保持 provider-free；每个 benchmark 和 release record
+保留自己的 evidence boundary。请先看
+[evaluation references](docs/reference/agent-evaluation-regression-gate.md)、
+[evidence index](docs/evidence/README.md) 和当前的
+[v0.1.8 release notes](docs/releases/v0.1.8.md)；showcase 不改写历史 release record。
+
+## 验证
+
+本次 surface 的 proportional local checks：
+
+```bash
+python -m pytest tests/unit/test_console_showcase_contracts.py \
+  tests/unit/test_demo_console_contracts.py -q
+cd frontend && npm run test && npm run lint && npm run build
+cd .. && python scripts/console_showcase_contracts.py check --root .
+```
+
+完整 CI proof inventory 仍见下方详细章节与 [CI workflow](.github/workflows/ci.yml)。
+
+## 能力详情
+
 - 使用 canonical `run_id` 执行研究任务。
 - 在应用数据库中持久化 ResearchRun、EvidenceLedger、review、verification、publication 和 canonical result 状态。
 - 通过可选的 durable `Idempotency-Key` 支持丢失响应后的 run identity reconciliation，并在 Agent invocation 前恢复单节点已提交工作；不声称 exactly-once execution。
@@ -28,7 +149,7 @@ Decision Research Agent 是一个长任务研究服务：围绕来源证据生�
 
 本仓库发布 backend、API、CLI、测试、文档、运维脚本和基于 React 的研究运行演示控制台（Agent Research Operations Console）。控制台可以创建 ResearchRun、观察生命周期并获取 canonical result，同时展示 EvidenceLedger、review、verification 和 authority 边界。它保留静态 fallback，不新增后端状态，也不成为业务事实源。
 
-## Engineering Depth
+## 工程深度详情
 
 - 服务将 interface clients 与应用拥有的 ResearchRun、EvidenceLedger、review、
   verification、publication 和 result authority 分离。
@@ -43,7 +164,7 @@ Decision Research Agent 是一个长任务研究服务：围绕来源证据生�
 - Release evidence 由显式验证脚本、文档契约、benchmark 报告和 feature-flag
   边界约束。
 
-## 架构
+## 架构参考
 
 ```mermaid
 flowchart TB
@@ -113,7 +234,7 @@ flowchart TB
 Demo videos 是 deterministic loopback contract demos，不是 live provider
 research recordings，也不是 public production service 或在线多用户部署证明。
 
-## 快速开始
+## 运行时快速开始详情
 
 先 clone 仓库、创建本地 `.env`、按 constraints 安装依赖、启动后端，再做
 healthcheck、doctor、创建 run 并读取 canonical result。
@@ -235,7 +356,7 @@ DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION=false
 
 除非后续 rollout 扩展部署模型，否则这两个功能仅支持文档中定义的单节点 SQLite 边界。
 
-## 验证
+## 验证详情
 
 以下命令仅为选定的本地验证子集，并非完整的 required CI proof 清单：
 

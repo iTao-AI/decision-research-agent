@@ -182,7 +182,7 @@ def test_showcase_manifest_verifies_exact_assets_and_capture_identity() -> None:
         "research-evidence-review.png",
         "research-workspace-overview.png",
     ]
-    assert result["provenance_verification"] == "historic_source_identity"
+    assert result["capture_input_fingerprint"] == compute_capture_input_fingerprint(PROJECT_ROOT)
 
 
 def test_reachable_historic_identity_is_cross_checked_against_capture_inputs(tmp_path: Path) -> None:

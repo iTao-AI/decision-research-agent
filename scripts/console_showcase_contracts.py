@@ -19,23 +19,24 @@ EXPECTED_ASSETS = (
     "research-evidence-review.png",
     "research-workspace-overview.png",
 )
-# Browser entry closure for the canonical frames. Keep generated PNGs,
-# manifest metadata, documentation, and tests outside this fingerprint.
-CAPTURE_INPUT_PATHS = (
-    "frontend/index.html",
-    "frontend/package-lock.json",
-    "frontend/package.json",
-    "frontend/src/App.tsx",
-    "frontend/src/apiClient.ts",
-    "frontend/src/consoleProjection.ts",
-    "frontend/src/demoData.ts",
-    "frontend/src/i18n.ts",
-    "frontend/src/main.tsx",
-    "frontend/src/runProjection.ts",
-    "frontend/src/styles.css",
-    "frontend/src/useLiveRun.ts",
-    "frontend/vite.config.ts",
+# Browser input discovery includes tracked frontend source, public assets, and
+# build/runtime configuration. Only clearly non-rendering test/generated/type
+# declaration paths are excluded; output PNGs, manifest metadata, docs, and
+# tests are never fingerprint inputs.
+NON_RENDERING_FRONTEND_DIRS = frozenset(
+    {
+        ".vite",
+        "__tests__",
+        "coverage",
+        "dist",
+        "node_modules",
+        "playwright-report",
+        "test-results",
+        "test",
+    }
 )
+NON_RENDERING_FRONTEND_SUFFIXES = (".d.ts",)
+NON_RENDERING_TEST_MARKERS = (".spec.", ".test.")
 CAPTURE_INPUT_FINGERPRINT_ALGORITHM = "sha256"
 EXPECTED_FRAMES = {
     "research-workspace-overview.png": {
@@ -100,13 +101,47 @@ def _source_commit_is_reachable(root: Path, source_commit: str) -> bool:
     _fail("git_identity_unavailable")
 
 
-def _fingerprint_from_reader(reader: Callable[[str], bytes]) -> str:
+def _is_rendering_frontend_path(relative_path: str) -> bool:
+    path = Path(relative_path)
+    if path.parts[0] != "frontend":
+        return False
+    if any(part in NON_RENDERING_FRONTEND_DIRS for part in path.parts[1:]):
+        return False
+    if path.name.endswith(NON_RENDERING_FRONTEND_SUFFIXES):
+        return False
+    return not any(marker in path.name for marker in NON_RENDERING_TEST_MARKERS)
+
+
+def _decode_git_paths(raw: bytes) -> tuple[str, ...]:
+    paths = {
+        path.decode("utf-8")
+        for path in raw.split(b"\0")
+        if path and _is_rendering_frontend_path(path.decode("utf-8"))
+    }
+    if not paths:
+        _fail("showcase_capture_input_set_empty")
+    return tuple(sorted(paths))
+
+
+def discover_capture_input_paths(root: Path) -> tuple[str, ...]:
+    return _decode_git_paths(_git_bytes(root, "ls-files", "-z", "--", "frontend"))
+
+
+def _discover_tree_capture_input_paths(root: Path, source_tree: str) -> tuple[str, ...]:
+    return _decode_git_paths(
+        _git_bytes(root, "ls-tree", "-r", "-z", "--name-only", source_tree, "--", "frontend")
+    )
+
+
+def _fingerprint_from_reader(
+    reader: Callable[[str], bytes], input_paths: tuple[str, ...]
+) -> str:
     entries = [
         {
             "path": relative_path,
             "sha256": hashlib.sha256(reader(relative_path)).hexdigest(),
         }
-        for relative_path in CAPTURE_INPUT_PATHS
+        for relative_path in input_paths
     ]
     canonical_entries = json.dumps(
         entries,
@@ -117,18 +152,25 @@ def _fingerprint_from_reader(reader: Callable[[str], bytes]) -> str:
 
 
 def compute_capture_input_fingerprint(root: Path) -> str:
+    input_paths = discover_capture_input_paths(root)
+
     def read_input(relative_path: str) -> bytes:
         try:
             return (root / relative_path).read_bytes()
         except OSError:
             _fail("showcase_capture_input_unreadable")
 
-    return _fingerprint_from_reader(read_input)
+    return _fingerprint_from_reader(read_input, input_paths)
 
 
-def _compute_tree_capture_input_fingerprint(root: Path, source_tree: str) -> str:
+def _compute_tree_capture_input_fingerprint(
+    root: Path,
+    source_tree: str,
+    input_paths: tuple[str, ...],
+) -> str:
     return _fingerprint_from_reader(
-        lambda relative_path: _git_bytes(root, "show", f"{source_tree}:{relative_path}")
+        lambda relative_path: _git_bytes(root, "show", f"{source_tree}:{relative_path}"),
+        input_paths,
     )
 
 
@@ -187,8 +229,9 @@ def verify_showcase_assets(root: Path) -> dict[str, Any]:
         _fail("showcase_capture_input_fingerprint_invalid")
     if capture_input.get("algorithm") != CAPTURE_INPUT_FINGERPRINT_ALGORITHM:
         _fail("showcase_capture_input_algorithm_invalid")
-    if capture_input.get("paths") != list(CAPTURE_INPUT_PATHS):
-        _fail("showcase_capture_input_paths_invalid")
+    discovered_input_paths = discover_capture_input_paths(root)
+    if capture_input.get("paths") != list(discovered_input_paths):
+        _fail("showcase_capture_input_paths_mismatch")
     declared_capture_input_fingerprint = _require_text(
         capture_input.get("value"),
         "showcase_capture_input_fingerprint_invalid",
@@ -207,7 +250,13 @@ def verify_showcase_assets(root: Path) -> dict[str, Any]:
         source_files = _git(root, "ls-tree", "-r", "--name-only", source_tree).splitlines()
         if any(path.startswith(f"{ASSET_RELATIVE_DIR.as_posix()}/") for path in source_files):
             _fail("showcase_source_tree_contains_assets")
-        if _compute_tree_capture_input_fingerprint(root, source_tree) != declared_capture_input_fingerprint:
+        source_input_paths = _discover_tree_capture_input_paths(root, source_tree)
+        if source_input_paths != discovered_input_paths:
+            _fail("showcase_source_capture_input_paths_mismatch")
+        if (
+            _compute_tree_capture_input_fingerprint(root, source_tree, discovered_input_paths)
+            != declared_capture_input_fingerprint
+        ):
             _fail("showcase_source_capture_input_fingerprint_mismatch")
         provenance_verification = "historic_source_identity"
     else:

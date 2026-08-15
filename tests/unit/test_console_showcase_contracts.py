@@ -8,15 +8,16 @@ import subprocess
 import pytest
 
 from scripts.console_showcase_contracts import (
-    CAPTURE_INPUT_PATHS,
     EXPECTED_ASSETS,
     compute_capture_input_fingerprint,
+    discover_capture_input_paths,
     load_showcase_manifest,
     verify_showcase_assets,
 )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CAPTURE_INPUT_PATHS = discover_capture_input_paths(PROJECT_ROOT)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -193,6 +194,17 @@ def test_reachable_historic_identity_is_cross_checked_against_capture_inputs(tmp
 
     assert result["provenance_verification"] == "historic_source_identity"
     assert result["capture_input_fingerprint"] == compute_capture_input_fingerprint(fixture)
+
+
+def test_new_tracked_production_frontend_input_requires_manifest_update(tmp_path: Path) -> None:
+    fixture = tmp_path / "new-production-input"
+    _prepare_git_fixture(fixture)
+    new_module = fixture / "frontend/src/newProductionModule.ts"
+    new_module.write_text("export const newProductionInput = true;\n", encoding="utf-8")
+    _git(fixture, "add", "frontend/src/newProductionModule.ts")
+
+    with pytest.raises(ValueError, match="showcase_capture_input_paths_mismatch"):
+        verify_showcase_assets(fixture)
 
 
 def test_unreachable_historic_identity_uses_truthful_capture_fingerprint_mode(tmp_path: Path) -> None:

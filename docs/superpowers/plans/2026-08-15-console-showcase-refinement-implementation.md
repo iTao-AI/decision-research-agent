@@ -46,3 +46,5 @@ pass, the final diff is public-neutral, and the worktree is clean.
 - Presentation provenance guards must remain portable on a fresh main clone:
   hard-verify the current rendering-input fingerprint, and report when
   historic identity is unavailable instead of claiming historic verification.
+- The capture-input path set must be derived from tracked production frontend
+  inputs; a manually maintained closure can silently become stale.

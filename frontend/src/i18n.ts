@@ -82,7 +82,7 @@ export const copy = {
     live: {
       staticMode: "静态演示",
       liveMode: "真实后端",
-      staticDescription: "使用内置静态快照，适合无后端面试演示。",
+      staticDescription: "使用内置静态快照，适合无后端演示。",
       liveDescription: "连接本机后端，执行受控 run -> result 黄金路径。",
       baseUrl: "Backend base URL",
       checkHealth: "检查后端",
@@ -110,6 +110,59 @@ export const copy = {
         result: "已加载 canonical result",
         static: "静态快照已启用",
         terminal: "已观察到非 ready 终态"
+      }
+    },
+    showcase: {
+      railLabel: "研究路径",
+      workspaceLabel: "研究工作区",
+      questionLabel: "研究问题",
+      question: "比较两种研究工作流的证据完整性与交付边界",
+      normalBadge: "正常路径 · 已交付",
+      blockedBadge: "Review required",
+      judgmentLabel: "判断侧栏",
+      technicalLabel: "Technical console view",
+      technicalDescription: "运行模式、内部标识、框架细节与诊断信息",
+      stages: {
+        question: "问题",
+        work: "计划与工具工作",
+        evidence: "Evidence review",
+        review: "判断与交付",
+        delivery: "Canonical delivery"
+      },
+      overview: {
+        summary: "计划、工具工作和 Evidence 已收敛为可交付的研究结果。",
+        planTitle: "Plan",
+        plan: "定义比较维度，先固定可审查的来源范围。",
+        toolTitle: "Tool work",
+        tool: "读取声明来源并记录每一步的 Evidence ref。",
+        evidenceTitle: "Evidence",
+        evidence: "2 条 Evidence 已冻结，claim 与 source 可回溯。",
+        reviewTitle: "Judgment",
+        review: "Review approved；verification 保持独立。",
+        deliveryTitle: "Canonical delivery",
+        delivery: "canonical result 已由 service-owned contract 交付。"
+      },
+      evidence: {
+        summary: "先把 claim、source 和 verification 分开，再判断是否允许交付。",
+        heading: "Claim / source review",
+        traceable: "Evidence is traceable before delivery",
+        claim: "Claim",
+        source: "Source",
+        citation: "Citation",
+        verified: "verified",
+        cited: "cited",
+        pending: "需要独立核验",
+        delivery: "Canonical delivery"
+      },
+      blocked: {
+        summary: "缺少足够 Evidence、citation 无效或 tool failure 时，交付保持关闭。",
+        heading: "Recovery checkpoint",
+        warning: "Evidence is insufficient or the citation is invalid",
+        detail: "需要补充来源或修复工具结果，不能用 UI 绕过 review gate。",
+        review: "review_required",
+        delivery: "not_delivered",
+        deliveryTitle: "Canonical delivery is held",
+        deliveryDetail: "先完成 Evidence review，再产生 canonical result。"
       }
     },
     statements: {
@@ -216,6 +269,59 @@ export const copy = {
         result: "Canonical result loaded",
         static: "Static snapshot active",
         terminal: "Terminal non-ready run observed"
+      }
+    },
+    showcase: {
+      railLabel: "Research flow",
+      workspaceLabel: "Research workspace",
+      questionLabel: "Research question",
+      question: "Compare evidence completeness and delivery boundaries across two research workflows",
+      normalBadge: "Normal path · delivered",
+      blockedBadge: "Review required",
+      judgmentLabel: "Judgment sidebar",
+      technicalLabel: "Technical console view",
+      technicalDescription: "Runtime mode, internal identifiers, framework details, and diagnostics",
+      stages: {
+        question: "Question",
+        work: "Plan + tool work",
+        evidence: "Evidence review",
+        review: "Judgment + review",
+        delivery: "Canonical delivery"
+      },
+      overview: {
+        summary: "Plan, tool work, and Evidence converge into a deliverable research result.",
+        planTitle: "Plan",
+        plan: "Fix comparison dimensions and the auditable source boundary first.",
+        toolTitle: "Tool work",
+        tool: "Read declared sources and record an Evidence ref for each step.",
+        evidenceTitle: "Evidence",
+        evidence: "Two Evidence entries are frozen and traceable to claims.",
+        reviewTitle: "Judgment",
+        review: "Review approved; verification remains an independent decision.",
+        deliveryTitle: "Canonical delivery",
+        delivery: "The service-owned contract supplies the canonical result."
+      },
+      evidence: {
+        summary: "Separate claim, source, and verification before deciding whether delivery is allowed.",
+        heading: "Claim / source review",
+        traceable: "Evidence is traceable before delivery",
+        claim: "Claim",
+        source: "Source",
+        citation: "Citation",
+        verified: "verified",
+        cited: "cited",
+        pending: "Independent verification required",
+        delivery: "Canonical delivery"
+      },
+      blocked: {
+        summary: "When Evidence is insufficient, a citation is invalid, or a tool fails, delivery stays closed.",
+        heading: "Recovery checkpoint",
+        warning: "Evidence is insufficient or the citation is invalid",
+        detail: "Add a source or repair the tool result; the UI cannot bypass the review gate.",
+        review: "review_required",
+        delivery: "not_delivered",
+        deliveryTitle: "Canonical delivery is held",
+        deliveryDetail: "Complete Evidence review before producing a canonical result."
       }
     },
     statements: {

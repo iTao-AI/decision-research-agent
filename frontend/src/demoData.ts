@@ -64,6 +64,63 @@ export const demoRun = {
     'python tools/decision_research_agent_tool.py run \\\n  --query "Compare the evidence behind the proposed decision" \\\n  --wait \\\n  --result'
 };
 
+export const blockedDemoRun = {
+  service: "decision-research-agent",
+  mode: "demo data",
+  health: "unavailable",
+  runId: "run_demo_blocked_evidence_001",
+  threadId: "demo-thread-blocked-recovery",
+  segmentId: "run_demo_blocked_evidence_001_seg_review",
+  stateVersion: 6,
+  profileId: "generic-research",
+  lifecycle: [
+    "created",
+    "planning",
+    "tool_call",
+    "tool_failed",
+    "evidence_incomplete",
+    "review_required"
+  ],
+  telemetry: [
+    "session_created",
+    "plan_recorded",
+    "tool_start: source_search",
+    "tool_failure",
+    "review_required"
+  ],
+  evidence: [
+    {
+      id: "ev_blocked_001",
+      source: "declared fixture: source admission incomplete",
+      fingerprint: "sha256:blocked...001",
+      citedBy: ["claim_unresolved"],
+      verification: "citation_invalid"
+    }
+  ],
+  review: {
+    status: "review_required",
+    decisionId: "decision_pending_review",
+    stateVersion: 6,
+    idempotency: "not created"
+  },
+  verification: {
+    snapshot: "verification_pending",
+    baselineOrigin: "synthetic_demo",
+    status: "blocked",
+    publicationFreshness: "not published"
+  },
+  artifact: {
+    id: "decision-brief.md",
+    mediaType: "text/markdown",
+    revision: "not published",
+    contentHash: "sha256:not-delivered",
+    safety: "not evaluated"
+  },
+  resultMarkdown: "",
+  cliGoldenPath:
+    'python tools/decision_research_agent_tool.py run \\\n+  --query "Compare the evidence behind the proposed decision" \\\n+  --wait \\\n+  --result'
+};
+
 export const architectureNodes = [
   "OpenClaw / Codex / Tool Client / REST",
   "FastAPI",

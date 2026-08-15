@@ -25,7 +25,22 @@ multi-tenant console, backend state machine, or result authority.
 
 ## Information Architecture
 
-The first shell has six required screens:
+The first shell presents one five-stage research path:
+
+1. Research question
+2. Plan and tool work
+3. Evidence review
+4. Judgment and review
+5. Canonical delivery
+
+The visible layout is intentionally ordered as:
+
+1. **Stage rail** — the current checkpoint and the next bounded handoff.
+2. **Research work surface** — the question, plan/tool work, Evidence, and
+   normal or blocked delivery state.
+3. **Judgment sidebar** — Evidence sufficiency, review state, and delivery gate.
+
+The technical disclosure retains the six operator screens:
 
 1. Command Center
 2. Run Lifecycle
@@ -36,16 +51,19 @@ The first shell has six required screens:
 
 The screen set is intentionally operational. Chat bubbles, prompt-first
 layouts, and message input boxes are not part of the primary interaction model.
+Runtime mode, internal IDs, framework details, and diagnostic traces remain
+available in the secondary technical disclosure rather than competing with the
+research path.
 
 ## Layout Rules
 
 - Desktop-first, because the primary use case is a live technical demo.
-- Three-column shell: left navigation, center run canvas, right inspector.
+- Three-column shell: stage rail, research work surface, judgment sidebar.
 - Static Demo places the selected screen before Live Backend controls so the
   1280x720 recording viewport leads with the current research concept. Live
   Backend mode promotes its controls ahead of the selected screen.
-- The right inspector carries persistent authority notes, CLI golden path, and
-  explicit UI boundaries.
+- The right judgment sidebar carries persistent Evidence, review, delivery,
+  authority, and explicit UI-boundary notes.
 - Mobile only needs to remain readable; it is not the primary experience.
 - Cards are used only for repeated state records, metrics, and inspection
   panels. Page sections remain unframed inside the shell.
@@ -117,6 +135,12 @@ python tools/decision_research_agent_tool.py run \
 ## Data Rules
 
 - Static Demo mode uses local demo data only.
+- Showcase routes `/?showcase=overview`, `/?showcase=evidence`, and
+  `/?showcase=blocked` select deterministic presentation fixtures only; they do
+  not add backend or API states.
+- The blocked fixture keeps insufficient Evidence, invalid citation, or tool
+  failure at `review_required` and `not_delivered`; it never fabricates a
+  canonical result.
 - Live Backend mode may call `/health`, `POST /api/runs`,
   `/api/runs/{run_id}`, and `/api/runs/{run_id}/result`.
 - Live Backend is local-only in the current slice. It uses one explicit CORS

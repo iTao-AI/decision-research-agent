@@ -1,4 +1,4 @@
-import { architectureNodes, demoRun } from "./demoData";
+import { architectureNodes, blockedDemoRun, demoRun } from "./demoData";
 import type { HealthResponse, RunCreationResponse } from "./apiClient";
 import type {
   ArtifactMetadataProjection,
@@ -171,6 +171,8 @@ export type LiveConsoleProjectionInput = Readonly<{
   status: string;
 }>;
 
+export type StaticShowcaseScenario = "normal" | "blocked";
+
 const LIVE_CLI_GOLDEN_PATH = [
   "python tools/decision_research_agent_tool.py run \\",
   '  --query "Compare the evidence behind the proposed decision" \\',
@@ -178,19 +180,23 @@ const LIVE_CLI_GOLDEN_PATH = [
   "  --result"
 ].join("\n");
 
-export function buildStaticConsoleProjection(): ConsoleProjection {
+export function buildStaticConsoleProjection(
+  scenario: StaticShowcaseScenario = "normal"
+): ConsoleProjection {
+  const staticRun = scenario === "blocked" ? blockedDemoRun : demoRun;
+  const isBlocked = scenario === "blocked";
   const run = freezeRunView({
-    runId: demoRun.runId,
-    threadId: demoRun.threadId,
-    profileId: demoRun.profileId,
-    stateVersion: demoRun.stateVersion,
-    primarySegmentId: observed(demoRun.segmentId),
-    executionStatus: notObserved(),
-    reviewStatus: observed(demoRun.review.status),
-    deliveryStatus: notObserved()
+    runId: staticRun.runId,
+    threadId: staticRun.threadId,
+    profileId: staticRun.profileId,
+    stateVersion: staticRun.stateVersion,
+    primarySegmentId: observed(staticRun.segmentId),
+    executionStatus: isBlocked ? observed("failed") : notObserved(),
+    reviewStatus: observed(staticRun.review.status),
+    deliveryStatus: isBlocked ? observed("not_delivered") : notObserved()
   });
   const lifecycleEntries = freezeArray([
-    ...demoRun.lifecycle.map((label) =>
+    ...staticRun.lifecycle.map((label) =>
       freezeLifecycleEntry({
         category: "lifecycle",
         label,
@@ -199,7 +205,7 @@ export function buildStaticConsoleProjection(): ConsoleProjection {
         attempt: unsupported()
       })
     ),
-    ...demoRun.telemetry.map((label) =>
+    ...staticRun.telemetry.map((label) =>
       freezeLifecycleEntry({
         category: "telemetry",
         label,
@@ -210,13 +216,13 @@ export function buildStaticConsoleProjection(): ConsoleProjection {
     )
   ]);
   const evidence = freezeArray(
-    demoRun.evidence.map((entry) =>
+    staticRun.evidence.map((entry) =>
       Object.freeze({
         evidenceId: entry.id,
         sourceIdentity: entry.source,
         sourceUrl: unsupported<string>(),
         fingerprint: entry.fingerprint,
-        citationStatus: unsupported<string>(),
+        citationStatus: isBlocked ? observed(entry.verification) : unsupported<string>(),
         verificationStatus: entry.verification,
         citedBy: observed(freezeArray([...entry.citedBy]))
       })
@@ -224,33 +230,37 @@ export function buildStaticConsoleProjection(): ConsoleProjection {
   );
   const verification = Object.freeze({
     source: "static" as const,
-    snapshot: demoRun.verification.snapshot,
-    baselineOrigin: demoRun.verification.baselineOrigin,
-    status: demoRun.verification.status,
-    publicationFreshness: demoRun.verification.publicationFreshness
+    snapshot: staticRun.verification.snapshot,
+    baselineOrigin: staticRun.verification.baselineOrigin,
+    status: staticRun.verification.status,
+    publicationFreshness: staticRun.verification.publicationFreshness
   });
-  const result = Object.freeze({
-    runId: demoRun.runId,
-    executionStatus: notObserved<string>(),
-    deliveryStatus: notObserved<string>(),
-    artifact: Object.freeze({
-      artifactId: demoRun.artifact.id,
-      kind: unsupported<string>(),
-      mediaType: demoRun.artifact.mediaType,
-      contentHash: demoRun.artifact.contentHash,
-      revision: observed(demoRun.artifact.revision),
-      safety: observed(demoRun.artifact.safety),
-      content: demoRun.resultMarkdown
-    })
-  });
+  const result: Observation<ResultView> = isBlocked
+    ? notApplicable()
+    : observed(
+        Object.freeze({
+          runId: staticRun.runId,
+          executionStatus: notObserved<string>(),
+          deliveryStatus: notObserved<string>(),
+          artifact: Object.freeze({
+            artifactId: staticRun.artifact.id,
+            kind: unsupported<string>(),
+            mediaType: staticRun.artifact.mediaType,
+            contentHash: staticRun.artifact.contentHash,
+            revision: observed(staticRun.artifact.revision),
+            safety: observed(staticRun.artifact.safety),
+            content: staticRun.resultMarkdown
+          })
+        })
+      );
 
   return Object.freeze({
     source: "static",
     summary: Object.freeze({
-      service: observed(demoRun.service),
-      health: observed(demoRun.health),
-      mode: demoRun.mode as "demo data",
-      runId: observed(demoRun.runId)
+      service: observed(staticRun.service),
+      health: observed(staticRun.health),
+      mode: staticRun.mode as "demo data",
+      runId: observed(staticRun.runId)
     }),
     command: Object.freeze({
       create: notApplicable<CreateReceiptView>(),
@@ -266,17 +276,17 @@ export function buildStaticConsoleProjection(): ConsoleProjection {
     }),
     evidence: observed(evidence),
     review: Object.freeze({
-      status: observed(demoRun.review.status),
-      decisionId: observed(demoRun.review.decisionId),
-      stateVersion: observed(demoRun.review.stateVersion),
-      idempotency: observed(demoRun.review.idempotency),
+      status: observed(staticRun.review.status),
+      decisionId: observed(staticRun.review.decisionId),
+      stateVersion: observed(staticRun.review.stateVersion),
+      idempotency: observed(staticRun.review.idempotency),
       workflow: unsupported<ReviewWorkflowProjection>(),
       decision: unsupported<ReviewDecisionProjection>(),
       resolution: unsupported<ReviewResolutionProjection>()
     }),
     verification: observed(verification),
-    result: observed(result),
-    architecture: buildArchitectureReference(demoRun.cliGoldenPath)
+    result,
+    architecture: buildArchitectureReference(staticRun.cliGoldenPath)
   });
 }
 

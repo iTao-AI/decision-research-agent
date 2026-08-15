@@ -14,6 +14,34 @@ owning business authority. It has two modes:
 The console is a consumer of service-owned state. It does not write review or
 verification decisions, create database authority, or bypass result gates.
 
+## Showcase Frames
+
+The public Static Demo has three deterministic capture states under
+[`docs/assets/console-showcase`](assets/console-showcase/):
+
+- [`research-workspace-overview.png`](assets/console-showcase/research-workspace-overview.png)
+  shows the question, plan/tool work, frozen Evidence, review, and canonical
+  delivery path.
+- [`research-evidence-review.png`](assets/console-showcase/research-evidence-review.png)
+  makes claim/source/citation judgment visible before delivery.
+- [`research-blocked-recovery.png`](assets/console-showcase/research-blocked-recovery.png)
+  shows insufficient Evidence, invalid citation, or tool failure held at
+  `review_required` and `not_delivered`.
+
+Open the corresponding deterministic routes in Static Demo:
+
+```text
+/?showcase=overview
+/?showcase=evidence
+/?showcase=blocked
+```
+
+These are synthetic/demo fixtures, not live provider research recordings or
+production data. The [manifest](assets/console-showcase/manifest.json) records
+the source implementation commit/tree, route/state, `zh-CN` locale,
+1600x1000 viewport, disclosure, and SHA-256 values. It intentionally refers to
+the stable implementation commit before the asset commit.
+
 ## Demo Video Boundary
 
 Public demo videos for Decision Research Agent are deterministic loopback contract demos.

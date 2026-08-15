@@ -89,6 +89,43 @@ describe("Decision Research Agent demo console", () => {
     expect(document.querySelector(".chat-bubble")).not.toBeInTheDocument();
   });
 
+  it("makes the five-step research path the primary static hierarchy", () => {
+    render(<App showcaseState="overview" />);
+
+    expect(screen.getByRole("navigation", { name: "Research flow" })).toBeInTheDocument();
+    expect(screen.getByText("研究问题")).toBeInTheDocument();
+    expect(screen.getAllByText("计划与工具工作").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Evidence review").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("判断与交付").length).toBeGreaterThan(0);
+    expect(document.querySelector(".stage-rail")).toBeInTheDocument();
+    expect(document.querySelector(".research-work-surface")).toBeInTheDocument();
+    expect(document.querySelector(".judgment-sidebar")).toBeInTheDocument();
+
+    const technicalDisclosure = screen.getByText("Technical console view").closest("details");
+    expect(technicalDisclosure).toBeInTheDocument();
+    expect(technicalDisclosure).not.toHaveAttribute("open");
+  });
+
+  it("renders the Evidence review showcase with claim and source judgment", () => {
+    render(<App showcaseState="evidence" />);
+
+    expect(screen.getAllByText("Claim / source review").length).toBeGreaterThan(0);
+    expect(screen.getByText("Evidence is traceable before delivery")).toBeInTheDocument();
+    expect(screen.getAllByText("citation_status").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Canonical delivery").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the blocked showcase at review-required and not-delivered", () => {
+    render(<App showcaseState="blocked" />);
+
+    expect(screen.getByText("Review required")).toBeInTheDocument();
+    expect(screen.getByText("Evidence is insufficient or the citation is invalid")).toBeInTheDocument();
+    expect(screen.getAllByText("review_required").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("not_delivered").length).toBeGreaterThan(0);
+    expect(screen.getByText("Canonical delivery is held")).toBeInTheDocument();
+    expect(screen.queryByText("Canonical Decision Brief")).not.toBeInTheDocument();
+  });
+
   it("lets each definition row span the parent grid and own its two-column layout", () => {
     const process = (
       globalThis as typeof globalThis & {
@@ -175,7 +212,7 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.getByRole("button", { name: "静态演示" })).toHaveClass("active");
     expect(screen.getByRole("button", { name: "真实后端" })).toBeInTheDocument();
     expect(screen.getByLabelText("Backend base URL")).toHaveValue("http://127.0.0.1:8000");
-    expect(screen.getByText("使用内置静态快照，适合无后端面试演示。")).toBeInTheDocument();
+    expect(screen.getByText("使用内置静态快照，适合无后端演示。")).toBeInTheDocument();
   });
 
   it("prioritizes screen content in Static Demo and live controls in Live Backend mode", async () => {
@@ -441,7 +478,7 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.queryByText("Result cleared by static mode.")).not.toBeInTheDocument();
     expect(screen.queryByText("后端可用")).not.toBeInTheDocument();
     expect(screen.getAllByText("run_demo_talent_2026_06_29").length).toBeGreaterThan(0);
-    expect(screen.getByText("使用内置静态快照，适合无后端面试演示。")).toBeInTheDocument();
+    expect(screen.getByText("使用内置静态快照，适合无后端演示。")).toBeInTheDocument();
   });
 
   it("clears connection-scoped state when the backend URL changes", async () => {

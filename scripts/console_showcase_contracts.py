@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 import hashlib
 import json
 from pathlib import Path
@@ -18,6 +19,24 @@ EXPECTED_ASSETS = (
     "research-evidence-review.png",
     "research-workspace-overview.png",
 )
+# Browser entry closure for the canonical frames. Keep generated PNGs,
+# manifest metadata, documentation, and tests outside this fingerprint.
+CAPTURE_INPUT_PATHS = (
+    "frontend/index.html",
+    "frontend/package-lock.json",
+    "frontend/package.json",
+    "frontend/src/App.tsx",
+    "frontend/src/apiClient.ts",
+    "frontend/src/consoleProjection.ts",
+    "frontend/src/demoData.ts",
+    "frontend/src/i18n.ts",
+    "frontend/src/main.tsx",
+    "frontend/src/runProjection.ts",
+    "frontend/src/styles.css",
+    "frontend/src/useLiveRun.ts",
+    "frontend/vite.config.ts",
+)
+CAPTURE_INPUT_FINGERPRINT_ALGORITHM = "sha256"
 EXPECTED_FRAMES = {
     "research-workspace-overview.png": {
         "route": "/?showcase=overview",
@@ -52,6 +71,65 @@ def _git(root: Path, *args: str) -> str:
     if completed.returncode != 0:
         _fail("git_identity_unavailable")
     return completed.stdout.strip()
+
+
+def _git_bytes(root: Path, *args: str) -> bytes:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        _fail("git_identity_unavailable")
+    return completed.stdout
+
+
+def _source_commit_is_reachable(root: Path, source_commit: str) -> bool:
+    completed = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{source_commit}^{{commit}}"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        return True
+    if completed.returncode == 1 and not completed.stderr:
+        return False
+    _fail("git_identity_unavailable")
+
+
+def _fingerprint_from_reader(reader: Callable[[str], bytes]) -> str:
+    entries = [
+        {
+            "path": relative_path,
+            "sha256": hashlib.sha256(reader(relative_path)).hexdigest(),
+        }
+        for relative_path in CAPTURE_INPUT_PATHS
+    ]
+    canonical_entries = json.dumps(
+        entries,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical_entries).hexdigest()
+
+
+def compute_capture_input_fingerprint(root: Path) -> str:
+    def read_input(relative_path: str) -> bytes:
+        try:
+            return (root / relative_path).read_bytes()
+        except OSError:
+            _fail("showcase_capture_input_unreadable")
+
+    return _fingerprint_from_reader(read_input)
+
+
+def _compute_tree_capture_input_fingerprint(root: Path, source_tree: str) -> str:
+    return _fingerprint_from_reader(
+        lambda relative_path: _git_bytes(root, "show", f"{source_tree}:{relative_path}")
+    )
 
 
 def load_showcase_manifest(root: Path) -> dict[str, Any]:
@@ -104,14 +182,36 @@ def verify_showcase_assets(root: Path) -> dict[str, Any]:
         _fail("showcase_locale_invalid")
     _require_text(capture.get("synthetic_demo_disclosure"), "showcase_disclosure_missing")
 
+    capture_input = capture.get("capture_input_fingerprint")
+    if not isinstance(capture_input, dict):
+        _fail("showcase_capture_input_fingerprint_invalid")
+    if capture_input.get("algorithm") != CAPTURE_INPUT_FINGERPRINT_ALGORITHM:
+        _fail("showcase_capture_input_algorithm_invalid")
+    if capture_input.get("paths") != list(CAPTURE_INPUT_PATHS):
+        _fail("showcase_capture_input_paths_invalid")
+    declared_capture_input_fingerprint = _require_text(
+        capture_input.get("value"),
+        "showcase_capture_input_fingerprint_invalid",
+    )
+    if not _HEX_64.fullmatch(declared_capture_input_fingerprint):
+        _fail("showcase_capture_input_fingerprint_invalid")
+    if compute_capture_input_fingerprint(root) != declared_capture_input_fingerprint:
+        _fail("showcase_capture_input_fingerprint_mismatch")
+
     current_head = _git(root, "rev-parse", "HEAD")
     if source_commit == current_head:
         _fail("showcase_manifest_self_reference")
-    if _git(root, "show", "-s", "--format=%T", source_commit) != source_tree:
-        _fail("showcase_source_tree_mismatch")
-    source_files = _git(root, "ls-tree", "-r", "--name-only", source_tree).splitlines()
-    if any(path.startswith(f"{ASSET_RELATIVE_DIR.as_posix()}/") for path in source_files):
-        _fail("showcase_source_tree_contains_assets")
+    if _source_commit_is_reachable(root, source_commit):
+        if _git(root, "show", "-s", "--format=%T", source_commit) != source_tree:
+            _fail("showcase_source_tree_mismatch")
+        source_files = _git(root, "ls-tree", "-r", "--name-only", source_tree).splitlines()
+        if any(path.startswith(f"{ASSET_RELATIVE_DIR.as_posix()}/") for path in source_files):
+            _fail("showcase_source_tree_contains_assets")
+        if _compute_tree_capture_input_fingerprint(root, source_tree) != declared_capture_input_fingerprint:
+            _fail("showcase_source_capture_input_fingerprint_mismatch")
+        provenance_verification = "historic_source_identity"
+    else:
+        provenance_verification = "capture_input_fingerprint_unreachable_source"
 
     actual_assets = tuple(sorted(path.name for path in asset_dir.glob("*.png")))
     if actual_assets != EXPECTED_ASSETS:
@@ -149,6 +249,8 @@ def verify_showcase_assets(root: Path) -> dict[str, Any]:
         "locale": capture["locale"],
         "source_commit": source_commit,
         "source_tree": source_tree,
+        "provenance_verification": provenance_verification,
+        "capture_input_fingerprint": declared_capture_input_fingerprint,
         "sha256": hashes,
     }
 

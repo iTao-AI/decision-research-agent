@@ -38,3 +38,11 @@ service-owned authority boundaries unchanged.
 Mark this plan complete only after the implementation source commit is frozen,
 the three assets and manifest verify deterministically, all proportional checks
 pass, the final diff is public-neutral, and the worktree is clean.
+
+## Mini-retro
+
+- A green PR-head run does not prove that a squash-merged main checkout can
+  resolve the PR's historic source commit.
+- Presentation provenance guards must remain portable on a fresh main clone:
+  hard-verify the current rendering-input fingerprint, and report when
+  historic identity is unavailable instead of claiming historic verification.

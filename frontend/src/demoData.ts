@@ -118,7 +118,7 @@ export const blockedDemoRun = {
   },
   resultMarkdown: "",
   cliGoldenPath:
-    'python tools/decision_research_agent_tool.py run \\\n+  --query "Compare the evidence behind the proposed decision" \\\n+  --wait \\\n+  --result'
+    'python tools/decision_research_agent_tool.py run \\\n  --query "Compare the evidence behind the proposed decision" \\\n  --wait \\\n  --result'
 };
 
 export const architectureNodes = [

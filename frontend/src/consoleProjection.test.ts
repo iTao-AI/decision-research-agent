@@ -180,6 +180,12 @@ describe("console projection source separation", () => {
     expectDeepFrozen(projection);
   });
 
+  it("keeps the blocked Static Demo CLI golden path free of diff markers", () => {
+    const projection = buildStaticConsoleProjection("blocked");
+
+    expect(projection.architecture.cliGoldenPath).not.toMatch(/^\+\s/m);
+  });
+
   it("returns an empty Live projection with no Static Demo identifiers", () => {
     const projection = buildLiveConsoleProjection(emptyLiveInput());
 

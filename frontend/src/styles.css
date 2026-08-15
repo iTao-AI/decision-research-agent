@@ -950,6 +950,11 @@ pre {
   background: #f7f5ef;
 }
 
+.showcase-route .workspace,
+.showcase-route .stage-rail {
+  min-height: 0;
+}
+
 .research-work-surface {
   padding: 24px;
   border: 1px solid #d8d2c4;
@@ -1015,10 +1020,48 @@ pre {
   color: #b91c1c;
 }
 
+.showcase-badge.neutral {
+  border-color: #b9c2d0;
+  background: #f1f5f9;
+  color: #475569;
+}
+
 .showcase-overview,
 .evidence-showcase,
 .blocked-showcase {
   min-width: 0;
+}
+
+.live-observation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.live-observation-grid article {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #d8d2c4;
+  border-radius: 8px;
+  background: #f7f5ef;
+}
+
+.live-observation-grid article > span {
+  display: block;
+  color: #6b7280;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.live-observation-grid article > strong,
+.live-observation-grid article > .observation {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .showcase-overview {
@@ -1413,6 +1456,10 @@ pre {
   color: #b91c1c;
 }
 
+.judgment-row strong.neutral {
+  color: #4b5563;
+}
+
 .inspector-technical[open] > .inspector-panel,
 .inspector-technical[open] > section {
   margin: 0 12px 12px;
@@ -1512,6 +1559,7 @@ pre {
   .showcase-step-grid,
   .evidence-review-grid,
   .blocked-showcase,
+  .live-observation-grid,
   .judgment-sidebar {
     grid-template-columns: 1fr;
   }

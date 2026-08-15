@@ -66,6 +66,7 @@ export default function App({
           }),
     [liveRun.state, staticScenario]
   );
+  const isStaticProjection = projection.source === "static";
 
   const activeTitle = t.screens[activeScreen];
   const activeStatement = t.statements[activeScreen];
@@ -76,7 +77,7 @@ export default function App({
   }, [language]);
 
   return (
-    <div className={`console-shell showcase-${showcaseState}`}>
+    <div className={`console-shell showcase-${showcaseState} ${isShowcaseRoute ? "showcase-route" : ""}`}>
       <header className="top-bar">
         <div>
           <p className="eyebrow">{t.eyebrow}</p>
@@ -111,32 +112,39 @@ export default function App({
         />
 
         <main className={`canvas ${liveRun.state.mode}-mode`}>
-          <section className="research-work-surface">
-            <div className="surface-heading">
-              <div>
-                <p className="kicker">{t.showcase.workspaceLabel}</p>
-                <p className="surface-label">{t.showcase.questionLabel}</p>
-                <h2>{t.showcase.question}</h2>
+          {isStaticProjection ? (
+            <section className="research-work-surface">
+              <div className="surface-heading">
+                <div>
+                  <p className="kicker">{t.showcase.workspaceLabel}</p>
+                  <p className="surface-label">{t.showcase.questionLabel}</p>
+                  <h2>{t.showcase.question}</h2>
+                </div>
+                <span className={`showcase-badge ${showcaseState === "blocked" ? "blocked" : "ready"}`}>
+                  {showcaseState === "blocked" ? t.showcase.blockedBadge : t.showcase.normalBadge}
+                </span>
               </div>
-              <span className={`showcase-badge ${showcaseState === "blocked" ? "blocked" : "ready"}`}>
-                {showcaseState === "blocked" ? t.showcase.blockedBadge : t.showcase.normalBadge}
-              </span>
-            </div>
-            <p className="surface-summary">
-              {showcaseState === "blocked"
-                ? t.showcase.blocked.summary
-                : showcaseState === "evidence"
-                  ? t.showcase.evidence.summary
-                  : t.showcase.overview.summary}
-            </p>
-            <ShowcaseWorkspace
-              language={language}
-              projection={projection}
-              showcaseState={showcaseState}
-            />
-          </section>
+              <p className="surface-summary">
+                {showcaseState === "blocked"
+                  ? t.showcase.blocked.summary
+                  : showcaseState === "evidence"
+                    ? t.showcase.evidence.summary
+                    : t.showcase.overview.summary}
+              </p>
+              <ShowcaseWorkspace
+                language={language}
+                projection={projection}
+                showcaseState={showcaseState}
+              />
+            </section>
+          ) : (
+            <LiveObservationSurface language={language} projection={projection} />
+          )}
 
-          <details className="technical-disclosure technical-console-view" open={!isShowcaseRoute}>
+          <details
+            className="technical-disclosure technical-console-view"
+            open={!isShowcaseRoute || !isStaticProjection}
+          >
             <summary>
               <span>{t.showcase.technicalLabel}</span>
               <small>{t.showcase.technicalDescription}</small>
@@ -190,7 +198,10 @@ export default function App({
             </section>
           </details>
 
-          <details className="technical-disclosure technical-live-view" open={!isShowcaseRoute}>
+          <details
+            className="technical-disclosure technical-live-view"
+            open={!isShowcaseRoute || !isStaticProjection}
+          >
             <summary>
               <span>{t.live.status}</span>
               <small>{t.live.liveDescription}</small>
@@ -199,12 +210,16 @@ export default function App({
           </details>
         </main>
 
-        <JudgmentSidebar
-          isShowcaseRoute={isShowcaseRoute}
-          language={language}
-          projection={projection}
-          showcaseState={showcaseState}
-        />
+        {isStaticProjection ? (
+          <JudgmentSidebar
+            isShowcaseRoute={isShowcaseRoute}
+            language={language}
+            projection={projection}
+            showcaseState={showcaseState}
+          />
+        ) : (
+          <LiveJudgmentSidebar language={language} projection={projection} />
+        )}
       </div>
     </div>
   );
@@ -259,7 +274,11 @@ function StageRail({
             <span className="stage-number">{String(index + 1).padStart(2, "0")}</span>
             <span>
               <strong>{t.showcase.stages[stage]}</strong>
-              <small>{stage === selectedStage ? "current" : "next checkpoint"}</small>
+              <small>
+                {stage === selectedStage
+                  ? t.showcase.stageStatus.current
+                  : t.showcase.stageStatus.nextCheckpoint}
+              </small>
             </span>
           </button>
         ))}
@@ -269,26 +288,28 @@ function StageRail({
         <p>{t.showcase.technicalDescription}</p>
       </div>
 
-      <details className="technical-disclosure technical-navigation" open={!isShowcaseRoute}>
-        <summary>
-          <span>{t.navLabel}</span>
-          <small>{t.showcase.technicalDescription}</small>
-        </summary>
-        <nav aria-label={t.navLabel}>
-          {screenKeys.map((screenKey) => (
-            <button
-              aria-label={screenEnglishNames[screenKey]}
-              className={screenKey === activeScreen ? "nav-item active" : "nav-item"}
-              key={screenKey}
-              type="button"
-              onClick={() => onSelectScreen(screenKey)}
-            >
-              <span>{t.screens[screenKey]}</span>
-              <small>{screenEnglishNames[screenKey]}</small>
-            </button>
-          ))}
-        </nav>
-      </details>
+      {!isShowcaseRoute && (
+        <details className="technical-disclosure technical-navigation" open>
+          <summary>
+            <span>{t.navLabel}</span>
+            <small>{t.showcase.technicalDescription}</small>
+          </summary>
+          <nav aria-label={t.navLabel}>
+            {screenKeys.map((screenKey) => (
+              <button
+                aria-label={screenEnglishNames[screenKey]}
+                className={screenKey === activeScreen ? "nav-item active" : "nav-item"}
+                key={screenKey}
+                type="button"
+                onClick={() => onSelectScreen(screenKey)}
+              >
+                <span>{t.screens[screenKey]}</span>
+                <small>{screenEnglishNames[screenKey]}</small>
+              </button>
+            ))}
+          </nav>
+        </details>
+      )}
     </aside>
   );
 }
@@ -311,14 +332,75 @@ function ShowcaseWorkspace({
   return <OverviewShowcase language={language} />;
 }
 
+function LiveObservationSurface({
+  language,
+  projection
+}: {
+  language: Language;
+  projection: ConsoleProjection;
+}) {
+  const t = copy[language];
+  const deliveryObservation: Observation<string> =
+    projection.command.run.kind === "observed"
+      ? projection.command.run.value.deliveryStatus
+      : { kind: "not_observed" };
+  const evidenceSummary =
+    projection.evidence.kind === "observed"
+      ? `${projection.evidence.value.length} ${t.showcase.live.evidenceObserved}`
+      : observationLabel(projection.evidence, language);
+  const resultSummary =
+    projection.result.kind === "observed"
+      ? t.showcase.live.resultObserved
+      : t.showcase.live.resultNotObserved;
+
+  return (
+    <section className="research-work-surface live-observation-surface">
+      <div className="surface-heading">
+        <div>
+          <p className="kicker">{t.showcase.live.title}</p>
+          <p className="surface-label">{t.labels.mode}</p>
+          <h2>{t.showcase.live.summary}</h2>
+        </div>
+        <span className="showcase-badge neutral">{t.showcase.live.badge}</span>
+      </div>
+      <div className="live-observation-grid">
+        <article>
+          <span>{t.labels.health}</span>
+          <ObservationValue language={language} observation={projection.summary.health} />
+        </article>
+        <article>
+          <span>{t.labels.run}</span>
+          <ObservationValue language={language} observation={projection.summary.runId} />
+        </article>
+        <article>
+          <span>{t.labels.evidence}</span>
+          <strong>{evidenceSummary}</strong>
+        </article>
+        <article>
+          <span>{t.labels.review}</span>
+          <ObservationValue language={language} observation={projection.review.status} />
+        </article>
+        <article>
+          <span>{t.showcase.stages.delivery}</span>
+          <ObservationValue language={language} observation={deliveryObservation} />
+        </article>
+        <article>
+          <span>{t.labels.artifact}</span>
+          <strong>{resultSummary}</strong>
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function OverviewShowcase({ language }: { language: Language }) {
   const t = copy[language].showcase.overview;
   const steps = [
-    ["01", copy[language].showcase.stages.question, t.planTitle, t.plan, "captured"],
-    ["02", copy[language].showcase.stages.work, t.toolTitle, t.tool, "recorded"],
-    ["03", copy[language].showcase.stages.evidence, t.evidenceTitle, t.evidence, "frozen"],
-    ["04", copy[language].showcase.stages.review, t.reviewTitle, t.review, "approved"],
-    ["05", copy[language].showcase.stages.delivery, t.deliveryTitle, t.delivery, "ready"]
+    ["01", copy[language].showcase.stages.question, t.planTitle, t.plan, t.statuses.captured],
+    ["02", copy[language].showcase.stages.work, t.toolTitle, t.tool, t.statuses.recorded],
+    ["03", copy[language].showcase.stages.evidence, t.evidenceTitle, t.evidence, t.statuses.frozen],
+    ["04", copy[language].showcase.stages.review, t.reviewTitle, t.review, t.statuses.approved],
+    ["05", copy[language].showcase.stages.delivery, t.deliveryTitle, t.delivery, t.statuses.ready]
   ] as const;
 
   return (
@@ -364,7 +446,7 @@ function EvidenceShowcase({
           <p className="step-stage">{t.heading}</p>
           <h3>{t.traceable}</h3>
         </div>
-        <span className="step-status">before delivery</span>
+        <span className="step-status">{t.reviewPhase}</span>
       </div>
       <div className="evidence-review-grid">
         {evidence.map((entry) => (
@@ -376,7 +458,9 @@ function EvidenceShowcase({
             <div className="review-field">
               <span>{t.claim}</span>
               <strong>
-                {entry.citedBy.kind === "observed" ? entry.citedBy.value.join(" · ") : "not observed"}
+                {entry.citedBy.kind === "observed"
+                  ? entry.citedBy.value.join(" · ")
+                  : t.notObserved}
               </strong>
             </div>
             <div className="review-field">
@@ -397,7 +481,7 @@ function EvidenceShowcase({
       </div>
       <div className="evidence-review-footer">
         <span>{t.delivery}</span>
-        <strong>{language === "zh" ? "核验后再交付" : "Deliver after judgment"}</strong>
+        <strong>{t.delivered}</strong>
       </div>
     </div>
   );
@@ -433,20 +517,20 @@ function BlockedShowcase({
         </div>
       </article>
       <article className="recovery-card">
-        <p className="step-stage">{language === "zh" ? "Recovery" : "Recovery"}</p>
+        <p className="step-stage">{t.recovery}</p>
         <h3>{t.deliveryTitle}</h3>
         <p>{t.deliveryDetail}</p>
         <div className="recovery-track">
-          <span className="recovery-track-stop done">Evidence</span>
+          <span className="recovery-track-stop done">{t.trackEvidence}</span>
           <span className="recovery-track-line" aria-hidden="true" />
-          <span className="recovery-track-stop hold">Review</span>
+          <span className="recovery-track-stop hold">{t.trackReview}</span>
           <span className="recovery-track-line" aria-hidden="true" />
-          <span className="recovery-track-stop hold">Result</span>
+          <span className="recovery-track-stop hold">{t.trackResult}</span>
         </div>
       </article>
       {projection.evidence.kind === "observed" && projection.evidence.value[0] && (
         <article className="blocked-evidence-card">
-          <p className="step-stage">Evidence signal</p>
+          <p className="step-stage">{t.evidenceSignal}</p>
           <h3>{projection.evidence.value[0].evidenceId}</h3>
           <p>{projection.evidence.value[0].sourceIdentity}</p>
           <code>{projection.evidence.value[0].fingerprint}</code>
@@ -479,7 +563,7 @@ function JudgmentSidebar({
         <div className="judgment-heading">
           <h2>{t.labels.review}</h2>
           <span className={`showcase-badge ${blocked ? "blocked" : "ready"}`}>
-            {blocked ? "blocked" : "ready"}
+            {blocked ? t.showcase.judgment.badgeBlocked : t.showcase.judgment.badgeReady}
           </span>
         </div>
         <p>
@@ -487,26 +571,26 @@ function JudgmentSidebar({
         </p>
       </section>
       <section className="judgment-panel">
-        <p className="sidebar-kicker">GATE CHECKS</p>
+        <p className="sidebar-kicker">{t.showcase.judgment.gateChecks}</p>
         <JudgmentRow
           label={t.labels.evidence}
-          value={blocked ? "insufficient" : "traceable"}
+          value={blocked ? t.showcase.judgment.evidenceInsufficient : t.showcase.judgment.evidenceTraceable}
           tone={blocked ? "blocked" : "ready"}
         />
         <JudgmentRow
           label={t.labels.review}
-          value={isShowcaseRoute ? reviewStatus : "decision observed"}
+          value={isShowcaseRoute ? reviewStatus : t.showcase.judgment.decisionObserved}
           tone={blocked ? "blocked" : "ready"}
         />
         <JudgmentRow
           label={t.showcase.stages.delivery}
-          value={blocked ? "not_delivered" : "ready"}
+          value={blocked ? t.showcase.blocked.delivery : t.showcase.judgment.badgeReady}
           tone={blocked ? "blocked" : "ready"}
         />
       </section>
       <section className="judgment-panel">
         <p className="sidebar-kicker">{t.showcase.evidence.heading}</p>
-        <h3>Evidence gate</h3>
+        <h3>{t.showcase.judgment.evidenceGateTitle}</h3>
         <p className="sidebar-note">
           {blocked ? t.showcase.blocked.detail : t.showcase.overview.evidence}
         </p>
@@ -538,7 +622,92 @@ function JudgmentSidebar({
   );
 }
 
-function JudgmentRow({ label, tone, value }: { label: string; tone: "blocked" | "ready"; value: string }) {
+function LiveJudgmentSidebar({
+  language,
+  projection
+}: {
+  language: Language;
+  projection: ConsoleProjection;
+}) {
+  const t = copy[language];
+  const deliveryObservation: Observation<string> =
+    projection.command.run.kind === "observed"
+      ? projection.command.run.value.deliveryStatus
+      : { kind: "not_observed" };
+  const evidenceStatus =
+    projection.evidence.kind === "observed"
+      ? `${projection.evidence.value.length} ${t.showcase.live.evidenceObserved}`
+      : observationLabel(projection.evidence, language);
+  const badge =
+    projection.result.kind === "observed"
+      ? t.showcase.judgment.badgeObserved
+      : t.showcase.judgment.badgeNotObserved;
+
+  return (
+    <aside className="inspector judgment-sidebar">
+      <section className="judgment-panel judgment-primary">
+        <p className="sidebar-kicker">{t.showcase.judgmentLabel}</p>
+        <div className="judgment-heading">
+          <h2>{t.labels.review}</h2>
+          <span className="showcase-badge neutral">{badge}</span>
+        </div>
+        <p>{t.showcase.judgment.liveSummary}</p>
+      </section>
+      <section className="judgment-panel">
+        <p className="sidebar-kicker">{t.showcase.judgment.gateChecks}</p>
+        <JudgmentRow label={t.labels.evidence} value={evidenceStatus} tone="neutral" />
+        <JudgmentRow
+          label={t.labels.review}
+          value={observationLabel(projection.review.status, language)}
+          tone="neutral"
+        />
+        <JudgmentRow
+          label={t.showcase.stages.delivery}
+          value={observationLabel(deliveryObservation, language)}
+          tone="neutral"
+        />
+      </section>
+      <section className="judgment-panel">
+        <p className="sidebar-kicker">{t.showcase.evidence.heading}</p>
+        <h3>{t.showcase.judgment.evidenceGateTitle}</h3>
+        <p className="sidebar-note">{t.showcase.judgment.liveSummary}</p>
+      </section>
+
+      <details className="technical-disclosure inspector-technical" open>
+        <summary>
+          <span>{t.labels.authority}</span>
+          <small>{t.showcase.technicalDescription}</small>
+        </summary>
+        <section className="inspector-panel">
+          <h2>{t.labels.authority}</h2>
+          <ul className="authority-list">
+            {authorityBadges.map((badge) => (
+              <li key={badge}>{badge}</li>
+            ))}
+          </ul>
+        </section>
+        <section className="inspector-panel dark">
+          <h2>{t.labels.cli}</h2>
+          <pre>{projection.architecture.cliGoldenPath}</pre>
+        </section>
+        <section className="inspector-panel">
+          <h2>{t.labels.boundaries}</h2>
+          <p>{t.boundaryStatement}</p>
+        </section>
+      </details>
+    </aside>
+  );
+}
+
+function JudgmentRow({
+  label,
+  tone,
+  value
+}: {
+  label: string;
+  tone: "blocked" | "neutral" | "ready";
+  value: string;
+}) {
   return (
     <div className="judgment-row">
       <span>{label}</span>

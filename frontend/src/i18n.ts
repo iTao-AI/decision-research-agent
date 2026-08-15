@@ -118,10 +118,14 @@ export const copy = {
       questionLabel: "研究问题",
       question: "比较两种研究工作流的证据完整性与交付边界",
       normalBadge: "正常路径 · 已交付",
-      blockedBadge: "Review required",
+      blockedBadge: "需要复核",
       judgmentLabel: "判断侧栏",
       technicalLabel: "Technical console view",
       technicalDescription: "运行模式、内部标识、框架细节与诊断信息",
+      stageStatus: {
+        current: "当前",
+        nextCheckpoint: "下一检查点"
+      },
       stages: {
         question: "问题",
         work: "计划与工具工作",
@@ -140,29 +144,64 @@ export const copy = {
         reviewTitle: "Judgment",
         review: "Review approved；verification 保持独立。",
         deliveryTitle: "Canonical delivery",
-        delivery: "canonical result 已由 service-owned contract 交付。"
+        delivery: "canonical result 已由 service-owned contract 交付。",
+        statuses: {
+          captured: "已捕获",
+          recorded: "已记录",
+          frozen: "已冻结",
+          approved: "已批准",
+          ready: "已就绪"
+        }
       },
       evidence: {
-        summary: "先把 claim、source 和 verification 分开，再判断是否允许交付。",
-        heading: "Claim / source review",
-        traceable: "Evidence is traceable before delivery",
+        summary: "已交付结果保留 claim、source 和 verification 的交付前复核记录。",
+        heading: "Claim / source 复核",
+        traceable: "已交付结果保留交付前复核记录",
+        reviewPhase: "交付前复核记录",
         claim: "Claim",
         source: "Source",
         citation: "Citation",
         verified: "verified",
         cited: "cited",
         pending: "需要独立核验",
-        delivery: "Canonical delivery"
+        notObserved: "尚未观察到",
+        delivery: "Canonical delivery",
+        delivered: "canonical result 已交付"
       },
       blocked: {
         summary: "缺少足够 Evidence、citation 无效或 tool failure 时，交付保持关闭。",
-        heading: "Recovery checkpoint",
-        warning: "Evidence is insufficient or the citation is invalid",
+        heading: "恢复检查点",
+        warning: "Evidence 不足或 citation 无效",
         detail: "需要补充来源或修复工具结果，不能用 UI 绕过 review gate。",
         review: "review_required",
         delivery: "not_delivered",
-        deliveryTitle: "Canonical delivery is held",
-        deliveryDetail: "先完成 Evidence review，再产生 canonical result。"
+        deliveryTitle: "Canonical delivery 已暂停",
+        deliveryDetail: "先完成 Evidence review，再产生 canonical result。",
+        recovery: "恢复",
+        trackEvidence: "Evidence",
+        trackReview: "Review",
+        trackResult: "Result",
+        evidenceSignal: "Evidence 信号"
+      },
+      judgment: {
+        gateChecks: "门控检查",
+        badgeReady: "已就绪",
+        badgeBlocked: "已阻断",
+        badgeObserved: "已观察",
+        badgeNotObserved: "尚未观察到",
+        evidenceTraceable: "可追溯",
+        evidenceInsufficient: "不足",
+        decisionObserved: "decision 已观察",
+        evidenceGateTitle: "Evidence 门控",
+        liveSummary: "当前仅显示 service-owned observation；未观察到的事实不会被推断。"
+      },
+      live: {
+        badge: "Live service projection",
+        title: "Live 服务状态",
+        summary: "仅显示当前 service-owned observation；未观察到的 Evidence、Review 或 delivery 不会被推断。",
+        evidenceObserved: "条 Evidence 已观察",
+        resultObserved: "canonical result 已观察",
+        resultNotObserved: "canonical result 尚未观察到"
       }
     },
     statements: {
@@ -281,6 +320,10 @@ export const copy = {
       judgmentLabel: "Judgment sidebar",
       technicalLabel: "Technical console view",
       technicalDescription: "Runtime mode, internal identifiers, framework details, and diagnostics",
+      stageStatus: {
+        current: "current",
+        nextCheckpoint: "next checkpoint"
+      },
       stages: {
         question: "Question",
         work: "Plan + tool work",
@@ -299,19 +342,29 @@ export const copy = {
         reviewTitle: "Judgment",
         review: "Review approved; verification remains an independent decision.",
         deliveryTitle: "Canonical delivery",
-        delivery: "The service-owned contract supplies the canonical result."
+        delivery: "The service-owned contract supplies the canonical result.",
+        statuses: {
+          captured: "captured",
+          recorded: "recorded",
+          frozen: "frozen",
+          approved: "approved",
+          ready: "ready"
+        }
       },
       evidence: {
-        summary: "Separate claim, source, and verification before deciding whether delivery is allowed.",
+        summary: "The delivered result retains its pre-delivery claim, source, and verification review record.",
         heading: "Claim / source review",
-        traceable: "Evidence is traceable before delivery",
+        traceable: "Delivered result retains its pre-delivery review record",
+        reviewPhase: "pre-delivery review retained",
         claim: "Claim",
         source: "Source",
         citation: "Citation",
         verified: "verified",
         cited: "cited",
         pending: "Independent verification required",
-        delivery: "Canonical delivery"
+        notObserved: "Not observed",
+        delivery: "Canonical delivery",
+        delivered: "Canonical result delivered"
       },
       blocked: {
         summary: "When Evidence is insufficient, a citation is invalid, or a tool fails, delivery stays closed.",
@@ -321,7 +374,32 @@ export const copy = {
         review: "review_required",
         delivery: "not_delivered",
         deliveryTitle: "Canonical delivery is held",
-        deliveryDetail: "Complete Evidence review before producing a canonical result."
+        deliveryDetail: "Complete Evidence review before producing a canonical result.",
+        recovery: "Recovery",
+        trackEvidence: "Evidence",
+        trackReview: "Review",
+        trackResult: "Result",
+        evidenceSignal: "Evidence signal"
+      },
+      judgment: {
+        gateChecks: "GATE CHECKS",
+        badgeReady: "ready",
+        badgeBlocked: "blocked",
+        badgeObserved: "observed",
+        badgeNotObserved: "not observed",
+        evidenceTraceable: "traceable",
+        evidenceInsufficient: "insufficient",
+        decisionObserved: "decision observed",
+        evidenceGateTitle: "Evidence gate",
+        liveSummary: "Only service-owned observations are shown; unobserved facts are not inferred."
+      },
+      live: {
+        badge: "Live service projection",
+        title: "Live service state",
+        summary: "Only the current service-owned observation is shown; unobserved Evidence, Review, or delivery is not inferred.",
+        evidenceObserved: "Evidence entries observed",
+        resultObserved: "Canonical result observed",
+        resultNotObserved: "Canonical result not observed"
       }
     },
     statements: {

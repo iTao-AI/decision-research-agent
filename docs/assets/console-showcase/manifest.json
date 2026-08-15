@@ -1,0 +1,34 @@
+{
+  "schema_version": "dra.console-showcase-manifest.v1",
+  "capture": {
+    "source_commit": "2756b5631bb8ff49f82ed7bcded15ed2f6f94324",
+    "source_tree": "93521346519a3b7801660fc175f7245b85d75fe9",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "locale": "zh-CN",
+    "synthetic_demo_disclosure": "Synthetic Static Demo fixtures; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment."
+  },
+  "frames": {
+    "research-workspace-overview.png": {
+      "route": "/?showcase=overview",
+      "state": "normal_delivered",
+      "locale": "zh-CN",
+      "sha256": "c239f82b5a8196bfdb1aeacd0af64ad252c2ca8452f5e84e423f65a95d17394d"
+    },
+    "research-evidence-review.png": {
+      "route": "/?showcase=evidence",
+      "state": "evidence_review",
+      "locale": "zh-CN",
+      "sha256": "4e2f5950cb7357f66e61aeb80ecc9c7ee1c8b275050126bc3de13a963acc49eb"
+    },
+    "research-blocked-recovery.png": {
+      "route": "/?showcase=blocked",
+      "state": "review_required_not_delivered",
+      "locale": "zh-CN",
+      "sha256": "542326e82f07046211f51226f276c030d165a9d39182419e41a8e5d7dde86f6a"
+    }
+  },
+  "synthetic_demo_disclosure": "Synthetic Static Demo fixtures; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment."
+}

@@ -2,6 +2,9 @@
   "name": "decision-research-agent-demo-console",
   "private": true,
   "version": "0.1.8",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,13 +17,14 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.1",
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "typescript": "~7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"

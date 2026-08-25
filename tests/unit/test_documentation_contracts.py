@@ -987,18 +987,29 @@ def test_v0_1_5_documentation_contract_rejects_swapped_section_order(
         _assert_v0_1_5_release_documentation_contract()
 
 
-def test_demo_console_docs_track_frontend_node_requirements() -> None:
-    docs = "\n\n".join(
-        [
-            (PROJECT_ROOT / "docs" / "demo-console.md").read_text(encoding="utf-8"),
-            (PROJECT_ROOT / "docs" / "getting-started.md").read_text(encoding="utf-8"),
-        ]
+def test_frontend_node_support_is_exact_and_consistent_across_public_docs() -> None:
+    supported_line = (
+        "Node.js `22.22.2` or later within `22.x`, or `24.15.0` or later within `24.x`"
     )
+    docs = [
+        PROJECT_ROOT / "CONTRIBUTING.md",
+        PROJECT_ROOT / "docs" / "getting-started.md",
+        PROJECT_ROOT / "docs" / "demo-console.md",
+    ]
 
-    assert "20.19+" in docs
-    assert "22.13+" in docs
-    assert "24+" in docs
-    assert "22.12+" not in docs
+    for path in docs:
+        text = path.read_text(encoding="utf-8")
+        assert text.count(supported_line) == 1, path
+        for retired_or_broad_claim in (
+            "20.19+",
+            "22.12+",
+            "22.13+",
+            "24+",
+            ">=24",
+            "Node.js 26",
+            "Node.js `26",
+        ):
+            assert retired_or_broad_claim not in text, (path, retired_or_broad_claim)
 
 
 def test_readme_first_run_flow_is_canonical_and_copy_pasteable() -> None:

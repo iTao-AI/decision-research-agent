@@ -10,8 +10,7 @@ source .venv/bin/activate
 python -m pip install --no-deps -r constraints.txt
 ```
 
-Frontend changes also require Node.js `20.19+`, `22.12+`, or `24+`, matching
-the locked Vite toolchain:
+Frontend changes also require Node.js `22.22.2` or later within `22.x`, or `24.15.0` or later within `24.x`, matching the locked Vite toolchain:
 
 ```bash
 cd frontend

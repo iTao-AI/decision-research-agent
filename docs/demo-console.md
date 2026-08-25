@@ -52,7 +52,7 @@ deployment.
 
 ## Prerequisites
 
-- Node.js `20.19+`, `22.13+`, or `24+`
+- Node.js `22.22.2` or later within `22.x`, or `24.15.0` or later within `24.x`
 - npm
 - Python 3.11 and provider configuration for Live Backend only
 

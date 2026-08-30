@@ -35,13 +35,16 @@ service-owned state。
 
 以下三张图来自同一个 frontend implementation 的 deterministic synthetic
 Static Demo，依次展示正常路径、claim/source review checkpoint，以及仍保持
-`review_required`、`not_delivered` 的恢复状态。
+`review_required`、`not_delivered` 的 blocked state。
 
 blocked frame 让一条有界诊断链可见：首个显示的失败生命周期步骤是
 `tool_failed`；现有 durable failure-cause observation 是
 `execution / execution_error`；service-owned disposition 仍为
-`review_required / not_delivered`。显示的失败步骤不等于已证明的根因。请修正
-Evidence 或 tool result 后再次 review；UI 不会制造结果，也不会自动启动替代运行。
+`review_required / not_delivered`。显示的失败步骤不等于已证明的根因。请检查已
+持久化的 failure cause 与处置；原失败运行保持 immutable 且不交付。Evidence 与
+citation 问题仍需人工复核。新的执行只能由调用方发起：普通 new run，或在符合
+条件时显式 one-hop replacement。UI 不会 resume 原失败运行、自动 retry，也不会
+自动创建 replacement。
 
 ![研究工作区总览](docs/assets/console-showcase/research-workspace-overview.png)
 

@@ -1,0 +1,57 @@
+{
+  "schema_version": "dra.console-showcase-manifest.v1",
+  "capture": {
+    "source_commit": "323122aeba39c4b49b9959ddfb8ee97acdbf173a",
+    "source_tree": "38f79c972ef166d6a4bd9cf390eb811688895dd6",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "locale": "zh-CN",
+    "synthetic_demo_disclosure": "Synthetic Static Demo fixtures; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment.",
+    "capture_input_fingerprint": {
+      "algorithm": "sha256",
+      "paths": [
+        "frontend/index.html",
+        "frontend/package-lock.json",
+        "frontend/package.json",
+        "frontend/public/favicon.svg",
+        "frontend/src/App.tsx",
+        "frontend/src/apiClient.ts",
+        "frontend/src/consoleProjection.ts",
+        "frontend/src/demoData.ts",
+        "frontend/src/i18n.ts",
+        "frontend/src/main.tsx",
+        "frontend/src/runProjection.ts",
+        "frontend/src/styles.css",
+        "frontend/src/useLiveRun.ts",
+        "frontend/tsconfig.app.json",
+        "frontend/tsconfig.json",
+        "frontend/tsconfig.node.json",
+        "frontend/vite.config.ts"
+      ],
+      "value": "6cc9cb18e2054dc995795809660961e9048123d36da601f9ee5bf43cf13e6b99"
+    }
+  },
+  "frames": {
+    "research-workspace-overview.png": {
+      "route": "/?showcase=overview",
+      "state": "normal_delivered",
+      "locale": "zh-CN",
+      "sha256": "c1e8b2cc5f7fe6f82f7b6616706b1a957d06cc967cde98d7c1cfd6c5b8228854"
+    },
+    "research-evidence-review.png": {
+      "route": "/?showcase=evidence",
+      "state": "evidence_review",
+      "locale": "zh-CN",
+      "sha256": "97e70ddc739e70abf380d62ad9e46e2551787ed7524683d9f38c62bfa1ab0897"
+    },
+    "research-blocked-recovery.png": {
+      "route": "/?showcase=blocked",
+      "state": "review_required_not_delivered",
+      "locale": "zh-CN",
+      "sha256": "86161c2826b75f1998a043f8615df32eb6b96be42473cb1f826c5588c71d021c"
+    }
+  },
+  "synthetic_demo_disclosure": "Synthetic Static Demo fixtures; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment."
+}

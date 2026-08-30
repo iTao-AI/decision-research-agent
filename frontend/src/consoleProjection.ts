@@ -272,7 +272,7 @@ export function buildStaticConsoleProjection(
       kind: "event_history",
       run: observed(run),
       entries: observed(lifecycleEntries),
-      failureCause: unsupported<FailureCauseView>()
+      failureCause: projectFailureCause(staticRun.failureCause)
     }),
     evidence: observed(evidence),
     review: Object.freeze({

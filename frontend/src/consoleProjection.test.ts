@@ -180,6 +180,36 @@ describe("console projection source separation", () => {
     expectDeepFrozen(projection);
   });
 
+  it("connects the blocked first failing step to the observed cause and disposition", () => {
+    const blocked = buildStaticConsoleProjection("blocked");
+    const lifecycleEntries = observedValue(blocked.lifecycle.entries).filter(
+      (entry) => entry.category === "lifecycle"
+    );
+
+    expect(lifecycleEntries[3]).toMatchObject({
+      label: "tool_failed",
+      status: { kind: "observed", value: "tool_failed" }
+    });
+    expect(blocked.lifecycle.failureCause).toEqual({
+      kind: "observed",
+      value: {
+        schemaVersion: "dra.run-failure-cause.v1",
+        phase: "execution",
+        code: "execution_error",
+        recordedAt: "2026-07-16T08:02:00Z"
+      }
+    });
+    expect(blocked.command.run).toMatchObject({
+      value: {
+        reviewStatus: { kind: "observed", value: "review_required" },
+        deliveryStatus: { kind: "observed", value: "not_delivered" }
+      }
+    });
+    expect(buildStaticConsoleProjection().lifecycle.failureCause).toEqual({
+      kind: "not_applicable"
+    });
+  });
+
   it("keeps the blocked Static Demo CLI golden path free of diff markers", () => {
     const projection = buildStaticConsoleProjection("blocked");
 

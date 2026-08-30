@@ -60,6 +60,9 @@ export const demoRun = {
   },
   resultMarkdown:
     "## Canonical Decision Brief\n\nRecommendation: proceed with a bounded interview demo using static data. Evidence refs: ev_001, ev_002.\n\nDelivery authority: GET /api/runs/{run_id}/result.",
+  failureCause: {
+    kind: "not_applicable"
+  } as const,
   cliGoldenPath:
     'python tools/decision_research_agent_tool.py run \\\n  --query "Compare the evidence behind the proposed decision" \\\n  --wait \\\n  --result'
 };
@@ -117,6 +120,13 @@ export const blockedDemoRun = {
     safety: "not evaluated"
   },
   resultMarkdown: "",
+  failureCause: {
+    kind: "observed",
+    schema_version: "dra.run-failure-cause.v1",
+    phase: "execution",
+    code: "execution_error",
+    recorded_at: "2026-07-16T08:02:00Z"
+  } as const,
   cliGoldenPath:
     'python tools/decision_research_agent_tool.py run \\\n  --query "Compare the evidence behind the proposed decision" \\\n  --wait \\\n  --result'
 };

@@ -39,8 +39,19 @@ Backend mode consumes service-owned state through the existing API contract.
 
 The three frames below are deterministic, synthetic Static Demo states captured
 from the same frontend implementation. They show the normal path, the
-claim/source review checkpoint, and a recovery state that remains
+claim/source review checkpoint, and a blocked state that remains
 `review_required` and `not_delivered`.
+
+The blocked frame makes one bounded diagnostic chain visible: the first
+displayed failing lifecycle step is `tool_failed`; the existing durable
+failure-cause observation is `execution / execution_error`; and the
+service-owned disposition remains `review_required / not_delivered`. The
+displayed failing step is not a proven root cause. Inspect the persisted
+failure cause and disposition; the failed source remains immutable and not
+delivered. Evidence and citation issues still require human review. Any new
+execution is caller-initiated as an ordinary new run or, when eligible, an
+explicit one-hop replacement. The UI does not resume the failed source, retry
+automatically, or create a replacement automatically.
 
 ![Research workspace overview](docs/assets/console-showcase/research-workspace-overview.png)
 

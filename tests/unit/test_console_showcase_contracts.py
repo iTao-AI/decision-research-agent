@@ -287,3 +287,36 @@ def test_readmes_lead_with_the_showcase_delivery_flow() -> None:
         assert "research-workspace-overview.png" in text
         assert "research-evidence-review.png" in text
         assert "research-blocked-recovery.png" in text
+
+    english_readme = " ".join(
+        (PROJECT_ROOT / "README.md").read_text(encoding="utf-8").split()
+    )
+    chinese_readme = " ".join(
+        (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8").split()
+    )
+    assert "the first displayed failing lifecycle step is `tool_failed`" in english_readme
+    assert (
+        "the existing durable failure-cause observation is `execution / execution_error`"
+        in english_readme
+    )
+    assert (
+        "the failed source remains immutable and not delivered"
+        in english_readme
+    )
+    assert (
+        "Evidence and citation issues still require human review"
+        in english_readme
+    )
+    assert (
+        "Any new execution is caller-initiated as an ordinary new run or, when eligible, an explicit one-hop replacement"
+        in english_readme
+    )
+    assert "The UI does not resume the failed source" in english_readme
+    assert "显示的失败步骤不等于已证明的根因" in chinese_readme
+    assert "`execution / execution_error`" in chinese_readme
+    assert "原失败运行保持 immutable 且不交付" in chinese_readme
+    assert "Evidence 与 citation 问题仍需人工复核" in chinese_readme
+    assert "执行只能由调用方发起：普通 new run，或在符合" in chinese_readme
+    assert "UI 不会 resume 原失败运行、自动 retry，也不会" in chinese_readme
+    assert "Correct the Evidence or tool result, then review again" not in english_readme
+    assert "请修正 Evidence 或 tool result 后再次 review" not in chinese_readme

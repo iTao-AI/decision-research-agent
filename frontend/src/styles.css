@@ -1273,6 +1273,7 @@ pre {
 
 .blocked-callout,
 .recovery-card,
+.blocked-diagnostic-card,
 .blocked-evidence-card {
   min-width: 0;
   padding: 16px;
@@ -1327,6 +1328,48 @@ pre {
 
 .blocked-status-row strong {
   color: #b91c1c;
+}
+
+.blocked-diagnostic-card {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #b7c8e8;
+  background: #f5f8ff;
+}
+
+.blocked-diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.blocked-diagnostic-node {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d7e1f2;
+  border-radius: 7px;
+  background: #fffdf8;
+}
+
+.blocked-diagnostic-node span {
+  color: #53627a;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+}
+
+.blocked-diagnostic-node strong {
+  overflow-wrap: anywhere;
+  color: #1d4ed8;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+}
+
+.blocked-diagnostic-node small {
+  color: #4b5563;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .recovery-card {
@@ -1559,6 +1602,7 @@ pre {
   .showcase-step-grid,
   .evidence-review-grid,
   .blocked-showcase,
+  .blocked-diagnostic-grid,
   .live-observation-grid,
   .judgment-sidebar {
     grid-template-columns: 1fr;

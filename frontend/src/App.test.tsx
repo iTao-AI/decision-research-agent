@@ -127,8 +127,68 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.getByText("Evidence 不足或 citation 无效")).toBeInTheDocument();
     expect(screen.getAllByText("review_required").length).toBeGreaterThan(0);
     expect(screen.getAllByText("not_delivered").length).toBeGreaterThan(0);
-    expect(screen.getByText("Canonical delivery 已暂停")).toBeInTheDocument();
+    expect(screen.getByText("原失败运行保持 immutable")).toBeInTheDocument();
     expect(screen.queryByText("Canonical Decision Brief")).not.toBeInTheDocument();
+  });
+
+  it("renders the blocked diagnostic chain without calling the first failure a proven root cause", async () => {
+    const user = userEvent.setup();
+    render(<App showcaseState="blocked" />);
+
+    expect(screen.getByText("首个显示失败步骤")).toBeInTheDocument();
+    expect(screen.getByText("tool_failed", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("持久化终态原因")).toBeInTheDocument();
+    expect(screen.getByText("execution / execution_error")).toBeInTheDocument();
+    expect(screen.getByText("既有处置")).toBeInTheDocument();
+    expect(screen.getByText("review_required / not_delivered")).toBeInTheDocument();
+    expect(
+      screen.getByText("这是生命周期中首先显示为失败的步骤，不等同于已证明的根因。")
+    ).toBeInTheDocument();
+    expect(screen.getByText("失败运行检查点")).toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        "请检查已持久化的 failure cause 与处置。原失败运行保持 immutable 且不交付；UI 不会 resume、自动 retry 或自动创建 replacement。"
+      )
+    ).toHaveLength(2);
+    expect(
+      screen.getByText(
+        "Evidence 与 citation 问题仍需人工复核。新的执行只能由调用方发起：普通 new run，或在符合条件时显式 one-hop replacement。"
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByText("原失败运行保持 immutable")).toBeInTheDocument();
+    expect(screen.getByText("后续执行边界")).toBeInTheDocument();
+    expect(screen.getByText("人工复核")).toBeInTheDocument();
+    expect(screen.getByText("不交付")).toBeInTheDocument();
+    expect(screen.queryByText(/请修正.*后再次 review/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/先完成 Evidence review/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/raw_error|provider|exception|\/private\//i)).not.toBeInTheDocument();
+    const diagnosticCard = screen.getByText("诊断链").closest(".blocked-diagnostic-card");
+    expect(diagnosticCard).toBeInTheDocument();
+    expect(diagnosticCard?.closest(".blocked-callout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "English" }));
+
+    expect(screen.getByText("First displayed failing step")).toBeInTheDocument();
+    expect(screen.getByText("The first displayed failing step is not a proven root cause.")).toBeInTheDocument();
+    expect(screen.getByText("Durable terminal cause")).toBeInTheDocument();
+    expect(screen.getByText("Disposition")).toBeInTheDocument();
+    expect(screen.getByText("Failed-run checkpoint")).toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        "Inspect the persisted failure cause and disposition. The failed source remains immutable and not delivered; the UI cannot resume it, retry automatically, or create a replacement automatically."
+      )
+    ).toHaveLength(2);
+    expect(
+      screen.getByText(
+        "Evidence and citation issues still require human review. Any new execution is caller-initiated as an ordinary new run or, when eligible, an explicit one-hop replacement."
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByText("Failed source remains immutable")).toBeInTheDocument();
+    expect(screen.getByText("Next execution boundary")).toBeInTheDocument();
+    expect(screen.getByText("Human review")).toBeInTheDocument();
+    expect(screen.getByText("Not delivered")).toBeInTheDocument();
+    expect(screen.queryByText(/Correct the Evidence or tool result, then review again/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Complete Evidence review before producing a canonical result/i)).not.toBeInTheDocument();
   });
 
   it("localizes showcase state labels in both locales", async () => {

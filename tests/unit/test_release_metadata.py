@@ -340,6 +340,35 @@ def test_changelog_preserves_published_release_boundary() -> None:
         assert phrase in v0_1_1
 
 
+def test_unreleased_records_exact_post_v0_1_8_inventory_without_release_promise() -> None:
+    changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split(
+        "## [0.1.8] - 2026-07-30", 1
+    )[0]
+    normalized = _collapsed(unreleased)
+
+    assert tuple(re.findall(r"^### (.+)$", unreleased, re.MULTILINE)) == (
+        "Frontend lock/security maintenance",
+        "Native showcase/provenance",
+        "Node 22/24 support matrix",
+        "Frontend test-patch/provenance refresh",
+        "Blocked failure diagnosis",
+    )
+    assert (
+        "changes already merged on the current default branch after stable `v0.1.8`"
+        in normalized
+    )
+    assert "not a promise of a future release" in normalized
+    for phrase in (
+        "frontend transitive security locks",
+        "native deterministic Static Demo showcase frames",
+        "Node.js 22/24 support matrix",
+        "frontend test patches",
+        "blocked-failure diagnosis",
+    ):
+        assert phrase in normalized
+
+
 def test_changelog_contains_v0_1_0_release_entry() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
 
@@ -657,7 +686,7 @@ def test_current_release_and_history_remain_discoverable() -> None:
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
     assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
     assert (
-        "- [v0.1.8 Release Notes](releases/v0.1.8.md) — current tool-safety,"
+        "- [v0.1.8 Release Notes](releases/v0.1.8.md) — stable tool-safety,"
         in docs_index
     )
     assert "- [v0.1.7 Release Notes](releases/v0.1.7.md) — historical" in docs_index
@@ -686,7 +715,7 @@ def test_current_release_and_history_remain_discoverable() -> None:
         in docs_index
     )
     assert "downstream-consumer and Agent evaluation contract gates." in docs_index
-    assert docs_index.count("current tool-safety") == 1
+    assert docs_index.count("stable tool-safety") == 1
     assert (
         "[v0.1.6 Release Notes](releases/v0.1.6.md) — current supported surface"
         not in docs_index

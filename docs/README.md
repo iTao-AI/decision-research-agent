@@ -124,7 +124,12 @@ external evaluation of the public contract surface.
 
 ## Release
 
-- [v0.1.8 Release Notes](releases/v0.1.8.md) — current tool-safety, SELECT-only
+The immutable stable `v0.1.8` Release Notes describe the stable release surface.
+Changes already merged on the current default branch are listed in
+[`CHANGELOG.md`](../CHANGELOG.md) under `[Unreleased]` and are not part of that
+Release.
+
+- [v0.1.8 Release Notes](releases/v0.1.8.md) — stable tool-safety, SELECT-only
   database authority, bounded output/time, dependency closure, migration,
   rollback, verification, and explicit limits.
 - [v0.1.7 Release Notes](releases/v0.1.7.md) — historical supported surface,

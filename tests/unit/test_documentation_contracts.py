@@ -937,6 +937,20 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
     )
 
 
+def test_docs_index_separates_stable_v0_1_8_from_current_default_branch() -> None:
+    docs_index = (PROJECT_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+    normalized = _collapsed(docs_index)
+
+    assert (
+        "The immutable stable `v0.1.8` Release Notes describe the stable release surface."
+        in normalized
+    )
+    assert (
+        "Changes already merged on the current default branch are listed in [`CHANGELOG.md`](../CHANGELOG.md) under `[Unreleased]` and are not part of that Release."
+        in normalized
+    )
+
+
 @pytest.mark.parametrize(
     ("path", "replacements"),
     (

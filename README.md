@@ -42,6 +42,14 @@ from the same frontend implementation. They show the normal path, the
 claim/source review checkpoint, and a recovery state that remains
 `review_required` and `not_delivered`.
 
+The blocked frame makes one bounded diagnostic chain visible: the first
+displayed failing lifecycle step is `tool_failed`; the existing durable
+failure-cause observation is `execution / execution_error`; and the
+service-owned disposition remains `review_required / not_delivered`. The
+displayed failing step is not a proven root cause. Correct the Evidence or
+tool result, then review again; the UI cannot manufacture a result or start an
+automatic replacement.
+
 ![Research workspace overview](docs/assets/console-showcase/research-workspace-overview.png)
 
 ![Research evidence review](docs/assets/console-showcase/research-evidence-review.png)

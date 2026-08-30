@@ -287,3 +287,17 @@ def test_readmes_lead_with_the_showcase_delivery_flow() -> None:
         assert "research-workspace-overview.png" in text
         assert "research-evidence-review.png" in text
         assert "research-blocked-recovery.png" in text
+
+    english_readme = " ".join(
+        (PROJECT_ROOT / "README.md").read_text(encoding="utf-8").split()
+    )
+    chinese_readme = " ".join(
+        (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8").split()
+    )
+    assert "the first displayed failing lifecycle step is `tool_failed`" in english_readme
+    assert (
+        "the existing durable failure-cause observation is `execution / execution_error`"
+        in english_readme
+    )
+    assert "显示的失败步骤不等于已证明的根因" in chinese_readme
+    assert "`execution / execution_error`" in chinese_readme

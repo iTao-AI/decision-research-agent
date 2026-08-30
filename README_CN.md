@@ -37,6 +37,12 @@ service-owned state。
 Static Demo，依次展示正常路径、claim/source review checkpoint，以及仍保持
 `review_required`、`not_delivered` 的恢复状态。
 
+blocked frame 让一条有界诊断链可见：首个显示的失败生命周期步骤是
+`tool_failed`；现有 durable failure-cause observation 是
+`execution / execution_error`；service-owned disposition 仍为
+`review_required / not_delivered`。显示的失败步骤不等于已证明的根因。请修正
+Evidence 或 tool result 后再次 review；UI 不会制造结果，也不会自动启动替代运行。
+
 ![研究工作区总览](docs/assets/console-showcase/research-workspace-overview.png)
 
 ![研究 Evidence 复核](docs/assets/console-showcase/research-evidence-review.png)

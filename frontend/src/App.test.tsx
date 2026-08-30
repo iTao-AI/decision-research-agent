@@ -131,6 +131,32 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.queryByText("Canonical Decision Brief")).not.toBeInTheDocument();
   });
 
+  it("renders the blocked diagnostic chain without calling the first failure a proven root cause", async () => {
+    const user = userEvent.setup();
+    render(<App showcaseState="blocked" />);
+
+    expect(screen.getByText("首个显示失败步骤")).toBeInTheDocument();
+    expect(screen.getByText("tool_failed", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("持久化终态原因")).toBeInTheDocument();
+    expect(screen.getByText("execution / execution_error")).toBeInTheDocument();
+    expect(screen.getByText("既有处置")).toBeInTheDocument();
+    expect(screen.getByText("review_required / not_delivered")).toBeInTheDocument();
+    expect(
+      screen.getByText("这是生命周期中首先显示为失败的步骤，不等同于已证明的根因。")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/raw_error|provider|exception|\/private\//i)).not.toBeInTheDocument();
+    const diagnosticCard = screen.getByText("诊断链").closest(".blocked-diagnostic-card");
+    expect(diagnosticCard).toBeInTheDocument();
+    expect(diagnosticCard?.closest(".blocked-callout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "English" }));
+
+    expect(screen.getByText("First displayed failing step")).toBeInTheDocument();
+    expect(screen.getByText("The first displayed failing step is not a proven root cause.")).toBeInTheDocument();
+    expect(screen.getByText("Durable terminal cause")).toBeInTheDocument();
+    expect(screen.getByText("Disposition")).toBeInTheDocument();
+  });
+
   it("localizes showcase state labels in both locales", async () => {
     const user = userEvent.setup();
     render(<App showcaseState="overview" />);

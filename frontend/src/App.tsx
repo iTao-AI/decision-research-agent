@@ -5,6 +5,7 @@ import {
   buildLiveConsoleProjection,
   buildStaticConsoleProjection,
   type ConsoleProjection,
+  type FailureCauseView,
   type Observation,
   type StaticShowcaseScenario
 } from "./consoleProjection";
@@ -495,6 +496,18 @@ function BlockedShowcase({
   projection: ConsoleProjection;
 }) {
   const t = copy[language].showcase.blocked;
+  const firstFailingStep =
+    projection.lifecycle.entries.kind === "observed"
+      ? projection.lifecycle.entries.value.find(
+          (entry) =>
+            entry.category === "lifecycle" &&
+            entry.status.kind === "observed" &&
+            entry.status.value === "tool_failed"
+        )
+      : undefined;
+  const firstFailingStepValue = firstFailingStep?.label ?? copy[language].observations.notObserved;
+  const terminalCauseValue = diagnosticFailureCause(projection.lifecycle.failureCause, language);
+  const dispositionValue = diagnosticDisposition(projection, language);
 
   return (
     <div className="blocked-showcase">
@@ -514,6 +527,26 @@ function BlockedShowcase({
         <div className="blocked-status-row">
           <span>delivery_status</span>
           <strong>{t.delivery}</strong>
+        </div>
+        <div className="blocked-diagnostic-card">
+          <p className="step-stage">{t.diagnostic}</p>
+          <div className="blocked-diagnostic-grid">
+            <div className="blocked-diagnostic-node">
+              <span>{t.firstFailingStep}</span>
+              <strong>{firstFailingStepValue}</strong>
+              <small>{t.firstFailingStepDetail}</small>
+            </div>
+            <div className="blocked-diagnostic-node">
+              <span>{t.terminalCause}</span>
+              <strong>{terminalCauseValue}</strong>
+              <small>{t.terminalCauseDetail}</small>
+            </div>
+            <div className="blocked-diagnostic-node">
+              <span>{t.disposition}</span>
+              <strong>{dispositionValue}</strong>
+              <small>{t.dispositionDetail}</small>
+            </div>
+          </div>
         </div>
       </article>
       <article className="recovery-card">
@@ -538,6 +571,26 @@ function BlockedShowcase({
       )}
     </div>
   );
+}
+
+function diagnosticFailureCause(
+  failureCause: Observation<FailureCauseView>,
+  language: Language
+): string {
+  if (failureCause.kind === "observed") {
+    return `${failureCause.value.phase} / ${failureCause.value.code}`;
+  }
+  return observationLabel(failureCause, language);
+}
+
+function diagnosticDisposition(projection: ConsoleProjection, language: Language): string {
+  if (projection.command.run.kind !== "observed") {
+    return copy[language].observations.notObserved;
+  }
+  return [
+    observationLabel(projection.command.run.value.reviewStatus, language),
+    observationLabel(projection.command.run.value.deliveryStatus, language)
+  ].join(" / ");
 }
 
 function JudgmentSidebar({

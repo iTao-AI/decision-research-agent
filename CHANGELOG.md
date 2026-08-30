@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+This section records changes already merged on the current default branch after
+stable `v0.1.8`; it is not a promise of a future release.
+
+### Frontend lock/security maintenance
+
+- Refreshed frontend transitive security locks after stable `v0.1.8`.
+
+### Native showcase/provenance
+
+- Added native deterministic Static Demo showcase frames and their provenance
+  contracts.
+
+### Node 22/24 support matrix
+
+- Modernized the frontend Node.js 22/24 support matrix and related
+  documentation and CI metadata.
+
+### Frontend test-patch/provenance refresh
+
+- Replaced frontend test patches and refreshed the showcase provenance/assets.
+
+### Blocked failure diagnosis
+
+- Clarified bounded blocked-failure diagnosis in the Console while preserving
+  `review_required` and `not_delivered` for the failed source.
+
 ## [0.1.8] - 2026-07-30
 
 ### Tool safety and runtime closure

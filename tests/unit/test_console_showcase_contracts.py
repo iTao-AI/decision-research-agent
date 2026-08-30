@@ -320,3 +320,31 @@ def test_readmes_lead_with_the_showcase_delivery_flow() -> None:
     assert "UI 不会 resume 原失败运行、自动 retry，也不会" in chinese_readme
     assert "Correct the Evidence or tool result, then review again" not in english_readme
     assert "请修正 Evidence 或 tool result 后再次 review" not in chinese_readme
+
+
+def test_readmes_bound_showcase_to_current_default_branch_not_stable_release() -> None:
+    english = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    chinese = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")
+
+    assert english.index("## Current Default Branch Status") < english.index(
+        "## Research Delivery Flow"
+    )
+    assert chinese.index("## 当前默认分支状态") < chinese.index(
+        "## Research Delivery Flow"
+    )
+
+    english_normalized = " ".join(english.split())
+    for phrase in (
+        "The showcased Console and blocked-failure diagnosis are current default-branch additions after stable `v0.1.8`",
+        "not included in the immutable stable `v0.1.8` release",
+        "not a deployment, provider-backed research, or business-impact claim",
+    ):
+        assert phrase in english_normalized
+
+    chinese_normalized = " ".join(chinese.split())
+    for phrase in (
+        "下文展示的 Console 和 blocked-failure diagnosis 是 stable `v0.1.8` 之后当前默认分支上的新增内容",
+        "不包含在不可变的 stable `v0.1.8` release 中",
+        "不构成 deployment、provider-backed research 或 business-impact claim",
+    ):
+        assert phrase in chinese_normalized

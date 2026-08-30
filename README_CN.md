@@ -23,6 +23,10 @@ Agent Research Operations Console 只负责把这条路径讲清楚，不成为�
 Static Demo 是确定性的；可选 Live Backend 只消费现有 API contract 的
 service-owned state。
 
+## 当前默认分支状态
+
+下文展示的 Console 和 blocked-failure diagnosis 是 stable `v0.1.8` 之后当前默认分支上的新增内容；它们不包含在不可变的 stable `v0.1.8` release 中。这一边界不构成 deployment、provider-backed research 或 business-impact claim。
+
 ## Research Delivery Flow
 
 1. **问题**：明确一个有界的研究问题与决策语境。
@@ -128,7 +132,7 @@ non-authority 边界。
 评估在仓库声明的范围内保持 provider-free；每个 benchmark 和 release record
 保留自己的 evidence boundary。请先看
 [evaluation references](docs/reference/agent-evaluation-regression-gate.md)、
-[evidence index](docs/evidence/README.md) 和当前的
+[evidence index](docs/evidence/README.md) 和 stable 的
 [v0.1.8 release notes](docs/releases/v0.1.8.md)；showcase 不改写历史 release record。
 
 ## 验证

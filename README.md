@@ -27,6 +27,13 @@ The Agent Research Operations Console makes that path legible without becoming
 the business authority. Its Static Demo is deterministic; its optional Live
 Backend mode consumes service-owned state through the existing API contract.
 
+## Current Default Branch Status
+
+The showcased Console and blocked-failure diagnosis are current default-branch
+additions after stable `v0.1.8`; they are not included in the immutable stable
+`v0.1.8` release. This boundary is not a deployment, provider-backed research,
+or business-impact claim.
+
 ## Research Delivery Flow
 
 1. **Question** — frame one bounded research question and its decision context.
@@ -140,7 +147,7 @@ presentation and non-authority boundaries.
 Evaluation remains provider-free where the repository says so, and every
 benchmark or release record keeps its own evidence boundary. Start with the
 [evaluation references](docs/reference/agent-evaluation-regression-gate.md),
-[evidence index](docs/evidence/README.md), and current
+[evidence index](docs/evidence/README.md), and stable
 [v0.1.8 release notes](docs/releases/v0.1.8.md); historical release records are
 not rewritten by the showcase.
 

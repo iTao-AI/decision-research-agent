@@ -7,12 +7,17 @@ owning business authority. It has two modes:
 
 - **Static Demo** renders a deterministic bundled snapshot and requires no
   backend, provider, or credentials.
-- **Live Backend** creates one generic ResearchRun against a local backend,
-  polls its bounded status, and renders the canonical result returned by
+- **Live Backend** accepts one bounded user-authored generic research question,
+  creates one generic ResearchRun against a local backend, polls its bounded
+  status, and renders the canonical result returned by
   `GET /api/runs/{run_id}/result`.
 
 The console is a consumer of service-owned state. It does not write review or
 verification decisions, create database authority, or bypass result gates.
+The question draft and temporary create intent are browser-session-only; the
+service-owned status and result authority remain outside the browser. This
+current-main input increment is current-main only; stable `v0.1.8` remains
+unchanged.
 
 ## Showcase Frames
 
@@ -129,8 +134,10 @@ Open `http://127.0.0.1:5173`, select **Live Backend**, keep Backend base URL as
 
 1. Select **检查后端 / Check backend**.
 2. Confirm the service reports ready.
-3. Select **运行并获取结果 / Run and fetch result**.
-4. Inspect the returned `run_id`, terminal state, and canonical artifact.
+3. Enter one nonblank research question in the editable multiline field. The
+   Console accepts at most 4096 UTF-8 bytes and shows the current byte count.
+4. Select **运行并获取结果 / Run and fetch result**.
+5. Inspect the returned `run_id`, terminal state, and canonical artifact.
 
 The client waits for at most ten minutes. A client timeout stops browser
 polling but does not cancel the server-side ResearchRun. Switching back to
@@ -145,11 +152,14 @@ not-applicable, unsupported, and observed-empty states instead of substituting
 Static Demo values.
 
 Idempotency-Key is header-only and browser-session scoped. Each new-run action
-keeps one temporary keyed request in memory. If the create acknowledgement is
-ambiguous, use **重试同一请求 / Retry same request** to resend the same key and
-byte-equivalent request, or explicitly discard it. Do not start a replacement
-request while reconciliation is pending. A page refresh discards the in-memory
-reconciliation capability; the console does not claim durable browser intent.
+keeps one temporary keyed request in memory. The question is sent exactly as
+entered; the Console does not trim, normalize, translate, case-fold, or rewrite
+it. If the create acknowledgement is ambiguous, use **重试同一请求 / Retry
+same request** to resend the same key and byte-equivalent request, including
+the exact submitted question, or explicitly discard it. Do not start a
+replacement request while reconciliation is pending. A page refresh discards
+the in-memory reconciliation capability; the draft is browser-session-only and
+the console does not claim durable browser intent.
 
 Once `run_id` is known, known run observation resumes with GET only. Use **仅
 GET 恢复观察 / Resume observation (GET only)** after an interrupted status or

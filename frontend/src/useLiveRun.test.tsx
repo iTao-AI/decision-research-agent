@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_LIVE_DEMO_QUERY } from "./apiClient";
 import { type LiveStatus, useLiveRun } from "./useLiveRun";
 
 const BASE_URL = "http://127.0.0.1:8000";
@@ -73,7 +74,7 @@ describe("useLiveRun", () => {
 
     let startPromise!: Promise<void>;
     act(() => {
-      startPromise = result.current.startNewRun();
+      startPromise = startDefaultRun(result);
     });
     expect(result.current.state.status).toBe("creating");
 
@@ -114,7 +115,7 @@ describe("useLiveRun", () => {
     await makeReady(result);
 
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
 
     expect(result.current.state.status).toBe("error");
@@ -145,7 +146,7 @@ describe("useLiveRun", () => {
     await makeReady(result);
 
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
 
     expect(result.current.state.status).toBe("error");
@@ -171,7 +172,7 @@ describe("useLiveRun", () => {
     await makeReady(result);
 
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
 
     expect(result.current.state.status).toBe("error");
@@ -214,7 +215,7 @@ describe("useLiveRun", () => {
       await makeReady(result);
 
       await act(async () => {
-        await result.current.startNewRun();
+        await startDefaultRun(result);
       });
 
       expect(result.current.state.status).toBe("error");
@@ -243,7 +244,7 @@ describe("useLiveRun", () => {
     await makeReady(result);
 
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
 
     expect(result.current.state.status).toBe("reconciliation_required");
@@ -267,6 +268,44 @@ describe("useLiveRun", () => {
     );
   });
 
+  it("replays the exact custom query after a later draft change", async () => {
+    const query = "  比较证据完整性\n与交付边界  ";
+    const laterDraft = "A later draft must not replace the pending intent.";
+    let currentDraft = query;
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      () => Promise.reject(new TypeError("lost create response")),
+      jsonResponse(createAcknowledgement("run_live_custom_replayed", true)),
+      jsonResponse(runStatus("run_live_custom_replayed", "completed", "ready")),
+      jsonResponse(runResult("run_live_custom_replayed"))
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.startNewRun(currentDraft);
+    });
+
+    expect(result.current.state.status).toBe("reconciliation_required");
+    currentDraft = laterDraft;
+
+    await act(async () => {
+      await result.current.retryCreate();
+    });
+
+    expect(result.current.state.status).toBe("result");
+    const createRequests = requests.filter(({ method }) => method === "POST");
+    expect(createRequests).toHaveLength(2);
+    expect(createRequests[1].body).toBe(createRequests[0].body);
+    expect(createRequests[1].headers.get("Idempotency-Key")).toBe(
+      createRequests[0].headers.get("Idempotency-Key")
+    );
+    expect(JSON.parse(String(createRequests[0].body)).query).toBe(query);
+    expect(JSON.parse(String(createRequests[1].body)).query).not.toBe(currentDraft);
+  });
+
   it("retries a create body-read transport failure with the same body and key", async () => {
     const requests = mockFetchSequence([
       jsonResponse({ status: "ok", service: "decision-research-agent" }),
@@ -282,7 +321,7 @@ describe("useLiveRun", () => {
     await makeReady(result);
 
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
 
     expect(result.current.state.status).toBe("reconciliation_required");
@@ -312,7 +351,7 @@ describe("useLiveRun", () => {
     );
     await makeReady(result);
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
 
     act(() => {
@@ -347,7 +386,7 @@ describe("useLiveRun", () => {
     await makeReady(result);
 
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
 
     expect(result.current.state.status).toBe("error");
@@ -373,7 +412,7 @@ describe("useLiveRun", () => {
     await makeReady(result);
 
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
 
     expect(result.current.state.status).toBe("observation_interrupted");
@@ -414,7 +453,7 @@ describe("useLiveRun", () => {
     await makeReady(result);
 
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
     expect(result.current.state.status).toBe("observation_interrupted");
 
@@ -522,7 +561,7 @@ describe("useLiveRun", () => {
       await makeReady(result);
 
       await act(async () => {
-        await result.current.startNewRun();
+        await startDefaultRun(result);
       });
 
       expect(result.current.state.status).toBe("error");
@@ -576,7 +615,7 @@ describe("useLiveRun", () => {
     );
     await makeReady(result);
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
     expect(result.current.state.status).toBe("observation_interrupted");
 
@@ -606,7 +645,7 @@ describe("useLiveRun", () => {
 
     let startPromise!: Promise<void>;
     act(() => {
-      startPromise = result.current.startNewRun();
+      startPromise = startDefaultRun(result);
     });
     await act(async () => {
       await Promise.resolve();
@@ -660,7 +699,7 @@ describe("useLiveRun", () => {
     await makeReady(result);
 
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
 
     expect(statusSignal?.aborted).toBe(true);
@@ -712,7 +751,7 @@ describe("useLiveRun", () => {
       await makeReady(result);
 
       await act(async () => {
-        await result.current.startNewRun();
+        await startDefaultRun(result);
       });
 
       expect(result.current.state.status).toBe("terminal");
@@ -769,7 +808,7 @@ describe("useLiveRun", () => {
 
     let startPromise!: Promise<void>;
     act(() => {
-      startPromise = result.current.startNewRun();
+      startPromise = startDefaultRun(result);
     });
     await act(async () => {
       for (let iteration = 0; iteration < 10; iteration += 1) {
@@ -811,7 +850,7 @@ describe("useLiveRun", () => {
 
       let startPromise!: Promise<void>;
       act(() => {
-        startPromise = result.current.startNewRun();
+        startPromise = startDefaultRun(result);
       });
       expect(result.current.state.status).toBe("creating");
 
@@ -855,7 +894,7 @@ describe("useLiveRun", () => {
     );
     await makeReady(result);
     await act(async () => {
-      await result.current.startNewRun();
+      await startDefaultRun(result);
     });
     expect(result.current.state.status).toBe("result");
 
@@ -871,7 +910,13 @@ describe("useLiveRun", () => {
   });
 });
 
-async function makeReady(result: ReturnType<typeof renderHook<ReturnType<typeof useLiveRun>, never>>["result"]) {
+type LiveRunHookResult = ReturnType<typeof renderHook<ReturnType<typeof useLiveRun>, never>>["result"];
+
+function startDefaultRun(result: LiveRunHookResult) {
+  return result.current.startNewRun(DEFAULT_LIVE_DEMO_QUERY);
+}
+
+async function makeReady(result: LiveRunHookResult) {
   act(() => {
     result.current.setMode("live");
   });

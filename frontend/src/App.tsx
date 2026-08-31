@@ -1,6 +1,10 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
-import type { ClientError } from "./apiClient";
+import {
+  DEFAULT_LIVE_DEMO_QUERY,
+  type ClientError,
+  validateLiveDemoQuery
+} from "./apiClient";
 import {
   buildLiveConsoleProjection,
   buildStaticConsoleProjection,
@@ -786,8 +790,21 @@ function LiveDemoPanel({
     state.status
   );
   const hasKnownRunError = state.status === "error" && Boolean(state.error?.run_id);
+  const [queryDraft, setQueryDraft] = useState(DEFAULT_LIVE_DEMO_QUERY);
+  const queryValidation = validateLiveDemoQuery(queryDraft);
+  const queryLocked =
+    !isLive ||
+    ["creating", "polling", "reconciliation_required", "observation_interrupted"].includes(
+      state.status
+    ) ||
+    hasKnownRunError;
+  const queryDescribedBy = [
+    "live-query-hint",
+    "live-query-bytes",
+    ...(queryValidation.ok ? [] : ["live-query-feedback"])
+  ].join(" ");
   const canStartNewRun =
-    isLive && ["ready", "terminal", "result"].includes(state.status);
+    isLive && queryValidation.ok && ["ready", "terminal", "result"].includes(state.status);
 
   return (
     <section className="live-panel" aria-label={t.live.status}>
@@ -820,6 +837,27 @@ function LiveDemoPanel({
             onChange={(event) => liveRun.setBaseUrl(event.target.value)}
           />
         </label>
+        <div className="live-query-field">
+          <label htmlFor="live-research-question">{t.live.question}</label>
+          <textarea
+            aria-describedby={queryDescribedBy}
+            aria-invalid={queryValidation.ok ? "false" : "true"}
+            disabled={queryLocked}
+            id="live-research-question"
+            rows={4}
+            value={queryDraft}
+            onChange={(event) => setQueryDraft(event.target.value)}
+          />
+          <small id="live-query-hint">{t.live.questionHint}</small>
+          <small className="live-query-bytes" id="live-query-bytes">
+            {t.live.queryBytes(queryValidation.utf8Bytes)}
+          </small>
+          {!queryValidation.ok && (
+            <p className="live-query-feedback" id="live-query-feedback">
+              {queryValidation.reason === "blank" ? t.live.queryBlank : t.live.queryTooLarge}
+            </p>
+          )}
+        </div>
         <button
           disabled={!isLive || isBusy || requiresRecovery || hasKnownRunError}
           type="button"
@@ -827,7 +865,11 @@ function LiveDemoPanel({
         >
           {t.live.checkHealth}
         </button>
-        <button disabled={!canStartNewRun} type="button" onClick={liveRun.startNewRun}>
+        <button
+          disabled={!canStartNewRun}
+          type="button"
+          onClick={() => liveRun.startNewRun(queryDraft)}
+        >
           {t.live.runResult}
         </button>
         {state.status === "reconciliation_required" && (

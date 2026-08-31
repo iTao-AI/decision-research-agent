@@ -291,8 +291,8 @@ export function useLiveRun(options: LiveRunOptions = {}) {
     }
   }, [isCurrent, nextRequest, observeRun, state.baseUrl, waitTimeoutMs]);
 
-  const startNewRun = useCallback(async () => {
-    const intent = createRunIntent(randomUUID);
+  const startNewRun = useCallback(async (query: string) => {
+    const intent = createRunIntent(query, randomUUID);
     createIntent.current = intent;
     activeRunId.current = null;
     await createAndObserve(intent);

@@ -1078,6 +1078,7 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.getAllByText("run_live_stable_ui_error").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "检查后端" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "运行并获取结果" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "检查后端" }));
 
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);

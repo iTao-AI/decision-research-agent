@@ -8,8 +8,25 @@ import {
 export type { RunProjection, RunResultResponse } from "./runProjection";
 
 export const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8000";
-export const LIVE_DEMO_QUERY =
+export const DEFAULT_LIVE_DEMO_QUERY =
   "Generate a short evidence-bound result for the Agent Research Operations Console.";
+export const LIVE_DEMO_QUERY_UTF8_BYTES_MAX = 4096;
+
+export type LiveDemoQueryValidation = Readonly<
+  | { ok: true; utf8Bytes: number }
+  | { ok: false; reason: "blank" | "too_large"; utf8Bytes: number }
+>;
+
+export function validateLiveDemoQuery(query: string): LiveDemoQueryValidation {
+  const utf8Bytes = new TextEncoder().encode(query).byteLength;
+  if (query.trim().length === 0) {
+    return Object.freeze({ ok: false, reason: "blank" as const, utf8Bytes });
+  }
+  if (utf8Bytes > LIVE_DEMO_QUERY_UTF8_BYTES_MAX) {
+    return Object.freeze({ ok: false, reason: "too_large" as const, utf8Bytes });
+  }
+  return Object.freeze({ ok: true as const, utf8Bytes });
+}
 
 export type ClientError = {
   code: string;
@@ -55,13 +72,18 @@ export class ClientRequestError extends Error {
 const ambiguousTransportErrors = new WeakSet<ClientRequestError>();
 
 export function createRunIntent(
+  query: string,
   randomUUID: () => string = () => crypto.randomUUID()
 ): RunCreateIntent {
+  const validation = validateLiveDemoQuery(query);
+  if (!validation.ok) {
+    throw new RangeError(`live_demo_query_${validation.reason}`);
+  }
   const uuid = randomUUID();
   return Object.freeze({
     idempotencyKey: `run-create-console-${uuid}`,
     payload: Object.freeze({
-      query: LIVE_DEMO_QUERY,
+      query,
       thread_id: `demo-console-${uuid}`,
       profile_id: "generic" as const,
       scope: Object.freeze({})

@@ -30,6 +30,17 @@ stable `v0.1.8`; it is not a promise of a future release.
 - Clarified bounded blocked-failure diagnosis in the Console while preserving
   `review_required` and `not_delivered` for the failed source.
 
+### Live Backend research question input
+
+- Added one bounded user-authored generic research question to Live Backend,
+  limited to a nonblank value of at most 4096 UTF-8 bytes.
+- The browser sends the exact question and keeps it only in a temporary
+  browser-session intent for same-key, byte-equivalent ambiguous-create replay;
+  known-run recovery remains GET-only and service-owned status/result authority
+  is unchanged.
+- This current-main increment leaves stable `v0.1.8` unchanged and makes no
+  provider, deployment, quality, or business-impact claim.
+
 ## [0.1.8] - 2026-07-30
 
 ### Tool safety and runtime closure

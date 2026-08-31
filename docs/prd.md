@@ -49,7 +49,7 @@ and bounded local Live Backend mode.
 | Durable HITL feasibility | Single-node SQLite review gate, disabled by default, with 13-gate safety report | Implemented |
 | Evidence verification authority | Append-only human verification decisions and revisioned publications | Implemented |
 | Tool Client integration | Canonical Python client for health, run, result, review, and evidence commands | Implemented |
-| Agent Research Operations Console | Keyed create/status/result observation, strict response identity, GET-only resume, and rendering limited to service-owned status plus the canonical result | Implemented |
+| Agent Research Operations Console | One bounded user-authored generic research question through keyed create/status/result observation, strict response identity, GET-only resume, and rendering limited to service-owned status plus the canonical result | Implemented |
 
 ## Success Criteria
 
@@ -94,3 +94,4 @@ and bounded local Live Backend mode.
 | 2026-06-26 | Rewritten for v0.1.0 canonical backend, DeepAgents-native harness, and legacy runtime removal |
 | 2026-06-30 | Added the separately built Agent Research Operations Console and bounded local Live Backend consumer flow |
 | 2026-07-16 | Added v0.1.2-v0.1.4 run reliability and Console observation capabilities |
+| 2026-09-01 | Added one bounded browser-session-only Live Backend research question input without changing backend authority |

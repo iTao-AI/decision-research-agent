@@ -294,6 +294,17 @@ h3 {
   font-size: 12px;
 }
 
+.live-query-field {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+}
+
+.live-query-field > label {
+  color: #6b7280;
+  font-size: 12px;
+}
+
 .live-controls input {
   min-height: 44px;
   width: 100%;
@@ -305,8 +316,46 @@ h3 {
   font: inherit;
 }
 
+.live-query-field textarea {
+  min-height: 112px;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #d8d2c4;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fffdf8;
+  color: #15171a;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.live-query-field textarea:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.live-query-field textarea[aria-invalid="true"] {
+  border-color: #b91c1c;
+}
+
+.live-query-field small {
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.live-query-bytes {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.live-query-feedback {
+  margin: 0;
+  color: #b91c1c;
+  line-height: 1.45;
+}
+
 .live-controls button:disabled,
-.live-controls input:disabled {
+.live-controls input:disabled,
+.live-query-field textarea:disabled {
   cursor: not-allowed;
   opacity: 0.58;
 }

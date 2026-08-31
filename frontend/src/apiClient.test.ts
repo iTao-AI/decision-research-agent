@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  DEFAULT_LIVE_DEMO_QUERY,
+  LIVE_DEMO_QUERY_UTF8_BYTES_MAX,
   ClientRequestError,
   createRunIntent,
   getHealth,
@@ -8,6 +10,7 @@ import {
   getRun,
   isAmbiguousCreateError,
   startRun,
+  validateLiveDemoQuery,
   type RunCreateIntent
 } from "./apiClient";
 
@@ -19,14 +22,62 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("live research question validation", () => {
+  it.each([
+    ["", "blank", 0],
+    ["   \n", "blank", 4],
+    ["a".repeat(LIVE_DEMO_QUERY_UTF8_BYTES_MAX + 1), "too_large", 4097]
+  ] as const)("rejects invalid live query %s", (query, reason, utf8Bytes) => {
+    expect(validateLiveDemoQuery(query)).toEqual({ ok: false, reason, utf8Bytes });
+    expect(() => createRunIntent(query, () => FIXED_UUID)).toThrow(
+      `live_demo_query_${reason}`
+    );
+  });
+
+  it("accepts exactly 4096 UTF-8 bytes and preserves the submitted string", () => {
+    const query = `  研究问题\n${"a".repeat(4079)}  `;
+
+    expect(new TextEncoder().encode(query)).toHaveLength(LIVE_DEMO_QUERY_UTF8_BYTES_MAX);
+    expect(validateLiveDemoQuery(query)).toEqual({
+      ok: true,
+      utf8Bytes: LIVE_DEMO_QUERY_UTF8_BYTES_MAX
+    });
+    expect(createRunIntent(query, () => FIXED_UUID).payload.query).toBe(query);
+  });
+
+  it("keeps a custom Chinese multiline query exact in the request body", async () => {
+    const query = "  比较证据完整性\n与交付边界  ";
+    const intent = createRunIntent(query, () => FIXED_UUID);
+    const fetchMock = stubFetch(
+      jsonResponse({
+        run_id: "run_live_custom_query",
+        segment_id: "run_live_custom_query_seg_000",
+        status: "started",
+        thread_id: intent.payload.thread_id,
+        idempotent_replay: false
+      })
+    );
+
+    await startRun(BASE_URL, intent);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      query,
+      thread_id: intent.payload.thread_id,
+      profile_id: "generic",
+      scope: {}
+    });
+  });
+});
+
 describe("keyed live run creation", () => {
   it("creates one immutable bounded browser intent", () => {
-    const intent = createRunIntent(() => FIXED_UUID);
+    const intent = createRunIntent(DEFAULT_LIVE_DEMO_QUERY, () => FIXED_UUID);
 
     expect(intent).toEqual({
       idempotencyKey: `run-create-console-${FIXED_UUID}`,
       payload: {
-        query: "Generate a short evidence-bound result for the Agent Research Operations Console.",
+        query: DEFAULT_LIVE_DEMO_QUERY,
         thread_id: `demo-console-${FIXED_UUID}`,
         profile_id: "generic",
         scope: {}
@@ -38,7 +89,7 @@ describe("keyed live run creation", () => {
   });
 
   it("sends the immutable payload with the raw key only in the idempotency header", async () => {
-    const intent = createRunIntent(() => FIXED_UUID);
+    const intent = createRunIntent(DEFAULT_LIVE_DEMO_QUERY, () => FIXED_UUID);
     const fetchMock = stubFetch(
       jsonResponse({
         run_id: "run_live_001",
@@ -75,7 +126,7 @@ describe("keyed live run creation", () => {
   });
 
   it("rejects a create acknowledgement for a different thread identity", async () => {
-    const intent = createRunIntent(() => FIXED_UUID);
+    const intent = createRunIntent(DEFAULT_LIVE_DEMO_QUERY, () => FIXED_UUID);
     stubFetch(
       jsonResponse({
         run_id: "run_live_wrong_thread",
@@ -94,7 +145,7 @@ describe("keyed live run creation", () => {
   it.each([undefined, "false", 0, null])(
     "rejects a non-boolean idempotent_replay value: %s",
     async (idempotentReplay) => {
-      const intent = createRunIntent(() => FIXED_UUID);
+      const intent = createRunIntent(DEFAULT_LIVE_DEMO_QUERY, () => FIXED_UUID);
       stubFetch(
         jsonResponse({
           run_id: "run_live_001",
@@ -112,7 +163,7 @@ describe("keyed live run creation", () => {
   );
 
   it("marks fetch-level connection failures ambiguous without exposing raw errors", async () => {
-    const intent = createRunIntent(() => FIXED_UUID);
+    const intent = createRunIntent(DEFAULT_LIVE_DEMO_QUERY, () => FIXED_UUID);
     stubFetch(Promise.reject(new Error(`opaque failure ${intent.idempotencyKey}`)));
 
     const error = await captureError(startRun(BASE_URL, intent));
@@ -130,7 +181,7 @@ describe("keyed live run creation", () => {
     ["transport failure", new TypeError("response body stream failed")],
     ["abort", new DOMException("Aborted", "AbortError")]
   ])("marks a create response body-read %s ambiguous", async (_label, bodyError) => {
-    const intent = createRunIntent(() => FIXED_UUID);
+    const intent = createRunIntent(DEFAULT_LIVE_DEMO_QUERY, () => FIXED_UUID);
     stubFetch(jsonReadFailureResponse(bodyError));
 
     const error = await captureError(startRun(BASE_URL, intent));
@@ -139,7 +190,7 @@ describe("keyed live run creation", () => {
   });
 
   it("keeps malformed create JSON as a bounded stable invalid_response", async () => {
-    const intent = createRunIntent(() => FIXED_UUID);
+    const intent = createRunIntent(DEFAULT_LIVE_DEMO_QUERY, () => FIXED_UUID);
     stubFetch(
       new Response("{not-json", {
         headers: { "Content-Type": "application/json" },
@@ -190,7 +241,7 @@ describe("keyed live run creation", () => {
       })
     ]
   ])("does not classify a %s as ambiguous", async (_label, response) => {
-    const intent: RunCreateIntent = createRunIntent(() => FIXED_UUID);
+    const intent: RunCreateIntent = createRunIntent(DEFAULT_LIVE_DEMO_QUERY, () => FIXED_UUID);
     stubFetch(response);
 
     const error = await captureError(startRun(BASE_URL, intent));
@@ -204,7 +255,7 @@ describe("loopback request boundary", () => {
   it.each(["health", "create", "status", "result"] as const)(
     "rejects redirects on the %s request path",
     async (requestPath) => {
-      const intent = createRunIntent(() => FIXED_UUID);
+      const intent = createRunIntent(DEFAULT_LIVE_DEMO_QUERY, () => FIXED_UUID);
       const responses = {
         health: jsonResponse({ status: "ok", service: "decision-research-agent" }),
         create: jsonResponse({

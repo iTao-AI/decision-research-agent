@@ -20,12 +20,13 @@ Decision Research Agent 把开放研究问题转化为有来源支撑、可复�
 和有界 canonical result。
 
 Agent Research Operations Console 只负责把这条路径讲清楚，不成为业务事实源。
-Static Demo 是确定性的；可选 Live Backend 只消费现有 API contract 的
-service-owned state。
+Static Demo 是确定性的；可选 Live Backend 接受一个有界的用户自定义通用研究问题，
+并只消费现有 API contract 的 service-owned state。问题不能为空，且最多为
+4096 UTF-8 bytes。
 
 ## 当前默认分支状态
 
-下文展示的 Console 和 blocked-failure diagnosis 是 stable `v0.1.8` 之后当前默认分支上的新增内容；它们不包含在不可变的 stable `v0.1.8` release 中。这一边界不构成 deployment、provider-backed research 或 business-impact claim。
+下文展示的 Console 和 blocked-failure diagnosis 是 stable `v0.1.8` 之后当前默认分支上的新增内容；它们不包含在不可变的 stable `v0.1.8` release 中。这一边界不构成 deployment、provider-backed research 或 business-impact claim。当前 main 的输入增量不改变 stable `v0.1.8`。
 
 ## Research Delivery Flow
 
@@ -295,10 +296,12 @@ CORS origin，并将未启用 `API_SECRET` 的 backend 绑定到 loopback；启�
 [Demo Console Guide](docs/demo-console.md)。当前 console 不接收或保存 API 凭据。
 
 Live Backend 只渲染真实的 service-owned state，来源仅限 run status 与
-canonical result contracts。create response 不明确时，reconciliation 重用
-same key 和 byte-equivalent request。获得 `run_id` 后，observation resume
-仅使用 GET，不能再次 create。Console 不拥有 review、verification、publication
-或 delivery authority。
+canonical result contracts。输入框的 draft 和临时 create intent 只存在于当前
+browser session；问题会按输入原样发送，不会被 trim、normalize、翻译或暗中改写。
+create response 不明确时，reconciliation 重用 same key 和 byte-equivalent request，
+并保留 exact submitted question。获得 `run_id` 后，observation resume 仅使用 GET，
+不能再次 create。Console 不拥有 review、verification、publication 或 delivery
+authority。
 
 ## Tool Client
 

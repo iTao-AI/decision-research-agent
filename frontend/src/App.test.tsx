@@ -1,8 +1,12 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+import {
+  DEFAULT_LIVE_DEMO_QUERY,
+  LIVE_DEMO_QUERY_UTF8_BYTES_MAX
+} from "./apiClient";
 
 const BASE_URL = "http://127.0.0.1:8000";
 const FIXED_UUID = "11111111-2222-4333-8444-555555555555";
@@ -93,7 +97,7 @@ describe("Decision Research Agent demo console", () => {
     render(<App showcaseState="overview" />);
 
     expect(screen.getByRole("navigation", { name: "Research flow" })).toBeInTheDocument();
-    expect(screen.getByText("研究问题")).toBeInTheDocument();
+    expect(screen.getAllByText("研究问题").length).toBeGreaterThan(0);
     expect(screen.getAllByText("计划与工具工作").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Evidence review").length).toBeGreaterThan(0);
     expect(screen.getAllByText("判断与交付").length).toBeGreaterThan(0);
@@ -340,6 +344,152 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.queryByText("traceable")).not.toBeInTheDocument();
     expect(screen.queryByText("已就绪")).not.toBeInTheDocument();
     expect(screen.getAllByText("尚未观察到").length).toBeGreaterThan(0);
+  });
+
+  it("shows an editable default research question with its UTF-8 byte count in Live Backend", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+
+    const question = screen.getByRole("textbox", { name: "研究问题" });
+    expect(question).toHaveValue(DEFAULT_LIVE_DEMO_QUERY);
+    expect(question).not.toBeDisabled();
+    expect(question).toHaveAttribute("aria-invalid", "false");
+    expect(question).toHaveAttribute("aria-describedby");
+    expect(screen.getByText(`UTF-8 bytes: ${new TextEncoder().encode(DEFAULT_LIVE_DEMO_QUERY).byteLength} / 4096`)).toBeInTheDocument();
+    expect(screen.getByText("初始示例可编辑；本页仅暂存输入，运行后由后端拥有状态与结果。"))
+      .toBeInTheDocument();
+  });
+
+  it("keeps the research question disabled and Static Demo network-free", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行并获取结果" })).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["   \n", "请先输入研究问题。", 4],
+    ["a".repeat(LIVE_DEMO_QUERY_UTF8_BYTES_MAX + 1), "请将研究问题缩短到 4096 UTF-8 bytes 以内。", 4097]
+  ] as const)("blocks %s without a create request", async (query, message, byteCount) => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+    const question = screen.getByRole("textbox", { name: "研究问题" });
+    fireEvent.change(question, { target: { value: query } });
+
+    expect(question).toHaveValue(query);
+    expect(question).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText(`UTF-8 bytes: ${byteCount} / 4096`)).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "运行并获取结果" })).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("submits the exact custom Chinese multiline question to the existing create contract", async () => {
+    const user = userEvent.setup();
+    const query = "  研究这个失败路径\n并保留原始格式  ";
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_custom_query", false)),
+      jsonResponse(runStatus("run_live_custom_query", "completed", "ready")),
+      jsonResponse(runResult("run_live_custom_query", "Custom query result."))
+    ]);
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+
+    const question = screen.getByRole("textbox", { name: "研究问题" });
+    fireEvent.change(question, { target: { value: query } });
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findByText("Custom query result.");
+
+    const createCall = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(createCall).toBeDefined();
+    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+      query,
+      profile_id: "generic",
+      scope: {}
+    });
+    expect(question).not.toBeDisabled();
+  });
+
+  it("locks the research question while a create is unresolved", async () => {
+    const user = userEvent.setup();
+    const createResponse = deferred<Response>();
+    mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      () => createResponse.promise
+    ]);
+
+    render(<App />);
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toBeDisabled();
+  });
+
+  it("locks the research question while polling a known run", async () => {
+    const user = userEvent.setup();
+    const statusResponse = deferred<Response>();
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_polling", false)),
+      () => statusResponse.promise
+    ]);
+
+    render(<App />);
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toBeDisabled();
+  });
+
+  it.each([
+    ["reconciliation_required", "重试同一请求", [
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      () => Promise.reject(new TypeError("lost create response"))
+    ]],
+    ["observation_interrupted", "仅 GET 恢复观察", [
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_interrupted", false)),
+      jsonResponse(runStatus("run_live_interrupted", "running", "pending")),
+      () => Promise.reject(new TypeError("poll connection dropped"))
+    ]]
+  ] as const)("locks the research question in %s recovery", async (_status, recoveryButton, steps) => {
+    const user = userEvent.setup();
+    mockFetchSequence([...steps]);
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findByRole("button", { name: recoveryButton });
+
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toBeDisabled();
+  });
+
+  it("allows the research question to be edited after a terminal run", async () => {
+    const user = userEvent.setup();
+    mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_live_terminal_edit", false)),
+      jsonResponse(runStatus("run_live_terminal_edit", "failed", "failed"))
+    ]);
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findAllByText("run_live_terminal_edit");
+
+    expect(screen.getByRole("textbox", { name: "研究问题" })).not.toBeDisabled();
   });
 
   it("checks backend health and renders bounded live service status", async () => {
@@ -928,6 +1078,7 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.getAllByText("run_live_stable_ui_error").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "检查后端" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "运行并获取结果" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "检查后端" }));
 
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);

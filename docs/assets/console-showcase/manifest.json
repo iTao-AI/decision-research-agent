@@ -1,8 +1,8 @@
 {
   "schema_version": "dra.console-showcase-manifest.v1",
   "capture": {
-    "source_commit": "0268ccae146a4714d0ab1c03ecff06f60f8efd77",
-    "source_tree": "a5309420877ce37a8ed40c0872186b6352cab794",
+    "source_commit": "1d4efb478af58cf3ed4c0c0a5c06ecbd62c2286b",
+    "source_tree": "deb0fbf8e7f9fae1fb5114a5e6c44458ee874069",
     "viewport": {
       "width": 1600,
       "height": 1000
@@ -30,7 +30,7 @@
         "frontend/tsconfig.node.json",
         "frontend/vite.config.ts"
       ],
-      "value": "6806c0ebd723925020215911c2c38345e21e67e7c09cf9cb7ff32ed4e3be0991"
+      "value": "9f606cfa1dbad253d5371ad445d60b6812e1ead2824574d1a6784879b7721df5"
     }
   },
   "frames": {

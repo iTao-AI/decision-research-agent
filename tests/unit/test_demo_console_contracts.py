@@ -85,6 +85,28 @@ def test_create_intent_is_header_only_session_scoped_and_reconcilable():
     assert "JSON.stringify(intent.payload)" in client
 
 
+def test_live_question_contract_is_bounded_exact_and_non_authoritative():
+    contract = _public_contract()
+    readme = re.sub(r"\s+", " ", _read(README))
+    readme_cn = re.sub(r"\s+", " ", _read(README_CN))
+
+    for phrase in (
+        "one bounded user-authored generic research question",
+        "4096 UTF-8 bytes",
+        "does not trim, normalize, translate, case-fold, or rewrite it",
+        "browser-session-only",
+        "same key and byte-equivalent request, including the exact submitted question",
+        "service-owned status and result authority",
+        "stable `v0.1.8` remains unchanged",
+    ):
+        assert phrase in contract
+
+    assert "one bounded user-authored generic research question" in readme
+    assert "4096 UTF-8 bytes" in readme
+    assert "一个有界的用户自定义通用研究问题" in readme_cn
+    assert "4096 UTF-8 bytes" in readme_cn
+
+
 def test_known_run_recovery_and_canonical_result_authority_are_explicit():
     contract = _public_contract()
     live_run = _read(LIVE_RUN)

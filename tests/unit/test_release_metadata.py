@@ -353,6 +353,7 @@ def test_unreleased_records_exact_post_v0_1_8_inventory_without_release_promise(
         "Node 22/24 support matrix",
         "Frontend test-patch/provenance refresh",
         "Blocked failure diagnosis",
+        "Live Backend research question input",
     )
     assert (
         "changes already merged on the current default branch after stable `v0.1.8`"
@@ -365,6 +366,7 @@ def test_unreleased_records_exact_post_v0_1_8_inventory_without_release_promise(
         "Node.js 22/24 support matrix",
         "frontend test patches",
         "blocked-failure diagnosis",
+        "bounded user-authored generic research question",
     ):
         assert phrase in normalized
 

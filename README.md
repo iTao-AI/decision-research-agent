@@ -25,14 +25,17 @@ reviewable Evidence and a bounded canonical result.
 
 The Agent Research Operations Console makes that path legible without becoming
 the business authority. Its Static Demo is deterministic; its optional Live
-Backend mode consumes service-owned state through the existing API contract.
+Backend mode accepts one bounded user-authored generic research question and
+consumes service-owned state through the existing API contract. The question is
+nonblank and at most 4096 UTF-8 bytes.
 
 ## Current Default Branch Status
 
 The showcased Console and blocked-failure diagnosis are current default-branch
 additions after stable `v0.1.8`; they are not included in the immutable stable
 `v0.1.8` release. This boundary is not a deployment, provider-backed research,
-or business-impact claim.
+or business-impact claim. The current-main input increment is current-main
+only; stable `v0.1.8` remains unchanged.
 
 ## Research Delivery Flow
 
@@ -326,9 +329,12 @@ console does not accept or store API credentials.
 
 Live Backend renders only real service-owned state from the run status and
 canonical result contracts. Ambiguous create reconciliation reuses the same
-key and byte-equivalent request. After `run_id` is known, observation resume is
-GET-only and cannot issue another create. The console does not own review,
-verification, publication, or delivery authority.
+key and byte-equivalent request, including the exact submitted question. The
+question is sent exactly as entered, without trim, normalization, translation,
+case-folding, or hidden rewrite. Its draft and temporary create intent are
+browser-session-only. After `run_id` is known, observation resume is GET-only
+and cannot issue another create. The console does not own review, verification,
+publication, or delivery authority.
 
 ## Tool Client
 

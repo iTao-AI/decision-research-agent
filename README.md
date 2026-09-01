@@ -332,9 +332,14 @@ canonical result contracts. Ambiguous create reconciliation reuses the same
 key and byte-equivalent request, including the exact submitted question. The
 question is sent exactly as entered, without trim, normalization, translation,
 case-folding, or hidden rewrite. Its draft and temporary create intent are
-browser-session-only. After `run_id` is known, observation resume is GET-only
-and cannot issue another create. The console does not own review, verification,
-publication, or delivery authority.
+browser-session-only. A retained known `run_id` can be re-entered after a page
+refresh through the separate Known run_id control. This is health-gated
+GET-only observation using the exact syntax
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`; it does not add run list/history or
+browser persistence. It does not reconstruct an ambiguous POST after refresh.
+After `run_id` is known, observation resume is GET-only and cannot issue another
+create. The console does not own review, verification, publication, or delivery
+authority.
 
 ## Tool Client
 

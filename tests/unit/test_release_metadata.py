@@ -142,6 +142,17 @@ def test_current_release_version_is_consistent() -> None:
     assert sha256(V015_RELEASE_NOTES.read_bytes()).hexdigest() == V015_RELEASE_NOTES_SHA256
 
 
+def test_known_run_reattach_is_current_main_only_and_excluded_from_v018() -> None:
+    changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
+    stable_release = _read(V018_RELEASE_NOTES)
+    unreleased = changelog.split("## [0.1.8]", maxsplit=1)[0]
+
+    assert "### Known-run GET-only reattachment" in unreleased
+    assert "A retained known `run_id` can be re-entered after a page refresh" in unreleased
+    assert "### Known-run GET-only reattachment" not in stable_release
+    assert "A retained known `run_id` can be re-entered after a page refresh" not in stable_release
+
+
 def test_changelog_preserves_published_release_boundary() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     unreleased_heading = "## [Unreleased]"
@@ -354,6 +365,7 @@ def test_unreleased_records_exact_post_v0_1_8_inventory_without_release_promise(
         "Frontend test-patch/provenance refresh",
         "Blocked failure diagnosis",
         "Live Backend research question input",
+        "Known-run GET-only reattachment",
     )
     assert (
         "changes already merged on the current default branch after stable `v0.1.8`"
@@ -367,6 +379,7 @@ def test_unreleased_records_exact_post_v0_1_8_inventory_without_release_promise(
         "frontend test patches",
         "blocked-failure diagnosis",
         "bounded user-authored generic research question",
+        "known `run_id` can be re-entered after a page refresh",
     ):
         assert phrase in normalized
 

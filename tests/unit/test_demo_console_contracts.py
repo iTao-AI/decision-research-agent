@@ -124,6 +124,31 @@ def test_known_run_recovery_and_canonical_result_authority_are_explicit():
     assert "startRun" not in resume
 
 
+def test_known_run_reattach_after_refresh_is_exact_health_gated_and_get_only():
+    contract = _public_contract()
+    readme = re.sub(r"\s+", " ", _read(README))
+    readme_cn = re.sub(r"\s+", " ", _read(README_CN))
+
+    for phrase in (
+        "A retained known `run_id` can be re-entered after a page refresh",
+        "exact syntax `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`",
+        "health-gated GET-only observation",
+        "does not add run list/history or browser persistence",
+        "does not reconstruct an ambiguous POST after refresh",
+    ):
+        assert phrase in contract
+        assert phrase in readme
+
+    for phrase in (
+        "保留的已知 `run_id` 可以在页面刷新后重新输入",
+        "精确格式 `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`",
+        "经过 health 检查后才允许 GET-only observation",
+        "不新增 run list/history 或 browser persistence",
+        "页面刷新后不重建 ambiguous POST",
+    ):
+        assert phrase in readme_cn
+
+
 def test_failure_cause_availability_states_remain_distinct():
     contract = _public_contract()
 

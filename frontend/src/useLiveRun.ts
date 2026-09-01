@@ -10,6 +10,7 @@ import {
   isAmbiguousCreateError,
   normalizeClientError,
   startRun,
+  validateLiveRunId,
   type ClientError,
   type HealthResponse,
   type RunCreateIntent,
@@ -298,6 +299,47 @@ export function useLiveRun(options: LiveRunOptions = {}) {
     await createAndObserve(intent);
   }, [createAndObserve, randomUUID]);
 
+  const attachKnownRun = useCallback(async (runId: string) => {
+    const validation = validateLiveRunId(runId);
+    if (!validation.ok) {
+      throw new RangeError(`live_run_id_${validation.reason}`);
+    }
+
+    const { controller: requestController, version } = nextRequest();
+    const deadline = createDeadline(requestController.signal, waitTimeoutMs);
+    const baseUrl = state.baseUrl;
+    createIntent.current = null;
+    activeRunId.current = runId;
+    setState((current) => ({
+      ...current,
+      created: undefined,
+      error: undefined,
+      result: undefined,
+      run: undefined,
+      status: "polling"
+    }));
+    try {
+      await observeRun({
+        baseUrl,
+        deadlineAt: deadline.deadlineAt,
+        runId,
+        signal: deadline.signal,
+        version
+      });
+    } catch (error) {
+      if (!isCurrent(version)) {
+        return;
+      }
+      const failure = classifyObservationFailure(error, runId, deadline.didExpire());
+      setState((current) => ({
+        ...current,
+        ...failure
+      }));
+    } finally {
+      deadline.dispose();
+    }
+  }, [isCurrent, nextRequest, observeRun, state.baseUrl, waitTimeoutMs]);
+
   const retryCreate = useCallback(async () => {
     const intent = createIntent.current;
     if (!intent) {
@@ -355,6 +397,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
   }, [isCurrent, nextRequest, observeRun, state.baseUrl, waitTimeoutMs]);
 
   return {
+    attachKnownRun,
     checkHealth,
     discardPendingIntent,
     resumeObservation,

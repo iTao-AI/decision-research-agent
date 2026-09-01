@@ -41,6 +41,18 @@ stable `v0.1.8`; it is not a promise of a future release.
 - This current-main increment leaves stable `v0.1.8` unchanged and makes no
   provider, deployment, quality, or business-impact claim.
 
+### Known-run GET-only reattachment
+
+- A retained known `run_id` can be re-entered after a page refresh through a
+  health-gated Live Backend control using the exact syntax
+  `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (128 characters maximum).
+- Reattachment is browser-session-only and GET-only. It does not add run
+  list/history or browser persistence, and it does not reconstruct an
+  ambiguous POST after refresh; stable service-owned status/result and
+  authority boundaries remain unchanged.
+- This current-main increment leaves stable `v0.1.8` unchanged and makes no
+  provider, deployment, quality, or business-impact claim.
+
 ## [0.1.8] - 2026-07-30
 
 ### Tool safety and runtime closure

@@ -3,7 +3,8 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_LIVE_DEMO_QUERY,
   type ClientError,
-  validateLiveDemoQuery
+  validateLiveDemoQuery,
+  validateLiveRunId
 } from "./apiClient";
 import {
   buildLiveConsoleProjection,
@@ -791,7 +792,9 @@ function LiveDemoPanel({
   );
   const hasKnownRunError = state.status === "error" && Boolean(state.error?.run_id);
   const [queryDraft, setQueryDraft] = useState(DEFAULT_LIVE_DEMO_QUERY);
+  const [knownRunDraft, setKnownRunDraft] = useState("");
   const queryValidation = validateLiveDemoQuery(queryDraft);
+  const knownRunValidation = validateLiveRunId(knownRunDraft);
   const queryLocked =
     !isLive ||
     ["creating", "polling", "reconciliation_required", "observation_interrupted"].includes(
@@ -805,6 +808,20 @@ function LiveDemoPanel({
   ].join(" ");
   const canStartNewRun =
     isLive && queryValidation.ok && ["ready", "terminal", "result"].includes(state.status);
+  const knownRunLocked =
+    !isLive ||
+    !state.health ||
+    ["checking", "creating", "polling", "reconciliation_required", "observation_interrupted"].includes(
+      state.status
+    ) ||
+    (state.status === "error" && !hasKnownRunError) ||
+    !["ready", "terminal", "result", "error"].includes(state.status);
+  const knownRunHasValidationError = knownRunDraft.length > 0 && !knownRunValidation.ok;
+  const knownRunDescribedBy = [
+    "live-known-run-hint",
+    ...(knownRunHasValidationError ? ["live-known-run-feedback"] : [])
+  ].join(" ");
+  const canObserveKnownRun = !knownRunLocked && knownRunValidation.ok;
 
   return (
     <section className="live-panel" aria-label={t.live.status}>
@@ -858,6 +875,27 @@ function LiveDemoPanel({
             </p>
           )}
         </div>
+        <div className="live-known-run-field">
+          <label htmlFor="live-known-run">{t.live.knownRun}</label>
+          <input
+            aria-describedby={knownRunDescribedBy}
+            aria-invalid={knownRunHasValidationError ? "true" : "false"}
+            disabled={knownRunLocked}
+            id="live-known-run"
+            value={knownRunDraft}
+            onChange={(event) => setKnownRunDraft(event.target.value)}
+          />
+          <small id="live-known-run-hint">{t.live.knownRunHint}</small>
+          {knownRunHasValidationError && (
+            <p className="live-known-run-feedback" id="live-known-run-feedback">
+              {knownRunValidation.reason === "blank"
+                ? t.live.knownRunBlank
+                : knownRunValidation.reason === "too_long"
+                  ? t.live.knownRunTooLong
+                  : t.live.knownRunInvalidFormat}
+            </p>
+          )}
+        </div>
         <button
           disabled={!isLive || isBusy || requiresRecovery || hasKnownRunError}
           type="button"
@@ -871,6 +909,13 @@ function LiveDemoPanel({
           onClick={() => liveRun.startNewRun(queryDraft)}
         >
           {t.live.runResult}
+        </button>
+        <button
+          disabled={!canObserveKnownRun}
+          type="button"
+          onClick={() => liveRun.attachKnownRun(knownRunDraft)}
+        >
+          {t.live.observeKnownRun}
         </button>
         {state.status === "reconciliation_required" && (
           <div className="recovery-actions">

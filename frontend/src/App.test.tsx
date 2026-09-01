@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   DEFAULT_LIVE_DEMO_QUERY,
-  LIVE_DEMO_QUERY_UTF8_BYTES_MAX
+  LIVE_DEMO_QUERY_UTF8_BYTES_MAX,
+  LIVE_RUN_ID_LENGTH_MAX
 } from "./apiClient";
 
 const BASE_URL = "http://127.0.0.1:8000";
@@ -391,6 +392,241 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.getByText(message)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "运行并获取结果" })).toBeDisabled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("renders an empty known run_id control and gates it on verified Live health", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const knownRun = screen.getByRole("textbox", { name: "已知 run_id" });
+    const observeKnownRun = screen.getByRole("button", { name: "观察已知运行" });
+    expect(knownRun).toHaveValue("");
+    expect(knownRun).toBeDisabled();
+    expect(observeKnownRun).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+
+    expect(screen.getByRole("textbox", { name: "已知 run_id" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "观察已知运行" })).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("reports exact known run_id format and length errors without a request", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" })
+    ]);
+
+    render(<App />);
+    await enterLiveMode(user);
+
+    const knownRun = screen.getByRole("textbox", { name: "已知 run_id" });
+    const observeKnownRun = screen.getByRole("button", { name: "观察已知运行" });
+    fireEvent.change(knownRun, { target: { value: " run_invalid" } });
+
+    expect(knownRun).toHaveValue(" run_invalid");
+    expect(knownRun).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText("run_id 必须以字母或数字开头，只能包含 ASCII 字母、数字、点、下划线或连字符；最长 128 个字符。"))
+      .toBeInTheDocument();
+    expect(observeKnownRun).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(knownRun, {
+      target: { value: "A".repeat(LIVE_RUN_ID_LENGTH_MAX + 1) }
+    });
+
+    expect(screen.getByText("run_id 不能超过 128 个字符。"))
+      .toBeInTheDocument();
+    expect(observeKnownRun).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reattaches an exact known run after a fresh mount with GET only and no create receipt", async () => {
+    const user = userEvent.setup();
+    const runId = "run_known_fresh_001";
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(runStatus(runId, "completed", "ready")),
+      jsonResponse(runResult(runId, "Known canonical result."))
+    ]);
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+
+    const knownRun = screen.getByRole("textbox", { name: "已知 run_id" });
+    fireEvent.change(knownRun, { target: { value: runId } });
+    await user.click(screen.getByRole("button", { name: "观察已知运行" }));
+
+    expect(await screen.findByText("Known canonical result.")).toBeInTheDocument();
+    expect(knownRun).toHaveValue(runId);
+    expect(screen.queryByText("新建请求确认")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue(DEFAULT_LIVE_DEMO_QUERY);
+    expect(fetchMock.mock.calls.map(([input, init]) => [init?.method ?? "GET", String(input)])).toEqual([
+      ["GET", `${BASE_URL}/health`],
+      ["GET", `${BASE_URL}/api/runs/${runId}`],
+      ["GET", `${BASE_URL}/api/runs/${runId}/result`]
+    ]);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  });
+
+  it("allows explicit known-run replacement from terminal, result, and stable error states", async () => {
+    const user = userEvent.setup();
+    const terminalRunId = "run_known_terminal";
+    const resultRunId = "run_known_result";
+    const missingRunId = "run_known_missing";
+    const correctedRunId = "run_known_corrected";
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(runStatus(terminalRunId, "completed", "review_required", "required")),
+      jsonResponse(runStatus(resultRunId, "completed", "ready")),
+      jsonResponse(runResult(resultRunId, "Result after explicit replacement.")),
+      jsonResponse(
+        {
+          code: "run_not_found",
+          problem: "Run was not found.",
+          cause: "The requested run does not exist.",
+          fix: "Check the exact run_id.",
+          retryable: false
+        },
+        404
+      ),
+      jsonResponse(runStatus(correctedRunId, "completed", "ready")),
+      jsonResponse(runResult(correctedRunId, "Corrected known-run result."))
+    ]);
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+    const knownRun = screen.getByRole("textbox", { name: "已知 run_id" });
+    const observeKnownRun = screen.getByRole("button", { name: "观察已知运行" });
+
+    fireEvent.change(knownRun, { target: { value: terminalRunId } });
+    expect(observeKnownRun).not.toBeDisabled();
+    await user.click(observeKnownRun);
+    await screen.findByText("已观察到非 ready 终态");
+    expect(knownRun).not.toBeDisabled();
+    expect(observeKnownRun).not.toBeDisabled();
+
+    fireEvent.change(knownRun, { target: { value: resultRunId } });
+    await user.click(observeKnownRun);
+    await screen.findByText("Result after explicit replacement.");
+    expect(knownRun).not.toBeDisabled();
+    expect(observeKnownRun).not.toBeDisabled();
+
+    fireEvent.change(knownRun, { target: { value: missingRunId } });
+    await user.click(observeKnownRun);
+    expect(await screen.findByText("run_not_found")).toBeInTheDocument();
+    expect(screen.getAllByText(missingRunId).length).toBeGreaterThan(0);
+    expect(knownRun).not.toBeDisabled();
+    expect(observeKnownRun).not.toBeDisabled();
+
+    fireEvent.change(knownRun, { target: { value: correctedRunId } });
+    await user.click(observeKnownRun);
+    expect(await screen.findByText("Corrected known-run result.")).toBeInTheDocument();
+    expect(screen.getAllByText(correctedRunId).length).toBeGreaterThan(0);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  });
+
+  it("resumes an interrupted known-run attachment through the existing GET-only control", async () => {
+    const user = userEvent.setup();
+    const runId = "run_known_interrupted";
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(runStatus(runId, "running", "pending")),
+      () => Promise.reject(new TypeError("known-run poll connection dropped")),
+      jsonResponse(runStatus(runId, "completed", "ready")),
+      jsonResponse(runResult(runId, "Resumed known-run result."))
+    ]);
+
+    render(<App liveOptions={{ pollIntervalMs: 1, waitTimeoutMs: 100 }} />);
+    await enterLiveMode(user);
+    const knownRun = screen.getByRole("textbox", { name: "已知 run_id" });
+    fireEvent.change(knownRun, { target: { value: runId } });
+    await user.click(screen.getByRole("button", { name: "观察已知运行" }));
+
+    const resume = await screen.findByRole("button", { name: "仅 GET 恢复观察" });
+    expect(knownRun).toBeDisabled();
+    await user.click(resume);
+    expect(await screen.findByText("Resumed known-run result.")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([input, init]) => [init?.method ?? "GET", String(input)])).toEqual([
+      ["GET", `${BASE_URL}/health`],
+      ["GET", `${BASE_URL}/api/runs/${runId}`],
+      ["GET", `${BASE_URL}/api/runs/${runId}`],
+      ["GET", `${BASE_URL}/api/runs/${runId}`],
+      ["GET", `${BASE_URL}/api/runs/${runId}/result`]
+    ]);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  });
+
+  it("locks the known-run control while health is checking", async () => {
+    const user = userEvent.setup();
+    const healthResponse = deferred<Response>();
+    mockFetchSequence([() => healthResponse.promise]);
+
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+    await user.click(screen.getByRole("button", { name: "检查后端" }));
+
+    expect(screen.getByRole("textbox", { name: "已知 run_id" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "观察已知运行" })).toBeDisabled();
+  });
+
+  it("locks the known-run control while a new run is creating", async () => {
+    const user = userEvent.setup();
+    const createResponse = deferred<Response>();
+    mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      () => createResponse.promise
+    ]);
+
+    render(<App />);
+    await enterLiveMode(user);
+    const knownRun = screen.getByRole("textbox", { name: "已知 run_id" });
+    fireEvent.change(knownRun, { target: { value: "run_known_creating" } });
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+
+    expect(screen.getByRole("textbox", { name: "已知 run_id" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "观察已知运行" })).toBeDisabled();
+  });
+
+  it("locks the known-run control while an existing run is polling", async () => {
+    const user = userEvent.setup();
+    const statusResponse = deferred<Response>();
+    const fetchMock = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(createAcknowledgement("run_known_polling", false)),
+      () => statusResponse.promise
+    ]);
+
+    render(<App />);
+    await enterLiveMode(user);
+    const knownRun = screen.getByRole("textbox", { name: "已知 run_id" });
+    fireEvent.change(knownRun, { target: { value: "run_known_polling" } });
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    expect(screen.getByRole("textbox", { name: "已知 run_id" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "观察已知运行" })).toBeDisabled();
+  });
+
+  it("locks the known-run control while create reconciliation is required", async () => {
+    const user = userEvent.setup();
+    mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      () => Promise.reject(new TypeError("lost create acknowledgement"))
+    ]);
+
+    render(<App />);
+    await enterLiveMode(user);
+    const knownRun = screen.getByRole("textbox", { name: "已知 run_id" });
+    fireEvent.change(knownRun, { target: { value: "run_known_reconciliation" } });
+    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await screen.findByRole("button", { name: "重试同一请求" });
+
+    expect(screen.getByRole("textbox", { name: "已知 run_id" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "观察已知运行" })).toBeDisabled();
   });
 
   it("submits the exact custom Chinese multiline question to the existing create contract", async () => {

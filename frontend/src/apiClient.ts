@@ -11,10 +11,16 @@ export const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8000";
 export const DEFAULT_LIVE_DEMO_QUERY =
   "Generate a short evidence-bound result for the Agent Research Operations Console.";
 export const LIVE_DEMO_QUERY_UTF8_BYTES_MAX = 4096;
+export const LIVE_RUN_ID_LENGTH_MAX = 128;
 
 export type LiveDemoQueryValidation = Readonly<
   | { ok: true; utf8Bytes: number }
   | { ok: false; reason: "blank" | "too_large"; utf8Bytes: number }
+>;
+
+export type LiveRunIdValidation = Readonly<
+  | { ok: true }
+  | { ok: false; reason: "blank" | "too_long" | "invalid_format" }
 >;
 
 export function validateLiveDemoQuery(query: string): LiveDemoQueryValidation {
@@ -26,6 +32,19 @@ export function validateLiveDemoQuery(query: string): LiveDemoQueryValidation {
     return Object.freeze({ ok: false, reason: "too_large" as const, utf8Bytes });
   }
   return Object.freeze({ ok: true as const, utf8Bytes });
+}
+
+export function validateLiveRunId(runId: string): LiveRunIdValidation {
+  if (runId.trim().length === 0) {
+    return Object.freeze({ ok: false, reason: "blank" as const });
+  }
+  if (runId.length > LIVE_RUN_ID_LENGTH_MAX) {
+    return Object.freeze({ ok: false, reason: "too_long" as const });
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runId)) {
+    return Object.freeze({ ok: false, reason: "invalid_format" as const });
+  }
+  return Object.freeze({ ok: true as const });
 }
 
 export type ClientError = {
@@ -165,6 +184,7 @@ export async function getRun(
   runId: string,
   signal?: AbortSignal
 ): Promise<RunProjection> {
+  assertValidLiveRunId(runId);
   const value = await requestJson<unknown>(
     baseUrl,
     `/api/runs/${encodeURIComponent(runId)}`,
@@ -184,6 +204,7 @@ export async function getResult(
   runId: string,
   signal?: AbortSignal
 ): Promise<RunResultResponse> {
+  assertValidLiveRunId(runId);
   const value = await requestJson<unknown>(
     baseUrl,
     `/api/runs/${encodeURIComponent(runId)}/result`,
@@ -335,6 +356,13 @@ function invalidBackendUrl(): ClientError {
     fix: "Enter an explicit loopback HTTP endpoint such as http://127.0.0.1:8000.",
     retryable: false
   };
+}
+
+function assertValidLiveRunId(runId: string) {
+  const validation = validateLiveRunId(runId);
+  if (!validation.ok) {
+    throw new RangeError(`live_run_id_${validation.reason}`);
+  }
 }
 
 function isAbortError(error: unknown) {

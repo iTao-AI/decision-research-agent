@@ -152,6 +152,9 @@ python tools/decision_research_agent_tool.py run \
 - Telemetry, token usage, and WebSocket endpoints are not part of the current
   UI flow.
 - `GET /api/runs/{run_id}/result` remains the canonical result contract.
+- A retained known `run_id` can be re-entered after a page refresh through the
+  health-gated GET-only observation control. Its exact syntax is
+  `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (128 characters maximum).
 - UI fixtures must not imply that review approval verifies Evidence.
 - `cited` and `verified` remain separate concepts.
 
@@ -183,6 +186,13 @@ with GET only. Status and result recovery do not create a replacement run. The
 canonical artifact comes only from /api/runs/{run_id}/result. A terminal
 non-ready state is an observed run outcome, not a connection failure, and does
 not trigger a result request.
+
+A retained known `run_id` can be re-entered after a page refresh in the separate
+Live Backend control. This health-gated GET-only observation uses the exact
+syntax `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`; it does not add run list/history or
+browser persistence. It does not reconstruct an ambiguous POST after refresh.
+The input is browser-session-only, and a corrected identity is always an
+explicit operator choice rather than auto-discovery or automatic replacement.
 
 The optional additive failure-cause field preserves four availability states:
 

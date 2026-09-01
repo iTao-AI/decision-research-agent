@@ -300,6 +300,17 @@ h3 {
   gap: 6px;
 }
 
+.live-known-run-field {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+}
+
+.live-known-run-field > label {
+  color: #6b7280;
+  font-size: 12px;
+}
+
 .live-query-field > label {
   color: #6b7280;
   font-size: 12px;
@@ -348,6 +359,26 @@ h3 {
 }
 
 .live-query-feedback {
+  margin: 0;
+  color: #b91c1c;
+  line-height: 1.45;
+}
+
+.live-known-run-field small {
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.live-known-run-field input:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.live-known-run-field input[aria-invalid="true"] {
+  border-color: #b91c1c;
+}
+
+.live-known-run-feedback {
   margin: 0;
   color: #b91c1c;
   line-height: 1.45;

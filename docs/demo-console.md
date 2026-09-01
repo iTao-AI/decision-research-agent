@@ -10,7 +10,8 @@ owning business authority. It has two modes:
 - **Live Backend** accepts one bounded user-authored generic research question,
   creates one generic ResearchRun against a local backend, polls its bounded
   status, and renders the canonical result returned by
-  `GET /api/runs/{run_id}/result`.
+  `GET /api/runs/{run_id}/result`. It also allows a retained known `run_id` to
+  be re-entered after a page refresh for health-gated GET-only observation.
 
 The console is a consumer of service-owned state. It does not write review or
 verification decisions, create database authority, or bypass result gates.
@@ -161,12 +162,18 @@ replacement request while reconciliation is pending. A page refresh discards
 the in-memory reconciliation capability; the draft is browser-session-only and
 the console does not claim durable browser intent.
 
-Once `run_id` is known, known run observation resumes with GET only. Use **仅
-GET 恢复观察 / Resume observation (GET only)** after an interrupted status or
+Once `run_id` is known, the separate **已知 run_id / Known run_id** field can
+reattach the current page after refresh. The health-gated **观察已知运行 /
+Observe known run** action accepts the exact syntax
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (128 characters maximum), is
+browser-session-only, and uses GET only; it does not create a new run. A
+retained known `run_id` can be re-entered after a page refresh. Use **仅 GET
+恢复观察 / Resume observation (GET only)** after an interrupted status or
 result observation. The canonical artifact comes only from
 /api/runs/{run_id}/result. A terminal non-ready state is an observed run
 outcome, not a connection failure, and the console does not request a result
-for that state.
+for that state. The console does not add run list/history or browser
+persistence and does not reconstruct an ambiguous POST after refresh.
 
 Failure-cause availability is not inferred:
 

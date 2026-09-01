@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_LIVE_DEMO_QUERY,
   LIVE_DEMO_QUERY_UTF8_BYTES_MAX,
+  LIVE_RUN_ID_LENGTH_MAX,
   ClientRequestError,
   createRunIntent,
   getHealth,
@@ -11,6 +12,7 @@ import {
   isAmbiguousCreateError,
   startRun,
   validateLiveDemoQuery,
+  validateLiveRunId,
   type RunCreateIntent
 } from "./apiClient";
 
@@ -20,6 +22,54 @@ const FIXED_UUID = "11111111-2222-4333-8444-555555555555";
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("live run_id validation", () => {
+  it.each([
+    ["run_a-1.2", { ok: true }],
+    ["A".repeat(LIVE_RUN_ID_LENGTH_MAX), { ok: true }]
+  ] as const)("accepts the exact public run_id format: %s", (runId, expected) => {
+    expect(validateLiveRunId(runId)).toEqual(expected);
+  });
+
+  it.each([
+    ["", "blank"],
+    [" \t\n", "blank"],
+    [" run_a-1.2", "invalid_format"],
+    ["run_a-1.2 ", "invalid_format"],
+    ["A".repeat(LIVE_RUN_ID_LENGTH_MAX + 1), "too_long"],
+    ["run/a", "invalid_format"],
+    ["run%2F", "invalid_format"],
+    ["run?x", "invalid_format"],
+    ["run#x", "invalid_format"],
+    ["运行", "invalid_format"]
+  ] as const)("rejects %j as %s", (runId, reason) => {
+    expect(validateLiveRunId(runId)).toEqual({ ok: false, reason });
+  });
+
+  it.each([
+    ["", "blank"],
+    [" run_a-1.2", "invalid_format"],
+    ["A".repeat(LIVE_RUN_ID_LENGTH_MAX + 1), "too_long"],
+    ["run/a", "invalid_format"],
+    ["run%2F", "invalid_format"],
+    ["run?x", "invalid_format"],
+    ["run#x", "invalid_format"],
+    ["运行", "invalid_format"]
+  ] as const)("does not fetch invalid run_id %j", async (runId, reason) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getRun(BASE_URL, runId)).rejects.toThrow(`live_run_id_${reason}`);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves a valid run_id without rewriting it", () => {
+    const runId = "run_a-1.2";
+
+    expect(validateLiveRunId(runId)).toEqual({ ok: true });
+    expect(runId).toBe("run_a-1.2");
+  });
 });
 
 describe("live research question validation", () => {

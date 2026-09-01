@@ -299,9 +299,12 @@ Live Backend 只渲染真实的 service-owned state，来源仅限 run status �
 canonical result contracts。输入框的 draft 和临时 create intent 只存在于当前
 browser session；问题会按输入原样发送，不会被 trim、normalize、翻译或暗中改写。
 create response 不明确时，reconciliation 重用 same key 和 byte-equivalent request，
-并保留 exact submitted question。获得 `run_id` 后，observation resume 仅使用 GET，
-不能再次 create。Console 不拥有 review、verification、publication 或 delivery
-authority。
+并保留 exact submitted question。保留的已知 `run_id` 可以在页面刷新后重新输入，
+通过独立的 Known run_id 控件进行观察；经过 health 检查后才允许 GET-only observation，
+精确格式 `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`。这不新增 run list/history 或
+browser persistence，页面刷新后不重建 ambiguous POST。获得 `run_id` 后，observation resume
+仅使用 GET，不能再次 create。Console 不拥有 review、verification、publication
+或 delivery authority。
 
 ## Tool Client
 

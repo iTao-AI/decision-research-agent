@@ -101,6 +101,261 @@ describe("useLiveRun", () => {
     ]);
   });
 
+  it("attaches a known completed run with GET only and no create receipt", async () => {
+    const runId = "run_existing_001";
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(runStatus(runId, "completed", "ready")),
+      jsonResponse(runResult(runId))
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.attachKnownRun(runId);
+    });
+
+    expect(result.current.state.status).toBe("result");
+    expect(result.current.state.created).toBeUndefined();
+    expect(result.current.state.run?.run_id).toBe(runId);
+    expect(result.current.state.result).toEqual({
+      run_id: runId,
+      execution_status: "completed",
+      delivery_status: "ready",
+      artifact: {
+        artifact_id: "research-report.md",
+        kind: "research_report_markdown",
+        media_type: "text/markdown",
+        content: "# Canonical result",
+        content_hash: "sha256:result"
+      }
+    });
+    expect(requests.map(({ method, url }) => [method, url])).toEqual([
+      ["GET", `${BASE_URL}/health`],
+      ["GET", `${BASE_URL}/api/runs/${runId}`],
+      ["GET", `${BASE_URL}/api/runs/${runId}/result`]
+    ]);
+    expect(requests.filter(({ method }) => method === "POST")).toHaveLength(0);
+  });
+
+  it("attaches a terminal non-ready run without requesting a result", async () => {
+    const runId = "run_existing_terminal";
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(runStatus(runId, "completed", "review_required", 1, "required"))
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.attachKnownRun(runId);
+    });
+
+    expect(result.current.state.status).toBe("terminal");
+    expect(result.current.state.created).toBeUndefined();
+    expect(result.current.state.result).toBeUndefined();
+    expect(result.current.state.run).toMatchObject({
+      delivery_status: "review_required",
+      execution_status: "completed",
+      review_status: "required",
+      run_id: runId
+    });
+    expect(requests.map(({ method, url }) => [method, url])).toEqual([
+      ["GET", `${BASE_URL}/health`],
+      ["GET", `${BASE_URL}/api/runs/${runId}`]
+    ]);
+  });
+
+  it("resumes an interrupted known-run attachment with GET only", async () => {
+    const runId = "run_existing_resume";
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(runStatus(runId, "running", "pending", 1)),
+      () => Promise.reject(new TypeError("known-run poll connection dropped")),
+      jsonResponse(runStatus(runId, "completed", "ready", 2)),
+      jsonResponse(runResult(runId))
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.attachKnownRun(runId);
+    });
+
+    expect(result.current.state.status).toBe("observation_interrupted");
+    expect(result.current.state.created).toBeUndefined();
+    expect(result.current.state.run?.run_id).toBe(runId);
+    expect(result.current.state.error).toMatchObject({
+      code: "connection_failed",
+      run_id: runId
+    });
+
+    await act(async () => {
+      await result.current.resumeObservation();
+    });
+
+    expect(result.current.state.status).toBe("result");
+    expect(result.current.state.run?.state_version).toBe(2);
+    expect(result.current.state.result?.run_id).toBe(runId);
+    expect(requests.filter(({ method }) => method === "POST")).toHaveLength(0);
+    expect(requests.slice(1).map(({ method, url }) => [method, url])).toEqual([
+      ["GET", `${BASE_URL}/api/runs/${runId}`],
+      ["GET", `${BASE_URL}/api/runs/${runId}`],
+      ["GET", `${BASE_URL}/api/runs/${runId}`],
+      ["GET", `${BASE_URL}/api/runs/${runId}/result`]
+    ]);
+  });
+
+  it("retains the requested identity for a stable known-run error", async () => {
+    const runId = "run_existing_missing";
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(
+        {
+          code: "run_not_found",
+          problem: "Run was not found.",
+          cause: "The requested run does not exist.",
+          fix: "Check the exact run_id.",
+          retryable: false
+        },
+        404
+      )
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.attachKnownRun(runId);
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(result.current.state.error).toEqual({
+      code: "run_not_found",
+      problem: "Run was not found.",
+      cause: "The requested run does not exist.",
+      fix: "Check the exact run_id.",
+      retryable: false,
+      run_id: runId
+    });
+    expect(result.current.state.created).toBeUndefined();
+    expect(result.current.state.run).toBeUndefined();
+    expect(requests.filter(({ method }) => method === "POST")).toHaveLength(0);
+  });
+
+  it.each([
+    ["status response", jsonResponse(runStatus("run_existing_other", "completed", "ready"))],
+    ["error response", mismatchedRunError("run_existing_other")]
+  ] as const)("fails closed when a known-run %s names another identity", async (_label, step) => {
+    const runId = "run_existing_expected";
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      step
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.attachKnownRun(runId);
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(result.current.state.error).toMatchObject({
+      code: "invalid_response",
+      retryable: false,
+      run_id: runId
+    });
+    expect(JSON.stringify(result.current.state)).not.toContain("run_existing_other");
+    expect(requests.filter(({ method }) => method === "POST")).toHaveLength(0);
+  });
+
+  it("replaces only the local observation scope when reattaching from a stable error", async () => {
+    const firstRunId = "run_existing_missing_first";
+    const secondRunId = "run_existing_second";
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" }),
+      jsonResponse(
+        {
+          code: "run_not_found",
+          problem: "Run was not found.",
+          cause: "The requested run does not exist.",
+          fix: "Check the exact run_id.",
+          retryable: false
+        },
+        404
+      ),
+      jsonResponse(runStatus(secondRunId, "completed", "ready")),
+      jsonResponse(runResult(secondRunId))
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await act(async () => {
+      await result.current.attachKnownRun(firstRunId);
+    });
+    expect(result.current.state.status).toBe("error");
+    expect(result.current.state.error?.run_id).toBe(firstRunId);
+    expect(result.current.state.health).toEqual({
+      service: "decision-research-agent",
+      status: "ok"
+    });
+
+    await act(async () => {
+      await result.current.attachKnownRun(secondRunId);
+    });
+
+    expect(result.current.state.status).toBe("result");
+    expect(result.current.state.error).toBeUndefined();
+    expect(result.current.state.created).toBeUndefined();
+    expect(result.current.state.run?.run_id).toBe(secondRunId);
+    expect(result.current.state.result?.run_id).toBe(secondRunId);
+    expect(result.current.state.health).toEqual({
+      service: "decision-research-agent",
+      status: "ok"
+    });
+    expect(requests.map(({ method, url }) => [method, url])).toEqual([
+      ["GET", `${BASE_URL}/health`],
+      ["GET", `${BASE_URL}/api/runs/${firstRunId}`],
+      ["GET", `${BASE_URL}/api/runs/${secondRunId}`],
+      ["GET", `${BASE_URL}/api/runs/${secondRunId}/result`]
+    ]);
+    expect(requests.filter(({ method }) => method === "POST")).toHaveLength(0);
+  });
+
+  it("rejects an invalid known run_id before state mutation or network access", async () => {
+    const requests = mockFetchSequence([
+      jsonResponse({ status: "ok", service: "decision-research-agent" })
+    ]);
+    const { result } = renderHook(() =>
+      useLiveRun({ pollIntervalMs: 1, randomUUID: () => FIXED_UUID, waitTimeoutMs: 500 })
+    );
+    await makeReady(result);
+
+    await expect(
+      act(async () => {
+        await result.current.attachKnownRun(" run_invalid");
+      })
+    ).rejects.toThrow("live_run_id_invalid_format");
+
+    expect(result.current.state.status).toBe("ready");
+    expect(result.current.state.health).toEqual({
+      service: "decision-research-agent",
+      status: "ok"
+    });
+    expect(requests).toHaveLength(1);
+  });
+
   it("rejects a create acknowledgement for a different intent thread", async () => {
     const requests = mockFetchSequence([
       jsonResponse({ status: "ok", service: "decision-research-agent" }),

@@ -1,8 +1,8 @@
 {
   "schema_version": "dra.console-showcase-manifest.v1",
   "capture": {
-    "source_commit": "1d4efb478af58cf3ed4c0c0a5c06ecbd62c2286b",
-    "source_tree": "deb0fbf8e7f9fae1fb5114a5e6c44458ee874069",
+    "source_commit": "52d80bec77245c7f908b1b11ef0e177b79e82899",
+    "source_tree": "7ae9ebcc47d945369f039eb6ae6dd6333cc467f1",
     "viewport": {
       "width": 1600,
       "height": 1000
@@ -30,7 +30,7 @@
         "frontend/tsconfig.node.json",
         "frontend/vite.config.ts"
       ],
-      "value": "9f606cfa1dbad253d5371ad445d60b6812e1ead2824574d1a6784879b7721df5"
+      "value": "c36c19212b120ca63ec2632c633618230a2a75d3cd9a7a49c00b448aede1bd9d"
     }
   },
   "frames": {
@@ -38,19 +38,19 @@
       "route": "/?showcase=overview",
       "state": "normal_delivered",
       "locale": "zh-CN",
-      "sha256": "3708c22de80534933556cfe2665ff78fd03ef77f30287f82009da8a4728c69e4"
+      "sha256": "56ba7185a2d921e6cfa36eb4d3efc70fb83a09bf2337259280d0ac63eaf094d0"
     },
     "research-evidence-review.png": {
       "route": "/?showcase=evidence",
       "state": "evidence_review",
       "locale": "zh-CN",
-      "sha256": "298e57548294214b8beb82995191fc611f860f001cb03efd65e5704f25ebc6e0"
+      "sha256": "0dcfc5652188036fe1fd4c5193fbb635d604c119ef024d95033356d244509582"
     },
     "research-blocked-recovery.png": {
       "route": "/?showcase=blocked",
       "state": "review_required_not_delivered",
       "locale": "zh-CN",
-      "sha256": "2aa5ca5c4e18489bb04346f4ba8b6ddb4209a1cc8f33800bc3cb19b9ac8c960d"
+      "sha256": "ae9cb05f57193f4e9ce2c40b4cc4b91e0ba65c353d9ab3b76bef1c5d39a5c75d"
     }
   },
   "synthetic_demo_disclosure": "Synthetic Static Demo fixtures; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment."

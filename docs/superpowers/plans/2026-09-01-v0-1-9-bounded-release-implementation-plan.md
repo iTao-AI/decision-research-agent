@@ -2,7 +2,7 @@
 
 Date: 2026-09-01
 
-Status: Stage 2 post-publication docs closeout pending authority review
+Status: v0.1.9 published; post-publication truth record reconciled
 
 ## Scope
 
@@ -91,11 +91,11 @@ The approved terminal path has exactly two sequential stages:
    plan so `v0.1.9` is the current published stable release.
 
 Stage 1 release-prep PR #149 and publication completed from the exact approved
-merge commit. Stage 2 is now prepared on that exact release merge and remains
-local-only pending authority review; no closeout PR has been created or pushed.
-The tagged release note and `[0.1.9]` changelog section remain immutable. The
-terminal record below contains only causal Stage 1 facts and deliberately omits
-closeout PR self-identity and post-merge cleanup.
+merge commit. The post-publication record below reconciles the exact Stage 1
+identities and verification readbacks. It contains only causal publication
+facts; the tagged release note and `[0.1.9]` changelog section remain immutable.
+The release remains provider-free and public-neutral, with no deployment,
+provider-backed execution, business-impact, or adoption claim.
 
 ## Terminal Publication Record
 

@@ -278,3 +278,27 @@ def test_terminal_state_rejects_stale_mutable_entrypoints(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="release_publication_published_surface_stale"):
         check_release_publication(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "transient_phrase",
+    (
+        "pending authority review",
+        "local-only pending authority review",
+        "no closeout PR has been created or pushed",
+    ),
+)
+def test_published_state_rejects_transient_closeout_phrases(
+    tmp_path: Path, transient_phrase: str
+) -> None:
+    _copy_surface(tmp_path)
+    plan = tmp_path / PLAN_PATH
+    plan.write_text(
+        f"{plan.read_text(encoding='utf-8').rstrip()}\n\n{transient_phrase}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError, match="release_publication_published_surface_transient"
+    ):
+        check_release_publication(tmp_path)

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from hashlib import sha256
-import json
 from pathlib import Path
 import re
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RELEASE = PROJECT_ROOT / "docs/releases/v0.1.8.md"
+RELEASE_SHA256 = (
+    "8f3656b2ba0ce4b4efdc5c914833ddabea1d38a7b07ab87c96cf645c12a64d95"
+)
 HEADINGS = (
     "Supported Surface",
     "Changes",
@@ -45,14 +47,9 @@ def _sections(text: str) -> dict[str, str]:
     }
 
 
-def test_v0_1_8_version_identity_and_current_links_are_consistent() -> None:
-    package = json.loads(_read(PROJECT_ROOT / "frontend/package.json"))
-    lock = json.loads(_read(PROJECT_ROOT / "frontend/package-lock.json"))
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.8"
-    assert package["version"] == "0.1.8"
-    assert lock["version"] == "0.1.8"
-    assert lock["packages"][""]["version"] == "0.1.8"
+def test_v0_1_8_historical_release_note_and_current_links_are_consistent() -> None:
     assert RELEASE.exists()
+    assert sha256(RELEASE.read_bytes()).hexdigest() == RELEASE_SHA256
     for path in (PROJECT_ROOT / "README.md", PROJECT_ROOT / "README_CN.md", PROJECT_ROOT / "docs/README.md"):
         assert "docs/releases/v0.1.8.md" in _read(path) or "releases/v0.1.8.md" in _read(path)
 

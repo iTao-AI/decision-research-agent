@@ -46,7 +46,10 @@ These are synthetic/demo fixtures, not live provider research recordings or
 production data. The [manifest](assets/console-showcase/manifest.json) records
 the source implementation commit/tree, route/state, `zh-CN` locale,
 1600x1000 viewport, disclosure, and SHA-256 values. It intentionally refers to
-the stable implementation commit before the asset commit.
+the stable implementation commit before the asset commit. Its tracked frontend
+capture fingerprint canonicalizes only the release `version` fields in
+`package.json` and `package-lock.json`; dependency, build configuration, source,
+and public-asset changes still require a new capture fingerprint and provenance.
 
 ## Demo Video Boundary
 

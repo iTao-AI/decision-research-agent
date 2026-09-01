@@ -38,6 +38,13 @@ NON_RENDERING_FRONTEND_DIRS = frozenset(
 NON_RENDERING_FRONTEND_SUFFIXES = (".d.ts",)
 NON_RENDERING_TEST_MARKERS = (".spec.", ".test.")
 CAPTURE_INPUT_FINGERPRINT_ALGORITHM = "sha256"
+RELEASE_METADATA_INPUTS = frozenset(
+    {
+        "frontend/package-lock.json",
+        "frontend/package.json",
+    }
+)
+RELEASE_VERSION_PLACEHOLDER = "<release-version>"
 EXPECTED_FRAMES = {
     "research-workspace-overview.png": {
         "route": "/?showcase=overview",
@@ -133,13 +140,39 @@ def _discover_tree_capture_input_paths(root: Path, source_tree: str) -> tuple[st
     )
 
 
+def _canonical_capture_input_bytes(relative_path: str, raw: bytes) -> bytes:
+    if relative_path not in RELEASE_METADATA_INPUTS:
+        return raw
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        _fail("showcase_capture_input_invalid")
+    if not isinstance(payload, dict):
+        _fail("showcase_capture_input_invalid")
+    payload["version"] = RELEASE_VERSION_PLACEHOLDER
+    if relative_path == "frontend/package-lock.json":
+        packages = payload.get("packages")
+        root_package = packages.get("") if isinstance(packages, dict) else None
+        if not isinstance(root_package, dict):
+            _fail("showcase_capture_input_invalid")
+        root_package["version"] = RELEASE_VERSION_PLACEHOLDER
+    return json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
 def _fingerprint_from_reader(
     reader: Callable[[str], bytes], input_paths: tuple[str, ...]
 ) -> str:
     entries = [
         {
             "path": relative_path,
-            "sha256": hashlib.sha256(reader(relative_path)).hexdigest(),
+            "sha256": hashlib.sha256(
+                _canonical_capture_input_bytes(relative_path, reader(relative_path))
+            ).hexdigest(),
         }
         for relative_path in input_paths
     ]

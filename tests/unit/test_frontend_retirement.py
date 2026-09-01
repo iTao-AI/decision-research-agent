@@ -33,7 +33,7 @@ def test_frontend_lock_preserves_identity_and_testing_target_closure():
     root_package = lock["packages"][""]
 
     assert lock["name"] == package["name"] == "decision-research-agent-demo-console"
-    assert lock["version"] == package["version"] == "0.1.8"
+    assert lock["version"] == package["version"] == "0.1.9"
     assert root_package["name"] == package["name"]
     assert root_package["version"] == package["version"]
     assert root_package["engines"] == package["engines"]

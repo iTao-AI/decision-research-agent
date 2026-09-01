@@ -133,7 +133,8 @@ non-authority 边界。
 评估在仓库声明的范围内保持 provider-free；每个 benchmark 和 release record
 保留自己的 evidence boundary。请先看
 [evaluation references](docs/reference/agent-evaluation-regression-gate.md)、
-[evidence index](docs/evidence/README.md) 和 stable 的
+[evidence index](docs/evidence/README.md)、当前的
+[v0.1.9 release preparation](docs/releases/v0.1.9.md) 和不可变的 stable
 [v0.1.8 release notes](docs/releases/v0.1.8.md)；showcase 不改写历史 release record。
 
 ## 验证
@@ -443,6 +444,7 @@ business acceptance、provider billing、exactly-once、production readiness
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
 - [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.9 Release Notes](docs/releases/v0.1.9.md)
 - [v0.1.8 Release Notes](docs/releases/v0.1.8.md)
 - [v0.1.7 Release Notes](docs/releases/v0.1.7.md)
 - [v0.1.6 Release Notes](docs/releases/v0.1.6.md)

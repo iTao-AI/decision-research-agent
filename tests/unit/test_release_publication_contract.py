@@ -13,6 +13,7 @@ from scripts.release_publication_contract import (
     changelog_release_section_bytes,
     MUTABLE_ENTRYPOINTS,
     PLAN_PATH,
+    PREPARATION_ENTRYPOINT_MARKERS,
     PREPARATION_RECORD,
     PUBLICATION_RECORD_REQUIRED_FIELDS,
     PUBLISHED_ENTRYPOINT_MARKERS,
@@ -60,6 +61,41 @@ def _replace_terminal_record(root: Path, record: dict[str, object]) -> None:
         text[: match.start()] + replacement + text[match.end() :],
         encoding="utf-8",
     )
+
+
+def _replace_preparation_record(root: Path) -> None:
+    path = root / PLAN_PATH
+    text = path.read_text(encoding="utf-8")
+    match = re.search(
+        r"^## Terminal Publication Record\n(?P<body>.*?)(?=^## |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None
+    replacement = (
+        "## Terminal Publication Record\n\n"
+        "Publication status: preparation.\n\n"
+        "No terminal publication facts exist in this preparation state.\n\n"
+        "```json\n"
+        f"{json.dumps(PREPARATION_RECORD, ensure_ascii=True, indent=2, sort_keys=True)}\n"
+        "```\n\n"
+    )
+    path.write_text(
+        text[: match.start()] + replacement + text[match.end() :],
+        encoding="utf-8",
+    )
+
+
+def _prepare_surface(root: Path) -> None:
+    _replace_preparation_record(root)
+    for relative_path, marker in PREPARATION_ENTRYPOINT_MARKERS.items():
+        path = root / relative_path
+        text = path.read_text(encoding="utf-8")
+        published_marker = PUBLISHED_ENTRYPOINT_MARKERS[relative_path]
+        text = text.replace(published_marker, marker)
+        if marker not in text:
+            text = f"{text.rstrip()}\n\n{marker}\n"
+        path.write_text(text, encoding="utf-8")
 
 
 def _valid_terminal_record() -> dict[str, object]:
@@ -115,15 +151,22 @@ def _valid_terminal_record() -> dict[str, object]:
     }
 
 
-def test_current_preparation_state_is_valid() -> None:
+def test_current_published_state_is_valid() -> None:
     result = check_release_publication(PROJECT_ROOT)
 
     assert result["status"] == "valid"
-    assert result["state"] == PREPARATION_RECORD["state"] == "preparation"
+    assert result["state"] == "published"
+    assert result["tag_release_note_sha256"] == (
+        "c704c3aced1c46d6ae75fc4ac9c036e53821f297d0535c3f29ec3a6b6f2c2a37"
+    )
+    assert result["tag_changelog_section_sha256"] == (
+        "2325ba03f2f66aec3c4371c9fafd34b1b5b56b71e377bcdb59c18419feff7f14"
+    )
 
 
 def test_preparation_state_rejects_a_premature_publication_claim(tmp_path: Path) -> None:
     _copy_surface(tmp_path)
+    _prepare_surface(tmp_path)
     readme = tmp_path / "README.md"
     readme.write_text(
         readme.read_text(encoding="utf-8") + "\nDecision Research Agent v0.1.9 is published.\n",
@@ -227,10 +270,35 @@ def test_terminal_state_rejects_stale_mutable_entrypoints(tmp_path: Path) -> Non
     _replace_terminal_record(tmp_path, record)
     for relative_path, marker in PUBLISHED_ENTRYPOINT_MARKERS.items():
         path = tmp_path / relative_path
+        stale_marker = STALE_ENTRYPOINT_MARKERS[relative_path][0]
         path.write_text(
-            f"{path.read_text(encoding='utf-8').rstrip()}\n\n{marker}\n",
+            f"{path.read_text(encoding='utf-8').rstrip()}\n\n{marker}\n\n{stale_marker}\n",
             encoding="utf-8",
         )
 
     with pytest.raises(ValueError, match="release_publication_published_surface_stale"):
+        check_release_publication(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "transient_phrase",
+    (
+        "pending authority review",
+        "local-only pending authority review",
+        "no closeout PR has been created or pushed",
+    ),
+)
+def test_published_state_rejects_transient_closeout_phrases(
+    tmp_path: Path, transient_phrase: str
+) -> None:
+    _copy_surface(tmp_path)
+    plan = tmp_path / PLAN_PATH
+    plan.write_text(
+        f"{plan.read_text(encoding='utf-8').rstrip()}\n\n{transient_phrase}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError, match="release_publication_published_surface_transient"
+    ):
         check_release_publication(tmp_path)

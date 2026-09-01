@@ -2,7 +2,7 @@
 
 Date: 2026-09-01
 
-Status: approved for implementation
+Status: v0.1.9 published; post-publication truth record reconciled
 
 ## Scope
 
@@ -90,30 +90,171 @@ The approved terminal path has exactly two sequential stages:
    bilingual README, docs index, `SECURITY.md`, Superpowers index, and this
    plan so `v0.1.9` is the current published stable release.
 
-This implementation phase is still before both terminal stages. No PR, merge,
-tag, GitHub Release, official source-archive receipt, or publication fact may
-be inferred from this local commit.
+Stage 1 release-prep PR #149 and publication completed from the exact approved
+merge commit. The post-publication record below reconciles the exact Stage 1
+identities and verification readbacks. It contains only causal publication
+facts; the tagged release note and `[0.1.9]` changelog section remain immutable.
+The release remains provider-free and public-neutral, with no deployment,
+provider-backed execution, business-impact, or adoption claim.
 
 ## Terminal Publication Record
 
-Publication status: preparation.
+Publication status: published.
 
-No terminal publication facts exist in this preparation state. The following
-JSON is a state marker, not a publication receipt. The same-scope
-post-publication docs closeout PR must replace this entire state marker with a
-complete JSON record containing only actual readback values that existed before
-that closeout PR was created; do not prefill fields with placeholders, `null`,
-`TBD`, or expected values. The closeout PR's own identity and post-merge
-cleanup are recorded only in its persisted PR body and the authority terminal
-callback/readback, never in this tracked JSON.
+The following causal JSON is the complete Stage 1 publication readback. Every
+value was read from the exact release-prep PR, exact merge commit, hosted
+checks, annotated tag, GitHub Release, or official source archive before this
+Stage 2 closeout branch was created. It contains no placeholders, `null`,
+`TBD`, expected values, closeout PR self-identity, or post-merge cleanup. The
+closeout PR identity and cleanup callback belong only in the final persisted
+closeout PR body and authority terminal callback/readback.
 
 ```json
 {
-  "state": "preparation"
+  "archive_bytes": 2307343,
+  "archive_filename": "decision-research-agent-0.1.9.tar.gz",
+  "archive_git_free_smoke": true,
+  "archive_safe_extraction": true,
+  "archive_sha256": "086432ed7a4bcf5addad316f98d9404d6c16a67b5eeaa797a43977593229d588",
+  "exact_main_hosted_checks": [
+    {
+      "head_sha": "e748870fd77257bb716b17bdc007099a4ff58a0b",
+      "name": "Backend Tests",
+      "run_id": 99899183518,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33520781422/job/99899183518"
+    },
+    {
+      "head_sha": "e748870fd77257bb716b17bdc007099a4ff58a0b",
+      "name": "Secure Local Runtime Containers",
+      "run_id": 99899183220,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33520781422/job/99899183220"
+    },
+    {
+      "head_sha": "e748870fd77257bb716b17bdc007099a4ff58a0b",
+      "name": "Frontend Demo Console (Node 22.22.2)",
+      "run_id": 99899183532,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33520781422/job/99899183532"
+    },
+    {
+      "head_sha": "e748870fd77257bb716b17bdc007099a4ff58a0b",
+      "name": "Frontend Demo Console (Node 24.15.0)",
+      "run_id": 99899183592,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33520781422/job/99899183592"
+    },
+    {
+      "head_sha": "e748870fd77257bb716b17bdc007099a4ff58a0b",
+      "name": "Analyze (actions)",
+      "run_id": 99899190419,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33520781343/job/99899190419"
+    },
+    {
+      "head_sha": "e748870fd77257bb716b17bdc007099a4ff58a0b",
+      "name": "Analyze (javascript-typescript)",
+      "run_id": 99899190397,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33520781343/job/99899190397"
+    },
+    {
+      "head_sha": "e748870fd77257bb716b17bdc007099a4ff58a0b",
+      "name": "Analyze (python)",
+      "run_id": 99899190136,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33520781343/job/99899190136"
+    }
+  ],
+  "non_claims": [
+    "No real-provider research or business-impact claim is made.",
+    "No hosted Console operation, deployment, production-readiness, or adoption claim is made.",
+    "Human review and release authority remain outside the Console."
+  ],
+  "peeled_commit": "e748870fd77257bb716b17bdc007099a4ff58a0b",
+  "release_body_sha256": "c704c3aced1c46d6ae75fc4ac9c036e53821f297d0535c3f29ec3a6b6f2c2a37",
+  "release_id": 380597208,
+  "release_is_draft": false,
+  "release_is_prerelease": false,
+  "release_prep_merge_commit": "e748870fd77257bb716b17bdc007099a4ff58a0b",
+  "release_prep_merge_tree": "29736bcf7c106bfa66be7cbb306a42430460b1fe",
+  "release_prep_pr_number": 149,
+  "release_prep_pr_url": "https://github.com/iTao-AI/decision-research-agent/pull/149",
+  "release_prep_reviewed_head": "3af482f93a43f4950d355520cf678b18e8f9cf5f",
+  "release_prep_reviewed_tree": "29736bcf7c106bfa66be7cbb306a42430460b1fe",
+  "release_published_at": "2026-09-01T14:54:14Z",
+  "release_state": "published",
+  "release_url": "https://github.com/iTao-AI/decision-research-agent/releases/tag/v0.1.9",
+  "reviewed_head_hosted_checks": [
+    {
+      "head_sha": "3af482f93a43f4950d355520cf678b18e8f9cf5f",
+      "name": "Backend Tests",
+      "run_id": 99895610898,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33519722406/job/99895610898"
+    },
+    {
+      "head_sha": "3af482f93a43f4950d355520cf678b18e8f9cf5f",
+      "name": "Secure Local Runtime Containers",
+      "run_id": 99895611349,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33519722406/job/99895611349"
+    },
+    {
+      "head_sha": "3af482f93a43f4950d355520cf678b18e8f9cf5f",
+      "name": "Frontend Demo Console (Node 22.22.2)",
+      "run_id": 99895611174,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33519722406/job/99895611174"
+    },
+    {
+      "head_sha": "3af482f93a43f4950d355520cf678b18e8f9cf5f",
+      "name": "Frontend Demo Console (Node 24.15.0)",
+      "run_id": 99895611335,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33519722406/job/99895611335"
+    },
+    {
+      "head_sha": "3af482f93a43f4950d355520cf678b18e8f9cf5f",
+      "name": "Analyze (actions)",
+      "run_id": 99895608823,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33519720453/job/99895608823"
+    },
+    {
+      "head_sha": "3af482f93a43f4950d355520cf678b18e8f9cf5f",
+      "name": "Analyze (javascript-typescript)",
+      "run_id": 99895609209,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33519720453/job/99895609209"
+    },
+    {
+      "head_sha": "3af482f93a43f4950d355520cf678b18e8f9cf5f",
+      "name": "Analyze (python)",
+      "run_id": 99895609212,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/33519720453/job/99895609212"
+    },
+    {
+      "head_sha": "3af482f93a43f4950d355520cf678b18e8f9cf5f",
+      "name": "CodeQL",
+      "run_id": 99895824437,
+      "status": "success",
+      "url": "https://github.com/iTao-AI/decision-research-agent/runs/99895824437"
+    }
+  ],
+  "schema_version": "dra.v0.1.9-publication-record.v1",
+  "state": "published",
+  "tag_changelog_section_sha256": "2325ba03f2f66aec3c4371c9fafd34b1b5b56b71e377bcdb59c18419feff7f14",
+  "tag_name": "v0.1.9",
+  "tag_object": "4e6e190bc974e6896009244f7c33fa8f3f497509",
+  "tag_release_note_sha256": "c704c3aced1c46d6ae75fc4ac9c036e53821f297d0535c3f29ec3a6b6f2c2a37",
+  "tag_tree": "29736bcf7c106bfa66be7cbb306a42430460b1fe"
 }
 ```
 
-When the record becomes `published`, the exact required fields are:
+The published record has the following exact required fields:
 
 - state envelope: `schema_version` and `state`;
 - release-prep PR: `release_prep_pr_number`, `release_prep_pr_url`,

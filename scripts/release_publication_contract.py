@@ -49,6 +49,11 @@ PREPARATION_ENTRYPOINT_MARKERS = {
     "SECURITY.md": "Decision Research Agent v0.1.9 release preparation includes",
     "docs/superpowers/README.md": "The v0.1.9 record is provider-free and public-neutral.",
 }
+PUBLISHED_STATE_TRANSIENT_PHRASES = (
+    "pending authority review",
+    "local-only pending authority review",
+    "no closeout pr has been created or pushed",
+)
 PUBLICATION_RECORD_REQUIRED_FIELDS = frozenset(
     {
         "schema_version",
@@ -369,6 +374,9 @@ def validate_published_state(root: Path, record: Mapping[str, Any]) -> dict[str,
     validated = validate_publication_record(record)
     texts = _surface_texts(root)
     plan = texts[PLAN_PATH]
+    normalized_plan = _normalized(plan).casefold()
+    if any(phrase in normalized_plan for phrase in PUBLISHED_STATE_TRANSIENT_PHRASES):
+        _fail("release_publication_published_surface_transient")
     if "Publication status: published." not in plan:
         _fail("release_publication_terminal_record_invalid")
     if "No terminal publication facts exist in this preparation state." in plan:

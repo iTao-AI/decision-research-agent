@@ -932,25 +932,24 @@ def test_v0_1_5_release_prep_documents_secure_local_runtime_boundaries() -> None
 
     assert "v0.1.5 Release Notes" in current_discovery
     assert "v0.1.6 Release Notes" in current_discovery
-    assert "Decision Research Agent v0.1.9 release preparation includes" in (
-        current_discovery
+    assert (
+        "Decision Research Agent v0.1.9 is the current published stable release."
+        in current_discovery
     )
 
 
-def test_docs_index_separates_stable_v0_1_8_from_current_v0_1_9_prep() -> None:
+def test_docs_index_separates_historical_v0_1_8_from_current_v0_1_9() -> None:
     docs_index = (PROJECT_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     normalized = _collapsed(docs_index)
 
+    assert "The current published stable release is `v0.1.9`." in normalized
     assert (
-        "The immutable stable `v0.1.8` Release Notes describe the last published stable release."
+        "Its tagged Release, source archive, and immutable release-note and changelog identities are recorded by the public-neutral publication contract."
         in normalized
     )
+    assert "The historical stable `v0.1.8` Release Notes remain immutable." in normalized
     assert (
-        "The current `v0.1.9` release preparation records the current-main additions listed in [`CHANGELOG.md`](../CHANGELOG.md) under `[0.1.9]`."
-        in normalized
-    )
-    assert (
-        "It does not claim that the v0.1.9 tag, GitHub Release, deployment, provider-backed execution, or business impact exists."
+        "This does not claim deployment, provider-backed execution, or business impact."
         in normalized
     )
 

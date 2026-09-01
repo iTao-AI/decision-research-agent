@@ -124,17 +124,17 @@ external evaluation of the public contract surface.
 
 ## Release
 
-The immutable stable `v0.1.8` Release Notes describe the last published stable
-release. The current `v0.1.9` release preparation records the current-main
-additions listed in [`CHANGELOG.md`](../CHANGELOG.md) under `[0.1.9]`. It does
-not claim that the v0.1.9 tag, GitHub Release, deployment, provider-backed
-execution, or business impact exists.
+The current published stable release is `v0.1.9`. Its tagged Release, source
+archive, and immutable release-note and changelog identities are recorded by
+the public-neutral publication contract. The historical stable `v0.1.8`
+Release Notes remain immutable. This does not claim deployment,
+provider-backed execution, or business impact.
 
-- [v0.1.9 Release Notes](releases/v0.1.9.md) — current provider-free release
-  preparation for Console showcase/provenance, Node 22/24 maintenance, bounded
-  failure diagnosis, bounded user-authored Live Backend question input, and
-  GET-only known-run reattachment.
-- [v0.1.8 Release Notes](releases/v0.1.8.md) — stable tool-safety, SELECT-only
+- [v0.1.9 Release Notes](releases/v0.1.9.md) — current published stable release
+  for Console showcase/provenance, Node 22/24 maintenance, bounded failure
+  diagnosis, bounded user-authored Live Backend question input, and GET-only
+  known-run reattachment.
+- [v0.1.8 Release Notes](releases/v0.1.8.md) — historical stable tool-safety, SELECT-only
   database authority, bounded output/time, dependency closure, migration,
   rollback, verification, and explicit limits.
 - [v0.1.7 Release Notes](releases/v0.1.7.md) — historical supported surface,

@@ -56,13 +56,9 @@ PUBLICATION_RECORD_REQUIRED_FIELDS = frozenset(
         "release_prep_pr_number",
         "release_prep_pr_url",
         "release_prep_reviewed_head",
+        "release_prep_reviewed_tree",
         "release_prep_merge_commit",
         "release_prep_merge_tree",
-        "post_publication_pr_number",
-        "post_publication_pr_url",
-        "post_publication_reviewed_head",
-        "post_publication_merge_commit",
-        "post_publication_merge_tree",
         "tag_name",
         "tag_object",
         "peeled_commit",
@@ -81,9 +77,9 @@ PUBLICATION_RECORD_REQUIRED_FIELDS = frozenset(
         "archive_sha256",
         "archive_safe_extraction",
         "archive_git_free_smoke",
+        "reviewed_head_hosted_checks",
         "exact_main_hosted_checks",
         "non_claims",
-        "cleanup",
     }
 )
 _HEX_40 = re.compile(r"^[0-9a-f]{40}$")
@@ -227,7 +223,6 @@ def validate_publication_record(record: Mapping[str, Any]) -> dict[str, Any]:
 
     for key in (
         "release_prep_pr_url",
-        "post_publication_pr_url",
         "release_url",
     ):
         if key.endswith("pr_url"):
@@ -236,7 +231,6 @@ def validate_publication_record(record: Mapping[str, Any]) -> dict[str, Any]:
             _require_github_url(record, key)
     for key in (
         "release_prep_pr_number",
-        "post_publication_pr_number",
         "release_id",
         "archive_bytes",
     ):
@@ -244,11 +238,9 @@ def validate_publication_record(record: Mapping[str, Any]) -> dict[str, Any]:
 
     for key in (
         "release_prep_reviewed_head",
+        "release_prep_reviewed_tree",
         "release_prep_merge_commit",
         "release_prep_merge_tree",
-        "post_publication_reviewed_head",
-        "post_publication_merge_commit",
-        "post_publication_merge_tree",
         "tag_object",
         "peeled_commit",
         "tag_tree",
@@ -269,6 +261,8 @@ def validate_publication_record(record: Mapping[str, Any]) -> dict[str, Any]:
     ):
         _fail("release_publication_record_url_invalid")
     if record["peeled_commit"] != record["release_prep_merge_commit"]:
+        _fail("release_publication_record_identity_invalid")
+    if record["release_prep_reviewed_tree"] != record["release_prep_merge_tree"]:
         _fail("release_publication_record_identity_invalid")
     if record["tag_tree"] != record["release_prep_merge_tree"]:
         _fail("release_publication_record_identity_invalid")
@@ -299,20 +293,24 @@ def validate_publication_record(record: Mapping[str, Any]) -> dict[str, Any]:
     if record["archive_safe_extraction"] is not True or record["archive_git_free_smoke"] is not True:
         _fail("release_publication_record_archive_invalid")
 
-    checks = record["exact_main_hosted_checks"]
-    if not isinstance(checks, list) or not checks:
-        _fail("release_publication_record_checks_invalid")
-    for check in checks:
-        if not isinstance(check, dict) or set(check) != {"name", "run_id", "url", "head_sha", "status"}:
+    for key, expected_head_sha in (
+        ("reviewed_head_hosted_checks", record["release_prep_reviewed_head"]),
+        ("exact_main_hosted_checks", record["release_prep_merge_commit"]),
+    ):
+        checks = record[key]
+        if not isinstance(checks, list) or not checks:
             _fail("release_publication_record_checks_invalid")
-        if not isinstance(check["name"], str) or not check["name"].strip():
-            _fail("release_publication_record_checks_invalid")
-        if isinstance(check["run_id"], bool) or not isinstance(check["run_id"], int) or check["run_id"] <= 0:
-            _fail("release_publication_record_checks_invalid")
-        if not check["url"].startswith("https://github.com/iTao-AI/decision-research-agent/"):
-            _fail("release_publication_record_checks_invalid")
-        if check["head_sha"] != record["release_prep_merge_commit"] or check["status"] != "success":
-            _fail("release_publication_record_checks_invalid")
+        for check in checks:
+            if not isinstance(check, dict) or set(check) != {"name", "run_id", "url", "head_sha", "status"}:
+                _fail("release_publication_record_checks_invalid")
+            if not isinstance(check["name"], str) or not check["name"].strip():
+                _fail("release_publication_record_checks_invalid")
+            if isinstance(check["run_id"], bool) or not isinstance(check["run_id"], int) or check["run_id"] <= 0:
+                _fail("release_publication_record_checks_invalid")
+            if not check["url"].startswith("https://github.com/iTao-AI/decision-research-agent/"):
+                _fail("release_publication_record_checks_invalid")
+            if check["head_sha"] != expected_head_sha or check["status"] != "success":
+                _fail("release_publication_record_checks_invalid")
 
     non_claims = record["non_claims"]
     if (
@@ -326,14 +324,6 @@ def validate_publication_record(record: Mapping[str, Any]) -> dict[str, Any]:
         )
     ):
         _fail("release_publication_record_non_claims_invalid")
-    cleanup = record["cleanup"]
-    if (
-        not isinstance(cleanup, dict)
-        or cleanup.get("status") != "clean"
-        or cleanup.get("task_owned_resources") != "removed"
-        or cleanup.get("worktrees_unchanged") is not True
-    ):
-        _fail("release_publication_record_cleanup_invalid")
     return dict(record)
 
 

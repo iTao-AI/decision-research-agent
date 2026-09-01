@@ -14,6 +14,7 @@ from scripts.release_publication_contract import (
     MUTABLE_ENTRYPOINTS,
     PLAN_PATH,
     PREPARATION_RECORD,
+    PUBLICATION_RECORD_REQUIRED_FIELDS,
     PUBLISHED_ENTRYPOINT_MARKERS,
     RELEASE_NOTES_PATH,
     STALE_ENTRYPOINT_MARKERS,
@@ -69,13 +70,9 @@ def _valid_terminal_record() -> dict[str, object]:
         "release_prep_pr_number": 201,
         "release_prep_pr_url": "https://github.com/iTao-AI/decision-research-agent/pull/201",
         "release_prep_reviewed_head": "b" * 40,
+        "release_prep_reviewed_tree": "c" * 40,
         "release_prep_merge_commit": merge_commit,
         "release_prep_merge_tree": "c" * 40,
-        "post_publication_pr_number": 202,
-        "post_publication_pr_url": "https://github.com/iTao-AI/decision-research-agent/pull/202",
-        "post_publication_reviewed_head": "d" * 40,
-        "post_publication_merge_commit": "e" * 40,
-        "post_publication_merge_tree": "f" * 40,
         "tag_name": "v0.1.9",
         "tag_object": "1" * 40,
         "peeled_commit": merge_commit,
@@ -94,6 +91,15 @@ def _valid_terminal_record() -> dict[str, object]:
         "archive_sha256": "5" * 64,
         "archive_safe_extraction": True,
         "archive_git_free_smoke": True,
+        "reviewed_head_hosted_checks": [
+            {
+                "name": "ci",
+                "run_id": 9000,
+                "url": "https://github.com/iTao-AI/decision-research-agent/actions/runs/9000",
+                "head_sha": "b" * 40,
+                "status": "success",
+            }
+        ],
         "exact_main_hosted_checks": [
             {
                 "name": "ci",
@@ -106,11 +112,6 @@ def _valid_terminal_record() -> dict[str, object]:
         "non_claims": [
             "No real-provider research or business-impact claim is made.",
         ],
-        "cleanup": {
-            "status": "clean",
-            "task_owned_resources": "removed",
-            "worktrees_unchanged": True,
-        },
     }
 
 
@@ -140,6 +141,16 @@ def test_preparation_state_rejects_a_premature_publication_claim(tmp_path: Path)
 
 def test_terminal_publication_record_requires_all_readback_fields() -> None:
     record = _valid_terminal_record()
+    assert set(record) == PUBLICATION_RECORD_REQUIRED_FIELDS
+    for self_referential_field in (
+        "post_publication_pr_number",
+        "post_publication_pr_url",
+        "post_publication_reviewed_head",
+        "post_publication_merge_commit",
+        "post_publication_merge_tree",
+        "cleanup",
+    ):
+        assert self_referential_field not in record
     validate_publication_record(record)
 
     missing = dict(record)
@@ -151,6 +162,27 @@ def test_terminal_publication_record_requires_all_readback_fields() -> None:
     placeholder["release_url"] = "TBD"
     with pytest.raises(ValueError, match="release_publication_record_value_invalid"):
         validate_publication_record(placeholder)
+
+
+def test_terminal_record_binds_reviewed_tree_and_both_hosted_check_groups() -> None:
+    record = _valid_terminal_record()
+    validate_publication_record(record)
+
+    reviewed_tree_mismatch = dict(record)
+    reviewed_tree_mismatch["release_prep_reviewed_tree"] = "6" * 40
+    with pytest.raises(ValueError, match="release_publication_record_identity_invalid"):
+        validate_publication_record(reviewed_tree_mismatch)
+
+    for check_group in ("reviewed_head_hosted_checks", "exact_main_hosted_checks"):
+        invalid_checks = dict(record)
+        invalid_checks[check_group] = [
+            {
+                **record[check_group][0],
+                "head_sha": "6" * 40,
+            }
+        ]
+        with pytest.raises(ValueError, match="release_publication_record_checks_invalid"):
+            validate_publication_record(invalid_checks)
 
 
 def test_terminal_state_requires_published_mutable_entrypoints_and_frozen_bytes(

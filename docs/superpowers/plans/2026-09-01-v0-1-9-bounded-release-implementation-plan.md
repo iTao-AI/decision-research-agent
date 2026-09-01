@@ -101,8 +101,11 @@ Publication status: preparation.
 No terminal publication facts exist in this preparation state. The following
 JSON is a state marker, not a publication receipt. The same-scope
 post-publication docs closeout PR must replace this entire state marker with a
-complete JSON record containing actual readback values; do not prefill fields
-with placeholders, `null`, `TBD`, or expected values.
+complete JSON record containing only actual readback values that existed before
+that closeout PR was created; do not prefill fields with placeholders, `null`,
+`TBD`, or expected values. The closeout PR's own identity and post-merge
+cleanup are recorded only in its persisted PR body and the authority terminal
+callback/readback, never in this tracked JSON.
 
 ```json
 {
@@ -114,11 +117,8 @@ When the record becomes `published`, the exact required fields are:
 
 - state envelope: `schema_version` and `state`;
 - release-prep PR: `release_prep_pr_number`, `release_prep_pr_url`,
-  `release_prep_reviewed_head`, `release_prep_merge_commit`,
-  `release_prep_merge_tree`;
-- post-publication docs closeout PR: `post_publication_pr_number`,
-  `post_publication_pr_url`, `post_publication_reviewed_head`,
-  `post_publication_merge_commit`, `post_publication_merge_tree`;
+  `release_prep_reviewed_head`, `release_prep_reviewed_tree`,
+  `release_prep_merge_commit`, `release_prep_merge_tree`;
 - tag and Release: `tag_name`, `tag_object`, `peeled_commit`, `tag_tree`,
   `release_id`, `release_url`, `release_published_at`, `release_state`,
   `release_is_draft`, `release_is_prerelease`, `release_body_sha256`;
@@ -126,13 +126,16 @@ When the record becomes `published`, the exact required fields are:
   `tag_changelog_section_sha256`;
 - official source archive: `archive_filename`, `archive_bytes`,
   `archive_sha256`, `archive_safe_extraction`, `archive_git_free_smoke`;
-- exact-main hosted evidence and closeout: `exact_main_hosted_checks`,
-  `non_claims`, and `cleanup`.
+- exact reviewed-head and exact-main hosted evidence: `reviewed_head_hosted_checks`
+  and `exact_main_hosted_checks`;
+- bounded non-claims: `non_claims`.
 
 The owning `release_publication_contract.py` rejects premature publication
 claims in the preparation state. In the published state it requires every
 field above, checks the annotated-tag/merge identities and Release body hash,
-requires successful checks on the exact release merge commit, verifies the
-frozen release note and changelog-section bytes, and rejects mutable entrypoints
-that still call `v0.1.8` the last published stable release or `v0.1.9` a
-preparation.
+requires `release_prep_reviewed_tree == release_prep_merge_tree`, requires the
+two hosted-check groups to be successful on their respective exact SHAs,
+verifies the frozen release note and changelog-section bytes, and rejects
+mutable entrypoints that still call `v0.1.8` the last published stable release
+or `v0.1.9` a preparation. The closeout PR identity and cleanup callback are
+post-merge terminal evidence, not self-referential tracked-record fields.

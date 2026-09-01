@@ -150,7 +150,8 @@ presentation and non-authority boundaries.
 Evaluation remains provider-free where the repository says so, and every
 benchmark or release record keeps its own evidence boundary. Start with the
 [evaluation references](docs/reference/agent-evaluation-regression-gate.md),
-[evidence index](docs/evidence/README.md), and stable
+[evidence index](docs/evidence/README.md), the current
+[v0.1.9 release preparation](docs/releases/v0.1.9.md), and the immutable stable
 [v0.1.8 release notes](docs/releases/v0.1.8.md); historical release records are
 not rewritten by the showcase.
 
@@ -524,6 +525,7 @@ decision while canonical episode hold decisions remain historical evidence.
 - [Secure Local Runtime v1 Proof](docs/evidence/secure-local-runtime-v1.md)
 - [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md)
 - [Talent Hiring Signal Benchmark v1](benchmarks/talent-hiring-signal-v1/README.md)
+- [v0.1.9 Release Notes](docs/releases/v0.1.9.md)
 - [v0.1.8 Release Notes](docs/releases/v0.1.8.md)
 - [v0.1.7 Release Notes](docs/releases/v0.1.7.md)
 - [v0.1.6 Release Notes](docs/releases/v0.1.6.md)

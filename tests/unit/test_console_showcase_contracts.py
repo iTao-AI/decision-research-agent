@@ -183,6 +183,8 @@ def test_showcase_manifest_verifies_exact_assets_and_capture_identity() -> None:
         "research-workspace-overview.png",
     ]
     assert result["capture_input_fingerprint"] == compute_capture_input_fingerprint(PROJECT_ROOT)
+    console_docs = (PROJECT_ROOT / "docs/demo-console.md").read_text(encoding="utf-8")
+    assert "canonicalizes only the release `version` fields" in console_docs
 
 
 def test_reachable_historic_identity_is_cross_checked_against_capture_inputs(tmp_path: Path) -> None:
@@ -194,6 +196,63 @@ def test_reachable_historic_identity_is_cross_checked_against_capture_inputs(tmp
 
     assert result["provenance_verification"] == "historic_source_identity"
     assert result["capture_input_fingerprint"] == compute_capture_input_fingerprint(fixture)
+
+
+def test_release_identity_version_drift_does_not_change_capture_provenance(tmp_path: Path) -> None:
+    fixture = tmp_path / "release-identity-drift"
+    _prepare_git_fixture(fixture)
+
+    package_path = fixture / "frontend/package.json"
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    package["version"] = "9.9.9"
+    package_path.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
+
+    lock_path = fixture / "frontend/package-lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["version"] = "9.9.9"
+    lock["packages"][""]["version"] = "9.9.9"
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    _git(fixture, "add", "frontend/package.json", "frontend/package-lock.json")
+    _git(
+        fixture,
+        "-c",
+        "user.name=Showcase Contract",
+        "-c",
+        "user.email=showcase-contract@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "change release identity",
+    )
+
+    result = verify_showcase_assets(fixture)
+
+    assert result["provenance_verification"] == "historic_source_identity"
+
+
+def test_dependency_metadata_drift_requires_new_capture_provenance(tmp_path: Path) -> None:
+    fixture = tmp_path / "dependency-metadata-drift"
+    _prepare_git_fixture(fixture)
+
+    package_path = fixture / "frontend/package.json"
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    package["dependencies"]["react"] = "^19.2.9"
+    package_path.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
+    _git(fixture, "add", "frontend/package.json")
+    _git(
+        fixture,
+        "-c",
+        "user.name=Showcase Contract",
+        "-c",
+        "user.email=showcase-contract@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "change dependency metadata",
+    )
+
+    with pytest.raises(ValueError, match="showcase_capture_input_fingerprint_mismatch"):
+        verify_showcase_assets(fixture)
 
 
 def test_new_tracked_production_frontend_input_requires_manifest_update(tmp_path: Path) -> None:

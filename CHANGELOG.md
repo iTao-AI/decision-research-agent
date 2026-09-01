@@ -4,8 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-This section records changes already merged on the current default branch after
-stable `v0.1.8`; it is not a promise of a future release.
+## [0.1.9] - 2026-09-01
+
+This release preparation records changes already merged on the current default
+branch after stable `v0.1.8`; it is not a promise of a future release and does
+not itself claim publication.
 
 ### Frontend lock/security maintenance
 

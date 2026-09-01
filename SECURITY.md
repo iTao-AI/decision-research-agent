@@ -1,6 +1,6 @@
 # Security Policy
 
-Decision Research Agent v0.1.8 release preparation includes tool safety and
+Decision Research Agent v0.1.9 release preparation includes tool safety and
 runtime closure alongside context reliability,
 privacy-safe observation, strict citation, evidence-gated offline verification,
 crash-safe single-node recovery, the FastAPI backend, Python Tool
@@ -65,7 +65,7 @@ independent feature-owned gates. The deterministic proof and required Docker
 lane use no live provider, model, or tool request and do not certify hosted or
 production security.
 
-Required v0.1.8 evaluation remains provider-free and does not run a provider,
+Required v0.1.9 evaluation remains provider-free and does not run a provider,
 search, `observe-live`, or remote LangSmith tracing. Generic search source
 admission accepts canonical public HTTPS URLs before model, monitor, or
 Evidence observation, and existing generic researcher and network-search
@@ -86,4 +86,4 @@ input.
 - Public bug bounty commitments.
 - Hosted service operations outside this repository.
 - Hosted console operations, RBAC, multi-tenant, or multi-replica deployments
-  that are not part of the v0.1.8 release preparation.
+  that are not part of the v0.1.9 release preparation.

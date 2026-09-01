@@ -21,6 +21,7 @@ V015_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.5.md"
 V016_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.6.md"
 V017_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.7.md"
 V018_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.8.md"
+V019_RELEASE_NOTES = PROJECT_ROOT / "docs" / "releases" / "v0.1.9.md"
 V015_RELEASE_NOTES_SHA256 = (
     "61cbac951a6513a3eb8f160647b9f16b95ca6ed96a4cca8bea80786462a90b6b"
 )
@@ -131,10 +132,11 @@ def test_current_release_version_is_consistent() -> None:
     package = json.loads(_read(PROJECT_ROOT / "frontend" / "package.json"))
     lock = json.loads(_read(PROJECT_ROOT / "frontend" / "package-lock.json"))
 
-    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.8"
-    assert package["version"] == "0.1.8"
-    assert lock["version"] == "0.1.8"
-    assert lock["packages"][""]["version"] == "0.1.8"
+    assert _read(PROJECT_ROOT / "VERSION").strip() == "0.1.9"
+    assert package["version"] == "0.1.9"
+    assert lock["version"] == "0.1.9"
+    assert lock["packages"][""]["version"] == "0.1.9"
+    assert V019_RELEASE_NOTES.exists()
     assert V018_RELEASE_NOTES.exists()
     assert V017_RELEASE_NOTES.exists()
     assert V016_RELEASE_NOTES.exists()
@@ -142,13 +144,15 @@ def test_current_release_version_is_consistent() -> None:
     assert sha256(V015_RELEASE_NOTES.read_bytes()).hexdigest() == V015_RELEASE_NOTES_SHA256
 
 
-def test_known_run_reattach_is_current_main_only_and_excluded_from_v018() -> None:
+def test_known_run_reattach_is_recorded_in_v019_and_excluded_from_v018() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     stable_release = _read(V018_RELEASE_NOTES)
-    unreleased = changelog.split("## [0.1.8]", maxsplit=1)[0]
+    current_release = changelog.split("## [0.1.9] - 2026-09-01", 1)[1].split(
+        "## [0.1.8] - 2026-07-30", 1
+    )[0]
 
-    assert "### Known-run GET-only reattachment" in unreleased
-    assert "A retained known `run_id` can be re-entered after a page refresh" in unreleased
+    assert "### Known-run GET-only reattachment" in current_release
+    assert "A retained known `run_id` can be re-entered after a page refresh" in current_release
     assert "### Known-run GET-only reattachment" not in stable_release
     assert "A retained known `run_id` can be re-entered after a page refresh" not in stable_release
 
@@ -156,6 +160,8 @@ def test_known_run_reattach_is_current_main_only_and_excluded_from_v018() -> Non
 def test_changelog_preserves_published_release_boundary() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     unreleased_heading = "## [Unreleased]"
+    v0_1_9_heading = "## [0.1.9] - 2026-09-01"
+    v0_1_8_heading = "## [0.1.8] - 2026-07-30"
     v0_1_7_heading = "## [0.1.7] - 2026-07-29"
     v0_1_6_heading = "## [0.1.6] - 2026-07-24"
     v0_1_5_match = re.search(
@@ -172,6 +178,8 @@ def test_changelog_preserves_published_release_boundary() -> None:
     v0_1_0_heading = "## [0.1.0] - 2026-06-28"
 
     assert unreleased_heading in changelog
+    assert v0_1_9_heading in changelog
+    assert v0_1_8_heading in changelog
     assert v0_1_7_heading in changelog
     assert v0_1_6_heading in changelog
     assert v0_1_5_heading in changelog
@@ -180,7 +188,9 @@ def test_changelog_preserves_published_release_boundary() -> None:
     assert v0_1_2_heading in changelog
     assert v0_1_1_heading in changelog
     assert v0_1_0_heading in changelog
-    assert changelog.index(unreleased_heading) < changelog.index(v0_1_7_heading)
+    assert changelog.index(unreleased_heading) < changelog.index(v0_1_9_heading)
+    assert changelog.index(v0_1_9_heading) < changelog.index(v0_1_8_heading)
+    assert changelog.index(v0_1_8_heading) < changelog.index(v0_1_7_heading)
     assert changelog.index(v0_1_7_heading) < changelog.index(v0_1_6_heading)
     assert changelog.index(v0_1_6_heading) < changelog.index(v0_1_5_heading)
     assert changelog.index(v0_1_5_heading) < changelog.index(v0_1_4_heading)
@@ -351,14 +361,18 @@ def test_changelog_preserves_published_release_boundary() -> None:
         assert phrase in v0_1_1
 
 
-def test_unreleased_records_exact_post_v0_1_8_inventory_without_release_promise() -> None:
+def test_v0_1_9_records_exact_post_v0_1_8_inventory_without_release_promise() -> None:
     changelog = _read(PROJECT_ROOT / "CHANGELOG.md")
     unreleased = changelog.split("## [Unreleased]", 1)[1].split(
+        "## [0.1.9] - 2026-09-01", 1
+    )[0]
+    current_release = changelog.split("## [0.1.9] - 2026-09-01", 1)[1].split(
         "## [0.1.8] - 2026-07-30", 1
     )[0]
-    normalized = _collapsed(unreleased)
+    normalized = _collapsed(current_release)
 
-    assert tuple(re.findall(r"^### (.+)$", unreleased, re.MULTILINE)) == (
+    assert not unreleased.strip()
+    assert tuple(re.findall(r"^### (.+)$", current_release, re.MULTILINE)) == (
         "Frontend lock/security maintenance",
         "Native showcase/provenance",
         "Node 22/24 support matrix",
@@ -429,7 +443,7 @@ def test_security_policy_matches_current_release_surface() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
 
     required = [
-        "Decision Research Agent v0.1.8 release preparation includes",
+        "Decision Research Agent v0.1.9 release preparation includes",
         "context reliability",
         "privacy-safe observation",
         "strict citation",
@@ -454,7 +468,7 @@ def test_security_policy_publishes_current_preparation_runtime_controls() -> Non
     security = _read(PROJECT_ROOT / "SECURITY.md")
     normalized = " ".join(security.split())
 
-    assert "Decision Research Agent v0.1.8 release preparation includes" in normalized
+    assert "Decision Research Agent v0.1.9 release preparation includes" in normalized
     assert "Decision Research Agent v0.1.8 ships" not in normalized
     assert "The source template uses `API_SECRET=`" in normalized
     assert "Compose requires non-empty" in normalized
@@ -673,6 +687,9 @@ def test_current_release_and_history_remain_discoverable() -> None:
     readme = _read(PROJECT_ROOT / "README.md")
     readme_cn = _read(PROJECT_ROOT / "README_CN.md")
     docs_index = _read(PROJECT_ROOT / "docs" / "README.md")
+    assert "[v0.1.9 Release Notes](docs/releases/v0.1.9.md)" in readme
+    assert "[v0.1.9 Release Notes](docs/releases/v0.1.9.md)" in readme_cn
+    assert "[v0.1.9 Release Notes](releases/v0.1.9.md)" in docs_index
     assert "[v0.1.8 Release Notes](docs/releases/v0.1.8.md)" in readme
     assert "[v0.1.8 Release Notes](docs/releases/v0.1.8.md)" in readme_cn
     assert "[v0.1.8 Release Notes](releases/v0.1.8.md)" in docs_index
@@ -700,6 +717,10 @@ def test_current_release_and_history_remain_discoverable() -> None:
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
     assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
+    assert (
+        "- [v0.1.9 Release Notes](releases/v0.1.9.md) — current provider-free release"
+        in docs_index
+    )
     assert (
         "- [v0.1.8 Release Notes](releases/v0.1.8.md) — stable tool-safety,"
         in docs_index

@@ -147,6 +147,7 @@ def test_v0_1_9_release_record_is_public_neutral_and_closed() -> None:
         "npm audit --audit-level=moderate",
         "python scripts/check_canonical_identity.py --root .",
         "python scripts/final_presentation_audit.py --root .",
+        "python scripts/release_publication_contract.py check --root .",
     ):
         assert command in sections["Required Verification"]
 

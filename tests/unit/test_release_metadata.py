@@ -443,7 +443,7 @@ def test_security_policy_matches_current_release_surface() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
 
     required = [
-        "Decision Research Agent v0.1.9 release preparation includes",
+        "Decision Research Agent v0.1.9 is the current published stable release.",
         "context reliability",
         "privacy-safe observation",
         "strict citation",
@@ -464,11 +464,14 @@ def test_security_policy_matches_current_release_surface() -> None:
         assert phrase in security
 
 
-def test_security_policy_publishes_current_preparation_runtime_controls() -> None:
+def test_security_policy_publishes_current_runtime_controls() -> None:
     security = _read(PROJECT_ROOT / "SECURITY.md")
     normalized = " ".join(security.split())
 
-    assert "Decision Research Agent v0.1.9 release preparation includes" in normalized
+    assert (
+        "Decision Research Agent v0.1.9 is the current published stable release."
+        in normalized
+    )
     assert "Decision Research Agent v0.1.8 ships" not in normalized
     assert "The source template uses `API_SECRET=`" in normalized
     assert "Compose requires non-empty" in normalized
@@ -718,11 +721,11 @@ def test_current_release_and_history_remain_discoverable() -> None:
     assert "[v0.1.0 Release Notes](docs/releases/v0.1.0.md)" in readme_cn
     assert "[v0.1.0 Release Notes](releases/v0.1.0.md)" in docs_index
     assert (
-        "- [v0.1.9 Release Notes](releases/v0.1.9.md) — current provider-free release"
+        "- [v0.1.9 Release Notes](releases/v0.1.9.md) — current published stable release"
         in docs_index
     )
     assert (
-        "- [v0.1.8 Release Notes](releases/v0.1.8.md) — stable tool-safety,"
+        "- [v0.1.8 Release Notes](releases/v0.1.8.md) — historical stable tool-safety,"
         in docs_index
     )
     assert "- [v0.1.7 Release Notes](releases/v0.1.7.md) — historical" in docs_index

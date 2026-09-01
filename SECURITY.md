@@ -1,7 +1,7 @@
 # Security Policy
 
-Decision Research Agent v0.1.9 release preparation includes tool safety and
-runtime closure alongside context reliability,
+Decision Research Agent v0.1.9 is the current published stable release. It
+includes tool safety and runtime closure alongside context reliability,
 privacy-safe observation, strict citation, evidence-gated offline verification,
 crash-safe single-node recovery, the FastAPI backend, Python Tool
 Client, single-node application-owned run dispatch reconciliation, durable
@@ -86,4 +86,4 @@ input.
 - Public bug bounty commitments.
 - Hosted service operations outside this repository.
 - Hosted console operations, RBAC, multi-tenant, or multi-replica deployments
-  that are not part of the v0.1.9 release preparation.
+  that are not part of the published v0.1.9 release.

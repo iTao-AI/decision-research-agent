@@ -26,7 +26,11 @@ Static Demo 是确定性的；可选 Live Backend 接受一个有界的用户自
 
 ## 当前默认分支状态
 
-下文展示的 Console 和 blocked-failure diagnosis 是 stable `v0.1.8` 之后当前默认分支上的新增内容；它们不包含在不可变的 stable `v0.1.8` release 中。这一边界不构成 deployment、provider-backed research 或 business-impact claim。当前 main 的输入增量不改变 stable `v0.1.8`。
+Decision Research Agent v0.1.9 是当前已发布的 stable release。
+下文展示的 Console 和 blocked-failure diagnosis 是不可变历史 stable `v0.1.8`
+之后的有界新增内容，并已纳入 v0.1.9 release record。这一边界不构成
+deployment、provider-backed research 或 business-impact claim。历史
+`v0.1.8` release 保持不变。
 
 ## Research Delivery Flow
 
@@ -133,8 +137,8 @@ non-authority 边界。
 评估在仓库声明的范围内保持 provider-free；每个 benchmark 和 release record
 保留自己的 evidence boundary。请先看
 [evaluation references](docs/reference/agent-evaluation-regression-gate.md)、
-[evidence index](docs/evidence/README.md)、当前的
-[v0.1.9 release preparation](docs/releases/v0.1.9.md) 和不可变的 stable
+[evidence index](docs/evidence/README.md)、当前已发布的
+[v0.1.9 Release Notes](docs/releases/v0.1.9.md) 和不可变的历史 stable
 [v0.1.8 release notes](docs/releases/v0.1.8.md)；showcase 不改写历史 release record。
 
 ## 验证

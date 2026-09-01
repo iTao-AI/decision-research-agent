@@ -31,11 +31,11 @@ nonblank and at most 4096 UTF-8 bytes.
 
 ## Current Default Branch Status
 
-The showcased Console and blocked-failure diagnosis are current default-branch
-additions after stable `v0.1.8`; they are not included in the immutable stable
-`v0.1.8` release. This boundary is not a deployment, provider-backed research,
-or business-impact claim. The current-main input increment is current-main
-only; stable `v0.1.8` remains unchanged.
+Decision Research Agent v0.1.9 is the current published stable release.
+The showcased Console and blocked-failure diagnosis are bounded additions after
+the immutable historical stable `v0.1.8`; they are included in the v0.1.9
+release record. This boundary is not a deployment, provider-backed research,
+or business-impact claim. The historical `v0.1.8` release remains unchanged.
 
 ## Research Delivery Flow
 
@@ -151,9 +151,9 @@ Evaluation remains provider-free where the repository says so, and every
 benchmark or release record keeps its own evidence boundary. Start with the
 [evaluation references](docs/reference/agent-evaluation-regression-gate.md),
 [evidence index](docs/evidence/README.md), the current
-[v0.1.9 release preparation](docs/releases/v0.1.9.md), and the immutable stable
-[v0.1.8 release notes](docs/releases/v0.1.8.md); historical release records are
-not rewritten by the showcase.
+the current published [v0.1.9 Release Notes](docs/releases/v0.1.9.md), and the
+immutable historical stable [v0.1.8 release notes](docs/releases/v0.1.8.md);
+historical release records are not rewritten by the showcase.
 
 ## Verification
 

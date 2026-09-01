@@ -24,9 +24,9 @@ artifacts, and tool-specific restore data never belong in this directory.
 - [Release notes](../releases/v0.1.9.md)
 - [Approved implementation plan](plans/2026-09-01-v0-1-9-bounded-release-implementation-plan.md)
 
-The v0.1.9 record is provider-free and public-neutral. Current code, tests,
-release notes, Git identities, hosted checks, and public Release state remain
-authoritative.
+The current published stable release is `v0.1.9`. The v0.1.9 record is
+provider-free and public-neutral. Current code, tests, release notes, Git
+identities, hosted checks, and public Release state remain authoritative.
 
 ## Historical v0.1.8 Release Records
 

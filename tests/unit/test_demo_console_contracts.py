@@ -10,6 +10,7 @@ DOCS_INDEX = ROOT / "docs" / "README.md"
 DESIGN = ROOT / "DESIGN.md"
 OPERATIONS = ROOT / "docs" / "demo-console.md"
 APP = ROOT / "frontend" / "src" / "App.tsx"
+PRESENTATION_ROOT = ROOT / "frontend" / "src" / "presentation"
 API_CLIENT = ROOT / "frontend" / "src" / "apiClient.ts"
 LIVE_RUN = ROOT / "frontend" / "src" / "useLiveRun.ts"
 MODULE_SPECIFIER = re.compile(
@@ -249,3 +250,75 @@ def test_production_typescript_source_discovery_is_recursive(tmp_path: Path):
 
     assert nested_source in discovered
     assert test_source not in discovered
+
+
+def test_frontend_presentation_families_have_direct_owners():
+    app = _read(APP)
+    expected_modules = {
+        "stageRail.tsx": (
+            r"\bfunction StageRail\b",
+            r"\btype StageKey\b",
+            r"\bconst stageKeys\b",
+            r"\bconst stageScreens\b",
+            r"\bfunction initialScreenForShowcase\b",
+        ),
+        "showcaseWorkspace.tsx": (
+            r"\bexport type ShowcaseState\b",
+            r"\bfunction ShowcaseWorkspace\b",
+            r"\bfunction LiveObservationSurface\b",
+            r"\bfunction OverviewShowcase\b",
+            r"\bfunction EvidenceShowcase\b",
+            r"\bfunction BlockedShowcase\b",
+            r"\bfunction diagnosticFailureCause\b",
+            r"\bfunction diagnosticDisposition\b",
+        ),
+        "judgmentSidebar.tsx": (
+            r"\bfunction JudgmentSidebar\b",
+            r"\bfunction LiveJudgmentSidebar\b",
+            r"\bfunction JudgmentRow\b",
+            r"\bconst authorityBadges\b",
+        ),
+        "technicalScreens.tsx": (
+            r"\bfunction Metric\b",
+            r"\bfunction CommandCenter\b",
+            r"\bfunction RunLifecycle\b",
+            r"\bfunction EvidenceLedger\b",
+            r"\bfunction ReviewVerification\b",
+            r"\bfunction CanonicalResult\b",
+            r"\bfunction ArchitectureMode\b",
+        ),
+        "observation.tsx": (
+            r"\bfunction ObservationSection\b",
+            r"\bfunction ObservationValue\b",
+            r"\bfunction observationLabel\b",
+            r"\bfunction KeyValueList\b",
+            r"\bfunction countSummary\b",
+            r"\bfunction buildScreenSummary\b",
+        ),
+    }
+
+    assert set(path.name for path in PRESENTATION_ROOT.glob("*.tsx")) >= set(expected_modules)
+    assert not (PRESENTATION_ROOT / "index.ts").exists()
+    assert not (PRESENTATION_ROOT / "index.tsx").exists()
+    assert len(app.splitlines()) <= 500
+
+    for module_name, declarations in expected_modules.items():
+        module_text = _read(PRESENTATION_ROOT / module_name)
+        assert len(module_text.splitlines()) <= 450
+        for declaration in declarations:
+            assert re.search(declaration, module_text), (module_name, declaration)
+            assert not re.search(declaration, app), (module_name, declaration)
+
+    assert "export type { ShowcaseState } from \"./presentation/showcaseWorkspace\";" in app
+    for required in (
+        "useLiveRun",
+        "useState",
+        "useEffect",
+        "useMemo",
+        "readShowcaseRoute",
+        "buildStaticConsoleProjection",
+        "buildLiveConsoleProjection",
+        "function LiveDemoPanel",
+        "function LiveErrorCard",
+    ):
+        assert required in app

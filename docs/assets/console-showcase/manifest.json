@@ -1,0 +1,62 @@
+{
+  "schema_version": "dra.console-showcase-manifest.v1",
+  "capture": {
+    "source_commit": "fbcc04bec9fcc7ce9eda1bb89a5d75e0a35c7e6e",
+    "source_tree": "eed640ddb8a03401befbce1262e922d4c12ca003",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "locale": "zh-CN",
+    "synthetic_demo_disclosure": "Synthetic Static Demo fixtures; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment.",
+    "capture_input_fingerprint": {
+      "algorithm": "sha256",
+      "paths": [
+        "frontend/index.html",
+        "frontend/package-lock.json",
+        "frontend/package.json",
+        "frontend/public/favicon.svg",
+        "frontend/src/App.tsx",
+        "frontend/src/apiClient.ts",
+        "frontend/src/consoleProjection.ts",
+        "frontend/src/demoData.ts",
+        "frontend/src/i18n.ts",
+        "frontend/src/main.tsx",
+        "frontend/src/presentation/judgmentSidebar.tsx",
+        "frontend/src/presentation/observation.tsx",
+        "frontend/src/presentation/showcaseWorkspace.tsx",
+        "frontend/src/presentation/stageRail.tsx",
+        "frontend/src/presentation/technicalScreens.tsx",
+        "frontend/src/runProjection.ts",
+        "frontend/src/styles.css",
+        "frontend/src/useLiveRun.ts",
+        "frontend/tsconfig.app.json",
+        "frontend/tsconfig.json",
+        "frontend/tsconfig.node.json",
+        "frontend/vite.config.ts"
+      ],
+      "value": "bf6db72ff5b9ef1d8d5b5181cca733bd39027b94ce8f527b046f4ad38adcda5f"
+    }
+  },
+  "frames": {
+    "research-workspace-overview.png": {
+      "route": "/?showcase=overview",
+      "state": "normal_delivered",
+      "locale": "zh-CN",
+      "sha256": "56ba7185a2d921e6cfa36eb4d3efc70fb83a09bf2337259280d0ac63eaf094d0"
+    },
+    "research-evidence-review.png": {
+      "route": "/?showcase=evidence",
+      "state": "evidence_review",
+      "locale": "zh-CN",
+      "sha256": "0dcfc5652188036fe1fd4c5193fbb635d604c119ef024d95033356d244509582"
+    },
+    "research-blocked-recovery.png": {
+      "route": "/?showcase=blocked",
+      "state": "review_required_not_delivered",
+      "locale": "zh-CN",
+      "sha256": "ae9cb05f57193f4e9ce2c40b4cc4b91e0ba65c353d9ab3b76bef1c5d39a5c75d"
+    }
+  },
+  "synthetic_demo_disclosure": "Synthetic Static Demo fixtures; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment."
+}

@@ -1,14 +1,14 @@
 {
   "schema_version": "dra.console-showcase-manifest.v1",
   "capture": {
-    "source_commit": "fbcc04bec9fcc7ce9eda1bb89a5d75e0a35c7e6e",
-    "source_tree": "eed640ddb8a03401befbce1262e922d4c12ca003",
+    "source_commit": "429427f3c96909dbe634b6570dcb6135f13c0231",
+    "source_tree": "236a7ff18414a53a33a58407f347985e3759f159",
     "viewport": {
       "width": 1600,
       "height": 1000
     },
     "locale": "zh-CN",
-    "synthetic_demo_disclosure": "Synthetic Static Demo fixtures; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment.",
+    "synthetic_demo_disclosure": "Synthetic Static Demo fixtures for a local customer-support refund-pilot case; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment.",
     "capture_input_fingerprint": {
       "algorithm": "sha256",
       "paths": [
@@ -22,8 +22,10 @@
         "frontend/src/demoData.ts",
         "frontend/src/i18n.ts",
         "frontend/src/main.tsx",
+        "frontend/src/presentation/evidenceSourcePanel.tsx",
         "frontend/src/presentation/judgmentSidebar.tsx",
         "frontend/src/presentation/observation.tsx",
+        "frontend/src/presentation/resultReader.tsx",
         "frontend/src/presentation/showcaseWorkspace.tsx",
         "frontend/src/presentation/stageRail.tsx",
         "frontend/src/presentation/technicalScreens.tsx",
@@ -35,7 +37,7 @@
         "frontend/tsconfig.node.json",
         "frontend/vite.config.ts"
       ],
-      "value": "bf6db72ff5b9ef1d8d5b5181cca733bd39027b94ce8f527b046f4ad38adcda5f"
+      "value": "aba74fb47c16dc18e89c1dfcac008a15674e64bd03a7dda71ddea2c9768cfc4c"
     }
   },
   "frames": {
@@ -43,20 +45,20 @@
       "route": "/?showcase=overview",
       "state": "normal_delivered",
       "locale": "zh-CN",
-      "sha256": "56ba7185a2d921e6cfa36eb4d3efc70fb83a09bf2337259280d0ac63eaf094d0"
+      "sha256": "7bf646ec6cb49535fe7d10ad99194246d4b793a809aa13544b49b2c5449b55e6"
     },
     "research-evidence-review.png": {
       "route": "/?showcase=evidence",
       "state": "evidence_review",
       "locale": "zh-CN",
-      "sha256": "0dcfc5652188036fe1fd4c5193fbb635d604c119ef024d95033356d244509582"
+      "sha256": "8f6760670698c899514cfed72d8c4499653864ca1fcf5ca18a55848a37716250"
     },
     "research-blocked-recovery.png": {
       "route": "/?showcase=blocked",
       "state": "review_required_not_delivered",
       "locale": "zh-CN",
-      "sha256": "ae9cb05f57193f4e9ce2c40b4cc4b91e0ba65c353d9ab3b76bef1c5d39a5c75d"
+      "sha256": "e1680fbc70e31d1fc44da4b6841cfc52e8e3f960ccf50240b7bc7d8f83b373b8"
     }
   },
-  "synthetic_demo_disclosure": "Synthetic Static Demo fixtures; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment."
+  "synthetic_demo_disclosure": "Synthetic Static Demo fixtures for a local customer-support refund-pilot case; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment."
 }

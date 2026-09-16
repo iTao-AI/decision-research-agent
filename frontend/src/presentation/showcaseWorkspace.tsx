@@ -185,8 +185,6 @@ function ResearchBriefShowcase({
         </article>
       </section>
 
-      <ResultReader language={language} mode="static" result={projection.result} />
-
       <section className="comparison-section" aria-labelledby="comparison-heading">
         <div className="section-heading-row">
           <div>
@@ -238,6 +236,11 @@ function ResearchBriefShowcase({
       </section>
 
       <p className="measurement-note">{t.showcase.brief.staticDisclosure}</p>
+
+      <details className="brief-reader-disclosure">
+        <summary>{t.reader.fullReportLabel}</summary>
+        <ResultReader language={language} mode="static" result={projection.result} />
+      </details>
     </div>
   );
 }

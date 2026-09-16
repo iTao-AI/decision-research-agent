@@ -117,7 +117,7 @@ export default function App({
       <div className="workspace">
         <StageRail
           activeScreen={activeScreen}
-          isShowcaseRoute={isShowcaseRoute}
+          isLive={!isStaticProjection}
           language={language}
           onSelectScreen={setActiveScreen}
         />
@@ -169,7 +169,7 @@ export default function App({
 
           <details
             className="technical-disclosure technical-console-view"
-            open={!isShowcaseRoute || !isStaticProjection}
+            open={!isStaticProjection}
           >
             <summary>
               <span>{t.showcase.technicalLabel}</span>
@@ -226,7 +226,7 @@ export default function App({
 
           <details
             className="technical-disclosure technical-live-view"
-            open={!isShowcaseRoute || !isStaticProjection}
+            open={!isStaticProjection}
           >
             <summary>
               <span>{t.live.status}</span>

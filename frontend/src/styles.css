@@ -812,6 +812,156 @@ pre {
   }
 }
 
+/* Refinements: keep the default route useful on small screens and make the
+   complete artifact an explicit second reading step. */
+.stage-rail-menu {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+}
+
+.stage-rail-menu > summary {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  cursor: pointer;
+  list-style: none;
+}
+
+.stage-rail-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.stage-rail-menu .rail-kicker,
+.stage-rail-menu .rail-title {
+  display: block;
+}
+
+.stage-rail-menu .rail-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.stage-rail-menu .rail-footer {
+  margin-top: auto;
+}
+
+.rail-menu-toggle {
+  display: none;
+}
+
+.brief-reader-disclosure {
+  min-width: 0;
+  border: 1px solid #d8d2c4;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.brief-reader-disclosure > summary {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.brief-reader-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.brief-reader-disclosure > summary::after {
+  color: #6b7280;
+  content: "+";
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.brief-reader-disclosure[open] > summary {
+  border-bottom: 1px solid #ebe7dd;
+}
+
+.brief-reader-disclosure[open] > summary::after {
+  content: "−";
+}
+
+.brief-reader-disclosure > .result-reader {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.safe-markdown p {
+  white-space: pre-wrap;
+}
+
+.source-claims {
+  display: grid;
+  gap: 8px;
+}
+
+.source-claim-heading {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.source-claim-heading code {
+  overflow-wrap: anywhere;
+  color: #0e7490;
+  font-size: 10px;
+}
+
+@media (max-width: 760px) {
+  .stage-rail-menu {
+    flex: 0 0 auto;
+    gap: 0;
+  }
+
+  .stage-rail-menu[open] {
+    gap: 18px;
+  }
+
+  .stage-rail-menu > summary {
+    align-items: center;
+  }
+
+  .stage-rail-menu:not([open]) > summary {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .rail-menu-toggle {
+    display: block;
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: #6b7280;
+    font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .rail-menu-toggle::before {
+    content: "+";
+  }
+
+  .stage-rail-menu[open] .rail-menu-toggle::before {
+    content: "−";
+  }
+
+  .stage-rail-menu:not([open]) + .technical-navigation {
+    margin-top: 0;
+  }
+}
+
 /* Showcase hierarchy: stage rail -> research work surface -> judgment sidebar. */
 .workspace {
   grid-template-columns: 244px minmax(0, 1fr) 304px;

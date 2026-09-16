@@ -87,7 +87,7 @@ export function JudgmentSidebar({
         </p>
       </section>
 
-      <details className="technical-disclosure inspector-technical" open={!isShowcaseRoute}>
+      <details className="technical-disclosure inspector-technical">
         <summary>
           <span>{t.labels.authority}</span>
           <small>{t.showcase.technicalDescription}</small>

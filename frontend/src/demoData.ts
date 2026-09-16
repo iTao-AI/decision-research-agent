@@ -62,9 +62,9 @@ export const researchBriefFixture: ResearchBriefFixture = {
   claims: [
     {
       claimId: "claim_bounded_assistant",
-      text: "现有读取能力支持先做带政策依据的客服草稿助手。",
+      text: "试点先覆盖政策检索与答复草稿，发送前仍需客服审核。",
       evidenceId: "ev_pilot_scope",
-      excerpt: "第一阶段帮助客服人员定位政策并起草答案。"
+      excerpt: "第一阶段帮助客服人员定位政策并起草答案。答案由客服人员审核后发送。"
     },
     {
       claimId: "claim_refund_write_unconfirmed",
@@ -123,7 +123,7 @@ export const researchBriefFixture: ResearchBriefFixture = {
 
 ## 支持性发现
 
-1. 现有读取能力支持先做带政策依据的客服草稿助手。Evidence: ev_pilot_scope。
+1. 试点先覆盖政策检索与答复草稿，发送前仍需客服审核。Evidence: ev_pilot_scope。
 2. 退款写入接入尚未被批准或验证，因此不能承诺 Agent 自动退款。Evidence: ev_system_access。
 3. 退款决定保留授权工作人员审批，政策不明或证据缺失时升级。Evidence: ev_refund_policy。
 
@@ -131,7 +131,7 @@ export const researchBriefFixture: ResearchBriefFixture = {
 
 节省时间、采用率和其他业务改善仍待测量。本静态案例没有提供流量、ROI、客户采用率或模型准确率数据。
 `,
-    contentHash: "sha256:35a6d30a26ea65ae940c227177fd901862920e7b7e5853fd098590cdeb747766"
+    contentHash: "sha256:76b47bf7480112c6e2978a092846af3e6d1c725823e41727d14bab05365ec724"
   }
 };
 

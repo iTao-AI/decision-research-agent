@@ -38,6 +38,7 @@ export function ResultReader({
   }
 
   const artifact = result.value.artifact;
+  const hashLabel = mode === "static" ? t.fixtureHash : t.serviceReportedHash;
   return (
     <article className="result-reader" aria-label={t.title}>
       <div className="reader-heading">
@@ -54,11 +55,6 @@ export function ResultReader({
             {t.download}
           </button>
         </div>
-      </div>
-      <div className="reader-meta" aria-label={t.metadataLabel}>
-        <span>{t.serviceReportedHash}</span>
-        <code>{artifact.contentHash}</code>
-        <span>{t.exactBytes}</span>
       </div>
       <div className="reader-tabs" role="tablist" aria-label={t.viewLabel}>
         <button
@@ -94,7 +90,9 @@ export function ResultReader({
             ["run_id", result.value.runId],
             ["artifact_id", artifact.artifactId],
             ["media_type", artifact.mediaType],
-            ["content_hash", artifact.contentHash],
+            ["hash_source", hashLabel],
+            ["content_hash", <code>{artifact.contentHash}</code>],
+            ["download_bytes", t.exactBytes],
             ["execution_status", <ObservationValue language={language} observation={result.value.executionStatus} />],
             ["delivery_status", <ObservationValue language={language} observation={result.value.deliveryStatus} />],
             ["revision", <ObservationValue language={language} observation={artifact.revision} />],
@@ -208,7 +206,7 @@ function parseBlocks(content: string): MarkdownBlock[] {
 
   const flushParagraph = () => {
     if (paragraph.length > 0) {
-      blocks.push({ kind: "paragraph", text: paragraph.join(" ") });
+      blocks.push({ kind: "paragraph", text: paragraph.join("\n") });
       paragraph = [];
     }
   };

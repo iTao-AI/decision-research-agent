@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { buildLiveConsoleProjection } from "../consoleProjection";
@@ -29,6 +30,39 @@ describe("LiveEvidenceSourcePanel", () => {
     expect(screen.getByText("当前运行没有观察到可展示的 excerpt；不会从报告正文推断。")).toBeInTheDocument();
     expect(container.querySelector("script")).not.toBeInTheDocument();
   });
+
+  it("reselects a current source when the observed Evidence collection changes", async () => {
+    const user = userEvent.setup();
+    const firstRun = buildLiveConsoleProjection({
+      health: HEALTH,
+      created: undefined,
+      run: sourceRun("run_live_sources_v1", [
+        sourceEvidence("ev_live_first", "First source"),
+        sourceEvidence("ev_live_second", "Second source")
+      ]),
+      result: undefined,
+      status: "terminal"
+    });
+    const { rerender } = render(<LiveEvidenceSourcePanel language="zh" projection={firstRun} />);
+
+    await user.click(screen.getByRole("button", { name: /Second source/ }));
+    expect(screen.getByRole("heading", { name: "Second source" })).toBeInTheDocument();
+
+    const replacementRun = buildLiveConsoleProjection({
+      health: HEALTH,
+      created: undefined,
+      run: sourceRun("run_live_sources_v2", [sourceEvidence("ev_live_replacement", "Replacement source")]),
+      result: undefined,
+      status: "terminal"
+    });
+    rerender(<LiveEvidenceSourcePanel language="zh" projection={replacementRun} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Replacement source" })).toBeInTheDocument();
+    });
+    expect(screen.queryByText("ev_live_second")).not.toBeInTheDocument();
+    expect(screen.getAllByText("ev_live_replacement").length).toBeGreaterThan(0);
+  });
 });
 
 function unsafeSourceRun(): RunProjection {
@@ -57,5 +91,25 @@ function unsafeSourceRun(): RunProjection {
       resolution: null
     },
     failureCause: { kind: "not_applicable" }
+  };
+}
+
+function sourceRun(runId: string, evidence: RunProjection["evidence"]): RunProjection {
+  return {
+    ...unsafeSourceRun(),
+    run_id: runId,
+    thread_id: `${runId}_thread`,
+    evidence
+  };
+}
+
+function sourceEvidence(evidenceId: string, sourceIdentity: string) {
+  return {
+    evidence_id: evidenceId,
+    source_url: `https://example.com/${evidenceId}`,
+    source_identity: sourceIdentity,
+    evidence_fingerprint: `sha256:${evidenceId}`,
+    citation_status: "cited" as const,
+    verification_status: "verified"
   };
 }

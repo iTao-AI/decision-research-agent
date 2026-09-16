@@ -29,12 +29,13 @@ export function StaticEvidenceSourcePanel({
   const detailRef = useRef<HTMLElement>(null);
   const evidence = projection.evidence.kind === "observed" ? projection.evidence.value : [];
   const selectedEvidence = findEvidence(evidence, selection.evidenceId);
-  const selectedFixture = researchBriefFixture.sources.find(
-    (source) => source.evidenceId === selection.evidenceId
+  const selectedFixture = selectedEvidence
+    ? researchBriefFixture.sources.find((source) => source.evidenceId === selection.evidenceId)
+    : undefined;
+  const selectedClaims = researchBriefFixture.claims.filter(
+    (claim) => claim.evidenceId === selection.evidenceId
   );
-  const selectedClaim = researchBriefFixture.claims.find(
-    (claim) => claim.claimId === selection.claimId && claim.evidenceId === selection.evidenceId
-  );
+  const selectedClaim = selectedClaims.find((claim) => claim.claimId === selection.claimId);
 
   useEffect(() => {
     if (selection.focus === "detail") {
@@ -93,19 +94,24 @@ export function StaticEvidenceSourcePanel({
         </div>
         {selectedEvidence?.sourceStatus === "unconfirmed" ? (
           <p className="source-warning">{t.showcase.brief.claimsUnavailable}</p>
-        ) : selectedClaim ? (
-          <div className="source-claim">
-            <span>{t.showcase.brief.claimLabel}</span>
-            <p>{selectedClaim.text}</p>
+        ) : selectedClaims.length > 0 ? (
+          <div className="source-claims">
+            {selectedClaims.map((claim) => (
+              <div className="source-claim" key={claim.claimId}>
+                <div className="source-claim-heading">
+                  <span>{t.showcase.brief.claimLabel}</span>
+                  <code>{claim.claimId}</code>
+                </div>
+                <p>{claim.text}</p>
+                <figure className="source-excerpt">
+                  <figcaption>{t.showcase.brief.excerptLabel}</figcaption>
+                  <blockquote>{claim.excerpt}</blockquote>
+                </figure>
+              </div>
+            ))}
           </div>
         ) : (
           <p className="source-warning">{t.showcase.brief.noClaim}</p>
-        )}
-        {selectedClaim && selectedEvidence?.sourceStatus !== "unconfirmed" && (
-          <figure className="source-excerpt">
-            <figcaption>{t.showcase.brief.excerptLabel}</figcaption>
-            <blockquote>{selectedClaim.excerpt}</blockquote>
-          </figure>
         )}
         {selectedFixture && (
           <div className="source-document">
@@ -135,8 +141,16 @@ export function LiveEvidenceSourcePanel({
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string>();
   const detailRef = useRef<HTMLElement>(null);
   const evidence = projection.evidence.kind === "observed" ? projection.evidence.value : [];
-  const selectedId = selectedEvidenceId ?? evidence[0]?.evidenceId;
+  const selectedId = evidence.some((entry) => entry.evidenceId === selectedEvidenceId)
+    ? selectedEvidenceId
+    : evidence[0]?.evidenceId;
   const selectedEvidence = evidence.find((entry) => entry.evidenceId === selectedId);
+
+  useEffect(() => {
+    if (selectedEvidenceId !== selectedId) {
+      setSelectedEvidenceId(selectedId);
+    }
+  }, [selectedEvidenceId, selectedId]);
 
   useEffect(() => {
     if (selectedEvidenceId) {
@@ -258,13 +272,16 @@ function SafeSourceLink({ language, evidence }: { language: Language; evidence: 
 }
 
 function findEvidence(evidence: readonly EvidenceView[], evidenceId: string): EvidenceView | undefined {
-  return evidence.find((entry) => entry.evidenceId === evidenceId) ?? evidence[0];
+  return evidence.find((entry) => entry.evidenceId === evidenceId);
 }
 
 function sourceStatusLabel(
   entry: EvidenceView | undefined,
-  t: { sourceObserved: string; sourceUnconfirmed: string }
+  t: { sourceObserved: string; sourceUnconfirmed: string; sourceUnavailable: string }
 ): string {
+  if (!entry) {
+    return t.sourceUnavailable;
+  }
   return entry?.sourceStatus === "unconfirmed"
     ? t.sourceUnconfirmed
     : t.sourceObserved;

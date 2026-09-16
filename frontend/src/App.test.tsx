@@ -23,8 +23,13 @@ afterEach(() => {
 });
 
 describe("Decision Research Agent demo console", () => {
-  it("renders the six required operator screens in navigation", () => {
+  it("renders the six required operator screens from a collapsed navigation menu", async () => {
+    const user = userEvent.setup();
     render(<App />);
+
+    const menuSummary = screen.getByText("Demo console screens");
+    expect(menuSummary.closest("details")).not.toHaveAttribute("open");
+    await user.click(menuSummary);
 
     const navigation = screen.getByRole("navigation", {
       name: /demo console screens/i
@@ -40,6 +45,44 @@ describe("Decision Research Agent demo console", () => {
     ].forEach((screenName) => {
       expect(within(navigation).getByRole("button", { name: screenName })).toBeInTheDocument();
     });
+  });
+
+  it("keeps the ordinary default route focused on the brief with technical details collapsed", () => {
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "先试点内部知识助手" })).toBeInTheDocument();
+    expect(document.querySelector(".technical-navigation")).not.toHaveAttribute("open");
+    expect(document.querySelector(".technical-console-view")).not.toHaveAttribute("open");
+    expect(document.querySelector(".technical-live-view")).not.toHaveAttribute("open");
+    expect(document.querySelector(".inspector-technical")).not.toHaveAttribute("open");
+    expect(document.querySelector(".brief-reader-disclosure")).not.toHaveAttribute("open");
+    expect(screen.getByText("完整报告与下载")).toBeInTheDocument();
+  });
+
+  it("keeps the mobile default route compact while retaining the question and recommendation", () => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    try {
+      render(<App />);
+
+      expect(document.querySelector(".stage-rail-menu")).not.toHaveAttribute("open");
+      expect(screen.getByRole("heading", { name: "客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "先试点内部知识助手" })).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: previousWidth });
+    }
+  });
+
+  it("opens the technical navigation and Live controls when Live Backend is selected", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+
+    expect(document.querySelector(".technical-navigation")).toHaveAttribute("open");
+    expect(document.querySelector(".technical-console-view")).toHaveAttribute("open");
+    expect(document.querySelector(".technical-live-view")).toHaveAttribute("open");
   });
 
   it("defaults to Chinese and can switch to English", async () => {
@@ -109,7 +152,7 @@ describe("Decision Research Agent demo console", () => {
     const technicalDisclosure = screen.getByText("Technical console view").closest("details");
     expect(technicalDisclosure).toBeInTheDocument();
     expect(technicalDisclosure).not.toHaveAttribute("open");
-    expect(screen.queryByText("Demo console screens")).not.toBeInTheDocument();
+    expect(document.querySelector(".technical-navigation")).not.toHaveAttribute("open");
   });
 
   it("renders the Evidence review showcase with claim and source judgment", () => {
@@ -144,6 +187,17 @@ describe("Decision Research Agent demo console", () => {
         document.getElementById("research-claim-claim_refund_write_unconfirmed")
       );
     });
+  });
+
+  it("shows the selected source claim when a source is chosen directly", async () => {
+    const user = userEvent.setup();
+    render(<App showcaseState="overview" />);
+
+    await user.click(screen.getByRole("button", { name: /系统接入清单/ }));
+
+    expect(screen.getAllByText("退款写入接入尚未被批准或验证，因此不能承诺 Agent 自动退款。").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("生产环境退款写入集成尚未获批准或验证。").length).toBeGreaterThan(1);
+    expect(screen.queryByText("该来源目前没有关联的 claim。")).not.toBeInTheDocument();
   });
 
   it("keeps the blocked showcase at review-required and not-delivered", () => {

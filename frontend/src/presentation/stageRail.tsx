@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { copy, type Language, screenEnglishNames, screenKeys, type ScreenKey } from "../i18n";
 import type { ShowcaseState } from "./showcaseWorkspace";
 
@@ -21,74 +23,84 @@ export function initialScreenForShowcase(showcaseState: ShowcaseState): ScreenKe
 
 export function StageRail({
   activeScreen,
-  isShowcaseRoute,
+  isLive,
   language,
   onSelectScreen
 }: {
   activeScreen: ScreenKey;
-  isShowcaseRoute: boolean;
+  isLive: boolean;
   language: Language;
   onSelectScreen: (screen: ScreenKey) => void;
 }) {
   const t = copy[language];
   const selectedStage = stageKeys.find((stage) => stageScreens[stage] === activeScreen) ?? "work";
+  const [stageMenuOpen, setStageMenuOpen] = useState(defaultStageMenuOpen);
 
   return (
     <aside className="stage-rail left-rail">
-      <div className="rail-heading">
-        <span className="rail-marker">01</span>
-        <div>
-          <p className="rail-kicker">DRA / DELIVERY PATH</p>
-          <h2>{t.showcase.railLabel}</h2>
+      <details
+        className="stage-rail-menu"
+        open={stageMenuOpen}
+        onToggle={(event) => setStageMenuOpen(event.currentTarget.open)}
+      >
+        <summary className="rail-heading">
+          <span className="rail-marker">01</span>
+          <span>
+            <span className="rail-kicker">DRA / DELIVERY PATH</span>
+            <span className="rail-title">{t.showcase.railLabel}</span>
+          </span>
+          <span className="rail-menu-toggle" aria-hidden="true" />
+        </summary>
+        <nav aria-label="Research flow" className="stage-navigation">
+          {stageKeys.map((stage, index) => (
+            <button
+              className={stage === selectedStage ? "stage-item active" : "stage-item"}
+              key={stage}
+              type="button"
+              onClick={() => onSelectScreen(stageScreens[stage])}
+            >
+              <span className="stage-number">{String(index + 1).padStart(2, "0")}</span>
+              <span>
+                <strong>{t.showcase.stages[stage]}</strong>
+                <small>
+                  {stage === selectedStage
+                    ? t.showcase.stageStatus.current
+                    : t.showcase.stageStatus.nextCheckpoint}
+                </small>
+              </span>
+            </button>
+          ))}
+        </nav>
+        <div className="rail-footer">
+          <span className="rail-footer-dot" aria-hidden="true" />
+          <p>{t.showcase.technicalDescription}</p>
         </div>
-      </div>
-      <nav aria-label="Research flow" className="stage-navigation">
-        {stageKeys.map((stage, index) => (
-          <button
-            className={stage === selectedStage ? "stage-item active" : "stage-item"}
-            key={stage}
-            type="button"
-            onClick={() => onSelectScreen(stageScreens[stage])}
-          >
-            <span className="stage-number">{String(index + 1).padStart(2, "0")}</span>
-            <span>
-              <strong>{t.showcase.stages[stage]}</strong>
-              <small>
-                {stage === selectedStage
-                  ? t.showcase.stageStatus.current
-                  : t.showcase.stageStatus.nextCheckpoint}
-              </small>
-            </span>
-          </button>
-        ))}
-      </nav>
-      <div className="rail-footer">
-        <span className="rail-footer-dot" aria-hidden="true" />
-        <p>{t.showcase.technicalDescription}</p>
-      </div>
+      </details>
 
-      {!isShowcaseRoute && (
-        <details className="technical-disclosure technical-navigation" open>
-          <summary>
-            <span>{t.navLabel}</span>
-            <small>{t.showcase.technicalDescription}</small>
-          </summary>
-          <nav aria-label={t.navLabel}>
-            {screenKeys.map((screenKey) => (
-              <button
-                aria-label={screenEnglishNames[screenKey]}
-                className={screenKey === activeScreen ? "nav-item active" : "nav-item"}
-                key={screenKey}
-                type="button"
-                onClick={() => onSelectScreen(screenKey)}
-              >
-                <span>{t.screens[screenKey]}</span>
-                <small>{screenEnglishNames[screenKey]}</small>
-              </button>
-            ))}
-          </nav>
-        </details>
-      )}
+      <details className="technical-disclosure technical-navigation" open={isLive}>
+        <summary>
+          <span>{t.navLabel}</span>
+          <small>{t.showcase.technicalDescription}</small>
+        </summary>
+        <nav aria-label={t.navLabel}>
+          {screenKeys.map((screenKey) => (
+            <button
+              aria-label={screenEnglishNames[screenKey]}
+              className={screenKey === activeScreen ? "nav-item active" : "nav-item"}
+              key={screenKey}
+              type="button"
+              onClick={() => onSelectScreen(screenKey)}
+            >
+              <span>{t.screens[screenKey]}</span>
+              <small>{screenEnglishNames[screenKey]}</small>
+            </button>
+          ))}
+        </nav>
+      </details>
     </aside>
   );
+}
+
+function defaultStageMenuOpen(): boolean {
+  return typeof window === "undefined" || window.innerWidth > 760;
 }

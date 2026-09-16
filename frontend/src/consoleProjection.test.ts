@@ -147,7 +147,7 @@ describe("console projection source separation", () => {
         artifactId: "customer-support-refund-pilot-decision-brief.md",
         mediaType: "text/markdown",
         revision: { kind: "observed", value: "publication_rev_1" },
-        contentHash: "sha256:35a6d30a26ea65ae940c227177fd901862920e7b7e5853fd098590cdeb747766",
+        contentHash: "sha256:76b47bf7480112c6e2978a092846af3e6d1c725823e41727d14bab05365ec724",
         safety: { kind: "observed", value: "hash verified / unsafe content rejected" },
         content: expect.stringContaining("客服退款自动化试点决策简报")
       }

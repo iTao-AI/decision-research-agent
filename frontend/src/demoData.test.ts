@@ -7,6 +7,16 @@ import {
 } from "./demoData";
 
 describe("research brief static fixture", () => {
+  it("keeps the first claim semantically bounded and aligned with its exact source excerpt", () => {
+    expect(researchBriefFixture.claims[0]).toMatchObject({
+      text: "试点先覆盖政策检索与答复草稿，发送前仍需客服审核。",
+      excerpt: "第一阶段帮助客服人员定位政策并起草答案。答案由客服人员审核后发送。"
+    });
+    expect(researchBriefFixture.report.content).toContain(
+      "1. 试点先覆盖政策检索与答复草稿，发送前仍需客服审核。Evidence: ev_pilot_scope。"
+    );
+  });
+
   it("keeps all claim references, excerpts, and hashes internally consistent", async () => {
     await expect(validateResearchBriefFixture()).resolves.toEqual([]);
   });

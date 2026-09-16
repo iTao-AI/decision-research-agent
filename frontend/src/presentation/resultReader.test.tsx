@@ -17,6 +17,13 @@ afterEach(() => {
 });
 
 describe("ResultReader", () => {
+  it("preserves line breaks in unsupported Markdown paragraphs", () => {
+    const table = "A\n| col | value |\n| --- | --- |\n| one | two |";
+    const { container } = render(<ResultReader language="zh" mode="static" result={observedResult(table)} />);
+
+    expect(container.querySelector(".safe-markdown p")?.textContent).toBe(table);
+  });
+
   it("renders safe formatted and exact raw views without interpreting HTML", async () => {
     const user = userEvent.setup();
     const result = observedResult("# 标题\n\n<script>alert('x')</script>\n\n1. 一项");

@@ -2,15 +2,11 @@
 
 # Decision Research Agent
 
-Decision Research Agent 是一个长任务研究服务：围绕来源证据生成有界、可审查、可交付的决策研究结果。项目使用 LangChain 作为 Agent Framework，DeepAgents 作为研究 harness，LangGraph 作为 durable workflow runtime，LangSmith 作为隐私优先诊断工具。
+Decision Research Agent 把开放研究问题整理成带来源依据的研究报告。调用方可以通过 CLI 或 API 发起任务、观察进度，并取回后端确认可交付的报告。
 
-术语契约：
+默认 showcase 是一个具体的合成客服试点案例：`客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`。它建议先试点内部知识助手，对比 Agent 自动处理退款，并让读者查看三条本地全文来源及其精确的 claim-to-excerpt 链接，再下载报告。
 
-- LangChain = Agent Framework
-- DeepAgents = research harness
-- LangGraph = durable workflow runtime
-- LangSmith = privacy-first tracing/evaluation
-- Application DB = business authority
+Static Demo 是确定性的本地入口；Live Backend 接受一个有界的用户自定义通用研究问题，并消费现有 API contract 的 service-owned state。两者使用同一个报告阅读器；该案例不代表真实客户试点、模型评测、生产部署或 business-impact claim。
 
 当前仓库、运行时配置、Tool Client、Docker 默认值和 health service ID 均使用 `decision-research-agent`。
 
@@ -20,11 +16,8 @@ Decision Research Agent 把开放研究问题转化为有来源支撑、可复�
 和有界 canonical result。
 
 Agent Research Operations Console 只负责把这条路径讲清楚，不成为业务事实源。
-Static Demo 是确定性的；可选 Live Backend 接受一个有界的用户自定义通用研究问题，
-并只消费现有 API contract 的 service-owned state。问题不能为空，且最多为
-4096 UTF-8 bytes。
-
-默认 showcase 是一个具体的合成案例：`客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`。它建议先试点内部知识助手，对比 Agent 自动处理退款，并提供三条本地可读全文来源及精确的 claim-to-excerpt 链接。Static Demo 与 Live Backend 使用同一个报告阅读器；已交付结果可以阅读 Markdown、切换原文并按原始 UTF-8 bytes 下载。该案例不代表真实客户试点、模型评测、生产部署或 business-impact claim。
+问题不能为空，且最多为 4096 UTF-8 bytes；已交付结果可以阅读 Markdown、切换
+原文并按原始 UTF-8 bytes 下载。
 
 ## 当前默认分支状态
 
@@ -129,6 +122,14 @@ dev -- --host 127.0.0.1`，再打开 `http://127.0.0.1:5173`。完整的
 verification、publication 和 result authority 分离。终态使用 fenced
 finalization；release evidence 由显式 tests、proof scripts、benchmark reports
 和 feature-flag limits 约束。
+
+术语契约：
+
+- LangChain = Agent Framework
+- DeepAgents = research harness
+- LangGraph = durable workflow runtime
+- LangSmith = privacy-first tracing/evaluation
+- Application DB = business authority
 
 ## 架构
 

@@ -94,18 +94,18 @@ describe("console projection source separation", () => {
       service: { kind: "observed", value: "decision-research-agent" },
       health: { kind: "observed", value: "unavailable" },
       mode: "demo data",
-      runId: { kind: "observed", value: "run_demo_talent_2026_06_29" }
+      runId: { kind: "observed", value: "run_demo_support_refund_normal" }
     });
     expect(projection.command.run).toMatchObject({
       kind: "observed",
       value: {
-        runId: "run_demo_talent_2026_06_29",
-        threadId: "demo-thread-interview-console",
-        profileId: "talent-hiring-signal",
+        runId: "run_demo_support_refund_normal",
+        threadId: "demo-thread-support-refund",
+        profileId: "generic-research",
         stateVersion: 17,
         primarySegmentId: {
           kind: "observed",
-          value: "run_demo_talent_2026_06_29_seg_final"
+          value: "run_demo_support_refund_normal_seg_final"
         },
         reviewStatus: { kind: "observed", value: "approved" }
       }
@@ -119,10 +119,10 @@ describe("console projection source separation", () => {
     expect(observedValue(projection.evidence)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          evidenceId: "ev_001",
+          evidenceId: "ev_pilot_scope",
           citedBy: {
             kind: "observed",
-            value: ["claim_candidate_signal", "finding_market_signal"]
+            value: ["claim_bounded_assistant"]
           },
           verificationStatus: "verified"
         })
@@ -130,26 +130,26 @@ describe("console projection source separation", () => {
     );
     expect(projection.review).toMatchObject({
       status: { kind: "observed", value: "approved" },
-      decisionId: { kind: "observed", value: "decision_demo_approved_001" },
+      decisionId: { kind: "observed", value: "decision_demo_support_refund_approved" },
       stateVersion: { kind: "observed", value: 17 },
       idempotency: { kind: "observed", value: "accepted replay-safe decision" }
     });
     expect(observedValue(projection.verification)).toEqual({
       source: "static",
-      snapshot: "verification_snapshot_rev_3",
+      snapshot: "verification_snapshot_support_refund_v1",
       baselineOrigin: "declared_fixture",
       status: "verified",
       publicationFreshness: "current"
     });
     expect(observedValue(projection.result)).toMatchObject({
-      runId: "run_demo_talent_2026_06_29",
+      runId: "run_demo_support_refund_normal",
       artifact: {
-        artifactId: "decision-brief.md",
+        artifactId: "customer-support-refund-pilot-decision-brief.md",
         mediaType: "text/markdown",
-        revision: { kind: "observed", value: "publication_rev_3" },
-        contentHash: "sha256:bb64e1d4f8d2a9c7",
+        revision: { kind: "observed", value: "publication_rev_1" },
+        contentHash: "sha256:35a6d30a26ea65ae940c227177fd901862920e7b7e5853fd098590cdeb747766",
         safety: { kind: "observed", value: "hash verified / unsafe content rejected" },
-        content: expect.stringContaining("Canonical Decision Brief")
+        content: expect.stringContaining("客服退款自动化试点决策简报")
       }
     });
     expect(projection.architecture.nodes).toContain("Application DB Authority");
@@ -170,12 +170,23 @@ describe("console projection source separation", () => {
         deliveryStatus: { kind: "observed", value: "not_delivered" }
       }
     });
-    expect(observedValue(projection.evidence)).toMatchObject([
-      expect.objectContaining({
-        citationStatus: { kind: "observed", value: "citation_invalid" },
-        verificationStatus: "citation_invalid"
-      })
-    ]);
+    expect(observedValue(projection.evidence)).toHaveLength(3);
+    expect(observedValue(projection.evidence)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          evidenceId: "ev_system_access",
+          citationStatus: { kind: "observed", value: "access_unconfirmed" },
+          verificationStatus: "access_unconfirmed",
+          citedBy: { kind: "observed", value: [] }
+        }),
+        expect.objectContaining({
+          evidenceId: "ev_refund_policy",
+          citationStatus: { kind: "observed", value: "access_unconfirmed" },
+          verificationStatus: "access_unconfirmed",
+          citedBy: { kind: "observed", value: [] }
+        })
+      ])
+    );
     expect(projection.result).toEqual({ kind: "not_applicable" });
     expectDeepFrozen(projection);
   });
@@ -196,7 +207,7 @@ describe("console projection source separation", () => {
         schemaVersion: "dra.run-failure-cause.v1",
         phase: "execution",
         code: "execution_error",
-        recordedAt: "2026-07-16T08:02:00Z"
+        recordedAt: "2026-09-16T00:00:00Z"
       }
     });
     expect(blocked.command.run).toMatchObject({
@@ -445,10 +456,10 @@ function observedValue<T>(observation: Observation<T>): T {
 function expectNoStaticRunIdentifiers(value: unknown) {
   const serialized = JSON.stringify(value);
   for (const forbidden of [
-    "run_demo_talent_2026_06_29",
-    "ev_001",
-    "decision_demo_approved_001",
-    "decision-brief.md"
+    "run_demo_support_refund_normal",
+    "ev_pilot_scope",
+    "decision_demo_support_refund_approved",
+    "customer-support-refund-pilot-decision-brief.md"
   ]) {
     expect(serialized).not.toContain(forbidden);
   }

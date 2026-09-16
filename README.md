@@ -29,6 +29,8 @@ Backend mode accepts one bounded user-authored generic research question and
 consumes service-owned state through the existing API contract. The question is
 nonblank and at most 4096 UTF-8 bytes.
 
+The default showcase is a concrete synthetic case: `客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？` It recommends starting with an internal knowledge assistant, compares that option with automated refund handling, and exposes three local full-text source fixtures with exact claim-to-excerpt links. Static Demo and Live Backend use the same report reader; a delivered result can be viewed as formatted Markdown or raw text and downloaded with its original UTF-8 bytes. The case is not a real customer trial, model evaluation, production deployment, or business-impact claim.
+
 ## Current Default Branch Status
 
 Decision Research Agent v0.1.9 is the current published stable release.
@@ -48,9 +50,11 @@ or business-impact claim. The historical `v0.1.8` release remains unchanged.
 ## Showcase Frames
 
 The three frames below are deterministic, synthetic Static Demo states captured
-from the same frontend implementation. They show the normal path, the
-claim/source review checkpoint, and a blocked state that remains
-`review_required` and `not_delivered`.
+from the same frontend implementation. They use the refund-automation question
+above to show a report-first normal path, the claim/source review checkpoint,
+and a blocked same-case run whose policy access remains unconfirmed. The
+blocked run stays `review_required` and `not_delivered`; it has no canonical
+result and no download action.
 
 The blocked frame makes one bounded diagnostic chain visible: the first
 displayed failing lifecycle step is `tool_failed`; the existing durable
@@ -107,9 +111,10 @@ python tools/decision_research_agent_tool.py run \
   --query "Compare the evidence behind the proposed decision" \
   --wait \
   --result
-python tools/decision_research_agent_tool.py result \
-  --run-id "$RUN_ID"
 ```
+
+The final `run --wait --result` command waits for the run and retrieves the
+service-owned canonical result, so a separate unset `$RUN_ID` is not needed.
 
 For the deterministic frontend path, run `cd frontend && npm ci && npm run dev
 -- --host 127.0.0.1`, then open `http://127.0.0.1:5173`. The detailed
@@ -150,8 +155,8 @@ presentation and non-authority boundaries.
 Evaluation remains provider-free where the repository says so, and every
 benchmark or release record keeps its own evidence boundary. Start with the
 [evaluation references](docs/reference/agent-evaluation-regression-gate.md),
-[evidence index](docs/evidence/README.md), the current
-the current published [v0.1.9 Release Notes](docs/releases/v0.1.9.md), and the
+[evidence index](docs/evidence/README.md), the current published
+[v0.1.9 Release Notes](docs/releases/v0.1.9.md), and the
 immutable historical stable [v0.1.8 release notes](docs/releases/v0.1.8.md);
 historical release records are not rewritten by the showcase.
 

@@ -12,11 +12,17 @@ import {
   type ConsoleProjection,
   type StaticShowcaseScenario
 } from "./consoleProjection";
+import { researchBriefFixture } from "./demoData";
 import { copy, type Language, screenEnglishNames, type ScreenKey } from "./i18n";
 import { type LiveRunOptions, useLiveRun } from "./useLiveRun";
 import { JudgmentSidebar, LiveJudgmentSidebar } from "./presentation/judgmentSidebar";
 import { initialScreenForShowcase, StageRail } from "./presentation/stageRail";
-import { LiveObservationSurface, ShowcaseWorkspace, type ShowcaseState } from "./presentation/showcaseWorkspace";
+import {
+  LiveObservationSurface,
+  ShowcaseWorkspace,
+  type ShowcaseState
+} from "./presentation/showcaseWorkspace";
+import type { EvidenceSelection } from "./presentation/evidenceSourcePanel";
 import {
   ArchitectureMode,
   CanonicalResult,
@@ -66,8 +72,15 @@ export default function App({
   );
   const isStaticProjection = projection.source === "static";
 
-  const activeTitle = t.screens[activeScreen];
   const activeStatement = t.statements[activeScreen];
+  const [staticSelection, setStaticSelection] = useState<EvidenceSelection>(() => ({
+    evidenceId:
+      (showcaseState === "blocked"
+        ? researchBriefFixture.sources[1]
+        : researchBriefFixture.sources[0]
+      ).evidenceId,
+    focus: "none"
+  }));
   const screenSummary = useMemo(() => buildScreenSummary(activeScreen), [activeScreen]);
 
   useEffect(() => {
@@ -79,8 +92,8 @@ export default function App({
       <header className="top-bar">
         <div>
           <p className="eyebrow">{t.eyebrow}</p>
-          <h1>{isShowcaseRoute ? t.showcase.workspaceLabel : activeTitle}</h1>
-          <p className="subtitle">{t.subtitle}</p>
+          <h1>{t.showcase.headerTitle}</h1>
+          <p className="subtitle">{isStaticProjection ? t.showcase.headerDescription : t.subtitle}</p>
         </div>
         <div className="top-actions" aria-label={t.language}>
           <span>{t.language}</span>
@@ -133,6 +146,21 @@ export default function App({
                 language={language}
                 projection={projection}
                 showcaseState={showcaseState}
+                selection={staticSelection}
+                onReturnToClaim={(claimId) =>
+                  setStaticSelection((current) => ({
+                    ...current,
+                    claimId,
+                    focus: "claim"
+                  }))
+                }
+                onSelectEvidence={(evidenceId, claimId) =>
+                  setStaticSelection({
+                    evidenceId,
+                    ...(claimId ? { claimId } : {}),
+                    focus: "detail"
+                  })
+                }
               />
             </section>
           ) : (
@@ -214,6 +242,17 @@ export default function App({
             language={language}
             projection={projection}
             showcaseState={showcaseState}
+            selection={staticSelection}
+            onReturnToClaim={(claimId) =>
+              setStaticSelection((current) => ({
+                ...current,
+                claimId,
+                focus: "claim"
+              }))
+            }
+            onSelectEvidence={(evidenceId) =>
+              setStaticSelection({ evidenceId, focus: "detail" })
+            }
           />
         ) : (
           <LiveJudgmentSidebar language={language} projection={projection} />
@@ -416,8 +455,8 @@ function LiveDemoPanel({
         {projection.source === "live" && projection.result.kind === "observed" ? (
           <article className="live-result-card">
             <strong>{t.live.resultPreview}</strong>
-            <p>{projection.result.value.artifact.artifactId}</p>
-            <pre>{projection.result.value.artifact.content}</pre>
+            <p>{t.showcase.live.resultObserved}</p>
+            <small>{t.reader.exactBytes}</small>
           </article>
         ) : (
           <article>

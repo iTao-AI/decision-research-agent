@@ -94,6 +94,9 @@ export type LifecycleProjection = Readonly<{
 export type EvidenceView = Readonly<{
   evidenceId: string;
   sourceIdentity: string;
+  sourceTitle?: string;
+  sourceContent?: string;
+  sourceStatus?: string;
   sourceUrl: Observation<string>;
   fingerprint: string;
   citationStatus: Observation<string>;
@@ -220,6 +223,9 @@ export function buildStaticConsoleProjection(
       Object.freeze({
         evidenceId: entry.id,
         sourceIdentity: entry.source,
+        sourceTitle: entry.sourceTitle,
+        sourceContent: entry.sourceContent,
+        sourceStatus: entry.availability,
         sourceUrl: unsupported<string>(),
         fingerprint: entry.fingerprint,
         citationStatus: isBlocked ? observed(entry.verification) : unsupported<string>(),

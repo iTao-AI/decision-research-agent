@@ -24,6 +24,8 @@ Static Demo 是确定性的；可选 Live Backend 接受一个有界的用户自
 并只消费现有 API contract 的 service-owned state。问题不能为空，且最多为
 4096 UTF-8 bytes。
 
+默认 showcase 是一个具体的合成案例：`客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`。它建议先试点内部知识助手，对比 Agent 自动处理退款，并提供三条本地可读全文来源及精确的 claim-to-excerpt 链接。Static Demo 与 Live Backend 使用同一个报告阅读器；已交付结果可以阅读 Markdown、切换原文并按原始 UTF-8 bytes 下载。该案例不代表真实客户试点、模型评测、生产部署或 business-impact claim。
+
 ## 当前默认分支状态
 
 Decision Research Agent v0.1.9 是当前已发布的 stable release。
@@ -43,8 +45,10 @@ deployment、provider-backed research 或 business-impact claim。历史
 ## Showcase Frames
 
 以下三张图来自同一个 frontend implementation 的 deterministic synthetic
-Static Demo，依次展示正常路径、claim/source review checkpoint，以及仍保持
-`review_required`、`not_delivered` 的 blocked state。
+Static Demo，围绕上面的退款自动化问题，依次展示报告优先的正常路径、
+claim/source review checkpoint，以及同一案例中 policy access 尚未确认、仍保持
+`review_required`、`not_delivered` 的 blocked state。blocked run 没有 canonical
+result，也没有下载操作。
 
 blocked frame 让一条有界诊断链可见：首个显示的失败生命周期步骤是
 `tool_failed`；现有 durable failure-cause observation 是
@@ -97,9 +101,10 @@ python tools/decision_research_agent_tool.py run \
   --query "Compare the evidence behind the proposed decision" \
   --wait \
   --result
-python tools/decision_research_agent_tool.py result \
-  --run-id "$RUN_ID"
 ```
+
+最后的 `run --wait --result` 会等待运行并获取 service-owned canonical result，
+不需要另行设置未定义的 `$RUN_ID`。
 
 要运行 deterministic frontend path，可执行 `cd frontend && npm ci && npm run
 dev -- --host 127.0.0.1`，再打开 `http://127.0.0.1:5173`。完整的

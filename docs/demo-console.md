@@ -1,24 +1,32 @@
 # Agent Research Operations Console
 
 The React-based research run demonstration console explains Decision Research
-Agent as an operations system rather than a chatbot. It can create a
-ResearchRun, observe its lifecycle, and retrieve the canonical result without
-owning business authority. It has two modes:
+Agent as an operations system rather than a chatbot. Its primary surface is a
+research brief: a concrete synthetic question, a recommended decision, the
+comparison criteria, supporting findings, and the exact source material behind
+each claim. It can create a ResearchRun, observe its lifecycle, and retrieve
+the canonical result without owning business authority. It has two modes:
 
 - **Static Demo** renders a deterministic bundled snapshot and requires no
-  backend, provider, or credentials.
+  backend, provider, or credentials. The default case asks `客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`, recommends an internal knowledge assistant, and exposes three local full-text sources with exact claim-to-excerpt links.
 - **Live Backend** accepts one bounded user-authored generic research question,
   creates one generic ResearchRun against a local backend, polls its bounded
   status, and renders the canonical result returned by
   `GET /api/runs/{run_id}/result`. It also allows a retained known `run_id` to
   be re-entered after a page refresh for health-gated GET-only observation.
 
+Both modes use the same report reader. An observed result can be read as safe
+formatted Markdown, switched to an opt-in raw-text view, and downloaded with
+the exact UTF-8 content bytes. A blocked Static Demo run uses the same case and
+source boundary with policy access unconfirmed; it remains
+`review_required`/`not_delivered` and offers no canonical result or download.
+
 The console is a consumer of service-owned state. It does not write review or
 verification decisions, create database authority, or bypass result gates.
 The question draft and temporary create intent are browser-session-only; the
-service-owned status and result authority remain outside the browser. This
-current-main input increment is current-main only; stable `v0.1.8` remains
-unchanged.
+service-owned status and result authority remain outside the browser. The
+bounded Live Backend research question input is included in the released
+`v0.1.9`; stable `v0.1.8` remains unchanged as a historical release.
 
 ## Showcase Frames
 
@@ -26,13 +34,15 @@ The public Static Demo has three deterministic capture states under
 [`docs/assets/console-showcase`](assets/console-showcase/):
 
 - [`research-workspace-overview.png`](assets/console-showcase/research-workspace-overview.png)
-  shows the question, plan/tool work, frozen Evidence, review, and canonical
-  delivery path.
+  shows the question, decision brief, comparison, supporting findings, frozen
+  Evidence, and canonical delivery path.
 - [`research-evidence-review.png`](assets/console-showcase/research-evidence-review.png)
-  makes claim/source/citation judgment visible before delivery.
+  makes claim/source/citation judgment visible and lets the operator open the
+  exact local source behind a finding.
 - [`research-blocked-recovery.png`](assets/console-showcase/research-blocked-recovery.png)
-  shows insufficient Evidence, invalid citation, or tool failure held at
-  `review_required` and `not_delivered`.
+  shows the same case with policy access unconfirmed, held at
+  `review_required` and `not_delivered` without a delivered/downloadable
+  result.
 
 Open the corresponding deterministic routes in Static Demo:
 
@@ -45,8 +55,7 @@ Open the corresponding deterministic routes in Static Demo:
 These are synthetic/demo fixtures, not live provider research recordings or
 production data. The [manifest](assets/console-showcase/manifest.json) records
 the source implementation commit/tree, route/state, `zh-CN` locale,
-1600x1000 viewport, disclosure, and SHA-256 values. It intentionally refers to
-the stable implementation commit before the asset commit. Its tracked frontend
+1600x1000 viewport, disclosure, and SHA-256 values. Its tracked frontend
 capture fingerprint canonicalizes only the release `version` fields in
 `package.json` and `package-lock.json`; dependency, build configuration, source,
 and public-asset changes still require a new capture fingerprint and provenance.

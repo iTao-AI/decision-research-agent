@@ -4,7 +4,12 @@ import {
 } from "../consoleProjection";
 import { copy, type Language } from "../i18n";
 import { observationLabel } from "./observation";
-import type { ShowcaseState } from "./showcaseWorkspace";
+import {
+  EvidenceSourceSidebar,
+  LiveEvidenceSidebar,
+  type ShowcaseState
+} from "./showcaseWorkspace";
+import type { EvidenceSelection } from "./evidenceSourcePanel";
 
 const authorityBadges = [
   "Application DB",
@@ -17,12 +22,18 @@ export function JudgmentSidebar({
   isShowcaseRoute,
   language,
   projection,
-  showcaseState
+  showcaseState,
+  selection,
+  onReturnToClaim,
+  onSelectEvidence
 }: {
   isShowcaseRoute: boolean;
   language: Language;
   projection: ConsoleProjection;
   showcaseState: ShowcaseState;
+  selection: EvidenceSelection;
+  onReturnToClaim: (claimId: string) => void;
+  onSelectEvidence: (evidenceId: string) => void;
 }) {
   const t = copy[language];
   const blocked = showcaseState === "blocked";
@@ -31,6 +42,13 @@ export function JudgmentSidebar({
 
   return (
     <aside className="inspector judgment-sidebar">
+      <EvidenceSourceSidebar
+        language={language}
+        projection={projection}
+        selection={selection}
+        onReturnToClaim={onReturnToClaim}
+        onSelectEvidence={onSelectEvidence}
+      />
       <section className="judgment-panel judgment-primary">
         <p className="sidebar-kicker">{t.showcase.judgmentLabel}</p>
         <div className="judgment-heading">
@@ -118,6 +136,7 @@ export function LiveJudgmentSidebar({
 
   return (
     <aside className="inspector judgment-sidebar">
+      <LiveEvidenceSidebar language={language} projection={projection} />
       <section className="judgment-panel judgment-primary">
         <p className="sidebar-kicker">{t.showcase.judgmentLabel}</p>
         <div className="judgment-heading">

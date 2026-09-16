@@ -36,9 +36,19 @@ The first shell presents one five-stage research path:
 The visible layout is intentionally ordered as:
 
 1. **Stage rail** — the current checkpoint and the next bounded handoff.
-2. **Research work surface** — the question, plan/tool work, Evidence, and
-   normal or blocked delivery state.
+2. **Research work surface** — the question, decision brief, comparison,
+   supporting findings, exact source excerpts, and normal or blocked delivery
+   state.
 3. **Judgment sidebar** — Evidence sufficiency, review state, and delivery gate.
+
+The normal Static Demo opens on a concrete synthetic customer-support question:
+`客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？` The
+decision brief recommends an internal knowledge assistant, compares it with
+automated refund handling, and exposes three local full-text source fixtures.
+Each finding carries an Evidence ID and an exact source excerpt; the source
+sidebar can return focus to the referring claim. Static Demo and Live Backend
+share the same report reader, with formatted Markdown, opt-in raw text, and an
+exact-byte download for observed results.
 
 The technical disclosure retains the six operator screens:
 
@@ -59,9 +69,10 @@ research path.
 
 - Desktop-first, because the primary use case is a live technical demo.
 - Three-column shell: stage rail, research work surface, judgment sidebar.
-- Static Demo places the selected screen before Live Backend controls so the
-  1280x720 recording viewport leads with the current research concept. Live
-  Backend mode promotes its controls ahead of the selected screen.
+- Static Demo places the research brief before Live Backend controls so the
+  1280x720 recording viewport leads with the current decision concept. Live
+  Backend mode promotes its observed result and controls ahead of secondary
+  technical details.
 - The right judgment sidebar carries persistent Evidence, review, delivery,
   authority, and explicit UI-boundary notes.
 - Mobile only needs to remain readable; it is not the primary experience.
@@ -83,7 +94,7 @@ Color tokens:
 | Muted | `#6B7280` | Secondary text |
 | Hairline | `#D8D2C4` | Borders |
 | Panel | `#FFFDF8` | Panels and cards |
-| Dark Panel | `#111827` | CLI and Markdown preview |
+| Dark Panel | `#111827` | CLI and raw report view |
 | Accent Blue | `#2563EB` | Selection and links |
 | Evidence Cyan | `#0891B2` | Evidence refs |
 | Review Amber | `#D97706` | Review required / unavailable |
@@ -112,6 +123,12 @@ Colors represent state, not decoration.
 - `AuthorityBadge`: distinguishes Application DB, LangGraph checkpoint,
   LangSmith diagnostics, and canonical result endpoint authority.
 - `BoundaryCallout`: states what the demo console does not do.
+- `ResultReader`: one report-first reader for Static Demo and observed Live
+  Backend results, with safe formatted Markdown, opt-in raw text, and exact
+  UTF-8 download.
+- `EvidenceSourcePanel`: keeps local fixture source details and claim excerpts
+  linked in Static Demo, while Live Backend renders only observed source fields
+  and safe HTTP(S) links.
 - `CommandSnippet`: shows the CLI golden path:
 
 ```bash
@@ -138,9 +155,15 @@ python tools/decision_research_agent_tool.py run \
 - Showcase routes `/?showcase=overview`, `/?showcase=evidence`, and
   `/?showcase=blocked` select deterministic presentation fixtures only; they do
   not add backend or API states.
-- The blocked fixture keeps insufficient Evidence, invalid citation, or tool
-  failure at `review_required` and `not_delivered`; it never fabricates a
-  canonical result.
+- The normal fixture is a synthetic refund-automation case with three local
+  full-text sources, exact claim-to-excerpt references, and a report hash
+  validated from the displayed UTF-8 bytes.
+- The blocked fixture keeps the same case question and source boundary while
+  marking policy access unconfirmed. It stays at `review_required` and
+  `not_delivered`; it never fabricates a canonical result or download.
+- Static source text is labeled as local fixture material. Live source details
+  render only observed identity, verification, fingerprint, citation, and safe
+  HTTP(S) links; the UI does not infer excerpts or claim links from report text.
 - Live Backend mode may call `/health`, `POST /api/runs`,
   `/api/runs/{run_id}`, and `/api/runs/{run_id}/result`.
 - Live Backend accepts one bounded user-authored generic research question. The
@@ -205,8 +228,9 @@ Live Backend remains loopback-only and does not accept or store API
 credentials. The console does not own review or verification authority and
 does not prove durable browser intent, production deployment, exactly-once
 execution, or live-provider quality. It consumes bounded service contracts and
-does not become a business authority. This current-main input increment is
-current-main only; stable `v0.1.8` remains unchanged.
+does not become a business authority. The bounded Live Backend research
+question input is included in the released `v0.1.9`; stable `v0.1.8` remains
+unchanged as a historical release.
 
 ## Explicit Non-Goals
 

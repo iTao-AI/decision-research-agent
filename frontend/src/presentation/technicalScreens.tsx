@@ -356,8 +356,10 @@ export function CanonicalResult({
             ]}
           />
         </article>
-        <article className="markdown-preview">
-          <pre>{result.artifact.content}</pre>
+        <article className="ledger-card">
+          <h3>{t.reader.title}</h3>
+          <p className="note">{t.reader.exactBytes}</p>
+          <p className="note">{t.reader.technicalDetails}</p>
         </article>
       </div>
     );

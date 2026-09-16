@@ -2,18 +2,21 @@
 
 # Decision Research Agent
 
-Decision Research Agent is a long-running research service that turns
-source-backed findings into bounded, reviewable decision artifacts. It uses
-LangChain as the agent framework, DeepAgents as the research harness, LangGraph
-as the durable workflow runtime, and LangSmith as privacy-first diagnostics.
+Decision Research Agent turns open research questions into source-backed
+research reports. Callers can start a run through the CLI or API, observe
+progress, and retrieve a report the backend has confirmed deliverable.
 
-Terminology contract:
+The default showcase is a concrete synthetic customer-support case:
+`客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`. It
+recommends starting with an internal knowledge assistant, compares that option
+with automated refund handling, and lets a reader inspect three local full-text
+sources and their exact claim-to-excerpt links before downloading the report.
 
-- LangChain = Agent Framework
-- DeepAgents = research harness
-- LangGraph = durable workflow runtime
-- LangSmith = privacy-first tracing/evaluation
-- Application DB = business authority
+Static Demo is deterministic and local. Live Backend accepts one bounded
+user-authored generic research question and consumes service-owned state through
+the existing API contract. Both use the same report reader; this case is not a
+real customer trial, model evaluation, production deployment, or business-impact
+claim.
 
 The active repository, runtime configuration, Tool Client, Docker defaults, and
 health service identifier use `decision-research-agent`.
@@ -24,10 +27,9 @@ Decision Research Agent turns an open research question into source-backed,
 reviewable Evidence and a bounded canonical result.
 
 The Agent Research Operations Console makes that path legible without becoming
-the business authority. Its Static Demo is deterministic; its optional Live
-Backend mode accepts one bounded user-authored generic research question and
-consumes service-owned state through the existing API contract. The question is
-nonblank and at most 4096 UTF-8 bytes.
+the business authority. The question bound is nonblank and at most 4096 UTF-8
+bytes; a delivered result can be viewed as formatted Markdown or raw text and
+downloaded with its original UTF-8 bytes.
 
 ## Current Default Branch Status
 
@@ -48,9 +50,11 @@ or business-impact claim. The historical `v0.1.8` release remains unchanged.
 ## Showcase Frames
 
 The three frames below are deterministic, synthetic Static Demo states captured
-from the same frontend implementation. They show the normal path, the
-claim/source review checkpoint, and a blocked state that remains
-`review_required` and `not_delivered`.
+from the same frontend implementation. They use the refund-automation question
+above to show a report-first normal path, the claim/source review checkpoint,
+and a blocked same-case run whose policy access remains unconfirmed. The
+blocked run stays `review_required` and `not_delivered`; it has no canonical
+result and no download action.
 
 The blocked frame makes one bounded diagnostic chain visible: the first
 displayed failing lifecycle step is `tool_failed`; the existing durable
@@ -107,9 +111,10 @@ python tools/decision_research_agent_tool.py run \
   --query "Compare the evidence behind the proposed decision" \
   --wait \
   --result
-python tools/decision_research_agent_tool.py result \
-  --run-id "$RUN_ID"
 ```
+
+The final `run --wait --result` command waits for the run and retrieves the
+service-owned canonical result, so a separate unset `$RUN_ID` is not needed.
 
 For the deterministic frontend path, run `cd frontend && npm ci && npm run dev
 -- --host 127.0.0.1`, then open `http://127.0.0.1:5173`. The detailed
@@ -138,6 +143,14 @@ authority. Terminal states use fenced finalization, while release evidence is
 bounded by explicit tests, proof scripts, benchmark reports, and feature-flag
 limits.
 
+Terminology contract:
+
+- LangChain = Agent Framework
+- DeepAgents = research harness
+- LangGraph = durable workflow runtime
+- LangSmith = privacy-first tracing/evaluation
+- Application DB = business authority
+
 ## Architecture
 
 The [Architecture Deep Dive](docs/architecture.md) maps Interfaces, Application
@@ -150,8 +163,8 @@ presentation and non-authority boundaries.
 Evaluation remains provider-free where the repository says so, and every
 benchmark or release record keeps its own evidence boundary. Start with the
 [evaluation references](docs/reference/agent-evaluation-regression-gate.md),
-[evidence index](docs/evidence/README.md), the current
-the current published [v0.1.9 Release Notes](docs/releases/v0.1.9.md), and the
+[evidence index](docs/evidence/README.md), the current published
+[v0.1.9 Release Notes](docs/releases/v0.1.9.md), and the
 immutable historical stable [v0.1.8 release notes](docs/releases/v0.1.8.md);
 historical release records are not rewritten by the showcase.
 

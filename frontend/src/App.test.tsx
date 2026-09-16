@@ -23,8 +23,13 @@ afterEach(() => {
 });
 
 describe("Decision Research Agent demo console", () => {
-  it("renders the six required operator screens in navigation", () => {
+  it("renders the six required operator screens from a collapsed navigation menu", async () => {
+    const user = userEvent.setup();
     render(<App />);
+
+    const menuSummary = screen.getByText("Demo console screens");
+    expect(menuSummary.closest("details")).not.toHaveAttribute("open");
+    await user.click(menuSummary);
 
     const navigation = screen.getByRole("navigation", {
       name: /demo console screens/i
@@ -42,11 +47,49 @@ describe("Decision Research Agent demo console", () => {
     });
   });
 
+  it("keeps the ordinary default route focused on the brief with technical details collapsed", () => {
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "先试点内部知识助手" })).toBeInTheDocument();
+    expect(document.querySelector(".technical-navigation")).not.toHaveAttribute("open");
+    expect(document.querySelector(".technical-console-view")).not.toHaveAttribute("open");
+    expect(document.querySelector(".technical-live-view")).not.toHaveAttribute("open");
+    expect(document.querySelector(".inspector-technical")).not.toHaveAttribute("open");
+    expect(document.querySelector(".brief-reader-disclosure")).not.toHaveAttribute("open");
+    expect(screen.getByText("完整报告与下载")).toBeInTheDocument();
+  });
+
+  it("keeps the mobile default route compact while retaining the question and recommendation", () => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    try {
+      render(<App />);
+
+      expect(document.querySelector(".stage-rail-menu")).not.toHaveAttribute("open");
+      expect(screen.getByRole("heading", { name: "客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "先试点内部知识助手" })).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: previousWidth });
+    }
+  });
+
+  it("opens the technical navigation and Live controls when Live Backend is selected", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+
+    expect(document.querySelector(".technical-navigation")).toHaveAttribute("open");
+    expect(document.querySelector(".technical-console-view")).toHaveAttribute("open");
+    expect(document.querySelector(".technical-live-view")).toHaveAttribute("open");
+  });
+
   it("defaults to Chinese and can switch to English", async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "研究运行演示控制台" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "把研究结论和依据放在一起" })).toBeInTheDocument();
     expect(screen.getByText("Agent-first / human-governed / Evidence-governed")).toBeInTheDocument();
     expect(screen.getByText("静态快照已启用")).toBeInTheDocument();
     expect(screen.getByText(/Static Demo 和有界 Live Backend consumer/)).toBeInTheDocument();
@@ -55,7 +98,7 @@ describe("Decision Research Agent demo console", () => {
 
     await user.click(screen.getByRole("button", { name: "English" }));
 
-    expect(screen.getByRole("heading", { name: "Agent Research Operations Console" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Put the research conclusion beside its evidence" })).toBeInTheDocument();
     expect(screen.getByText("Agent-first / human-governed / Evidence-governed")).toBeInTheDocument();
     expect(screen.getByText(/Static fallback plus bounded Live Backend consumer/)).toBeInTheDocument();
     expect(screen.queryByText(/read-only operator console/i)).not.toBeInTheDocument();
@@ -109,30 +152,64 @@ describe("Decision Research Agent demo console", () => {
     const technicalDisclosure = screen.getByText("Technical console view").closest("details");
     expect(technicalDisclosure).toBeInTheDocument();
     expect(technicalDisclosure).not.toHaveAttribute("open");
-    expect(screen.queryByText("Demo console screens")).not.toBeInTheDocument();
+    expect(document.querySelector(".technical-navigation")).not.toHaveAttribute("open");
   });
 
   it("renders the Evidence review showcase with claim and source judgment", () => {
     render(<App showcaseState="evidence" />);
 
     expect(screen.getAllByText("Claim / source 复核").length).toBeGreaterThan(0);
-    expect(screen.getByText("已交付结果保留交付前复核记录")).toBeInTheDocument();
+    expect(screen.getAllByText("退款写入接入尚未被批准或验证，因此不能承诺 Agent 自动退款。").length).toBeGreaterThan(0);
     expect(screen.getAllByText("citation_status").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Canonical delivery").length).toBeGreaterThan(0);
-    expect(screen.getByText("canonical result 已交付")).toBeInTheDocument();
-    expect(screen.getByText("正常路径 · 已交付")).toBeInTheDocument();
+    expect(screen.getAllByText("静态案例 · 已交付").length).toBeGreaterThan(0);
+    expect(screen.getByText("研究报告")).toBeInTheDocument();
     expect(screen.queryByText("核验后再交付")).not.toBeInTheDocument();
     expect(screen.queryByText("before delivery")).not.toBeInTheDocument();
+  });
+
+  it("links a claim to its exact source excerpt and returns focus to the claim", async () => {
+    const user = userEvent.setup();
+    render(<App showcaseState="overview" />);
+
+    await user.click(screen.getAllByRole("button", { name: "查看依据" })[1]);
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(document.getElementById("evidence-detail"));
+    });
+    expect(screen.getAllByText("生产环境退款写入集成尚未获批准或验证。").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("退款写入接入尚未被批准或验证，因此不能承诺 Agent 自动退款。").length).toBeGreaterThan(1);
+
+    await user.click(screen.getByRole("button", { name: "返回对应结论" }));
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(
+        document.getElementById("research-claim-claim_refund_write_unconfirmed")
+      );
+    });
+  });
+
+  it("shows the selected source claim when a source is chosen directly", async () => {
+    const user = userEvent.setup();
+    render(<App showcaseState="overview" />);
+
+    await user.click(screen.getByRole("button", { name: /系统接入清单/ }));
+
+    expect(screen.getAllByText("退款写入接入尚未被批准或验证，因此不能承诺 Agent 自动退款。").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("生产环境退款写入集成尚未获批准或验证。").length).toBeGreaterThan(1);
+    expect(screen.queryByText("该来源目前没有关联的 claim。")).not.toBeInTheDocument();
   });
 
   it("keeps the blocked showcase at review-required and not-delivered", () => {
     render(<App showcaseState="blocked" />);
 
     expect(screen.getByText("需要复核")).toBeInTheDocument();
-    expect(screen.getByText("Evidence 不足或 citation 无效")).toBeInTheDocument();
+    expect(screen.getByText("报告暂不可用，无法下载")).toBeInTheDocument();
+    expect(screen.getAllByText("缺少足够 Evidence、citation 无效或 tool failure 时，交付保持关闭。").length).toBeGreaterThan(1);
     expect(screen.getAllByText("review_required").length).toBeGreaterThan(0);
     expect(screen.getAllByText("not_delivered").length).toBeGreaterThan(0);
-    expect(screen.getByText("原失败运行保持 immutable")).toBeInTheDocument();
+    expect(screen.getAllByText(/原失败运行保持 immutable/).length).toBeGreaterThan(1);
+    expect(screen.queryByRole("button", { name: "下载报告" })).not.toBeInTheDocument();
     expect(screen.queryByText("Canonical Decision Brief")).not.toBeInTheDocument();
   });
 
@@ -155,21 +232,15 @@ describe("Decision Research Agent demo console", () => {
         "请检查已持久化的 failure cause 与处置。原失败运行保持 immutable 且不交付；UI 不会 resume、自动 retry 或自动创建 replacement。"
       )
     ).toHaveLength(2);
-    expect(
-      screen.getByText(
-        "Evidence 与 citation 问题仍需人工复核。新的执行只能由调用方发起：普通 new run，或在符合条件时显式 one-hop replacement。"
-      )
-    ).toBeInTheDocument();
-    expect(screen.getByText("原失败运行保持 immutable")).toBeInTheDocument();
-    expect(screen.getByText("后续执行边界")).toBeInTheDocument();
-    expect(screen.getByText("人工复核")).toBeInTheDocument();
-    expect(screen.getByText("不交付")).toBeInTheDocument();
+    expect(screen.getByText("下一步需要澄清")).toBeInTheDocument();
+    expect(screen.getByText("确认已批准政策材料和退款处理规则的访问权限，再重新评估是否能扩大试点范围。")).toBeInTheDocument();
+    expect(screen.getAllByText(/原失败运行保持 immutable/).length).toBeGreaterThan(1);
     expect(screen.queryByText(/请修正.*后再次 review/)).not.toBeInTheDocument();
     expect(screen.queryByText(/先完成 Evidence review/)).not.toBeInTheDocument();
     expect(screen.queryByText(/raw_error|provider|exception|\/private\//i)).not.toBeInTheDocument();
-    const diagnosticCard = screen.getByText("诊断链").closest(".blocked-diagnostic-card");
+    const diagnosticCard = screen.getByText("诊断链").closest("details");
     expect(diagnosticCard).toBeInTheDocument();
-    expect(diagnosticCard?.closest(".blocked-callout")).toBeInTheDocument();
+    expect(diagnosticCard?.closest(".blocked-showcase")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "English" }));
 
@@ -183,15 +254,9 @@ describe("Decision Research Agent demo console", () => {
         "Inspect the persisted failure cause and disposition. The failed source remains immutable and not delivered; the UI cannot resume it, retry automatically, or create a replacement automatically."
       )
     ).toHaveLength(2);
-    expect(
-      screen.getByText(
-        "Evidence and citation issues still require human review. Any new execution is caller-initiated as an ordinary new run or, when eligible, an explicit one-hop replacement."
-      )
-    ).toBeInTheDocument();
-    expect(screen.getByText("Failed source remains immutable")).toBeInTheDocument();
-    expect(screen.getByText("Next execution boundary")).toBeInTheDocument();
-    expect(screen.getByText("Human review")).toBeInTheDocument();
-    expect(screen.getByText("Not delivered")).toBeInTheDocument();
+    expect(screen.getByText("Clarify next")).toBeInTheDocument();
+    expect(screen.getByText("Confirm access to approved policy material and the refund handling rules before reassessing a broader pilot.")).toBeInTheDocument();
+    expect(screen.getAllByText(/failed source remains immutable/).length).toBeGreaterThan(1);
     expect(screen.queryByText(/Correct the Evidence or tool result, then review again/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Complete Evidence review before producing a canonical result/i)).not.toBeInTheDocument();
   });
@@ -203,21 +268,19 @@ describe("Decision Research Agent demo console", () => {
     const flow = screen.getByRole("navigation", { name: "Research flow" });
     expect(within(flow).getByText("当前")).toBeInTheDocument();
     expect(within(flow).getAllByText("下一检查点")).toHaveLength(4);
-    expect(screen.getByText("已捕获")).toBeInTheDocument();
-    expect(screen.getByText("已记录")).toBeInTheDocument();
-    expect(screen.getByText("已冻结")).toBeInTheDocument();
-    expect(screen.getByText("已批准")).toBeInTheDocument();
-    expect(screen.getAllByText("已就绪").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("静态案例 · 已交付").length).toBeGreaterThan(0);
+    expect(screen.getByText("先试点内部知识助手")).toBeInTheDocument();
+    expect(screen.getAllByText("本次案例已纳入").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("查看依据").length).toBe(3);
 
     await user.click(screen.getByRole("button", { name: "English" }));
 
     expect(within(flow).getByText("current")).toBeInTheDocument();
     expect(within(flow).getAllByText("next checkpoint")).toHaveLength(4);
-    expect(screen.getByText("captured")).toBeInTheDocument();
-    expect(screen.getByText("recorded")).toBeInTheDocument();
-    expect(screen.getByText("frozen")).toBeInTheDocument();
-    expect(screen.getAllByText("approved").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("ready").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Static case · delivered").length).toBeGreaterThan(0);
+    expect(screen.getByText("先试点内部知识助手")).toBeInTheDocument();
+    expect(screen.getAllByText("Included in this case").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Inspect evidence").length).toBe(3);
   });
 
   it("keeps the delivered evidence review in one historical time frame in English", async () => {
@@ -226,9 +289,9 @@ describe("Decision Research Agent demo console", () => {
 
     await user.click(screen.getByRole("button", { name: "English" }));
 
-    expect(screen.getByText("Delivered result retains its pre-delivery review record")).toBeInTheDocument();
-    expect(screen.getByText("Canonical result delivered")).toBeInTheDocument();
-    expect(screen.getByText("Normal path · delivered")).toBeInTheDocument();
+    expect(screen.getByText("This is a local synthetic case, not a real customer trial, model evaluation, or production impact claim. Time savings and adoption remain to be measured.")).toBeInTheDocument();
+    expect(screen.getAllByText("Static case · delivered").length).toBeGreaterThan(0);
+    expect(screen.getByText("Research report")).toBeInTheDocument();
     expect(screen.queryByText("Deliver after judgment")).not.toBeInTheDocument();
     expect(screen.queryByText("before delivery")).not.toBeInTheDocument();
   });
@@ -286,21 +349,21 @@ describe("Decision Research Agent demo console", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    expect(screen.getAllByText("run_demo_talent_2026_06_29").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("run_demo_support_refund_normal").length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "Run Lifecycle" }));
     expect(screen.getAllByText(/evidence_frozen/).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "Evidence Ledger" }));
-    expect(screen.getByText(/ev_001/)).toBeInTheDocument();
-    expect(screen.getByText(/claim_candidate_signal/)).toBeInTheDocument();
+    expect(screen.getAllByText(/ev_pilot_scope/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/claim_bounded_assistant/).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "Review / Verification" }));
     expect(screen.getAllByText("approved").length).toBeGreaterThan(0);
     expect(screen.getAllByText("verified").length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "Canonical Result" }));
-    expect(screen.getByText("decision-brief.md")).toBeInTheDocument();
+    expect(screen.getAllByText("customer-support-refund-pilot-decision-brief.md").length).toBeGreaterThan(0);
     expect(screen.getByText(/python tools\/decision_research_agent_tool.py run/)).toBeInTheDocument();
   });
 
@@ -844,7 +907,7 @@ describe("Decision Research Agent demo console", () => {
       expect(screen.getAllByText("run_live_001").length).toBeGreaterThan(0);
     });
     expect(await screen.findByText(/Source-backed result from backend/)).toBeInTheDocument();
-    expect(screen.getByText("research-report.md")).toBeInTheDocument();
+    expect(screen.getAllByText("research-report.md").length).toBeGreaterThan(0);
   });
 
   it("fetches the canonical result for completed_with_fallback", async () => {
@@ -976,7 +1039,7 @@ describe("Decision Research Agent demo console", () => {
     expect(screen.queryAllByText("run_live_static_reset")).toHaveLength(0);
     expect(screen.queryByText("Result cleared by static mode.")).not.toBeInTheDocument();
     expect(screen.queryByText("后端可用")).not.toBeInTheDocument();
-    expect(screen.getAllByText("run_demo_talent_2026_06_29").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("run_demo_support_refund_normal").length).toBeGreaterThan(0);
     expect(screen.getByText("使用内置静态快照，适合无后端演示。")).toBeInTheDocument();
   });
 
@@ -1056,11 +1119,11 @@ describe("Decision Research Agent demo console", () => {
       ["Architecture Explain Mode", "Application DB Authority"]
     ] as const;
     const forbidden = [
-      "run_demo_talent_2026_06_29",
-      "ev_001",
-      "decision_demo_approved_001",
-      "verification_snapshot_rev_3",
-      "decision-brief.md"
+      "run_demo_support_refund_normal",
+      "ev_pilot_scope",
+      "decision_demo_support_refund_approved",
+      "verification_snapshot_support_refund_v1",
+      "customer-support-refund-pilot-decision-brief.md"
     ];
 
     for (const [navigationName, liveFact] of screenFacts) {
@@ -1080,7 +1143,7 @@ describe("Decision Research Agent demo console", () => {
     await user.click(screen.getByRole("button", { name: "真实后端" }));
 
     expect(screen.getAllByText("尚未观察到").length).toBeGreaterThan(0);
-    expect(screen.queryByText("run_demo_talent_2026_06_29")).not.toBeInTheDocument();
+    expect(screen.queryByText("run_demo_support_refund_normal")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "检查后端" }));
     await screen.findByText("后端可用");
@@ -1088,7 +1151,7 @@ describe("Decision Research Agent demo console", () => {
     await screen.findAllByText("run_live_empty");
 
     await user.click(screen.getByRole("button", { name: "Evidence Ledger" }));
-    expect(screen.getByText("已观察：Evidence 为空")).toBeInTheDocument();
+    expect(screen.getAllByText("已观察：Evidence 为空").length).toBeGreaterThan(1);
 
     await user.click(screen.getByRole("button", { name: "Review / Verification" }));
     expect(screen.getAllByText("not_required").length).toBeGreaterThan(0);
@@ -1332,11 +1395,11 @@ describe("Decision Research Agent demo console", () => {
     await user.click(screen.getByRole("button", { name: "静态演示" }));
 
     const staticScreens = [
-      ["Command Center", "run_demo_talent_2026_06_29"],
+      ["Command Center", "run_demo_support_refund_normal"],
       ["Run Lifecycle", "evidence_frozen"],
-      ["Evidence Ledger", "ev_001"],
-      ["Review / Verification", "decision_demo_approved_001"],
-      ["Canonical Result", "decision-brief.md"],
+      ["Evidence Ledger", "ev_pilot_scope"],
+      ["Review / Verification", "decision_demo_support_refund_approved"],
+      ["Canonical Result", "customer-support-refund-pilot-decision-brief.md"],
       ["Architecture Explain Mode", "Application DB Authority"]
     ] as const;
     for (const [navigationName, staticFact] of staticScreens) {

@@ -165,9 +165,10 @@ Tool Client. Do not put it in shell history as a command argument.
 
 ### The run is not terminal
 
-`run_not_terminal` means execution is still pending or running. Re-run the
-`run --wait` flow or poll `GET /api/runs/{run_id}` before requesting the
-result.
+`run_not_terminal` means execution is still pending or running. Poll
+`GET /api/runs/{run_id}` using the existing run identifier until execution is
+terminal, then request its canonical result. Do not re-run `run --wait` to
+continue waiting, because that starts a new `ResearchRun`.
 
 ### The result requires review
 

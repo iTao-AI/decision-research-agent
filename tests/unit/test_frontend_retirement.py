@@ -22,7 +22,7 @@ def test_frontend_package_declares_maintained_lts_node_contract():
         )
     } == {
         "jsdom": "^30.0.1",
-        "@testing-library/jest-dom": "^7.0.0",
+        "@testing-library/jest-dom": "^7.0.1",
         "@testing-library/dom": "^10.4.1",
     }
 
@@ -46,19 +46,22 @@ def test_frontend_lock_preserves_identity_and_testing_target_closure():
         )
     } == {
         "jsdom": "^30.0.1",
-        "@testing-library/jest-dom": "^7.0.0",
+        "@testing-library/jest-dom": "^7.0.1",
         "@testing-library/dom": "^10.4.1",
     }
 
     assert lock["packages"]["node_modules/jsdom"]["version"] == "30.0.1"
     assert (
         lock["packages"]["node_modules/@testing-library/jest-dom"]["version"]
-        == "7.0.0"
+        == "7.0.1"
     )
     assert lock["packages"]["node_modules/@testing-library/dom"]["version"] == "10.4.1"
     assert lock["packages"]["node_modules/@testing-library/jest-dom"][
         "peerDependencies"
-    ] == {"@testing-library/dom": ">=10 <11"}
+    ] == {"@testing-library/dom": ">=10 <11", "vitest": ">= 0.32"}
+    assert lock["packages"]["node_modules/@testing-library/jest-dom"][
+        "peerDependenciesMeta"
+    ] == {"vitest": {"optional": True}}
 
 
 def test_legacy_vue_frontend_assets_are_retired():

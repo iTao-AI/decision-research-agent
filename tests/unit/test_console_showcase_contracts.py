@@ -14,6 +14,7 @@ from scripts.console_showcase_contracts import (
     load_showcase_manifest,
     verify_showcase_assets,
 )
+from scripts.release_publication_contract import PUBLISHED_ENTRYPOINT_MARKERS
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -389,7 +390,7 @@ def test_readmes_distinguish_current_source_showcase_from_published_releases() -
 
     english_normalized = " ".join(english.split())
     for phrase in (
-        "Decision Research Agent v0.1.9 is the latest published stable release.",
+        PUBLISHED_ENTRYPOINT_MARKERS["README.md"],
         "The Static Demo presentation in the current source tree is a later source change and is not part of that historical release.",
         "The immutable stable `v0.1.8` release remains unchanged.",
         "at most 4096 UTF-8 bytes",
@@ -400,7 +401,7 @@ def test_readmes_distinguish_current_source_showcase_from_published_releases() -
 
     chinese_normalized = " ".join(chinese.split())
     for phrase in (
-        "Decision Research Agent v0.1.9 是最新已发布的 stable release。",
+        PUBLISHED_ENTRYPOINT_MARKERS["README_CN.md"],
         "当前源码中的 Static Demo 展示界面属于后续源码变更，不包含在该历史版本中。",
         "不可变的 stable `v0.1.8` release 仍保持不变。",
         "最多 4096 UTF-8 bytes",

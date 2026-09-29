@@ -6,66 +6,35 @@ Decision Research Agent turns open research questions into source-backed
 research reports. Callers can start a run through the CLI or API, observe
 progress, and retrieve a report the backend has confirmed deliverable.
 
-The default showcase is a concrete synthetic customer-support case:
-`客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`. It
-recommends starting with an internal knowledge assistant, compares that option
-with automated refund handling, and lets a reader inspect three local full-text
-sources and their exact claim-to-excerpt links before downloading the report.
+The default showcase starts with a support team deciding whether to pilot an
+internal knowledge assistant or let an Agent handle refunds. It presents the
+recommendation, compares both options, connects supporting materials to
+individual findings, and provides the full report.
 
-Static Demo is deterministic and local. Live Backend accepts one bounded
-user-authored generic research question and consumes service-owned state through
-the existing API contract. Both use the same report reader; this case is not a
-real customer trial, model evaluation, production deployment, or business-impact
-claim.
+The deterministic Static Demo uses bundled synthetic material, needs no API
+key, and does not represent results from a real customer. Callers can run real
+research tasks through the CLI or API.
 
-The active repository, runtime configuration, Tool Client, Docker defaults, and
-health service identifier use `decision-research-agent`.
+## Browse the Static Demo
 
-## What It Does
+The three deterministic routes use one synthetic refund-automation case:
 
-Decision Research Agent turns an open research question into source-backed,
-reviewable Evidence and a bounded canonical result.
+- **Overview** (`/?showcase=overview`) presents the recommendation, compares
+  the two approaches, and lists the supporting sources.
+- **Evidence** (`/?showcase=evidence`) opens with the second linked finding and
+  source selected so the reader can inspect their relationship.
+- **Blocked** (`/?showcase=blocked`) explains that policy access is unconfirmed,
+  the run delivered no report, and a person must confirm access before deciding
+  whether to expand the pilot. It offers no report or download action and does
+  not retry automatically.
 
-The Agent Research Operations Console makes that path legible without becoming
-the business authority. The question bound is nonblank and at most 4096 UTF-8
-bytes; a delivered result can be viewed as formatted Markdown or raw text and
-downloaded with its original UTF-8 bytes.
-
-## Current Default Branch Status
-
-Decision Research Agent v0.1.9 is the current published stable release.
-The showcased Console and blocked-failure diagnosis are bounded additions after
-the immutable historical stable `v0.1.8`; they are included in the v0.1.9
-release record. This boundary is not a deployment, provider-backed research,
-or business-impact claim. The historical `v0.1.8` release remains unchanged.
-
-## Research Delivery Flow
-
-1. **Question** — frame one bounded research question and its decision context.
-2. **Plan** — make the comparison dimensions and source boundary explicit.
-3. **Tool work** — collect source observations and attach run-scoped Evidence refs.
-4. **Judgment** — review claims, citations, and verification separately.
-5. **Delivery** — return the canonical result only when the service-owned gate allows it.
-
-## Showcase Frames
-
-The three frames below are deterministic, synthetic Static Demo states captured
-from the same frontend implementation. They use the refund-automation question
-above to show a report-first normal path, the claim/source review checkpoint,
-and a blocked same-case run whose policy access remains unconfirmed. The
-blocked run stays `review_required` and `not_delivered`; it has no canonical
-result and no download action.
-
-The blocked frame makes one bounded diagnostic chain visible: the first
-displayed failing lifecycle step is `tool_failed`; the existing durable
-failure-cause observation is `execution / execution_error`; and the
-service-owned disposition remains `review_required / not_delivered`. The
-displayed failing step is not a proven root cause. Inspect the persisted
-failure cause and disposition; the failed source remains immutable and not
-delivered. Evidence and citation issues still require human review. Any new
-execution is caller-initiated as an ordinary new run or, when eligible, an
-explicit one-hop replacement. The UI does not resume the failed source, retry
-automatically, or create a replacement automatically.
+On the overview and evidence routes, use **Conclusion and comparison** to
+focus the recommendation, **View supporting evidence** to reach the selected
+source details, and **Read the full report** to open the existing report
+reader. A finding links to its source and can return focus to the finding.
+Static Demo uses a report-and-source two-column layout on wider screens and
+stacks those sections on narrow screens. The five-stage rail remains in Live
+Backend; the six operator screens are inside the collapsed technical console.
 
 ![Research workspace overview](docs/assets/console-showcase/research-workspace-overview.png)
 
@@ -75,6 +44,34 @@ automatically, or create a replacement automatically.
 
 The capture source, viewport, locale, route/state mapping, disclosure, and
 SHA-256 values are recorded in the [showcase manifest](docs/assets/console-showcase/manifest.json).
+
+## Run Static Demo
+
+```bash
+git clone https://github.com/iTao-AI/decision-research-agent.git
+cd decision-research-agent/frontend
+npm ci
+npm run dev -- --host 127.0.0.1
+```
+
+Open `http://127.0.0.1:5173`, or add one of the showcase routes above. Static
+Demo uses bundled synthetic data and needs no API key, backend, provider, or
+credentials. It sends no request to the Decision Research Agent backend.
+
+## Current Default Branch Status
+
+Decision Research Agent v0.1.9 is the latest published stable release. The
+Static Demo presentation in the current source tree is a later source change and
+is not part of that historical release. The immutable stable `v0.1.8` release
+remains unchanged.
+
+## Research Delivery Flow
+
+1. **Question** — frame one bounded research question and its decision context.
+2. **Plan** — make the comparison dimensions and source boundary explicit.
+3. **Tool work** — collect source observations and attach run-scoped Evidence refs.
+4. **Judgment** — review claims, citations, and verification separately.
+5. **Delivery** — return the canonical result only when the service-owned gate allows it.
 
 ## Engineering Judgments
 
@@ -92,7 +89,7 @@ SHA-256 values are recorded in the [showcase manifest](docs/assets/console-showc
   manufacture a canonical result. See the blocked fixture and
   [`App.test.tsx`](frontend/src/App.test.tsx).
 
-## Quick Start
+## Run With the Backend
 
 ```bash
 git clone https://github.com/iTao-AI/decision-research-agent.git
@@ -116,9 +113,7 @@ python tools/decision_research_agent_tool.py run \
 The final `run --wait --result` command waits for the run and retrieves the
 service-owned canonical result, so a separate unset `$RUN_ID` is not needed.
 
-For the deterministic frontend path, run `cd frontend && npm ci && npm run dev
--- --host 127.0.0.1`, then open `http://127.0.0.1:5173`. The detailed
-[Getting Started tutorial](docs/getting-started.md) covers readiness,
+The [Getting Started tutorial](docs/getting-started.md) covers readiness,
 troubleshooting, and authenticated local runtime boundaries.
 
 ## Authority And Runtime
@@ -131,6 +126,11 @@ troubleshooting, and authenticated local runtime boundaries.
 - The console consumes canonical API and result contracts. It does not add
   backend state, database tables, API paths, credentials, review controls,
   verification authority, public online execution, or a tenant model.
+- Live Backend accepts one bounded user-authored generic research question of
+  at most 4096 UTF-8 bytes and consumes service-owned state through the existing
+  API contract. The active repository, runtime configuration, Tool Client,
+  Docker defaults, and health service identifier use
+  `decision-research-agent`.
 - Live Backend remains loopback-only and the browser does not accept or store
   API credentials. See [Demo Console](docs/demo-console.md) and the
   [API Contract](docs/reference/api-contract.md).
@@ -328,18 +328,9 @@ use [Secure Local Runtime Operations](docs/operations/secure-local-runtime.md).
 
 ## Demo Console
 
-The React console starts in deterministic Static Demo mode:
-
-```bash
-cd frontend
-npm ci
-npm run dev -- --host 127.0.0.1
-```
-
-Open `http://127.0.0.1:5173`. The optional Live Backend mode requires an exact
-CORS origin and a loopback-only backend; follow the
-[Demo Console guide](docs/demo-console.md) before enabling it. The current
-console does not accept or store API credentials.
+For Live Backend and service-contract details, see the
+[Demo Console guide](docs/demo-console.md). The current console does not accept
+or store API credentials.
 
 Live Backend renders only real service-owned state from the run status and
 canonical result contracts. Ambiguous create reconciliation reuses the same

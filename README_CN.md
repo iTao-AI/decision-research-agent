@@ -4,53 +4,19 @@
 
 Decision Research Agent 把开放研究问题整理成带来源依据的研究报告。调用方可以通过 CLI 或 API 发起任务、观察进度，并取回后端确认可交付的报告。
 
-默认 showcase 是一个具体的合成客服试点案例：`客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`。它建议先试点内部知识助手，对比 Agent 自动处理退款，并让读者查看三条本地全文来源及其精确的 claim-to-excerpt 链接，再下载报告。
+默认 showcase 从客服团队的一项试点决策展开：先试用内部知识助手，还是让 Agent 自动处理退款？页面展示推荐、方案比较、每条结论对应的支持资料，以及可阅读的完整报告。
 
-Static Demo 是确定性的本地入口；Live Backend 接受一个有界的用户自定义通用研究问题，并消费现有 API contract 的 service-owned state。两者使用同一个报告阅读器；该案例不代表真实客户试点、模型评测、生产部署或 business-impact claim。
+确定性的 Static Demo 只使用内置合成资料，不需要 API key，也不代表真实客户试点或实际成效。真实研究任务可通过 CLI 或 API 发起。
 
-当前仓库、运行时配置、Tool Client、Docker 默认值和 health service ID 均使用 `decision-research-agent`。
+## 浏览 Static Demo
 
-## 当前能力
+三个确定性入口围绕同一个合成退款自动化案例：
 
-Decision Research Agent 把开放研究问题转化为有来源支撑、可复核的 Evidence
-和有界 canonical result。
+- **总览**（`/?showcase=overview`）：先展示推荐方案，再比较两种处理方式并列出支撑资料。
+- **查看依据**（`/?showcase=evidence`）：进入页面时选中第二条关联结论及其资料，便于核对两者关系。
+- **阻塞状态**（`/?showcase=blocked`）：说明政策资料访问尚未确认、本次运行没有交付报告，以及需要人工先确认的事项。页面没有报告或下载操作，也不会自动重试。
 
-Agent Research Operations Console 只负责把这条路径讲清楚，不成为业务事实源。
-问题不能为空，且最多为 4096 UTF-8 bytes；已交付结果可以阅读 Markdown、切换
-原文并按原始 UTF-8 bytes 下载。
-
-## 当前默认分支状态
-
-Decision Research Agent v0.1.9 是当前已发布的 stable release。
-下文展示的 Console 和 blocked-failure diagnosis 是不可变历史 stable `v0.1.8`
-之后的有界新增内容，并已纳入 v0.1.9 release record。这一边界不构成
-deployment、provider-backed research 或 business-impact claim。历史
-`v0.1.8` release 保持不变。
-
-## Research Delivery Flow
-
-1. **问题**：明确一个有界的研究问题与决策语境。
-2. **计划**：固定比较维度和可审查的来源边界。
-3. **工具工作**：收集来源观察，并附加 run-scoped Evidence refs。
-4. **判断**：分别复核 claim、citation 和 verification。
-5. **交付**：只有 service-owned gate 允许时才返回 canonical result。
-
-## Showcase Frames
-
-以下三张图来自同一个 frontend implementation 的 deterministic synthetic
-Static Demo，围绕上面的退款自动化问题，依次展示报告优先的正常路径、
-claim/source review checkpoint，以及同一案例中 policy access 尚未确认、仍保持
-`review_required`、`not_delivered` 的 blocked state。blocked run 没有 canonical
-result，也没有下载操作。
-
-blocked frame 让一条有界诊断链可见：首个显示的失败生命周期步骤是
-`tool_failed`；现有 durable failure-cause observation 是
-`execution / execution_error`；service-owned disposition 仍为
-`review_required / not_delivered`。显示的失败步骤不等于已证明的根因。请检查已
-持久化的 failure cause 与处置；原失败运行保持 immutable 且不交付。Evidence 与
-citation 问题仍需人工复核。新的执行只能由调用方发起：普通 new run，或在符合
-条件时显式 one-hop replacement。UI 不会 resume 原失败运行、自动 retry，也不会
-自动创建 replacement。
+在总览和依据页面，可用 **结论与比较** 聚焦推荐方案，**查看依据** 到达当前选中资料详情，**阅读完整报告** 打开现有报告阅读器。每条结论都可以打开对应资料，并返回原结论。宽屏上报告与资料并排显示，窄屏上按页面顺序纵向排列。五步导航仍只用于 Live Backend；六个操作屏幕收在默认折叠的技术控制台中。
 
 ![研究工作区总览](docs/assets/console-showcase/research-workspace-overview.png)
 
@@ -60,6 +26,31 @@ citation 问题仍需人工复核。新的执行只能由调用方发起：普�
 
 capture source、viewport、locale、route/state mapping、disclosure 和
 SHA-256 记录在 [showcase manifest](docs/assets/console-showcase/manifest.json)。
+
+## 运行 Static Demo
+
+```bash
+git clone https://github.com/iTao-AI/decision-research-agent.git
+cd decision-research-agent/frontend
+npm ci
+npm run dev -- --host 127.0.0.1
+```
+
+打开 `http://127.0.0.1:5173`，或访问上面的任一展示路由。Static Demo 使用内置合成资料，不需要 API key、backend、provider 或凭据，也不会向 Decision Research Agent backend 发送请求。
+
+## 当前默认分支状态
+
+Decision Research Agent v0.1.9 是最新已发布的 stable release。当前源码中的
+Static Demo 展示界面属于后续源码变更，不包含在该历史版本中。不可变的
+stable `v0.1.8` release 仍保持不变。
+
+## Research Delivery Flow
+
+1. **问题**：明确一个有界的研究问题与决策语境。
+2. **计划**：固定比较维度和可审查的来源边界。
+3. **工具工作**：收集来源观察，并附加 run-scoped Evidence refs。
+4. **判断**：分别复核 claim、citation 和 verification。
+5. **交付**：只有 service-owned gate 允许时才返回 canonical result。
 
 ## 三个工程判断
 
@@ -75,7 +66,7 @@ SHA-256 记录在 [showcase manifest](docs/assets/console-showcase/manifest.json
   会保持 review-required；blocked frame 不能制造 canonical result。见
   blocked fixture 与 [`App.test.tsx`](frontend/src/App.test.tsx)。
 
-## 快速开始
+## 使用 Backend 运行
 
 ```bash
 git clone https://github.com/iTao-AI/decision-research-agent.git
@@ -99,10 +90,7 @@ python tools/decision_research_agent_tool.py run \
 最后的 `run --wait --result` 会等待运行并获取 service-owned canonical result，
 不需要另行设置未定义的 `$RUN_ID`。
 
-要运行 deterministic frontend path，可执行 `cd frontend && npm ci && npm run
-dev -- --host 127.0.0.1`，再打开 `http://127.0.0.1:5173`。完整的
-[Getting Started tutorial](docs/getting-started.md) 说明 readiness、故障处理
-和 authenticated local runtime 边界。
+完整的 [Getting Started tutorial](docs/getting-started.md) 说明 readiness、故障处理和 authenticated local runtime 边界。
 
 ## Authority And Runtime
 
@@ -113,6 +101,10 @@ dev -- --host 127.0.0.1`，再打开 `http://127.0.0.1:5173`。完整的
 - Console 消费 canonical API 与 result contract，不新增 backend state、DB
   table、API path、credential、review control、verification authority、public
   online execution 或 tenant model。
+- Live Backend 接受一个有界的用户自定义通用研究问题，最多 4096 UTF-8
+  bytes，并通过现有 API contract 消费 service-owned state。当前仓库、运行时
+  配置、Tool Client、Docker 默认值和 health service ID 均使用
+  `decision-research-agent`。
 - Live Backend 仍限于 loopback，浏览器不接收或保存 API credential。详见
   [Demo Console](docs/demo-console.md) 与 [API Contract](docs/reference/api-contract.md)。
 
@@ -294,16 +286,7 @@ startup 和保留 volume 的 rollback 启动 authenticated container 时，请�
 
 ## Demo Console
 
-React console 默认进入可重复的 Static Demo 模式：
-
-```bash
-cd frontend
-npm ci
-npm run dev -- --host 127.0.0.1
-```
-
-打开 `http://127.0.0.1:5173`。可选的 Live Backend 模式要求配置精确的
-CORS origin，并将未启用 `API_SECRET` 的 backend 绑定到 loopback；启用前请阅读
+Static Demo 的运行方式见上文。Live Backend 和 service-contract 细节请阅读
 [Demo Console Guide](docs/demo-console.md)。当前 console 不接收或保存 API 凭据。
 
 Live Backend 只渲染真实的 service-owned state，来源仅限 run status 与

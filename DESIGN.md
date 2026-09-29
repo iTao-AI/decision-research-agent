@@ -25,30 +25,32 @@ multi-tenant console, backend state machine, or result authority.
 
 ## Information Architecture
 
-The first shell presents one five-stage research path:
+Static Demo opens as a readable decision brief, not a workflow navigator. Its
+compact header names Decision Research Agent and describes the product as
+turning research questions into reviewable reports. The report presents the
+question and delivery state, the recommendation, a comparison of options, and
+supporting findings. A related-source panel shows readable source names,
+source status, supported findings, matching excerpts, and full source text.
+Internal Evidence and claim IDs stay in technical details.
 
-1. Research question
-2. Plan and tool work
-3. Evidence review
-4. Judgment and review
-5. Canonical delivery
+Three report shortcuts navigate to the recommendation and comparison, the
+currently selected source details, and the full report. The full-report
+shortcut opens the existing reader disclosure before moving focus. Selecting a
+finding opens its linked source; the return action restores focus to that
+finding. Repeating either action repeats the focus and scroll navigation.
 
-The visible layout is intentionally ordered as:
+The normal Static Demo opens on a concrete synthetic customer-support
+question: `客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`
+The decision brief recommends an internal knowledge assistant, compares it
+with automated refund handling, and exposes three local full-text source
+fixtures. Its overview route opens on the recommendation; the evidence route
+selects the second linked finding and source. The blocked route names the
+unconfirmed policy access, states that no report was delivered, and gives the
+next human confirmation. It has no report or download action and does not
+retry automatically.
 
-1. **Stage rail** — the current checkpoint and the next bounded handoff.
-2. **Research work surface** — the question, decision brief, comparison,
-   supporting findings, exact source excerpts, and normal or blocked delivery
-   state.
-3. **Judgment sidebar** — Evidence sufficiency, review state, and delivery gate.
-
-The normal Static Demo opens on a concrete synthetic customer-support question:
-`客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？` The
-decision brief recommends an internal knowledge assistant, compares it with
-automated refund handling, and exposes three local full-text source fixtures.
-Each finding carries an Evidence ID and an exact source excerpt; the source
-sidebar can return focus to the referring claim. Static Demo and Live Backend
-share the same report reader, with formatted Markdown, opt-in raw text, and an
-exact-byte download for observed results.
+Live Backend retains the existing stage rail, technical screen navigation,
+and report reader. It continues to render only observed service-owned state.
 
 The technical disclosure retains the six operator screens:
 
@@ -67,17 +69,21 @@ research path.
 
 ## Layout Rules
 
-- Desktop-first, because the primary use case is a live technical demo.
-- Three-column shell: stage rail, research work surface, judgment sidebar.
-- Static Demo places the research brief before Live Backend controls so the
-  1280x720 recording viewport leads with the current decision concept. Live
-  Backend mode promotes its observed result and controls ahead of secondary
-  technical details.
-- The right judgment sidebar carries persistent Evidence, review, delivery,
-  authority, and explicit UI-boundary notes.
-- Mobile only needs to remain readable; it is not the primary experience.
-- Cards are used only for repeated state records, metrics, and inspection
-  panels. Page sections remain unframed inside the shell.
+- The header is compact (about 80 px on desktop) and keeps the language toggle.
+  Chinese copy may wrap naturally on narrow screens.
+- Static Demo uses two columns from 1100 px upward. The source panel is about
+  340–360 px wide; below that breakpoint, the report and source panel stack in
+  document order.
+- Static Demo does not show the five-stage rail. Its six operator screens stay
+  inside the collapsed technical console disclosure. Live Backend retains its
+  stage rail and existing controls.
+- Put the full recommendation and the comparison entry in the first desktop
+  viewport at 1440×900. On narrow screens, report shortcuts and source details
+  must remain reachable by normal page scrolling.
+- Use 15–16 px body text and a 26–30 px main question. Use cards for repeated
+  records and inspection panels; keep report sections unframed.
+- The source panel prioritizes readable names and source content. Review,
+  gate, and authority summaries sit in a collapsed run-details disclosure.
 
 ## Visual System
 
@@ -111,8 +117,8 @@ Colors represent state, not decoration.
 - Code, IDs, state codes, artifact names, and command snippets:
   `JetBrains Mono`, `SFMono-Regular`, `Consolas`, `monospace`.
 - Do not set the entire app in monospace.
-- Use tabular, stable-looking ID treatment for run, evidence, decision,
-  publication, and artifact identifiers.
+- Keep stable technical IDs in the technical console and run-details
+  disclosures; do not place internal IDs in the reader-facing source list.
 
 ## Components
 

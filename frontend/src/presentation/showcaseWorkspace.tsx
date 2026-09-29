@@ -169,15 +169,11 @@ function ResearchBriefShowcase({
       claim.focus();
       claim.scrollIntoView?.({ block: "center" });
     }
-  }, [selection.claimId, selection.focus]);
+  }, [selection.claimId, selection.focus, selection.navigationRequestId]);
 
   return (
     <div className={`brief-workspace ${showcaseState === "evidence" ? "brief-evidence-route" : ""}`}>
-      <section className="brief-report-intro">
-        <div className="brief-disclosure">
-          <span className="brief-disclosure-mark">i</span>
-          <p>{researchBriefFixture.disclosure}</p>
-        </div>
+      <section className="brief-report-intro" id="conclusion-section" tabIndex={-1}>
         <article className="recommendation-block">
           <p className="step-stage">{t.showcase.brief.recommendationLabel}</p>
           <h3>{researchBriefFixture.recommendation}</h3>
@@ -188,7 +184,6 @@ function ResearchBriefShowcase({
       <section className="comparison-section" aria-labelledby="comparison-heading">
         <div className="section-heading-row">
           <div>
-            <p className="step-stage">{t.showcase.brief.criteriaLabel}</p>
             <h3 id="comparison-heading">{t.showcase.brief.criteriaLabel}</h3>
           </div>
           <span className="section-count">{researchBriefFixture.comparison.length} {t.showcase.brief.optionLabel}</span>
@@ -205,22 +200,43 @@ function ResearchBriefShowcase({
         </div>
       </section>
 
-      <section className="findings-section" aria-labelledby="findings-heading">
+      <section
+        className="findings-section"
+        aria-labelledby="findings-heading"
+        id="findings-section"
+        tabIndex={-1}
+      >
         <div className="section-heading-row">
           <div>
             <p className="step-stage">{t.showcase.brief.evidenceLabel}</p>
             <h3 id="findings-heading">{t.showcase.brief.findingsLabel}</h3>
           </div>
-          <span className="section-count">{researchBriefFixture.claims.length} {t.showcase.brief.claimLabel}</span>
+          <span className="section-count">{researchBriefFixture.claims.length} {t.showcase.brief.claimCountLabel}</span>
         </div>
         <div className="claim-list">
           {researchBriefFixture.claims.map((claim, index) => (
-            <article className="claim-item" id={`research-claim-${claim.claimId}`} key={claim.claimId} tabIndex={-1}>
+            <article
+              className={
+                selection.claimId === claim.claimId && selection.evidenceId === claim.evidenceId
+                  ? "claim-item selected"
+                  : "claim-item"
+              }
+              id={`research-claim-${claim.claimId}`}
+              key={claim.claimId}
+              tabIndex={-1}
+            >
               <div className="claim-number">{String(index + 1).padStart(2, "0")}</div>
               <div className="claim-body">
-                <span>{t.showcase.brief.claimLabel}</span>
+                <span className="claim-kind">
+                  {t.showcase.brief.claimLabel}
+                  {selection.claimId === claim.claimId && selection.evidenceId === claim.evidenceId && (
+                    <strong>{t.showcase.brief.selectedEvidenceFocus}</strong>
+                  )}
+                </span>
                 <p>{claim.text}</p>
-                <code>{t.showcase.brief.evidenceLabel}: {claim.evidenceId}</code>
+                <small className="claim-source-label">
+                  {t.showcase.brief.sourceReferenceLabel}: {researchBriefFixture.sources.find((source) => source.evidenceId === claim.evidenceId)?.title}
+                </small>
               </div>
               <button
                 className="claim-link"
@@ -235,11 +251,11 @@ function ResearchBriefShowcase({
         </div>
       </section>
 
-      <p className="measurement-note">{t.showcase.brief.staticDisclosure}</p>
-
-      <details className="brief-reader-disclosure">
+      <details className="brief-reader-disclosure" id="full-report-disclosure">
         <summary>{t.reader.fullReportLabel}</summary>
-        <ResultReader language={language} mode="static" result={projection.result} />
+        <div className="full-report-content" id="full-report-content" tabIndex={-1}>
+          <ResultReader language={language} mode="static" result={projection.result} />
+        </div>
       </details>
     </div>
   );
@@ -288,11 +304,11 @@ function BlockedShowcase({
         <p>{t.summary}</p>
         <p>{t.detail}</p>
         <div className="blocked-status-row">
-          <span>review_status</span>
+          <span>{t.reviewLabel}</span>
           <strong>{t.review}</strong>
         </div>
         <div className="blocked-status-row">
-          <span>delivery_status</span>
+          <span>{t.deliveryLabel}</span>
           <strong>{t.delivery}</strong>
         </div>
         <section className="next-clarification">
@@ -300,8 +316,6 @@ function BlockedShowcase({
           <h4>{copy[language].showcase.brief.nextClarificationDetail}</h4>
         </section>
       </article>
-
-      <ResultReader language={language} mode="static" result={projection.result} />
 
       <details className="blocked-diagnostic-disclosure">
         <summary>{t.diagnostic}</summary>

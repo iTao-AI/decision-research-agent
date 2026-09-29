@@ -16,12 +16,16 @@ import { researchBriefFixture } from "./demoData";
 import { copy, type Language, screenEnglishNames, type ScreenKey } from "./i18n";
 import { type LiveRunOptions, useLiveRun } from "./useLiveRun";
 import { JudgmentSidebar, LiveJudgmentSidebar } from "./presentation/judgmentSidebar";
-import { initialScreenForShowcase, StageRail } from "./presentation/stageRail";
+import {
+  initialScreenForShowcase,
+  StageRail,
+  TechnicalScreenNavigation
+} from "./presentation/stageRail";
 import {
   LiveObservationSurface,
-  ShowcaseWorkspace,
   type ShowcaseState
 } from "./presentation/showcaseWorkspace";
+import { StaticReportSurface } from "./presentation/staticReportSurface";
 import type { EvidenceSelection } from "./presentation/evidenceSourcePanel";
 import {
   ArchitectureMode,
@@ -73,15 +77,35 @@ export default function App({
   const isStaticProjection = projection.source === "static";
 
   const activeStatement = t.statements[activeScreen];
-  const [staticSelection, setStaticSelection] = useState<EvidenceSelection>(() => ({
-    evidenceId:
-      (showcaseState === "blocked"
-        ? researchBriefFixture.sources[1]
-        : researchBriefFixture.sources[0]
-      ).evidenceId,
-    focus: "none"
-  }));
+  const [staticSelection, setStaticSelection] = useState<EvidenceSelection>(() => {
+    const selectedClaim = showcaseState === "evidence" ? researchBriefFixture.claims[1] : undefined;
+    return {
+      evidenceId:
+        selectedClaim?.evidenceId ??
+        (showcaseState === "blocked"
+          ? researchBriefFixture.sources[1]
+          : researchBriefFixture.sources[0]
+        ).evidenceId,
+      ...(selectedClaim ? { claimId: selectedClaim.claimId } : {}),
+      focus: "none",
+      navigationRequestId: 0
+    };
+  });
   const screenSummary = useMemo(() => buildScreenSummary(activeScreen), [activeScreen]);
+  const returnToClaim = (claimId: string) =>
+    setStaticSelection((current) => ({
+      ...current,
+      claimId,
+      focus: "claim",
+      navigationRequestId: current.navigationRequestId + 1
+    }));
+  const selectEvidence = (evidenceId: string, claimId?: string) =>
+    setStaticSelection((current) => ({
+      evidenceId,
+      ...(claimId ? { claimId } : {}),
+      focus: "detail",
+      navigationRequestId: current.navigationRequestId + 1
+    }));
 
   useEffect(() => {
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
@@ -90,10 +114,9 @@ export default function App({
   return (
     <div className={`console-shell showcase-${showcaseState} ${isShowcaseRoute ? "showcase-route" : ""}`}>
       <header className="top-bar">
-        <div>
-          <p className="eyebrow">{t.eyebrow}</p>
+        <div className="brand-block">
           <h1>{t.showcase.headerTitle}</h1>
-          <p className="subtitle">{isStaticProjection ? t.showcase.headerDescription : t.subtitle}</p>
+          <p className="subtitle">{t.showcase.headerDescription}</p>
         </div>
         <div className="top-actions" aria-label={t.language}>
           <span>{t.language}</span>
@@ -114,55 +137,26 @@ export default function App({
         </div>
       </header>
 
-      <div className="workspace">
-        <StageRail
-          activeScreen={activeScreen}
-          isLive={!isStaticProjection}
-          language={language}
-          onSelectScreen={setActiveScreen}
-        />
+      <div className={`workspace ${isStaticProjection ? "static-workspace" : "live-workspace"}`}>
+        {!isStaticProjection && (
+          <StageRail
+            activeScreen={activeScreen}
+            isLive
+            language={language}
+            onSelectScreen={setActiveScreen}
+          />
+        )}
 
         <main className={`canvas ${liveRun.state.mode}-mode`}>
           {isStaticProjection ? (
-            <section className="research-work-surface">
-              <div className="surface-heading">
-                <div>
-                  <p className="kicker">{t.showcase.workspaceLabel}</p>
-                  <p className="surface-label">{t.showcase.questionLabel}</p>
-                  <h2>{t.showcase.question}</h2>
-                </div>
-                <span className={`showcase-badge ${showcaseState === "blocked" ? "blocked" : "ready"}`}>
-                  {showcaseState === "blocked" ? t.showcase.blockedBadge : t.showcase.normalBadge}
-                </span>
-              </div>
-              <p className="surface-summary">
-                {showcaseState === "blocked"
-                  ? t.showcase.blocked.summary
-                  : showcaseState === "evidence"
-                    ? t.showcase.evidence.summary
-                    : t.showcase.overview.summary}
-              </p>
-              <ShowcaseWorkspace
-                language={language}
-                projection={projection}
-                showcaseState={showcaseState}
-                selection={staticSelection}
-                onReturnToClaim={(claimId) =>
-                  setStaticSelection((current) => ({
-                    ...current,
-                    claimId,
-                    focus: "claim"
-                  }))
-                }
-                onSelectEvidence={(evidenceId, claimId) =>
-                  setStaticSelection({
-                    evidenceId,
-                    ...(claimId ? { claimId } : {}),
-                    focus: "detail"
-                  })
-                }
-              />
-            </section>
+            <StaticReportSurface
+              language={language}
+              projection={projection}
+              showcaseState={showcaseState}
+              selection={staticSelection}
+              onReturnToClaim={returnToClaim}
+              onSelectEvidence={selectEvidence}
+            />
           ) : (
             <LiveObservationSurface language={language} projection={projection} />
           )}
@@ -175,6 +169,14 @@ export default function App({
               <span>{t.showcase.technicalLabel}</span>
               <small>{t.showcase.technicalDescription}</small>
             </summary>
+            {isStaticProjection && (
+              <TechnicalScreenNavigation
+                activeScreen={activeScreen}
+                className="static-technical-navigation"
+                language={language}
+                onSelectScreen={setActiveScreen}
+              />
+            )}
             <section className="status-grid" aria-label="Run state summary">
               <Metric
                 label={t.labels.service}
@@ -243,16 +245,8 @@ export default function App({
             projection={projection}
             showcaseState={showcaseState}
             selection={staticSelection}
-            onReturnToClaim={(claimId) =>
-              setStaticSelection((current) => ({
-                ...current,
-                claimId,
-                focus: "claim"
-              }))
-            }
-            onSelectEvidence={(evidenceId) =>
-              setStaticSelection({ evidenceId, focus: "detail" })
-            }
+            onReturnToClaim={returnToClaim}
+            onSelectEvidence={selectEvidence}
           />
         ) : (
           <LiveJudgmentSidebar language={language} projection={projection} />

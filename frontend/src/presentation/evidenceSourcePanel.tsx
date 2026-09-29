@@ -10,6 +10,7 @@ export type EvidenceSelection = Readonly<{
   evidenceId: string;
   claimId?: string;
   focus: "none" | "detail" | "claim";
+  navigationRequestId: number;
 }>;
 
 export function StaticEvidenceSourcePanel({
@@ -39,9 +40,11 @@ export function StaticEvidenceSourcePanel({
 
   useEffect(() => {
     if (selection.focus === "detail") {
-      detailRef.current?.focus();
+      const detail = detailRef.current;
+      detail?.focus();
+      detail?.scrollIntoView?.({ block: "start" });
     }
-  }, [selection.evidenceId, selection.focus]);
+  }, [selection.evidenceId, selection.focus, selection.navigationRequestId]);
 
   if (projection.evidence.kind !== "observed") {
     return (
@@ -68,9 +71,7 @@ export function StaticEvidenceSourcePanel({
                 onClick={() => onSelectEvidence(source.evidenceId)}
               >
                 <span>{source.title}</span>
-                <small>
-                  {source.evidenceId} · {sourceStatusLabel(entry, t.showcase.brief)}
-                </small>
+                <small>{sourceStatusLabel(entry, t.showcase.brief)}</small>
               </button>
             </li>
           );
@@ -100,7 +101,6 @@ export function StaticEvidenceSourcePanel({
               <div className="source-claim" key={claim.claimId}>
                 <div className="source-claim-heading">
                   <span>{t.showcase.brief.claimLabel}</span>
-                  <code>{claim.claimId}</code>
                 </div>
                 <p>{claim.text}</p>
                 <figure className="source-excerpt">
@@ -232,7 +232,6 @@ function SourcePanelHeading({ language }: { language: Language }) {
         <p className="sidebar-kicker">{t.showcase.brief.sourceListLabel}</p>
         <p>{t.showcase.brief.sourceListDetail}</p>
       </div>
-      <span className="source-count">{t.labels.evidence}</span>
     </div>
   );
 }

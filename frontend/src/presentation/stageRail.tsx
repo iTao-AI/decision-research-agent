@@ -82,22 +82,43 @@ export function StageRail({
           <span>{t.navLabel}</span>
           <small>{t.showcase.technicalDescription}</small>
         </summary>
-        <nav aria-label={t.navLabel}>
-          {screenKeys.map((screenKey) => (
-            <button
-              aria-label={screenEnglishNames[screenKey]}
-              className={screenKey === activeScreen ? "nav-item active" : "nav-item"}
-              key={screenKey}
-              type="button"
-              onClick={() => onSelectScreen(screenKey)}
-            >
-              <span>{t.screens[screenKey]}</span>
-              <small>{screenEnglishNames[screenKey]}</small>
-            </button>
-          ))}
-        </nav>
+        <TechnicalScreenNavigation
+          activeScreen={activeScreen}
+          language={language}
+          onSelectScreen={onSelectScreen}
+        />
       </details>
     </aside>
+  );
+}
+
+export function TechnicalScreenNavigation({
+  activeScreen,
+  className = "technical-screen-list",
+  language,
+  onSelectScreen
+}: {
+  activeScreen: ScreenKey;
+  className?: string;
+  language: Language;
+  onSelectScreen: (screen: ScreenKey) => void;
+}) {
+  const t = copy[language];
+  return (
+    <nav aria-label={t.navLabel} className={className}>
+      {screenKeys.map((screenKey) => (
+        <button
+          aria-label={screenEnglishNames[screenKey]}
+          className={screenKey === activeScreen ? "nav-item active" : "nav-item"}
+          key={screenKey}
+          type="button"
+          onClick={() => onSelectScreen(screenKey)}
+        >
+          <span>{t.screens[screenKey]}</span>
+          <small>{screenEnglishNames[screenKey]}</small>
+        </button>
+      ))}
+    </nav>
   );
 }
 

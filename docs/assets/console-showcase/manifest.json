@@ -1,0 +1,65 @@
+{
+  "schema_version": "dra.console-showcase-manifest.v1",
+  "capture": {
+    "source_commit": "cdd7b07e427b30596f6434a82bfafc1624e3cba5",
+    "source_tree": "737d76edb54b43e60f7105edeb7e18cca5d24807",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "locale": "zh-CN",
+    "synthetic_demo_disclosure": "Synthetic Static Demo fixtures for a local customer-support refund-pilot case; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment.",
+    "capture_input_fingerprint": {
+      "algorithm": "sha256",
+      "paths": [
+        "frontend/index.html",
+        "frontend/package-lock.json",
+        "frontend/package.json",
+        "frontend/public/favicon.svg",
+        "frontend/src/App.tsx",
+        "frontend/src/apiClient.ts",
+        "frontend/src/consoleProjection.ts",
+        "frontend/src/demoData.ts",
+        "frontend/src/i18n.ts",
+        "frontend/src/main.tsx",
+        "frontend/src/presentation/evidenceSourcePanel.tsx",
+        "frontend/src/presentation/judgmentSidebar.tsx",
+        "frontend/src/presentation/observation.tsx",
+        "frontend/src/presentation/resultReader.tsx",
+        "frontend/src/presentation/showcaseWorkspace.tsx",
+        "frontend/src/presentation/stageRail.tsx",
+        "frontend/src/presentation/staticReportSurface.tsx",
+        "frontend/src/presentation/technicalScreens.tsx",
+        "frontend/src/runProjection.ts",
+        "frontend/src/styles.css",
+        "frontend/src/useLiveRun.ts",
+        "frontend/tsconfig.app.json",
+        "frontend/tsconfig.json",
+        "frontend/tsconfig.node.json",
+        "frontend/vite.config.ts"
+      ],
+      "value": "75b37ae088e15330bda9b46f339175650cb635598b689809e7894a452f4b6c6e"
+    }
+  },
+  "frames": {
+    "research-workspace-overview.png": {
+      "route": "/?showcase=overview",
+      "state": "normal_delivered",
+      "locale": "zh-CN",
+      "sha256": "d61586280b7799a537686f14b7a5614f57300967e145364f6f6afa3040ed38cd"
+    },
+    "research-evidence-review.png": {
+      "route": "/?showcase=evidence",
+      "state": "evidence_review",
+      "locale": "zh-CN",
+      "sha256": "f8192ff16044ce2fd3f7c36ae1e4e516aec152c69922a07b87a5810ee50de771"
+    },
+    "research-blocked-recovery.png": {
+      "route": "/?showcase=blocked",
+      "state": "review_required_not_delivered",
+      "locale": "zh-CN",
+      "sha256": "ba35388176d56c6d187be21589fada3bafb1e3250ef8f86069dc8a61459e12ba"
+    }
+  },
+  "synthetic_demo_disclosure": "Synthetic Static Demo fixtures for a local customer-support refund-pilot case; screenshots do not represent live provider data, hosted availability, benchmark results, or production deployment."
+}

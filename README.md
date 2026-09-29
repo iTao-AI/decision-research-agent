@@ -60,7 +60,7 @@ credentials. It sends no request to the Decision Research Agent backend.
 
 ## Current Default Branch Status
 
-Decision Research Agent v0.1.9 is the latest published stable release. The
+Decision Research Agent v0.1.9 is the current published stable release. The
 Static Demo presentation in the current source tree is a later source change and
 is not part of that historical release. The immutable stable `v0.1.8` release
 remains unchanged.

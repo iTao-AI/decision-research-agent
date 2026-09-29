@@ -40,7 +40,7 @@ npm run dev -- --host 127.0.0.1
 
 ## 当前默认分支状态
 
-Decision Research Agent v0.1.9 是最新已发布的 stable release。当前源码中的
+Decision Research Agent v0.1.9 是当前已发布的 stable release。当前源码中的
 Static Demo 展示界面属于后续源码变更，不包含在该历史版本中。不可变的
 stable `v0.1.8` release 仍保持不变。
 

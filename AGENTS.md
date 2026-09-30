@@ -165,7 +165,7 @@ cross-module behavior, multiple planned PRs.
 - Use an isolated worktree and TDD.
 - Update ADRs or public contracts.
 - Run full relevant verification.
-- Use Autoplan, `gstack-review`, documentation audit, or an independent second
+- Use `gstack-workflows:autoplan`, `gstack-workflows:review`, documentation audit, or an independent second
   view only when their expected value justifies their cost or the user requests
   them.
 
@@ -174,10 +174,10 @@ level instead of silently expanding the process.
 
 ## Subagent Policy
 
-Subagents are not required by default. Use them only when there are at least
-two independently scoped work units with clear file ownership, separate
-verification boundaries, and enough parallel benefit to exceed coordination
-cost.
+Subagents are optional. Use a bounded agent when independent context or review
+has a clear benefit. Parallel work additionally requires independently scoped
+units, clear file ownership, separate verification boundaries, and enough
+benefit to exceed coordination cost.
 
 - The parent Agent owns shared contracts and files, the final integrated branch
   state, cross-lane integration, full relevant verification, and the
@@ -193,7 +193,8 @@ existing runtime research sub-agent architecture.
 
 ## Skills And Phase Ownership
 
-- Use GStack primarily for plan challenge, review, QA, and release audits.
+- Use the official `gstack-workflows` plugin primarily for design, plan challenge,
+  review, QA, and release audits.
 - Use Superpowers primarily for brainstorming, TDD, systematic debugging, plan
   execution, review-finding resolution, and completion verification.
 - Assign one primary workflow controller per phase. Do not stack Skills with
@@ -202,6 +203,23 @@ existing runtime research sub-agent architecture.
 - Apply specialized security, performance, documentation, or independent
   review Skills only when the risk-based execution level or task evidence
   justifies their cost.
+
+### Approved Design To Implementation
+
+- Accept a public-neutral brief or approved repository spec with scope,
+  constraints, observable acceptance, Git starting point, delivery owner, and
+  authorization. Follow the persistence rules below; small work needs only a brief.
+- Verify current rules and Git state, reuse the approved design, and use
+  `superpowers:writing-plans` only to fill implementation gaps. The delivery owner
+  decides in-scope details; changes to goals, key design, acceptance, or authorization
+  return to the owner of the approved design.
+- Choose direct execution for small work, or one plan route:
+  `superpowers:executing-plans` for self-implementation, or
+  `superpowers:subagent-driven-development` for managed implementation and review.
+  Do not restart the full manager workflow inside a task worker.
+- Return the exact HEAD, diff and acceptance evidence, plus remaining work.
+  Distinguish local completion from hosted delivery; missing remote authorization
+  does not prevent preparing a reviewable local result.
 
 ## Working Rules
 

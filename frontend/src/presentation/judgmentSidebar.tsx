@@ -49,65 +49,69 @@ export function JudgmentSidebar({
         onReturnToClaim={onReturnToClaim}
         onSelectEvidence={onSelectEvidence}
       />
-      <section className="judgment-panel judgment-primary">
-        <p className="sidebar-kicker">{t.showcase.judgmentLabel}</p>
-        <div className="judgment-heading">
-          <h2>{t.labels.review}</h2>
-          <span className={`showcase-badge ${blocked ? "blocked" : "ready"}`}>
-            {blocked ? t.showcase.judgment.badgeBlocked : t.showcase.judgment.badgeReady}
-          </span>
-        </div>
-        <p>
-          {blocked ? t.showcase.blocked.summary : t.showcase.overview.review}
-        </p>
-      </section>
-      <section className="judgment-panel">
-        <p className="sidebar-kicker">{t.showcase.judgment.gateChecks}</p>
-        <JudgmentRow
-          label={t.labels.evidence}
-          value={blocked ? t.showcase.judgment.evidenceInsufficient : t.showcase.judgment.evidenceTraceable}
-          tone={blocked ? "blocked" : "ready"}
-        />
-        <JudgmentRow
-          label={t.labels.review}
-          value={isShowcaseRoute ? reviewStatus : t.showcase.judgment.decisionObserved}
-          tone={blocked ? "blocked" : "ready"}
-        />
-        <JudgmentRow
-          label={t.showcase.stages.delivery}
-          value={blocked ? t.showcase.blocked.delivery : t.showcase.judgment.badgeReady}
-          tone={blocked ? "blocked" : "ready"}
-        />
-      </section>
-      <section className="judgment-panel">
-        <p className="sidebar-kicker">{t.showcase.evidence.heading}</p>
-        <h3>{t.showcase.judgment.evidenceGateTitle}</h3>
-        <p className="sidebar-note">
-          {blocked ? t.showcase.blocked.detail : t.showcase.overview.evidence}
-        </p>
-      </section>
-
-      <details className="technical-disclosure inspector-technical">
+      <details className="run-details">
         <summary>
-          <span>{t.labels.authority}</span>
-          <small>{t.showcase.technicalDescription}</small>
+          <span>{t.showcase.judgment.runDetails}</span>
+          <small>{t.showcase.judgment.runDetailsDescription}</small>
         </summary>
-        <section className="inspector-panel">
-          <h2>{t.labels.authority}</h2>
-          <ul className="authority-list">
-            {authorityBadges.map((badge) => (
-              <li key={badge}>{badge}</li>
-            ))}
-          </ul>
+        <section className="judgment-panel judgment-primary">
+          <p className="sidebar-kicker">{t.showcase.judgmentLabel}</p>
+          <div className="judgment-heading">
+            <h2>{t.labels.review}</h2>
+            <span className={`showcase-badge ${blocked ? "blocked" : "ready"}`}>
+              {blocked ? t.showcase.judgment.badgeBlocked : t.showcase.judgment.badgeReady}
+            </span>
+          </div>
+          <p>{blocked ? t.showcase.blocked.summary : t.showcase.overview.review}</p>
         </section>
-        <section className="inspector-panel dark">
-          <h2>{t.labels.cli}</h2>
-          <pre>{projection.architecture.cliGoldenPath}</pre>
+        <section className="judgment-panel">
+          <p className="sidebar-kicker">{t.showcase.judgment.gateChecks}</p>
+          <JudgmentRow
+            label={t.labels.evidence}
+            value={blocked ? t.showcase.judgment.evidenceInsufficient : t.showcase.judgment.evidenceTraceable}
+            tone={blocked ? "blocked" : "ready"}
+          />
+          <JudgmentRow
+            label={t.labels.review}
+            value={isShowcaseRoute ? reviewStatus : t.showcase.judgment.decisionObserved}
+            tone={blocked ? "blocked" : "ready"}
+          />
+          <JudgmentRow
+            label={t.showcase.stages.delivery}
+            value={blocked ? t.showcase.blocked.delivery : t.showcase.judgment.badgeReady}
+            tone={blocked ? "blocked" : "ready"}
+          />
         </section>
-        <section className="inspector-panel">
-          <h2>{t.labels.boundaries}</h2>
-          <p>{t.boundaryStatement}</p>
+        <section className="judgment-panel">
+          <p className="sidebar-kicker">{t.showcase.evidence.heading}</p>
+          <h3>{t.showcase.judgment.evidenceGateTitle}</h3>
+          <p className="sidebar-note">
+            {blocked ? t.showcase.blocked.detail : t.showcase.overview.evidence}
+          </p>
         </section>
+
+        <details className="technical-disclosure inspector-technical">
+          <summary>
+            <span>{t.labels.authority}</span>
+            <small>{t.showcase.technicalDescription}</small>
+          </summary>
+          <section className="inspector-panel">
+            <h2>{t.labels.authority}</h2>
+            <ul className="authority-list">
+              {authorityBadges.map((badge) => (
+                <li key={badge}>{badge}</li>
+              ))}
+            </ul>
+          </section>
+          <section className="inspector-panel dark">
+            <h2>{t.labels.cli}</h2>
+            <pre>{projection.architecture.cliGoldenPath}</pre>
+          </section>
+          <section className="inspector-panel">
+            <h2>{t.labels.boundaries}</h2>
+            <p>{t.boundaryStatement}</p>
+          </section>
+        </details>
       </details>
     </aside>
   );

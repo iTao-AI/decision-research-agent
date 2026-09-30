@@ -14,6 +14,7 @@ from scripts.console_showcase_contracts import (
     load_showcase_manifest,
     verify_showcase_assets,
 )
+from scripts.release_publication_contract import PUBLISHED_ENTRYPOINT_MARKERS
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -314,23 +315,25 @@ def test_showcase_manifest_maps_normal_and_blocked_states_to_public_routes() -> 
     assert manifest["synthetic_demo_disclosure"]
 
 
-def test_readmes_lead_with_the_showcase_delivery_flow() -> None:
+def test_readmes_lead_with_showcase_browsing_and_no_key_static_demo() -> None:
     english_sections = [
-        "## What It Does",
+        "## Browse the Static Demo",
+        "## Run Static Demo",
+        "## Current Default Branch Status",
         "## Research Delivery Flow",
-        "## Showcase Frames",
         "## Engineering Judgments",
-        "## Quick Start",
+        "## Run With the Backend",
         "## Authority And Runtime",
         "## Architecture",
         "## Verification",
     ]
     chinese_sections = [
-        "## 当前能力",
+        "## 浏览 Static Demo",
+        "## 运行 Static Demo",
+        "## 当前默认分支状态",
         "## Research Delivery Flow",
-        "## Showcase Frames",
         "## 三个工程判断",
-        "## 快速开始",
+        "## 使用 Backend 运行",
         "## Authority And Runtime",
         "## 架构",
         "## 验证",
@@ -353,35 +356,28 @@ def test_readmes_lead_with_the_showcase_delivery_flow() -> None:
     chinese_readme = " ".join(
         (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8").split()
     )
-    assert "the first displayed failing lifecycle step is `tool_failed`" in english_readme
-    assert (
-        "the existing durable failure-cause observation is `execution / execution_error`"
-        in english_readme
-    )
-    assert (
-        "the failed source remains immutable and not delivered"
-        in english_readme
-    )
-    assert (
-        "Evidence and citation issues still require human review"
-        in english_readme
-    )
-    assert (
-        "Any new execution is caller-initiated as an ordinary new run or, when eligible, an explicit one-hop replacement"
-        in english_readme
-    )
-    assert "The UI does not resume the failed source" in english_readme
-    assert "显示的失败步骤不等于已证明的根因" in chinese_readme
-    assert "`execution / execution_error`" in chinese_readme
-    assert "原失败运行保持 immutable 且不交付" in chinese_readme
-    assert "Evidence 与 citation 问题仍需人工复核" in chinese_readme
-    assert "执行只能由调用方发起：普通 new run，或在符合" in chinese_readme
-    assert "UI 不会 resume 原失败运行、自动 retry，也不会" in chinese_readme
+    assert "`/?showcase=overview`" in english_readme
+    assert "`/?showcase=evidence`" in english_readme
+    assert "`/?showcase=blocked`" in english_readme
+    assert "policy access is unconfirmed" in english_readme
+    assert "no report or download action and does not retry automatically" in english_readme
+    assert "no API key, backend, provider, or credentials" in english_readme
+    assert "`/?showcase=overview`" in chinese_readme
+    assert "`/?showcase=evidence`" in chinese_readme
+    assert "`/?showcase=blocked`" in chinese_readme
+    assert "本次运行没有交付报告" in chinese_readme
+    assert "页面没有报告或下载操作，也不会自动重试" in chinese_readme
+    assert "不需要 API key、backend、provider 或凭据" in chinese_readme
     assert "Correct the Evidence or tool result, then review again" not in english_readme
     assert "请修正 Evidence 或 tool result 后再次 review" not in chinese_readme
+    for readme in (english_readme, chinese_readme):
+        assert "git clone https://github.com/iTao-AI/decision-research-agent.git" in readme
+        assert "cd decision-research-agent/frontend" in readme
+    assert "The tracked captures will be refreshed" not in english_readme
+    assert "当前跟踪的截图会在完成原生浏览器验证后重新采集" not in chinese_readme
 
 
-def test_readmes_bound_showcase_to_current_published_release() -> None:
+def test_readmes_distinguish_current_source_showcase_from_published_releases() -> None:
     english = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     chinese = (PROJECT_ROOT / "README_CN.md").read_text(encoding="utf-8")
 
@@ -394,16 +390,22 @@ def test_readmes_bound_showcase_to_current_published_release() -> None:
 
     english_normalized = " ".join(english.split())
     for phrase in (
-        "Decision Research Agent v0.1.9 is the current published stable release.",
-        "The showcased Console and blocked-failure diagnosis are bounded additions after the immutable historical stable `v0.1.8`; they are included in the v0.1.9 release record.",
-        "This boundary is not a deployment, provider-backed research, or business-impact claim.",
+        PUBLISHED_ENTRYPOINT_MARKERS["README.md"],
+        "The Static Demo presentation in the current source tree is a later source change and is not part of that historical release.",
+        "The immutable stable `v0.1.8` release remains unchanged.",
+        "at most 4096 UTF-8 bytes",
+        "service-owned state through the existing API contract",
+        "health service identifier use `decision-research-agent`",
     ):
         assert phrase in english_normalized
 
     chinese_normalized = " ".join(chinese.split())
     for phrase in (
-        "Decision Research Agent v0.1.9 是当前已发布的 stable release。",
-        "下文展示的 Console 和 blocked-failure diagnosis 是不可变历史 stable `v0.1.8` 之后的有界新增内容，并已纳入 v0.1.9 release record。",
-        "这一边界不构成 deployment、provider-backed research 或 business-impact claim。",
+        PUBLISHED_ENTRYPOINT_MARKERS["README_CN.md"],
+        "当前源码中的 Static Demo 展示界面属于后续源码变更，不包含在该历史版本中。",
+        "不可变的 stable `v0.1.8` release 仍保持不变。",
+        "最多 4096 UTF-8 bytes",
+        "通过现有 API contract 消费 service-owned state",
+        "health service ID 均使用 `decision-research-agent`",
     ):
         assert phrase in chinese_normalized

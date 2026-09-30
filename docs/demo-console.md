@@ -15,11 +15,12 @@ the canonical result without owning business authority. It has two modes:
   `GET /api/runs/{run_id}/result`. It also allows a retained known `run_id` to
   be re-entered after a page refresh for health-gated GET-only observation.
 
-Both modes use the same report reader. An observed result can be read as safe
-formatted Markdown, switched to an opt-in raw-text view, and downloaded with
-the exact UTF-8 content bytes. A blocked Static Demo run uses the same case and
-source boundary with policy access unconfirmed; it remains
-`review_required`/`not_delivered` and offers no canonical result or download.
+Delivered results in either mode use the existing report reader. An observed
+result can be read as safe formatted Markdown, switched to an opt-in raw-text
+view, and downloaded with the exact UTF-8 content bytes. A blocked Static Demo
+run uses the same case and source boundary with policy access unconfirmed; it
+remains `review_required`/`not_delivered` and offers no report or download
+action.
 
 The console is a consumer of service-owned state. It does not write review or
 verification decisions, create database authority, or bypass result gates.
@@ -34,15 +35,32 @@ The public Static Demo has three deterministic capture states under
 [`docs/assets/console-showcase`](assets/console-showcase/):
 
 - [`research-workspace-overview.png`](assets/console-showcase/research-workspace-overview.png)
-  shows the question, decision brief, comparison, supporting findings, frozen
-  Evidence, and canonical delivery path.
+  shows the compact brand header, research question, recommendation,
+  comparison, supporting findings, and related sources.
 - [`research-evidence-review.png`](assets/console-showcase/research-evidence-review.png)
-  makes claim/source/citation judgment visible and lets the operator open the
-  exact local source behind a finding.
+  opens on the second linked finding and source, with the selected source and
+  its supporting conclusion highlighted for review.
 - [`research-blocked-recovery.png`](assets/console-showcase/research-blocked-recovery.png)
-  shows the same case with policy access unconfirmed, held at
-  `review_required` and `not_delivered` without a delivered/downloadable
-  result.
+  names the unconfirmed policy access, confirms that no report was delivered,
+  and shows the next human confirmation without a report or download action.
+
+The blocked case displays `tool_failed` as its first failing lifecycle step,
+`execution / execution_error` as the persisted failure-cause observation, and
+`review_required / not_delivered` as the service-owned disposition. The first
+displayed failing step is not a proven root cause. The failed run remains
+immutable; the UI does not resume it, retry automatically, or create a
+replacement run.
+
+On the overview and evidence routes, **Conclusion and comparison** focuses the
+recommendation, **View supporting evidence** moves to the currently selected
+source details, and **Read the full report** opens the existing report reader.
+Each finding can open its linked source and return focus to the finding. The
+evidence route begins with the second linked finding/source selected. The
+blocked route has no report shortcuts and never retries automatically. At
+desktop widths of 1100 px or more, the report and source panel use two columns;
+narrower layouts stack them in page order. The six operator screens remain in
+the collapsed technical console, and the five-stage rail remains a Live
+Backend control.
 
 Open the corresponding deterministic routes in Static Demo:
 
@@ -85,7 +103,9 @@ npm run dev -- --host 127.0.0.1
 ```
 
 Open `http://127.0.0.1:5173`. Static Demo is selected by default. It does not
-send a network request to the Decision Research Agent backend.
+send a network request to the Decision Research Agent backend. Browse the
+overview, evidence, and blocked states at the deterministic routes above; no
+API key, backend, provider, or credentials are needed.
 
 ## Run Live Backend Locally
 

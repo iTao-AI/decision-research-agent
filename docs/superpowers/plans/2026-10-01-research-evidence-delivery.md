@@ -153,10 +153,52 @@
 
 ## Integrated Acceptance (delivery owner)
 
-- [ ] Read task review reports and resolve all blocking findings before dependent tasks.
-- [ ] Run backend non-Docker suite, dependency/import compatibility, deterministic evaluation v1/v2 (including causal-order regression), evidence-loop, run creation/dispatch/failure/recovery/security/bounded-producer checks named in current CI.
-- [ ] Run frontend test/lint/build once on the integrated candidate; inspect desktop and narrow live structured pages with native provider-free API and actual browser tools.
-- [ ] Run Docker gates only when applicable to the changed contract and resources are available; identify any skipped required hosted gate precisely. Do not claim unrun Docker/HITL/paid/hosted checks.
-- [ ] Audit important-feature docs against implemented producer, delivery, API, reader, compatibility, and evidence limits; reconcile evidence with observations.
-- [ ] Obtain whole-branch Sol review, fix verified issues, rerun affected checks, verify `git diff --check`, clean Git state, exact HEAD, and unchanged protected checkouts.
-- [ ] Return `READY` for local acceptance or exact missing gate(s), branch/worktree/HEAD, diff, actual checks/outcomes, walkthrough, documentation impact, and remaining remote/paid gates. Preserve the clean worktree; no remote action.
+- [x] Read task review reports and resolve all blocking findings before dependent tasks.
+- [x] Run backend non-Docker suite, dependency/import compatibility, deterministic evaluation v1/v2 (including causal-order regression), evidence-loop, run creation/dispatch/failure/recovery/security/bounded-producer checks named in current CI.
+- [x] Run frontend test/lint/build once on the integrated candidate; inspect desktop and narrow live structured pages with native provider-free API and actual browser tools.
+- [x] Run Docker gates only when applicable to the changed contract and resources are available; identify any skipped required hosted gate precisely. Do not claim unrun Docker/HITL/paid/hosted checks.
+- [x] Audit important-feature docs against implemented producer, delivery, API, reader, compatibility, and evidence limits; reconcile evidence with observations.
+- [x] Obtain whole-branch Sol review, fix verified issues, rerun affected checks, verify `git diff --check`, clean Git state, exact HEAD, and unchanged protected checkouts.
+- [x] Prepare the local `READY` handoff with branch/worktree/HEAD, diff, actual checks/outcomes, walkthrough, documentation impact, and remaining remote/paid gates. Preserve the clean worktree; no remote action.
+
+## Integrated local acceptance record — 2026-10-02
+
+Implemented candidate `9a9a2500e96364ace66e25c9c9b04707139f4b95` is locally
+accepted. This record names the actual tested revisions; its own documentation
+commit does not change the runtime, frontend, fixtures or verification commands.
+
+| Verification | Actual result and revision |
+| --- | --- |
+| Backend `python -m pytest -q -m 'not docker'` | 3882 passed, 4 deselected, 2 existing dependency deprecation warnings; exit 0 at `9a9a250`. |
+| Required container `DECISION_RESEARCH_AGENT_REQUIRE_DOCKER_TESTS=true python -m pytest -q -m docker` | 4 passed, 3862 deselected; exit 0 at `0de2d45`. Docker became available before this run. No standalone durable HITL gate is claimed. |
+| Frontend `npm run test`, `npm run lint`, `npm run build` | 388 tests in 12 files passed; lint and build exited 0 at `0de2d45` using existing local Node 24 dependencies. Hosted Node 22/24 matrix execution is unperformed. |
+| Dependency/import, deterministic evaluation v1/v2, evidence loop, creation idempotency, dispatch reconciliation, failure cause, secure runtime, bounded producer, rollback source/archive and execution recovery | All 13 checks exited 0 at `0de2d45`; the evaluation v2 checks include the causal-order regression. |
+| Native research delivery proof | Four independently declared cases matched actual native execution and HTTP outcomes; exit 0 at `0de2d45`. Complete, partial and contradictory deliveries were ready; insufficient evidence completed with blocked delivery. |
+| Actual browser acceptance | Desktop and narrow layout, Chinese/English labels, service-observed profile, all four cases and keyboard snippet inspection passed at frontend `7a26613`, with the native fixture producer started from `9d6d715`. See the separate browser receipt. |
+| Independent review | Whole-branch review plus full six-file fix re-review accepted `9a9a250`. Both confirmed P2 findings were resolved; no additional confirmed finding remained. |
+
+The final six-file correction reconciles documentation assertions and historical
+showcase verification. It leaves the runtime, frontend, dependency and container
+inputs tested at `0de2d45` unchanged. The original failing backend output was
+retained; the fresh full backend result above supersedes it. Existing websocket
+dependency warnings remain deferred without a dependency change.
+
+Important-feature documentation now links the implemented producer, frozen
+binding, fenced delivery, independent readers, compatibility limits, native
+proof and [operator walkthrough](../../operations/research-evidence-delivery.md).
+The [browser receipt](../../evidence/research-evidence-delivery-reader-v1.md)
+records actual rendered observations separately from the native HTTP receipt.
+Historical Static Demo captures keep their original source and image hashes:
+explicit `--allow-historical` verifies that provenance and reports current input
+parity false; it does not claim a new current Static Demo capture.
+
+The committed task diff passed `git diff --check` from the approved starting
+revision. Seven protected checkouts matched their saved HEAD/status/diff
+snapshots. Temporary API/Vite listeners, the browser tab/viewport override and
+task-owned container resources were released; the clean task worktree is retained.
+
+This is local implementation acceptance. Hosted CI, push, PR creation, merge,
+release, deployment and paid-provider proof remain unperformed and unauthorized.
+Source binding is not truth, entailment, Evidence verification or human approval.
+The proposed paid gate still requires aggregate budget/domain enforcement,
+current provider verification and separate authorization before execution.

@@ -109,5 +109,7 @@ write/stream, application execution, fenced database and persisted HTTP readers.
 They are local provider-free structural evidence, not a required hosted gate,
 paid-provider quality result, truth/entailment verification or browser receipt.
 The [walkthrough](../operations/research-evidence-delivery.md) separates temporary
-fixture serving and a concrete proposed paid-provider gate. Parent-owned actual UI
-observations are retained separately. Earlier evidence retains its original scope.
+fixture serving and a concrete proposed paid-provider gate. The separate
+[browser observation receipt](research-evidence-delivery-reader-v1.md) records
+actual desktop/narrow geometry, keyboard inspection and synthetic local screenshots.
+Earlier evidence retains its original scope.

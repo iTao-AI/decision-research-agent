@@ -115,6 +115,9 @@ external evaluation of the public contract surface.
   ([JSON](evidence/research-evidence-delivery-v1.json)) — four declared synthetic
   complete/partial/contradictory/insufficient outcomes through real native runtime
   and persisted HTTP readers; browser and paid-provider observations are separate.
+- [Research Evidence Delivery Browser Observation](evidence/research-evidence-delivery-reader-v1.md)
+  — actual local desktop/narrow geometry, keyboard snippet inspection and screenshots
+  against the native synthetic fixture API; no paid-provider or research-quality claim.
 - [Durable HITL Gate Report](evidence/durable-hitl-gate-report.json) — 13-gate result artifact.
 - [Real-Source Proof](evidence/real-source-proof.md) and
   [JSON report](evidence/real-source-proof.json) — bounded proof and limitations.

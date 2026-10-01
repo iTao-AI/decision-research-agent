@@ -6,8 +6,10 @@ persistence, independent API readers and the opt-in structured Live reader are
 implemented. The [native proof](../evidence/research-evidence-delivery-v1.md) and
 [walkthrough](../operations/research-evidence-delivery.md) record four independently
 declared synthetic outcomes through installed graph/file/stream/DB/HTTP paths.
-Integrated acceptance and actual browser observations are separate delivery-owner
-gates; real-provider adherence and research quality remain unproven.
+Actual desktop/narrow and keyboard observations are recorded in a separate
+[browser receipt](../evidence/research-evidence-delivery-reader-v1.md).
+Integrated acceptance remains a delivery-owner gate; real-provider adherence
+and research quality remain unproven.
 
 ## Decision
 

@@ -111,9 +111,9 @@ restores trigger focus. The original Markdown reader, raw text view and exact
 UTF-8 download remain available. The insufficient run shows completed/blocked
 and bounded diagnostics, with no deliverable findings or Markdown.
 
-Observe desktop and narrow layouts and keyboard inspection separately, retaining
-actual UI receipts/screenshots in a separately linked evidence file. The native
-receipt proves HTTP consumption only and never invents browser observations.
+The [browser observation receipt](../evidence/research-evidence-delivery-reader-v1.md)
+retains actual desktop/narrow geometry, keyboard inspection and screenshots.
+The native receipt proves HTTP consumption only and never invents browser observations.
 [Demo Console](../demo-console.md) describes reader and existing create/recovery
 controls. Frontend parsing and focus tests supplement actual browser observation.
 

@@ -166,8 +166,16 @@ non-authority 边界。
 python -m pytest tests/unit/test_console_showcase_contracts.py \
   tests/unit/test_demo_console_contracts.py -q
 cd frontend && npm run test && npm run lint && npm run build
-cd .. && python scripts/console_showcase_contracts.py check --root .
+cd .. && python scripts/console_showcase_contracts.py check --root . --allow-historical
 ```
+
+显式 `--allow-historical` 按可达的历史 source commit/tree、独立发现的
+输入路径与 fingerprint，以及精确 PNG 元数据/字节核对保留的 Static Demo 截图。
+当前 structured reader 变更对应 `current_capture_inputs_match: false`；历史来源
+验证不证明当前 Static Demo 渲染一致。不带该参数仍要求当前输入路径与 fingerprint
+匹配，发生漂移后需要真实的新采集/manifest 才能证明当前渲染一致。历史来源不可达
+时，该参数也不免除当前输入要求。[单独的 Live reader 记录](docs/evidence/research-evidence-delivery-reader-v1.md)
+保存当前 native fixture 浏览器观察。
 
 完整 CI proof inventory 仍见下方详细章节与 [CI workflow](.github/workflows/ci.yml)。
 

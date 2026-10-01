@@ -204,8 +204,19 @@ The proportional local checks for this surface are:
 python -m pytest tests/unit/test_console_showcase_contracts.py \
   tests/unit/test_demo_console_contracts.py -q
 cd frontend && npm run test && npm run lint && npm run build
-cd .. && python scripts/console_showcase_contracts.py check --root .
+cd .. && python scripts/console_showcase_contracts.py check --root . --allow-historical
 ```
+
+The explicit `--allow-historical` command verifies the retained Static Demo
+captures against their reachable historical source commit/tree, independently
+discovered input paths/fingerprint, and exact PNG metadata/bytes. It reports
+`current_capture_inputs_match: false` for the current structured-reader changes;
+historical provenance does not establish current Static Demo rendering parity.
+Omitting the flag still requires current input paths and fingerprint to match;
+current-render parity requires an honest new capture/manifest when they drift.
+An unreachable historical source always retains that strict current-input
+requirement. The separate [structured Live reader receipt](docs/evidence/research-evidence-delivery-reader-v1.md)
+records current native fixture browser observations.
 
 The full CI proof inventory remains documented in the detailed sections and
 the [CI workflow](.github/workflows/ci.yml).

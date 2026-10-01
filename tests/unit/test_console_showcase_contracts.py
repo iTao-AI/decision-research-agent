@@ -173,7 +173,7 @@ def _prepare_tree_mismatch_fixture(root: Path) -> tuple[str, str]:
 
 
 def test_showcase_manifest_verifies_exact_assets_and_capture_identity() -> None:
-    result = verify_showcase_assets(PROJECT_ROOT)
+    result = verify_showcase_assets(PROJECT_ROOT, allow_historical=True)
 
     assert result["status"] == "ok"
     assert result["viewport"] == {"width": 1600, "height": 1000}
@@ -183,7 +183,9 @@ def test_showcase_manifest_verifies_exact_assets_and_capture_identity() -> None:
         "research-evidence-review.png",
         "research-workspace-overview.png",
     ]
-    assert result["capture_input_fingerprint"] == compute_capture_input_fingerprint(PROJECT_ROOT)
+    declared = load_showcase_manifest(PROJECT_ROOT)["capture"]["capture_input_fingerprint"]["value"]
+    assert result["capture_input_fingerprint"] == declared
+    assert result["current_capture_inputs_match"] is False
     console_docs = (PROJECT_ROOT / "docs/demo-console.md").read_text(encoding="utf-8")
     assert "canonicalizes only the release `version` fields" in console_docs
 
@@ -409,3 +411,168 @@ def test_readmes_distinguish_current_source_showcase_from_published_releases() -
         "health service ID 均使用 `decision-research-agent`",
     ):
         assert phrase in chinese_normalized
+
+
+def _add_current_render_input(root: Path) -> None:
+    path = root / "frontend/src/currentReader.tsx"
+    path.write_text("export const CurrentReader = () => null;\n", encoding="utf-8")
+    _git(root, "add", "frontend/src/currentReader.tsx")
+
+
+def _mutate_manifest(root: Path, change) -> None:
+    path = root / "docs/assets/console-showcase/manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    change(manifest)
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize("drift", ["pathset", "content"])
+def test_historical_mode_verifies_declared_source_after_current_render_drift(tmp_path, drift):
+    fixture = tmp_path / "historical-drift"
+    _prepare_git_fixture(fixture)
+    declared = load_showcase_manifest(fixture)["capture"]["capture_input_fingerprint"]["value"]
+    if drift == "pathset":
+        _add_current_render_input(fixture)
+        code = "showcase_capture_input_paths_mismatch"
+    else:
+        app = fixture / "frontend/src/App.tsx"
+        app.write_bytes(app.read_bytes() + b"\n// Current render source changed.\n")
+        code = "showcase_capture_input_fingerprint_mismatch"
+    with pytest.raises(ValueError, match=code):
+        verify_showcase_assets(fixture)
+    result = verify_showcase_assets(fixture, allow_historical=True)
+    assert result["provenance_verification"] == "historic_source_identity"
+    assert result["capture_input_fingerprint"] == declared
+    assert result["current_capture_inputs_match"] is False
+    assert set(result["sha256"]) == set(EXPECTED_ASSETS)
+
+
+def test_historical_mode_reports_current_match_when_inputs_still_match(tmp_path):
+    fixture = tmp_path / "historical-current-match"
+    _prepare_git_fixture(fixture)
+    assert verify_showcase_assets(fixture, allow_historical=True)["current_capture_inputs_match"] is True
+
+
+@pytest.mark.parametrize("current_failure", ["invalid_metadata", "missing_input"])
+def test_historical_mode_keeps_source_proof_when_current_fingerprint_cannot_be_read(tmp_path, current_failure):
+    fixture = tmp_path / current_failure
+    _prepare_git_fixture(fixture)
+    package = fixture / "frontend/package.json"
+    if current_failure == "invalid_metadata":
+        package.write_text("{", encoding="utf-8")
+    else:
+        package.unlink()
+    with pytest.raises(ValueError, match="showcase_capture_input_(invalid|unreadable)"):
+        verify_showcase_assets(fixture)
+    assert verify_showcase_assets(fixture, allow_historical=True)["current_capture_inputs_match"] is False
+
+
+@pytest.mark.parametrize("tamper,code", [
+    ("fingerprint", "showcase_source_capture_input_fingerprint_mismatch"),
+    ("paths", "showcase_source_capture_input_paths_mismatch"),
+    ("tree", "showcase_source_tree_mismatch"),
+])
+def test_historical_mode_rejects_tampered_declared_source_provenance(tmp_path, tamper, code):
+    fixture = tmp_path / tamper
+    _prepare_git_fixture(fixture)
+    _add_current_render_input(fixture)
+    def change(manifest):
+        capture = manifest["capture"]
+        if tamper == "fingerprint":
+            capture["capture_input_fingerprint"]["value"] = "0" * 64
+        elif tamper == "paths":
+            capture["capture_input_fingerprint"]["paths"].pop()
+        else:
+            capture["source_tree"] = "0" * 40
+    _mutate_manifest(fixture, change)
+    with pytest.raises(ValueError, match=code):
+        verify_showcase_assets(fixture, allow_historical=True)
+
+
+@pytest.mark.parametrize("drift", ["pathset", "content"])
+def test_unreachable_history_flag_still_requires_current_capture_match(tmp_path, drift):
+    source_commit, source_tree = _prepare_git_fixture(tmp_path / "source")
+    fixture = tmp_path / "unreachable"
+    _prepare_git_fixture(fixture, source_identity=(source_commit, source_tree), capture_commit_message="different source identity")
+    matching = verify_showcase_assets(fixture, allow_historical=True)
+    assert matching["current_capture_inputs_match"] is True
+    assert matching["provenance_verification"] == "capture_input_fingerprint_unreachable_source"
+    if drift == "pathset":
+        _add_current_render_input(fixture)
+        code = "showcase_capture_input_paths_mismatch"
+    else:
+        app = fixture / "frontend/src/App.tsx"
+        app.write_bytes(app.read_bytes() + b"\n// Current render source changed.\n")
+        code = "showcase_capture_input_fingerprint_mismatch"
+    with pytest.raises(ValueError, match=code):
+        verify_showcase_assets(fixture, allow_historical=True)
+
+
+@pytest.mark.parametrize("tamper,code", [
+    ("png_bytes", "showcase_frame_hash_mismatch"),
+    ("hash", "showcase_frame_hash_mismatch"),
+    ("dimensions", "showcase_asset_dimensions_invalid"),
+    ("route", "showcase_frame_state_invalid"),
+    ("frame_locale", "showcase_frame_locale_invalid"),
+    ("capture_locale", "showcase_locale_invalid"),
+    ("disclosure", "showcase_disclosure_missing"),
+])
+def test_historical_mode_preserves_asset_and_disclosure_guards(tmp_path, tamper, code):
+    import struct
+    fixture = tmp_path / tamper
+    _prepare_git_fixture(fixture)
+    _add_current_render_input(fixture)
+    asset = fixture / "docs/assets/console-showcase/research-workspace-overview.png"
+    if tamper == "png_bytes":
+        asset.write_bytes(asset.read_bytes() + b"tampered")
+    elif tamper == "dimensions":
+        raw = asset.read_bytes()
+        asset.write_bytes(raw[:16] + struct.pack(">II", 1599, 1000) + raw[24:])
+    else:
+        def change(manifest):
+            frame = manifest["frames"]["research-workspace-overview.png"]
+            if tamper == "hash":
+                frame["sha256"] = "0" * 64
+            elif tamper == "route":
+                frame["route"] = "/?showcase=unapproved"
+            elif tamper == "frame_locale":
+                frame["locale"] = "en-US"
+            elif tamper == "capture_locale":
+                manifest["capture"]["locale"] = "en-US"
+            else:
+                manifest["capture"]["synthetic_demo_disclosure"] = ""
+        _mutate_manifest(fixture, change)
+    with pytest.raises(ValueError, match=code):
+        verify_showcase_assets(fixture, allow_historical=True)
+
+
+def test_historical_mode_preserves_self_reference_and_source_asset_guards(tmp_path):
+    fixture = tmp_path / "self-reference"
+    _prepare_git_fixture(fixture)
+    asset_commit = _git(fixture, "rev-parse", "HEAD")
+    asset_tree = _git(fixture, "rev-parse", "HEAD^{tree}")
+    _mutate_manifest(fixture, lambda m: m["capture"].update(source_commit=asset_commit, source_tree=asset_tree))
+    with pytest.raises(ValueError, match="showcase_manifest_self_reference"):
+        verify_showcase_assets(fixture, allow_historical=True)
+    _add_current_render_input(fixture)
+    _git(fixture, "commit", "--quiet", "-m", "current rendering input")
+    with pytest.raises(ValueError, match="showcase_source_tree_contains_assets"):
+        verify_showcase_assets(fixture, allow_historical=True)
+
+
+def test_historical_source_errors_survive_invalid_current_fingerprint(tmp_path):
+    fixture = tmp_path / "invalid-current-and-source"
+    _prepare_git_fixture(fixture)
+    (fixture / "frontend/package.json").write_text("{", encoding="utf-8")
+    _mutate_manifest(fixture, lambda m: m["capture"]["capture_input_fingerprint"].update(value="0" * 64))
+    with pytest.raises(ValueError, match="showcase_source_capture_input_fingerprint_mismatch"):
+        verify_showcase_assets(fixture, allow_historical=True)
+
+
+def test_historical_mode_handles_empty_current_input_set_without_waiving_source_checks(tmp_path):
+    fixture = tmp_path / "no-current-inputs"
+    _prepare_git_fixture(fixture)
+    _git(fixture, "rm", "--cached", "--quiet", *CAPTURE_INPUT_PATHS)
+    with pytest.raises(ValueError, match="showcase_capture_input_set_empty"):
+        verify_showcase_assets(fixture)
+    assert verify_showcase_assets(fixture, allow_historical=True)["current_capture_inputs_match"] is False

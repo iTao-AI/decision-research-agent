@@ -92,19 +92,26 @@ def test_live_question_contract_is_bounded_exact_and_non_authoritative():
     readme_cn = re.sub(r"\s+", " ", _read(README_CN))
 
     for phrase in (
-        "one bounded user-authored generic research question",
+        "one bounded user-authored research question",
+        "Generic remains the default",
+        "explicit structured selection submits `generic-evidence-report`",
+        '{questions: [{question_id: "q1", text: query}]}',
         "4096 UTF-8 bytes",
         "does not trim, normalize, translate, case-fold, or rewrite it",
         "browser-session-only",
-        "same key and byte-equivalent request, including the exact submitted question",
+        "same key and byte-equivalent request, including the exact submitted question, selected profile, and deeply frozen scope",
         "service-owned status and result authority",
         "stable `v0.1.8` remains unchanged",
     ):
         assert phrase in contract
 
-    assert "one bounded user-authored generic research question" in readme
+    assert "one bounded user-authored research question" in readme
+    assert "Generic is the default" in readme
+    assert "explicit structured research selects `generic-evidence-report@1`" in readme
     assert "4096 UTF-8 bytes" in readme
-    assert "一个有界的用户自定义通用研究问题" in readme_cn
+    assert "一个有界的用户自定义研究问题" in readme_cn
+    assert "Generic 保持默认" in readme_cn
+    assert "显式结构化模式选择 `generic-evidence-report@1`" in readme_cn
     assert "4096 UTF-8 bytes" in readme_cn
 
 
@@ -116,7 +123,8 @@ def test_known_run_recovery_and_canonical_result_authority_are_explicit():
     )[0]
 
     assert "known run observation resumes with GET only" in contract
-    assert "canonical artifact comes only from /api/runs/{run_id}/result" in contract
+    assert "canonical Markdown artifact comes only from /api/runs/{run_id}/result" in contract
+    assert "structured findings come from the separate canonical /api/runs/{run_id}/findings reader" in contract
     assert (
         "terminal non-ready state is an observed run outcome, not a connection failure"
         in contract

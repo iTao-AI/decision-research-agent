@@ -134,7 +134,26 @@ the source implementation commit/tree, route/state, `zh-CN` locale,
 1600x1000 viewport, disclosure, and SHA-256 values. Its tracked frontend
 capture fingerprint canonicalizes only the release `version` fields in
 `package.json` and `package-lock.json`; dependency, build configuration, source,
-and public-asset changes still require a new capture fingerprint and provenance.
+and public-asset changes still require a new capture fingerprint and provenance
+to establish current-render parity. The retained PNGs and manifest remain
+historical captures; this structured-reader change does not claim new current
+Static Demo rendering parity.
+
+```bash
+python scripts/console_showcase_contracts.py check --root . --allow-historical
+```
+
+Explicit historical mode admits current input drift only when the declared
+commit is reachable and its true tree, independently discovered historical
+frontend path set, exact fingerprint and all PNG bytes/hash/dimensions/route/locale/
+disclosure checks pass. It reports `current_capture_inputs_match` separately
+from `provenance_verification`; historical success may have current match false.
+Omitting `--allow-historical` retains strict current paths/fingerprint matching.
+If the declared source is unreachable, current matching remains required even
+with the flag. A new honest capture/manifest is required to assert current-render
+parity after drift; neither this flag nor the separate
+[structured Live browser receipt](evidence/research-evidence-delivery-reader-v1.md)
+creates a new Static Demo capture.
 
 ## Demo Video Boundary
 

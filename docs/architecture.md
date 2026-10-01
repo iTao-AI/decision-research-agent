@@ -110,6 +110,16 @@ boundaries; arbitrary nested output and subagent summaries do not become
 Evidence. Exact source URLs in a researcher summary preserve citations for the
 coordinator, but are not subagent summaries elevated to business authority.
 
+The opt-in `generic-evidence-report@1` selects a server-owned JSON candidate
+contract on that same graph. Native root `write_file` and stream capture provide
+bounded candidate material; the application resolver binds unique exact excerpts
+to frozen same-run Evidence, never a source refetch. Observed source intake stores
+normalized snippets bounded to 1000 Unicode code points; offsets use code points.
+Canonical JSON and deterministic Markdown are each bounded to 1 MiB. Source
+binding is not truth, entailment or verification, and model-reported contradictions
+remain unreviewed. See the [delivery ADR](decisions/research-findings-delivery-authority.md)
+and [runnable walkthrough](operations/research-evidence-delivery.md).
+
 The opt-in strict citation profile uses the same generic graph and configured
 chat model; this is the configured chat model already owned by the runtime.
 Application finalization first recomputes exact citations. If none
@@ -125,7 +135,9 @@ artifact.
 Web, CLI, REST, WebSocket, and first-party automation all consume canonical
 service contracts. The Agent Research Operations Console can create a
 ResearchRun, observe lifecycle state, and retrieve
-`GET /api/runs/{run_id}/result`, but it does not own business authority or
+`GET /api/runs/{run_id}/result`. Ready observed `generic-evidence-report` runs
+also consume the independent `GET /api/runs/{run_id}/findings` projection with
+inspectable persisted excerpts. The console does not own business authority or
 define a separate runtime.
 
 The CLI golden path `run --wait --result` and the demo console Live Backend
@@ -150,7 +162,10 @@ search cache must not leak across concurrent runs.
 The service finalizes terminal states through fenced transactions. Completion,
 timeout, cancellation, and stale writer paths must preserve frozen Evidence
 and cannot silently overwrite terminal run state. Generic runs persist a
-canonical Markdown report artifact. Talent runs may also persist structured
+canonical Markdown report artifact. The opt-in `generic-evidence-report` also
+persists canonical findings JSON and bounded diagnostics in the same transaction;
+wholly empty or invalid findings complete with blocked delivery. Honest unresolved
+questions may accompany deliverable candidates. Talent runs may also persist structured
 packets, review bundles, publications, and DecisionBrief artifacts under the
 same run-owned authority.
 
@@ -212,6 +227,13 @@ not verify Evidence. Verification decisions are explicit persisted snapshots.
 returns the canonical Markdown report when available. For Talent runs it
 resolves the current publication artifact when publication is enabled, or the
 canonical `decision-brief.md` artifact when that is the active contract.
+
+For the structured profile, `GET /api/runs/{run_id}/findings` independently
+rechecks current delivery, actual own-byte artifact hashes and same-run persisted
+Evidence bindings. Its canonical report carries candidates, questions, frozen
+snippets and dispositions; Markdown remains available through the original result
+endpoint. The browser reads these projections without promoting counts or binding
+to business or verification authority.
 
 Detailed fields and publication semantics live in
 [Data Models](reference/data-models.md) and
@@ -313,8 +335,13 @@ Controlled durable review and evidence verification stay disabled by default
 and remain limited to the documented single-node SQLite boundary unless a
 later architecture decision expands the deployment model.
 
-Delivery is Markdown-only in v0.1.0. The result endpoint returns canonical
-Markdown artifacts and does not generate PDF files.
+The historical v0.1.0 delivery scope was Markdown-only. The current result
+endpoint still returns canonical Markdown and does not generate PDF files; the
+opt-in structured profile additionally exposes application-owned findings JSON.
+The [native proof](evidence/research-evidence-delivery-v1.md) uses deterministic
+model/source fixtures through real graph/file/stream/DB/HTTP paths. It does not
+measure paid-provider adherence, truth/entailment, research quality or browser
+geometry. Actual UI observations and paid-provider proof have separate receipts.
 
 ## Crash-Safe Startup Convergence
 

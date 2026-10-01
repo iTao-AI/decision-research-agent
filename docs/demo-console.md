@@ -34,6 +34,10 @@ service-owned status and result authority remain outside the browser. The
 bounded Live Backend research question input is included in the released
 `v0.1.9`; stable `v0.1.8` remains unchanged as a historical release.
 
+For a provider-free native backend and four declared cases, follow the
+[research evidence delivery walkthrough](operations/research-evidence-delivery.md).
+Its HTTP proof remains separate from actual browser observations and paid runs.
+
 ## Structured Live Reader
 
 Select **真实后端 / Live Backend**, check health, then explicitly choose

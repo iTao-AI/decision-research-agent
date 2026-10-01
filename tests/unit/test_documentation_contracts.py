@@ -622,7 +622,8 @@ def test_current_docs_state_framework_authority_contracts() -> None:
         "Static Demo",
         "Live Backend",
         "Agent Research Operations Console",
-        "Markdown-only delivery",
+        "generic-evidence-report@1",
+        "GET /api/runs/{run_id}/findings",
     ]
 
     for phrase in required_phrases:
@@ -1431,7 +1432,7 @@ def test_run_failure_cause_status_contract_is_public_and_additive() -> None:
         assert projection in status
 
     for phrase in (
-        "exactly one additive top-level field",
+        "The failure-cause status extension adds one additive top-level field",
         "winning application terminal-transaction time",
         "extra-allow",
         "documentation metadata",

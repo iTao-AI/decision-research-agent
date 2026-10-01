@@ -1,0 +1,341 @@
+{
+  "browser_receipt": "Separate parent-owned UI observation receipt; native check never writes it.",
+  "cases": [
+    {
+      "case_id": "complete",
+      "checkpoints": {
+        "actual_stream_candidate_capture": true,
+        "api_creation": true,
+        "application_execution_evidence": true,
+        "canonical_json_projection_agrees_or_delivery_blocked": true,
+        "fenced_database_terminal": true,
+        "http_findings_and_markdown_readers": true,
+        "http_status_reader": true,
+        "installed_graph_named_source_tool": true,
+        "native_write_file": true,
+        "no_external_transport_attempt": true,
+        "returned_artifact_hashes_match_or_delivery_blocked": true,
+        "returned_references_match_frozen_rows_or_no_findings": true
+      },
+      "expected": {
+        "bound_reference_count": 1,
+        "covered_question_count": 1,
+        "delivery_status": "ready",
+        "evidence_count": 1,
+        "execution_status": "completed",
+        "findings_http_status": 200,
+        "issue_codes": [],
+        "markdown_http_status": 200,
+        "reference_binding_failure_count": 0,
+        "reported_contradiction_count": 0,
+        "requested_question_count": 1,
+        "unresolved_question_count": 0
+      },
+      "http_reader": {
+        "artifacts": [
+          {
+            "artifact_id": "research-findings.json",
+            "own_byte_hash_validated": true,
+            "sha256": "d8dd1de9e1add0a4c7d3271e1d18b3016cd85494d02bb73c15f26760128b34e7"
+          },
+          {
+            "artifact_id": "research-report.md",
+            "own_byte_hash_validated": true,
+            "sha256": "7fbd80ba0b8079be7970cf37039f31d5c95fee7ac8914f36de84a8317310ae9e"
+          }
+        ],
+        "evidence_verification_states": [
+          "unverified"
+        ],
+        "findings_error_code": null,
+        "markdown_error_code": null
+      },
+      "observed": {
+        "bound_reference_count": 1,
+        "covered_question_count": 1,
+        "delivery_status": "ready",
+        "evidence_count": 1,
+        "execution_status": "completed",
+        "findings_http_status": 200,
+        "issue_codes": [],
+        "markdown_http_status": 200,
+        "reference_binding_failure_count": 0,
+        "reported_contradiction_count": 0,
+        "requested_question_count": 1,
+        "unresolved_question_count": 0
+      },
+      "passed": true,
+      "query": "research-evidence-proof:complete",
+      "run_id": "run_6bc0b688d0ac536eb2d612086d406868",
+      "runtime": {
+        "model_calls": 5,
+        "model_roles": [
+          "coordinator",
+          "researcher",
+          "researcher",
+          "coordinator",
+          "coordinator"
+        ],
+        "source_tool_status": "success",
+        "tool_calls": [
+          "task",
+          "internet_search",
+          "write_file"
+        ]
+      }
+    },
+    {
+      "case_id": "partial",
+      "checkpoints": {
+        "actual_stream_candidate_capture": true,
+        "api_creation": true,
+        "application_execution_evidence": true,
+        "canonical_json_projection_agrees_or_delivery_blocked": true,
+        "fenced_database_terminal": true,
+        "http_findings_and_markdown_readers": true,
+        "http_status_reader": true,
+        "installed_graph_named_source_tool": true,
+        "native_write_file": true,
+        "no_external_transport_attempt": true,
+        "returned_artifact_hashes_match_or_delivery_blocked": true,
+        "returned_references_match_frozen_rows_or_no_findings": true
+      },
+      "expected": {
+        "bound_reference_count": 1,
+        "covered_question_count": 1,
+        "delivery_status": "ready",
+        "evidence_count": 1,
+        "execution_status": "completed",
+        "findings_http_status": 200,
+        "issue_codes": [],
+        "markdown_http_status": 200,
+        "reference_binding_failure_count": 0,
+        "reported_contradiction_count": 0,
+        "requested_question_count": 2,
+        "unresolved_question_count": 1
+      },
+      "http_reader": {
+        "artifacts": [
+          {
+            "artifact_id": "research-findings.json",
+            "own_byte_hash_validated": true,
+            "sha256": "70236e4312e65a601c0c5235f995fe2da61333dc919ff13c6834e2e9165850ef"
+          },
+          {
+            "artifact_id": "research-report.md",
+            "own_byte_hash_validated": true,
+            "sha256": "053fdc1cb1afec6d7018748a302afd005d0e016b9e2f917c14488e283b804576"
+          }
+        ],
+        "evidence_verification_states": [
+          "unverified"
+        ],
+        "findings_error_code": null,
+        "markdown_error_code": null
+      },
+      "observed": {
+        "bound_reference_count": 1,
+        "covered_question_count": 1,
+        "delivery_status": "ready",
+        "evidence_count": 1,
+        "execution_status": "completed",
+        "findings_http_status": 200,
+        "issue_codes": [],
+        "markdown_http_status": 200,
+        "reference_binding_failure_count": 0,
+        "reported_contradiction_count": 0,
+        "requested_question_count": 2,
+        "unresolved_question_count": 1
+      },
+      "passed": true,
+      "query": "research-evidence-proof:partial",
+      "run_id": "run_e4383ba9ee7353e89f6cc82563dd1470",
+      "runtime": {
+        "model_calls": 5,
+        "model_roles": [
+          "coordinator",
+          "researcher",
+          "researcher",
+          "coordinator",
+          "coordinator"
+        ],
+        "source_tool_status": "success",
+        "tool_calls": [
+          "task",
+          "internet_search",
+          "write_file"
+        ]
+      }
+    },
+    {
+      "case_id": "contradictory",
+      "checkpoints": {
+        "actual_stream_candidate_capture": true,
+        "api_creation": true,
+        "application_execution_evidence": true,
+        "canonical_json_projection_agrees_or_delivery_blocked": true,
+        "fenced_database_terminal": true,
+        "http_findings_and_markdown_readers": true,
+        "http_status_reader": true,
+        "installed_graph_named_source_tool": true,
+        "native_write_file": true,
+        "no_external_transport_attempt": true,
+        "returned_artifact_hashes_match_or_delivery_blocked": true,
+        "returned_references_match_frozen_rows_or_no_findings": true
+      },
+      "expected": {
+        "bound_reference_count": 2,
+        "covered_question_count": 1,
+        "delivery_status": "ready",
+        "evidence_count": 2,
+        "execution_status": "completed",
+        "findings_http_status": 200,
+        "issue_codes": [],
+        "markdown_http_status": 200,
+        "reference_binding_failure_count": 0,
+        "reported_contradiction_count": 1,
+        "requested_question_count": 1,
+        "unresolved_question_count": 0
+      },
+      "http_reader": {
+        "artifacts": [
+          {
+            "artifact_id": "research-findings.json",
+            "own_byte_hash_validated": true,
+            "sha256": "5728b092a52ebeef3fb6408e96b234ce2efd8ba4faa6c99282ae6942d72ef988"
+          },
+          {
+            "artifact_id": "research-report.md",
+            "own_byte_hash_validated": true,
+            "sha256": "1ae990d09b015c2d2ba31214ec4a9ba5d93781a34af8f7bf35ea36562ca2c325"
+          }
+        ],
+        "evidence_verification_states": [
+          "unverified"
+        ],
+        "findings_error_code": null,
+        "markdown_error_code": null
+      },
+      "observed": {
+        "bound_reference_count": 2,
+        "covered_question_count": 1,
+        "delivery_status": "ready",
+        "evidence_count": 2,
+        "execution_status": "completed",
+        "findings_http_status": 200,
+        "issue_codes": [],
+        "markdown_http_status": 200,
+        "reference_binding_failure_count": 0,
+        "reported_contradiction_count": 1,
+        "requested_question_count": 1,
+        "unresolved_question_count": 0
+      },
+      "passed": true,
+      "query": "research-evidence-proof:contradictory",
+      "run_id": "run_558e4f7a1d965b018568e8669dd6f2be",
+      "runtime": {
+        "model_calls": 5,
+        "model_roles": [
+          "coordinator",
+          "researcher",
+          "researcher",
+          "coordinator",
+          "coordinator"
+        ],
+        "source_tool_status": "success",
+        "tool_calls": [
+          "task",
+          "internet_search",
+          "write_file"
+        ]
+      }
+    },
+    {
+      "case_id": "insufficient-evidence",
+      "checkpoints": {
+        "actual_stream_candidate_capture": true,
+        "api_creation": true,
+        "application_execution_evidence": true,
+        "canonical_json_projection_agrees_or_delivery_blocked": true,
+        "fenced_database_terminal": true,
+        "http_findings_and_markdown_readers": true,
+        "http_status_reader": true,
+        "installed_graph_named_source_tool": true,
+        "native_write_file": true,
+        "no_external_transport_attempt": true,
+        "returned_artifact_hashes_match_or_delivery_blocked": true,
+        "returned_references_match_frozen_rows_or_no_findings": true
+      },
+      "expected": {
+        "bound_reference_count": 0,
+        "covered_question_count": 0,
+        "delivery_status": "blocked",
+        "evidence_count": 0,
+        "execution_status": "completed",
+        "findings_http_status": 409,
+        "issue_codes": [
+          "empty_research_output"
+        ],
+        "markdown_http_status": 409,
+        "reference_binding_failure_count": 0,
+        "reported_contradiction_count": 0,
+        "requested_question_count": 1,
+        "unresolved_question_count": 1
+      },
+      "http_reader": {
+        "artifacts": [],
+        "evidence_verification_states": [],
+        "findings_error_code": "run_delivery_blocked",
+        "markdown_error_code": "run_delivery_blocked"
+      },
+      "observed": {
+        "bound_reference_count": 0,
+        "covered_question_count": 0,
+        "delivery_status": "blocked",
+        "evidence_count": 0,
+        "execution_status": "completed",
+        "findings_http_status": 409,
+        "issue_codes": [
+          "empty_research_output"
+        ],
+        "markdown_http_status": 409,
+        "reference_binding_failure_count": 0,
+        "reported_contradiction_count": 0,
+        "requested_question_count": 1,
+        "unresolved_question_count": 1
+      },
+      "passed": true,
+      "query": "research-evidence-proof:insufficient-evidence",
+      "run_id": "run_d057d451d4785220aa34d5887f3e061d",
+      "runtime": {
+        "model_calls": 5,
+        "model_roles": [
+          "coordinator",
+          "researcher",
+          "researcher",
+          "coordinator",
+          "coordinator"
+        ],
+        "source_tool_status": "success",
+        "tool_calls": [
+          "task",
+          "internet_search",
+          "write_file"
+        ]
+      }
+    }
+  ],
+  "consumer_scope": "persisted HTTP status, findings JSON and Markdown result readers",
+  "expectations_file": "tests/fixtures/research-evidence-delivery/expected.json",
+  "fixture_file": "tests/fixtures/research-evidence-delivery/cases.json",
+  "measurements": {
+    "entailment": "not_measured",
+    "production_research_quality": "not_measured",
+    "provider_instruction_obedience": "not_measured",
+    "truth": "not_measured"
+  },
+  "passed": true,
+  "producer_scope": "installed graph + deterministic model + declared named source-tool fixture",
+  "schema": "dra.research-evidence-delivery-proof.v1",
+  "synthetic": true
+}

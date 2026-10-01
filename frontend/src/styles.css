@@ -2062,6 +2062,7 @@ pre {
 
 .safe-markdown {
   min-width: 0;
+  overflow-wrap: anywhere;
   color: #23262b;
   line-height: 1.65;
 }
@@ -2385,6 +2386,12 @@ pre {
 
 .source-detail-heading {
   align-items: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.source-detail-heading > div {
+  min-width: 0;
 }
 
 .source-detail-heading h3 {

@@ -27,7 +27,7 @@ describe("LiveEvidenceSourcePanel", () => {
     expect(screen.getAllByText("Untrusted source").length).toBeGreaterThan(1);
     expect(screen.getByText("该 URL 未通过 HTTP(S) 安全检查")).toBeInTheDocument();
     expect(container.querySelector(".source-detail a")).not.toBeInTheDocument();
-    expect(screen.getByText("当前运行没有观察到可展示的 excerpt；不会从报告正文推断。")).toBeInTheDocument();
+    expect(screen.getByText("此来源元数据未提供可展示的 excerpt；不会从报告正文推断。")).toBeInTheDocument();
     expect(container.querySelector("script")).not.toBeInTheDocument();
   });
 

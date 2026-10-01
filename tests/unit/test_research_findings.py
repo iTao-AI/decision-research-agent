@@ -98,7 +98,7 @@ def test_deterministic_artifact_bytes_hashes_and_markdown_escape_untrusted_text(
     first = build(data)
     second = build(data, entries=[replace(evidence(), created_at="different time")])
     assert first.artifacts == second.artifacts
-    assert [a["artifact_id"] for a in first.artifacts] == ["research-findings.json", "research-report.md"]
+    assert [a["artifact_id"] for a in first.artifacts] == ["research-findings.json", "research-report.md", "research-findings-diagnostics.json"]
     for artifact in first.artifacts:
         assert artifact["content_hash"] == hashlib.sha256(artifact["content"].encode("utf-8")).hexdigest()
     assert first.artifacts[0]["content"] == json.dumps(first.report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":"))

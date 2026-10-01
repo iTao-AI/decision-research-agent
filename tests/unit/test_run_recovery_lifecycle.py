@@ -668,3 +668,11 @@ def test_snapshot_fields_are_the_complete_closed_projection():
         "recorded_at",
         "initial_segment_count",
     }
+
+
+def test_completed_blocked_without_review_is_fenced_terminal():
+    blocked = replace(_family(LifecycleFamily.CLOSED_TERMINAL), delivery_status='blocked')
+    assert _classify(blocked, role=LifecycleRole.ORDINARY) is LifecycleFamily.ORDINARY_COMPATIBLE
+    assert _classify(blocked) is LifecycleFamily.CLOSED_TERMINAL
+    _assert_invalid(replace(blocked, owner_phase='execution'))
+    _assert_invalid(replace(blocked, execution_status='failed', segment_status='failed'))

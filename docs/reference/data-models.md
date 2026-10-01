@@ -388,3 +388,44 @@ Public cause mapping remains the closed `dra.run-failure-cause.v1` contract:
 execution becomes `execution/execution_error`, and finalization becomes
 `finalization/run_finalization_failed`. Status and result schemas gain no
 recovery fields.
+
+
+## Research findings artifacts (implemented)
+
+`generic-evidence-report@1` preserves the existing generic policy and run identity.
+Strict `ResearchFindingsScope` accepts 1–5 unique question IDs with text of
+1–4096 code points. Missing questions default to query/q1 before run creation,
+including keyed intent fingerprinting. Explicit empty scope questions fail.
+The native root VFS candidate uses `dra.research-findings-candidate.v1`, a
+256 KiB UTF-8 limit, 20 findings and 10 references per finding. Its dedicated
+`FindingsCandidate` never changes the Markdown-only `ReportCandidate` guard.
+
+Application-owned artifacts in `run_artifacts_v2` are:
+
+| artifact_id | kind | media_type | limit |
+|---|---|---|---|
+| `research-findings.json` | `research_findings_json` | `application/json` | 1 MiB UTF-8 |
+| `research-report.md` | `research_findings_markdown` | `text/markdown` | 1 MiB UTF-8 |
+| `research-findings-diagnostics.json` | `research_findings_diagnostics_json` | `application/json` | reader: 4 KiB UTF-8 |
+
+Every `content_hash` is SHA-256 of that artifact's own actual UTF-8 content.
+Ready finalization persists all three; blocked finalization persists diagnostics
+only. Run/segment/state version and owner fences commit delivery, frozen Evidence
+and the artifacts atomically. The independent reader receives scope and
+same-run Evidence rows in one DB snapshot. It reparses strict canonical JSON,
+recomputes Evidence identities/fingerprints, uniquely rebinds exact contiguous
+excerpts, and compares Markdown with the deterministic renderer.
+
+`dra.research-findings.v1` contains accepted questions, candidate findings,
+per-question dispositions, limitations and model-reported contradictions.
+References carry exact observed source URL/identity and frozen snippet,
+application-owned `ev_{run_id}_{fingerprint}` and fingerprint, verbatim excerpt,
+and zero-based half-open Python Unicode code-point offsets. Rendering escapes
+untrusted text. Source binding grants neither source verification nor claim
+entailment; existing verification fields and origins remain unchanged.
+
+`dra.research-findings-diagnostics.v1` contains only run identity, closed issue
+codes and requested/covered/unresolved question and reference-binding failure
+counts. GET run projects optional `findings_issues` and `findings_outcome` after
+strict metadata, UTF-8 bound, hash, schema and run identity checks. Corruption
+omits these fields. Existing profile status projections remain unchanged.

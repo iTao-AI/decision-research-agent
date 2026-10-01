@@ -9,7 +9,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Sequence
 
-from agent.harness_contracts import ReportCandidate
+from agent.harness_contracts import ReportCandidate, FindingsCandidate
+from agent.research_findings_contracts import ResearchFindingsIssueCode
 from agent.profile_registry import is_generic_family
 from agent.research import EvidenceEntry, extract_evidence_entries
 from agent.talent_contracts import ResearchPacket
@@ -42,6 +43,8 @@ class ExecutionOutcome:
     failure_kind: str | None = None
     cancellation_state: str | None = None
     report_candidate: ReportCandidate | None = None
+    findings_candidate: FindingsCandidate | None = None
+    findings_capture_issue: ResearchFindingsIssueCode | None = None
 
 
 # Backwards-compatible public name while callers migrate to ExecutionOutcome.
@@ -86,6 +89,8 @@ class AgentRunAccumulator:
     evidence_aliases: dict[str, tuple[str, ...]] = field(default_factory=dict)
     verified_evidence_ids: set[str] = field(default_factory=set)
     report_candidate: ReportCandidate | None = None
+    findings_candidate: FindingsCandidate | None = None
+    findings_capture_issue: ResearchFindingsIssueCode | None = None
 
     def to_outcome(
         self,
@@ -125,6 +130,8 @@ class AgentRunAccumulator:
             failure_kind=resolved_failure_kind,
             cancellation_state=cancellation_state,
             report_candidate=self.report_candidate,
+            findings_candidate=self.findings_candidate,
+            findings_capture_issue=self.findings_capture_issue,
         )
 
     def to_result(self, error_message: str | None = None) -> AgentRunResult:
@@ -382,6 +389,9 @@ def process_stream_chunk(
                 or node_name != "network_search"
                 or tool_name != "internet_search"
             ):
+                continue
+            if (accumulator.profile_id == "generic-evidence-report"
+                    and last_msg.status != "success"):
                 continue
             accumulator.evidence_entries.extend(
                 extract_evidence_entries(

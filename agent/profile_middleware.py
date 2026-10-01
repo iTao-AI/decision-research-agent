@@ -16,6 +16,9 @@ from langgraph.runtime import Runtime
 from typing_extensions import NotRequired
 
 
+from agent.harness_contracts import FINDINGS_CANDIDATE_PATH, capture_findings_candidate
+
+
 _CANONICAL_REPORT_PATH = "/workspace/research-report.md"
 _MAX_CANONICAL_REPORT_BYTES = 1024 * 1024
 _CANONICAL_REPORT_CORRECTION = (
@@ -61,18 +64,32 @@ class CanonicalReportCompletionMiddleware(
         state: CanonicalReportCompletionState,
         runtime: Runtime,
     ) -> dict[str, Any] | None:
-        del runtime
+        findings_mode = getattr(getattr(runtime, "context", None), "profile_id", None) == "generic-evidence-report"
+        if findings_mode:
+            files = state.get("files", {})
+            candidate, issue = capture_findings_candidate(
+                files.get(FINDINGS_CANDIDATE_PATH.as_posix()) if isinstance(files, Mapping) else None
+            )
+            has_artifact = candidate is not None and issue is None and bool(candidate.content.strip())
+            correction = (
+                "The required JSON candidate is still missing. Use native write_file to create "
+                "/workspace/research-findings.json following the accepted questions and strict "
+                "candidate schema in the request. Do not return the candidate only as chat text."
+            )
+        else:
+            has_artifact = _has_valid_canonical_report(state)
+            correction = _CANONICAL_REPORT_CORRECTION
         messages = state.get("messages", [])
         last_message = messages[-1] if messages else None
         if (
             not isinstance(last_message, AIMessage)
             or last_message.tool_calls
-            or _has_valid_canonical_report(state)
+            or has_artifact
             or state.get("canonical_report_correction_count", 0) >= 1
         ):
             return None
         return {
-            "messages": [HumanMessage(content=_CANONICAL_REPORT_CORRECTION)],
+            "messages": [HumanMessage(content=correction)],
             "canonical_report_correction_count": 1,
             "jump_to": "model",
         }

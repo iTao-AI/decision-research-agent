@@ -1,9 +1,9 @@
 # Research findings delivery authority
 
 Date: 2026-10-01. Status: accepted boundary for the approved research-findings
-delivery design. Strict contracts and the pure frozen-Evidence resolver are
-implemented; producer, persistence integration and API/UI consumer wiring
-are subsequent slices.
+delivery design. Strict contracts, the pure frozen-Evidence resolver, native producer, fenced
+persistence and independent API readers are implemented. UI wiring and integrated
+acceptance remain subsequent slices.
 
 ## Decision
 
@@ -83,10 +83,26 @@ domain's uniqueness, disposition-reason and exact-offset rules. Checkpoints
 and tracing cannot replace the application ledger; no framework upgrade or
 additional orchestrator is required.
 
-Provider-free contract and Talent finalization regressions validate this first
-slice. They do not prove native research-findings production or a paid-provider
-run. Native producer-through-reader proof remains a subsequent delivery gate;
-paid-provider evidence requires separate authorization.
+Provider-free native regressions now exercise installed build_generic_harness,
+named network_search/internet_search, native write_file, stream capture, application
+execution, real server dispatch/fenced DB and independent HTTP JSON/Markdown
+consumers. Failed file/source tools and missing/invalid/empty candidate controls
+complete with blocked delivery. These are synthetic local structural outcomes;
+paid-provider evidence and research quality require separate authorization.
+
+Ready packages persist typed diagnostics as a third artifact in the same fenced
+transaction, after canonical JSON and Markdown. Blocked packages retain only
+diagnostics. Each artifact hashes its own UTF-8 bytes; status diagnostics use a
+4 KiB read bound and closed fields. Invalid root VFS replacement discards prior
+candidate bytes. The existing completion middleware chooses the candidate target
+from server-owned runtime context with one correction; the shared graph and
+legacy Markdown ReportCandidate guard remain intact.
+
+The recovery lifecycle classifier now accepts completed/not_required/blocked
+with all existing closed-owner/finalization, segment, version, dispatch and
+no-failure-cause checks. This records completed execution without granting
+delivery, verification or review authority. Nonterminal and failed admission
+remain unchanged.
 
 ## Adjacent Talent repair
 
@@ -96,3 +112,16 @@ execution `completed` and sets delivery `review_required`. A human may explicitl
 resolve a legitimate no-findings outcome through the existing review workflow.
 Findings-only nonempty output remains eligible under existing reference and
 review rules; the policy does not require every packet list to be nonempty.
+
+
+The shared coordinator prompt retains the Markdown default and explicitly allows
+only the server-supplied structured profile envelope to select the JSON target,
+with precedence over legacy Skill output-format wording. The server constructs
+that envelope from validated profile/scope and quotes query/question text as
+untrusted research content. Provider-free tests prove native mechanics and
+delivery authority; they do not prove real-model instruction adherence.
+
+The producer envelope also states the existing intake boundary: Evidence capture
+collapses whitespace and truncates observed snippets to 1000 code points. Exact
+excerpts must occur uniquely and contiguously inside that stored normalized
+snippet; later passages of a longer raw tool result cannot satisfy binding.

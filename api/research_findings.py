@@ -214,6 +214,10 @@ def build_research_findings_artifacts(
             _artifact("research-findings-diagnostics.json", "research_findings_diagnostics_json", "application/json",
                       _canonical_json(diagnostics.model_dump(mode="json")))
         ], list(evidence_entries), diagnostics)
+    artifacts.append(_artifact(
+        "research-findings-diagnostics.json", "research_findings_diagnostics_json", "application/json",
+        _canonical_json(diagnostics.model_dump(mode="json")),
+    ))
     cited = {reference.evidence_fingerprint for finding in findings for reference in finding.references}
     marked = [replace(entry, citation_status="cited" if entry.evidence_fingerprint in cited else "uncited") for entry in evidence_entries]
     return ResearchFindingsBuildResult("ready", report, artifacts, marked, diagnostics)

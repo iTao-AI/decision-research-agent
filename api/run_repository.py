@@ -1113,6 +1113,19 @@ def get_run(*, run_id: str, db_path: str | None = None) -> dict[str, Any] | None
         result["review_workflow"] = review_projection["workflow"]
         result["review_decision"] = review_projection["decision"]
         result["review_resolution"] = review_projection["resolution"]
+        if result["profile_id"] == "generic-evidence-report":
+            from api.research_findings_service import project_findings_diagnostics
+            diagnostic = conn.execute(
+                "SELECT artifact_id, kind, media_type, content, content_hash FROM run_artifacts_v2 "
+                "WHERE run_id = ? AND artifact_id = 'research-findings-diagnostics.json'", (run_id,)
+            ).fetchone()
+            current_ids = result.get("current_publication", {}).get("artifact_ids", []) if result.get("current_publication") else []
+            if not current_ids or "research-findings-diagnostics.json" in current_ids:
+                result.update(project_findings_diagnostics(
+                    run_id=run_id, profile_version=result["profile_version"],
+                    delivery_status=result["delivery_status"], scope=result["scope"],
+                    artifact=dict(diagnostic) if diagnostic else None,
+                ))
         return result
     finally:
         conn.close()
@@ -1130,7 +1143,7 @@ def get_run_delivery_snapshot(
         conn.execute("BEGIN")
         run = conn.execute(
             """
-            SELECT run_id, profile_id, profile_version,
+            SELECT run_id, profile_id, profile_version, scope_json,
                    execution_status, delivery_status
             FROM research_runs_v2
             WHERE run_id = ?
@@ -1191,6 +1204,15 @@ def get_run_delivery_snapshot(
             "current_artifact_ids": current_ids,
             "artifacts": tuple(dict(row) for row in rows),
         }
+        if run["profile_id"] == "generic-evidence-report":
+            snapshot.update({
+                "profile_version": run["profile_version"],
+                "scope": json.loads(run["scope_json"]),
+                "evidence_rows": [dict(row) for row in conn.execute(
+                    "SELECT run_id, evidence_id, source_url, source_identity, snippet, evidence_fingerprint "
+                    "FROM evidence_entries_v2 WHERE run_id = ? ORDER BY evidence_id", (run_id,)
+                ).fetchall()],
+            })
         if run["profile_id"] == "generic-strict-citation":
             cited_rows = conn.execute(
                 """
@@ -1213,7 +1235,7 @@ def get_run_delivery_snapshot(
             )
         conn.commit()
         return snapshot
-    except (json.JSONDecodeError, sqlite3.Error, TypeError, ValueError) as exc:
+    except (json.JSONDecodeError, sqlite3.Error, TypeError, ValueError, RecursionError) as exc:
         conn.rollback()
         raise RunDeliverySnapshotConflict(
             "run_delivery_snapshot_corrupt"

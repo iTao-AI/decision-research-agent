@@ -9,11 +9,16 @@ the canonical result without owning business authority. It has two modes:
 
 - **Static Demo** renders a deterministic bundled snapshot and requires no
   backend, provider, or credentials. The default case asks `客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`, recommends an internal knowledge assistant, and exposes three local full-text sources with exact claim-to-excerpt links.
-- **Live Backend** accepts one bounded user-authored generic research question,
-  creates one generic ResearchRun against a local backend, polls its bounded
-  status, and renders the canonical result returned by
+- **Live Backend** accepts one bounded user-authored research question. Generic
+  research remains the default; **结构化证据研究 / Structured evidence research**
+  explicitly selects `generic-evidence-report@1` with one `q1`. The console
+  creates the selected ResearchRun against a local backend, polls bounded
+  status, and renders the canonical Markdown result returned by
   `GET /api/runs/{run_id}/result`. It also allows a retained known `run_id` to
   be re-entered after a page refresh for health-gated GET-only observation.
+  Ready runs whose observed profile is `generic-evidence-report` additionally
+  read `GET /api/runs/{run_id}/findings`; attached runs use their actual observed
+  profile, rather than the currently selected creation mode.
 
 Delivered results in either mode use the existing report reader. An observed
 result can be read as safe formatted Markdown, switched to an opt-in raw-text
@@ -28,6 +33,55 @@ The question draft and temporary create intent are browser-session-only; the
 service-owned status and result authority remain outside the browser. The
 bounded Live Backend research question input is included in the released
 `v0.1.9`; stable `v0.1.8` remains unchanged as a historical release.
+
+## Structured Live Reader
+
+Select **真实后端 / Live Backend**, check health, then explicitly choose
+**结构化证据研究 / Structured evidence research** in **研究模式 / Research mode**.
+Enter a research question and select **运行并获取结果 / Run and fetch result**.
+The browser submits the exact original query and an immutable nested
+`{questions: [{question_id: "q1", text: query}]}` scope. The API also supports
+1–5 questions for other consumers; the console does not invent questions for
+attached runs. Accepted question text shown in the report is service-owned
+and may reflect server scope normalization.
+
+Only an observed ready run of the structured profile triggers `/findings`.
+The reader presents accepted questions, source-bound candidate findings, exact
+excerpts, and **查看完整持久化片段 / Inspect full persisted snippet** controls.
+Opening inspection focuses the full snippet region; **返回引用片段 / Return to
+excerpt** restores focus. The region scrolls and wraps long Unicode text on
+narrow screens. These are persisted snippets, not complete webpages or new
+source fetches. All candidate/source/contradiction strings render as text;
+unsafe or credential-bearing URLs have no actionable link.
+
+Unresolved question reasons, limitations, and model-reported contradictions
+remain visible. Source binding locates material in an observed source snippet;
+it does not prove truth or entailment, and model-reported contradictions have
+not been independently reviewed. The existing canonical Markdown reader, raw
+view, and exact UTF-8 download remain available after both reads succeed.
+
+The selected-field parser requires canonical run/profile/version/artifact
+identity, coherent question dispositions and exact unique excerpt offsets.
+String limits and offsets count Unicode code points using `Array.from`;
+canonical JSON is bounded to 1 MiB of UTF-8 bytes. An excerpt allows up to
+1000 code points. A persisted snippet has no extra fixed character bound
+beyond the artifact limit. The backend remains the Evidence/hash/delivery
+authority; the browser does not perform independent Evidence verification.
+
+A completed but blocked run does not fetch findings or Markdown and exposes
+only optional bounded service diagnostic codes and counts. Counts represent
+question coverage, unresolved dispositions, and reference binding failures,
+not answer accuracy. Missing diagnostics are not a readiness signal. Findings
+read failures clear both reader presentations and show a bounded client error.
+Switching profile, backend URL, or static/live mode clears the active run and
+invalidates stale responses. Ambiguous create retry preserves the original
+query, profile, scope, and key.
+
+The structured live surface is implemented in the current local change. The
+tracked Static Demo screenshots below remain synthetic fixtures and do not
+prove the structured live path, real-provider quality, or semantic accuracy.
+Desktop/narrow browser inspection is a separate integrated acceptance step;
+component keyboard/Unicode checks do not substitute for rendered observations.
 
 ## Showcase Frames
 
@@ -167,7 +221,8 @@ Open `http://127.0.0.1:5173`, select **Live Backend**, keep Backend base URL as
 
 1. Select **检查后端 / Check backend**.
 2. Confirm the service reports ready.
-3. Enter one nonblank research question in the editable multiline field. The
+3. Keep the default generic mode or explicitly select Structured evidence
+   research, then enter one nonblank research question in the editable multiline field. The
    Console accepts at most 4096 UTF-8 bytes and shows the current byte count.
 4. Select **运行并获取结果 / Run and fetch result**.
 5. Inspect the returned `run_id`, terminal state, and canonical artifact.
@@ -189,7 +244,8 @@ keeps one temporary keyed request in memory. The question is sent exactly as
 entered; the Console does not trim, normalize, translate, case-fold, or rewrite
 it. If the create acknowledgement is ambiguous, use **重试同一请求 / Retry
 same request** to resend the same key and byte-equivalent request, including
-the exact submitted question, or explicitly discard it. Do not start a
+the exact submitted question, selected profile, and nested scope, or explicitly
+discard it. Do not start a
 replacement request while reconciliation is pending. A page refresh discards
 the in-memory reconciliation capability; the draft is browser-session-only and
 the console does not claim durable browser intent.
@@ -201,8 +257,9 @@ Observe known run** action accepts the exact syntax
 browser-session-only, and uses GET only; it does not create a new run. A
 retained known `run_id` can be re-entered after a page refresh. Use **仅 GET
 恢复观察 / Resume observation (GET only)** after an interrupted status or
-result observation. The canonical artifact comes only from
-/api/runs/{run_id}/result. A terminal non-ready state is an observed run
+result observation. The canonical Markdown artifact comes only from
+/api/runs/{run_id}/result; structured findings come from the separate canonical
+/api/runs/{run_id}/findings reader. A terminal non-ready state is an observed run
 outcome, not a connection failure, and the console does not request a result
 for that state. The console does not add run list/history or browser
 persistence and does not reconstruct an ambiguous POST after refresh.

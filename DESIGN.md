@@ -50,7 +50,15 @@ next human confirmation. It has no report or download action and does not
 retry automatically.
 
 Live Backend retains the existing stage rail, technical screen navigation,
-and report reader. It continues to render only observed service-owned state.
+and Markdown report reader. Generic research remains the default. An explicit
+Structured evidence research selection creates `generic-evidence-report@1`
+with one `q1` question. A ready observed run of that profile adds a structured
+reader before the canonical Markdown reader, with accepted questions,
+source-bound candidate findings, exact excerpts, full persisted snippets,
+unresolved dispositions, model-reported contradictions, and limitations.
+Attached runs select the reader from the service-observed profile, regardless
+of the form selection. The UI continues to render only observed service-owned
+state.
 
 The technical disclosure retains the six operator screens:
 
@@ -132,6 +140,12 @@ Colors represent state, not decoration.
 - `ResultReader`: one report-first reader for Static Demo and observed Live
   Backend results, with safe formatted Markdown, opt-in raw text, and exact
   UTF-8 download.
+- `ResearchFindingsReader`: consumes the canonical structured projection for
+  the opt-in live profile. Source/model strings remain React text. Full snippet
+  inspection opens a bounded scrolling region, moves keyboard focus there,
+  and returns focus to the excerpt control. Source actions use the existing
+  safe HTTP(S) policy; rejected addresses remain non-actionable text. The
+  source-bound label does not assert truth, entailment, or verification.
 - `EvidenceSourcePanel`: keeps local fixture source details and claim excerpts
   linked in Static Demo, while Live Backend renders only observed source fields
   and safe HTTP(S) links.
@@ -168,11 +182,15 @@ python tools/decision_research_agent_tool.py run \
   marking policy access unconfirmed. It stays at `review_required` and
   `not_delivered`; it never fabricates a canonical result or download.
 - Static source text is labeled as local fixture material. Live source details
-  render only observed identity, verification, fingerprint, citation, and safe
-  HTTP(S) links; the UI does not infer excerpts or claim links from report text.
+  render observed identity, verification, fingerprint, citation, and safe
+  HTTP(S) links. The structured reader displays canonical bound excerpts and
+  persisted snippets from `/findings`; it does not infer them from Markdown,
+  refetch sources, or describe snippets as full webpages.
 - Live Backend mode may call `/health`, `POST /api/runs`,
-  `/api/runs/{run_id}`, and `/api/runs/{run_id}/result`.
-- Live Backend accepts one bounded user-authored generic research question. The
+  `/api/runs/{run_id}`, `/api/runs/{run_id}/result`, and the ready observed
+  structured profile's `/api/runs/{run_id}/findings`.
+- Live Backend accepts one bounded user-authored research question; generic is
+  the default and structured evidence research is opt-in. The
   question must be nonblank and no more than 4096 UTF-8 bytes; this is a
   browser consumer bound, not a backend schema change.
 - Live Backend is local-only in the current slice. It uses one explicit CORS
@@ -195,8 +213,10 @@ run-specific data is never rendered. Static fixtures cannot fill gaps in a
 Live projection; missing, not-applicable, unsupported, and observed-empty
 values remain explicit.
 
-Live Backend accepts one bounded user-authored generic research question. The
-initial example is editable, but the submitted question must be nonblank and
+Live Backend accepts one bounded user-authored research question. Generic
+remains the default; the explicit structured selection submits
+`generic-evidence-report` with `{questions: [{question_id: "q1", text: query}]}`.
+The initial example is editable, but the submitted question must be nonblank and
 at most 4096 UTF-8 bytes. The Console sends the string exactly as entered,
 including surrounding spaces and line breaks; it does not trim, normalize,
 translate, case-fold, or rewrite it. The draft and its temporary create intent
@@ -206,15 +226,22 @@ outside the browser.
 Idempotency-Key is header-only and browser-session scoped. A new-run action
 creates one in-memory intent before transport begins. If its create response is
 ambiguous, the operator may retry the same key and byte-equivalent request,
-including the exact submitted question, or discard that pending intent. The key
+including the exact submitted question, selected profile, and deeply frozen
+scope, or discard that pending intent. The key
 is never rendered, placed in the URL or request body, or stored in browser
 persistence. A page refresh discards the in-memory reconciliation capability.
 
 After a valid acknowledgement exposes `run_id`, known run observation resumes
 with GET only. Status and result recovery do not create a replacement run. The
-canonical artifact comes only from /api/runs/{run_id}/result. A terminal
+canonical Markdown artifact comes only from /api/runs/{run_id}/result. A terminal
 non-ready state is an observed run outcome, not a connection failure, and does
-not trigger a result request.
+not trigger a result or findings request. Optional service-owned
+`findings_issues` and `findings_outcome` show bounded issue codes and counts;
+counts describe question coverage/reference binding, not answer accuracy.
+Missing diagnostics do not grant or deny delivery. Switching research profile,
+backend URL, or static/live mode clears run/findings/result state and aborts
+old observation. A failed findings read clears both readers; stale responses
+cannot restore them.
 
 A retained known `run_id` can be re-entered after a page refresh in the separate
 Live Backend control. This health-gated GET-only observation uses the exact
@@ -240,7 +267,7 @@ unchanged as a historical release.
 
 ## Explicit Non-Goals
 
-- No backend API changes.
+- No frontend-specific backend aliases or authority changes.
 - No database changes.
 - No feature flags.
 - No login, RBAC, multi-tenancy, public online research runner, or PDF export.

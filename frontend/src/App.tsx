@@ -37,6 +37,8 @@ import {
   RunLifecycle
 } from "./presentation/technicalScreens";
 import { buildScreenSummary, ObservationValue, observationLabel } from "./presentation/observation";
+import { ResearchFindingsReader } from "./presentation/researchFindingsReader";
+import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile } from "./researchFindings";
 
 export type { ShowcaseState } from "./presentation/showcaseWorkspace";
 
@@ -158,7 +160,20 @@ export default function App({
               onSelectEvidence={selectEvidence}
             />
           ) : (
-            <LiveObservationSurface language={language} projection={projection} />
+            <>
+              {liveRun.state.findings && <ResearchFindingsReader key={liveRun.state.findings.run_id} language={language} findings={liveRun.state.findings} />}
+              {liveRun.state.run?.profile_id === STRUCTURED_RESEARCH_PROFILE && !liveRun.state.findings && (
+                <section className="research-findings-diagnostics" aria-label={t.research.diagnostics}>
+                  <h2>{t.research.diagnostics}</h2><p>{t.research.unavailable}</p>
+                  {liveRun.state.run.findingsIssues && <ul>{liveRun.state.run.findingsIssues.map((code, index) => <li key={index}><code>{code}</code></li>)}</ul>}
+                  {liveRun.state.run.findingsOutcome && <>
+                    <p>{t.research.counts}</p>
+                    <dl>{Object.entries(liveRun.state.run.findingsOutcome).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
+                  </>}
+                </section>
+              )}
+              <LiveObservationSurface language={language} projection={projection} />
+            </>
           )}
 
           <details
@@ -338,6 +353,15 @@ function LiveDemoPanel({
       </div>
 
       <div className="live-controls">
+        <label className="research-profile-field">
+          <span>{t.research.mode}</span>
+          <select aria-label={t.research.mode} aria-describedby="live-research-mode-hint" disabled={!isLive} value={state.createProfileId ?? "generic"}
+            onChange={(event) => liveRun.setProfile(event.target.value as LiveResearchProfile)}>
+            <option value="generic">{t.research.genericMode}</option>
+            <option value={STRUCTURED_RESEARCH_PROFILE}>{t.research.structuredMode}</option>
+          </select>
+          <small id="live-research-mode-hint">{t.research.modeHint}</small>
+        </label>
         <label>
           <span>{t.live.baseUrl}</span>
           <input

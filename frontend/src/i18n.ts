@@ -125,6 +125,19 @@ export const copy = {
         terminal: "已观察到非 ready 终态"
       }
     },
+    research: {
+      mode: "研究模式", genericMode: "通用研究（默认）", structuredMode: "结构化证据研究",
+      modeHint: "结构化模式提交一个 q1；已知运行按后端实际 profile 读取。切换模式会清除当前运行观察。",
+      title: "来源绑定的候选结论", questions: "已接受的研究问题", findings: "候选发现",
+      boundary: "绑定说明候选内容来自已观察到的来源片段，不证明来源真实或片段蕴含结论；Evidence 核验仍由服务拥有。",
+      excerpt: "精确引用片段", inspect: "查看完整持久化片段", fullSnippet: "完整持久化片段",
+      snippetBoundary: "这是当前运行保存的片段，不是完整网页，也没有重新抓取来源。",
+      returnToExcerpt: "返回引用片段", source: "绑定来源", unsafeLink: "此地址仅显示文本，不能打开。",
+      unresolved: "未解决的问题", contradictions: "模型报告的矛盾", limitations: "限制",
+      contradictionsBoundary: "以下矛盾由模型报告，尚未独立复核。", none: "未报告条目。",
+      technical: "绑定技术信息", diagnostics: "服务报告的结构化交付诊断",
+      counts: "问题覆盖与引用绑定计数（不代表答案准确率）", unavailable: "当前没有可读的结构化交付物。"
+    },
     reader: {
       title: "研究报告",
       documentLabel: "决策简报",
@@ -409,6 +422,19 @@ export const copy = {
         static: "Static snapshot active",
         terminal: "Terminal non-ready run observed"
       }
+    },
+    research: {
+      mode: "Research mode", genericMode: "Generic research (default)", structuredMode: "Structured evidence research",
+      modeHint: "Structured mode submits one q1; attached runs use the service-observed profile. Switching clears the current run observation.",
+      title: "Source-bound candidate findings", questions: "Accepted research questions", findings: "Candidate findings",
+      boundary: "Binding locates the candidate in an observed source snippet. It does not prove source truth or claim entailment; Evidence verification remains service-owned.",
+      excerpt: "Exact excerpt", inspect: "Inspect full persisted snippet", fullSnippet: "Full persisted snippet",
+      snippetBoundary: "This is the snippet saved by the current run, not a full webpage or a new source fetch.",
+      returnToExcerpt: "Return to excerpt", source: "Bound source", unsafeLink: "This address is text only and cannot be opened.",
+      unresolved: "Unresolved questions", contradictions: "Model-reported contradictions", limitations: "Limitations",
+      contradictionsBoundary: "These contradictions were reported by the model and have not been independently reviewed.", none: "No entries reported.",
+      technical: "Binding technical details", diagnostics: "Service-reported structured delivery diagnostics",
+      counts: "Question coverage and reference binding counts (not answer accuracy)", unavailable: "No readable structured delivery is available."
     },
     reader: {
       title: "Research report",

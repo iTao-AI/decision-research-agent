@@ -144,3 +144,52 @@ def test_serve_actual_loopback_http_readers_and_bounded_cleanup(tmp_path):
         if process.poll() is None:
             process.terminate()
             process.communicate(timeout=5)
+
+
+def test_serve_sigint_has_bounded_exit_and_cleans_actual_native_runtime(tmp_path):
+    import signal
+    import socket
+    import time
+    import urllib.request
+    import urllib.error
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+    env = {**os.environ, 'TMPDIR': str(tmp_path), 'PYTHON_DOTENV_DISABLED': '1',
+           'LANGSMITH_TRACING': 'false', 'LANGCHAIN_TRACING_V2': 'false', 'PYTHONDONTWRITEBYTECODE': '1'}
+    process = subprocess.Popen([sys.executable, str(SCRIPT), 'serve', '--origin',
+        'http://127.0.0.1:5175', '--port', str(port), '--seconds', '60'], cwd=ROOT,
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                with urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=.5) as response:
+                    assert response.status == 200
+                break
+            except urllib.error.URLError:
+                assert time.monotonic() < deadline, 'fixture server never became ready'
+                time.sleep(.05)
+        runtime_dirs = list(tmp_path.glob('dra-research-evidence-proof-*'))
+        assert len(runtime_dirs) == 1
+        assert (runtime_dirs[0] / 'runs.db').is_file()
+        process.send_signal(signal.SIGINT)
+        stdout, stderr = process.communicate(timeout=7)
+        assert process.returncode == 130, stderr
+        assert stderr.splitlines()[-1] == 'research_evidence_proof_interrupted'
+        assert 'Traceback' not in stderr and 'KeyboardInterrupt' not in stderr
+        assert str(ROOT) not in stdout + stderr
+        assert str(runtime_dirs[0]) not in stdout + stderr
+        assert not runtime_dirs[0].exists()
+        with socket.socket() as probe:
+            assert probe.connect_ex(('127.0.0.1', port)) != 0
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            process.communicate(timeout=5)
+
+
+def test_serve_invalid_origin_retains_bounded_failure_exit():
+    result = invoke('serve', '--origin', 'https://example.com:5175', '--seconds', '1')
+    assert result.returncode == 1
+    assert result.stderr.strip() == 'research_evidence_proof_failed'

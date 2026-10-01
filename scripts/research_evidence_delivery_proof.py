@@ -301,6 +301,11 @@ def main(argv=None):
                 return 0 if report['passed'] else 1
             serve(Path(directory),args.origin,args.port,args.seconds)
         return 0
+    except KeyboardInterrupt:
+        # Uvicorn propagates SIGINT after shutdown; all runtime contexts above
+        # have unwound before reporting the expected operator stop.
+        print('research_evidence_proof_interrupted', file=sys.stderr)
+        return 130
     except Exception:
         print('research_evidence_proof_failed',file=sys.stderr)
         return 1

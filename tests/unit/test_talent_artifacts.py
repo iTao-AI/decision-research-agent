@@ -1,6 +1,41 @@
 from datetime import datetime, timezone
 
 
+def test_empty_talent_output_requires_review():
+    from api.review_service import build_review_bundle
+
+    review = build_review_bundle(
+        run_id="run-empty", findings=[], claims=[], evidence=[],
+        confidence_threshold=0.6,
+    )
+
+    assert review.status == "required"
+    assert review.required_before_delivery is True
+    assert review.triggers == ["empty_research_output"]
+
+
+def test_findings_only_output_keeps_existing_readiness():
+    from agent.talent_contracts import EvidenceSnapshot, Finding
+    from api.review_service import build_review_bundle
+
+    review = build_review_bundle(
+        run_id="run-findings",
+        findings=[Finding(
+            finding_id="f1", research_question_id="q1", statement="Observed signal",
+            evidence_refs=["ev1"], sample_scope="declared", confidence=0.8,
+        )],
+        claims=[],
+        evidence=[EvidenceSnapshot(
+            evidence_id="ev1", snippet="Observed signal", verification_status="unverified",
+        )],
+        confidence_threshold=0.6,
+    )
+
+    assert review.status == "not_required"
+    assert review.required_before_delivery is False
+    assert review.triggers == []
+
+
 def test_talent_artifacts_are_deterministic_and_require_review_for_unknown_evidence():
     from agent.talent_contracts import ResearchPacket
     from api.talent_artifacts import build_talent_artifacts

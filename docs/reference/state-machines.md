@@ -183,6 +183,13 @@ Talent outputs must satisfy the structured contract:
 - every evidence reference resolves to the current run snapshot;
 - review bundle and canonical DecisionBrief artifacts are deterministic.
 
+When a packet has neither findings nor candidate claims, the policy adds the
+`empty_research_output` review trigger. Execution remains `completed`, while
+delivery becomes `review_required`. A human may explicitly resolve a legitimate
+no-findings outcome through the existing review workflow. Findings-only output
+can still be ready under existing reference and review rules; individual packet
+lists do not all need to be nonempty.
+
 Approval permits delivery. It does not verify evidence. Rejection blocks
 delivery and does not start a new research run.
 

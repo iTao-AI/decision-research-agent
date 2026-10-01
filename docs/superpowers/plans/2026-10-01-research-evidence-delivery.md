@@ -43,7 +43,7 @@
 ### Task 1: Repair empty Talent readiness and freeze strict contracts
 
 **Files:**
-- Modify: `api/review_service.py`, `tests/unit/test_talent_artifacts.py`, `tests/integration/test_run_api.py` (or the existing finalization-focused integration module).
+- Modify: `api/review_service.py`, `tests/unit/test_talent_artifacts.py`, `tests/unit/test_talent_contracts.py`, `tests/integration/test_run_api.py` (or the existing finalization-focused integration module).
 - Create: `agent/research_findings_contracts.py`, `tests/unit/test_research_findings_contracts.py`, `docs/decisions/research-findings-delivery-authority.md`.
 - Modify: the Talent readiness explanation in `docs/reference/state-machines.md`.
 
@@ -75,13 +75,13 @@
 
 **Interfaces:**
 - `ResearchFindingsBuildResult`: delivery status (`ready` or `blocked`), canonical report or `None`, artifacts, updated Evidence entries, and typed diagnostics.
-- `build_research_findings_artifacts(*, run_id: str, scope: ResearchFindingsScope, candidate_content: str | None, evidence_entries: list[EvidenceEntry]) -> ResearchFindingsBuildResult`.
+- `build_research_findings_artifacts(*, run_id: str, scope: ResearchFindingsScope, candidate_content: str | None, evidence_entries: list[EvidenceEntry], capture_issue: ResearchFindingsIssueCode | None = None) -> ResearchFindingsBuildResult`. A closed capture issue takes precedence over earlier candidate content.
 - `render_research_findings_markdown(report: ResearchFindingsReport) -> str`.
 - `validate_research_findings_report(report: ResearchFindingsReport, *, run_id: str, scope: ResearchFindingsScope, evidence_rows: list[dict]) -> bool`: independent same-run identity/excerpt checks, used by Task 3.
 - Canonical JSON uses UTF-8, sorted keys, compact separators, no volatile timestamps; each artifact hash is SHA-256 of its actual bytes, as generic artifacts do.
 - Artifact IDs/kinds: `research-findings.json` / `research_findings_json`, `research-report.md` / `research_findings_markdown`, `research-findings-diagnostics.json` / `research_findings_diagnostics_json`.
 - Ready requires at least one finding and every reference uniquely resolved. Any malformed, missing, unmatched, ambiguous, or wholly empty candidate blocks the entire package; persist only bounded diagnostics for blocked output.
-- Codes include `candidate_missing`, `candidate_too_large`, `candidate_invalid`, `question_disposition_invalid`, `reference_not_found`, `reference_ambiguous`, `source_url_unsafe`, and `empty_research_output`; application may add a closed code for an actually distinct in-scope failure and document it.
+- Use the closed `ResearchFindingsIssueCode` contract: candidate absence/size/JSON/shape, scope/disposition mismatches, empty output, publishability, unobserved source, missing/ambiguous excerpt, and binding failure have distinct bounded codes. Model fields use `dispositions`; canonical and diagnostic field names match the implemented Task 1 contracts. Add a code only for an actually distinct in-scope failure and document it.
 
 - [ ] **Step 1:** Write RED tests for complete, partial, contradictory, and all-unresolved candidates, deterministic bytes/hashes/Markdown, Unicode exact offsets, repeated/overlapping excerpts, multiple matching entries, unknown/missing/duplicate question dispositions, invented URLs, unsafe URLs, authority injection, malformed/duplicate-key/oversized JSON, and wrong scope/foreign Evidence IDs on independent validation.
 - [ ] **Step 2:** Implement strict JSON parsing with a 256 KiB byte check before parsing; reject duplicate keys and non-JSON numeric constants. Validate every accepted question is represented exactly once and covered/unresolved status matches findings.
@@ -93,13 +93,14 @@
 ### Task 3: Connect native VFS producer to fenced persistence and API readers
 
 **Files:**
-- Modify: `agent/profile_registry.py`, `agent/deepagents_harness.py`, `agent/run_result.py`, `api/research_execution_service.py`, `api/server.py`, `api/run_repository.py`, `api/run_result_service.py`.
+- Modify: `agent/profile_registry.py`, `agent/deepagents_harness.py`, `agent/harness_contracts.py`, `agent/profile_middleware.py`, `agent/run_result.py`, `api/research_execution_service.py`, `api/server.py`, `api/run_repository.py`, `api/run_result_service.py`.
 - Create: `api/research_findings_service.py`, `tests/integration/test_research_findings_api.py`, `tests/integration/test_research_findings_native.py`.
 - Modify: focused profile/harness/stream/lifecycle tests and `docs/reference/api-contract.md`, `docs/reference/data-models.md`, `docs/reference/state-machines.md`, `docs/AGENT_INTEGRATION.md`.
 
 **Interfaces:**
 - Register `generic-evidence-report` version `1`, classified as generic family with the unchanged generic policy. Compile/reuse the same generic graph; only the new profile's request envelope adds accepted questions and strict candidate instructions.
-- Add `findings_candidate: ReportCandidate | None` to accumulator/outcome. Capture only `/workspace/research-findings.json` from root native VFS file updates. A later invalid replacement clears/invalidates the earlier candidate rather than retaining stale bytes; apply byte bounds before conversion/parsing.
+- Use a dedicated VFS findings candidate type in accumulator/outcome, retaining the legacy Markdown-only `ReportCandidate` guard, plus explicit bounded capture issue state. Capture only `/workspace/research-findings.json` from root native VFS file updates. A later invalid replacement clears/invalidates the earlier candidate rather than retaining stale bytes; apply byte bounds before conversion/parsing and pass any closed capture issue to Task 2.
+- Adapt the existing one-correction completion middleware target via server-owned runtime profile context: new profile closes its JSON candidate; generic/strict keep the existing Markdown behavior. Add no new middleware or post-processing model.
 - New profile scope is validated/normalized before `create_run` and keyed creation. Use bounded `invalid_research_scope` without raw validator input/exception text.
 - Finalization calls Task 2 once with frozen outcome Evidence, persists all returned artifacts/status through the existing owner/state/segment fence, and never builds a generic Markdown fallback for this profile.
 - Delivery snapshot includes scope and same-run Evidence rows needed for independent binding validation in one read transaction.

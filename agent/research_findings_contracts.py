@@ -172,6 +172,7 @@ ResearchFindingsIssueCode = Literal[
     "excerpt_not_found",
     "ambiguous_reference",
     "reference_binding_failed",
+    "artifact_package_too_large",
 ]
 
 

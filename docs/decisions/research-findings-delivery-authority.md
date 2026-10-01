@@ -1,8 +1,9 @@
 # Research findings delivery authority
 
 Date: 2026-10-01. Status: accepted boundary for the approved research-findings
-delivery design. Strict contracts are implemented; producer, resolver,
-persistence integration and API/UI consumer wiring are subsequent slices.
+delivery design. Strict contracts and the pure frozen-Evidence resolver are
+implemented; producer, persistence integration and API/UI consumer wiring
+are subsequent slices.
 
 ## Decision
 
@@ -32,7 +33,13 @@ findings, each with 1–10 source URL/excerpt references, 1–5 unique dispositi
 and bounded model-reported contradictions and limitations. Empty findings are
 structurally representable for honest unresolved research; this alone grants
 no delivery readiness. The candidate byte-size limit is enforced by the
-future producer reader, outside these field contracts.
+application candidate parser at 256 KiB, outside these field contracts. The
+pure resolver is implemented; native producer and persisted-reader wiring
+remain subsequent slices. Canonical JSON and Markdown are each bounded to
+1 MiB, matching the existing result-reader limit. Repeated frozen snippets can
+expand a small candidate beyond that bound; `artifact_package_too_large`
+blocks the entire package and emits only bounded closed-code diagnostics.
+An explicit closed capture issue takes precedence over earlier candidate text.
 
 ## Evidence resolution and non-claims
 

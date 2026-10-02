@@ -220,6 +220,11 @@ existing runtime research sub-agent architecture.
 - Return the exact HEAD, diff and acceptance evidence, plus remaining work.
   Distinguish local completion from hosted delivery; missing remote authorization
   does not prevent preparing a reviewable local result.
+- If a task names a delegated approval owner, route new approval requests to that
+  owner first with the action, scope, impact, and supporting evidence. Existing
+  authorization remains valid within its granted scope. Require direct user
+  handling when the delegation or host does not permit delegated approval;
+  delegated approval cannot replace host-required personal confirmation.
 
 ## Working Rules
 

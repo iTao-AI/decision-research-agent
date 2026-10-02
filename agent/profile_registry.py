@@ -78,12 +78,16 @@ STRICT_CITATION_PROFILE_ID = "generic-strict-citation"
 STRICT_CITATION_PROFILE_VERSION = "1"
 STRICT_CITATION_PROOF_SCHEMA = "dra.strict-citation-profile.v1"
 GENERIC_FAMILY_PROFILE_IDS = frozenset(
-    {"generic", STRICT_CITATION_PROFILE_ID}
+    {"generic", STRICT_CITATION_PROFILE_ID, "generic-evidence-report"}
 )
 STRICT_CITATION_PROFILE = replace(
     GENERIC_PROFILE,
     profile_id=STRICT_CITATION_PROFILE_ID,
     version=STRICT_CITATION_PROFILE_VERSION,
+)
+RESEARCH_FINDINGS_PROFILE = replace(
+    GENERIC_PROFILE, profile_id="generic-evidence-report", scope_schema="ResearchFindingsScope",
+    finding_schema="dra.research-findings.v1", renderer_version="1", canonicalization_version="1",
 )
 TALENT_PROFILE = ProfileSpec(
     profile_id="talent-hiring-signal",
@@ -165,6 +169,6 @@ class AgentFactory:
 
 
 profile_registry = ProfileRegistry(
-    profiles=(GENERIC_PROFILE, STRICT_CITATION_PROFILE, TALENT_PROFILE),
+    profiles=(GENERIC_PROFILE, STRICT_CITATION_PROFILE, RESEARCH_FINDINGS_PROFILE, TALENT_PROFILE),
     policies=(GENERIC_POLICY, TALENT_POLICY),
 )

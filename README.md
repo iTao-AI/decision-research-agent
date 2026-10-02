@@ -126,14 +126,42 @@ troubleshooting, and authenticated local runtime boundaries.
 - The console consumes canonical API and result contracts. It does not add
   backend state, database tables, API paths, credentials, review controls,
   verification authority, public online execution, or a tenant model.
-- Live Backend accepts one bounded user-authored generic research question of
+- Live Backend accepts one bounded user-authored research question of
   at most 4096 UTF-8 bytes and consumes service-owned state through the existing
-  API contract. The active repository, runtime configuration, Tool Client,
+  API contract. Generic is the default; explicit structured research selects
+  `generic-evidence-report@1` and reads source-bound candidates through
+  `GET /api/runs/{run_id}/findings` alongside canonical Markdown. The active
+  repository, runtime configuration, Tool Client,
   Docker defaults, and health service identifier use
   `decision-research-agent`.
 - Live Backend remains loopback-only and the browser does not accept or store
   API credentials. See [Demo Console](docs/demo-console.md) and the
   [API Contract](docs/reference/api-contract.md).
+
+## Inspectable Research Findings
+
+The opt-in `generic-evidence-report@1` profile delivers candidate findings bound
+to exact excerpts in same-run persisted Evidence, accepted questions and honest
+unresolved dispositions. The Live reader can inspect stored snippets and retain
+the canonical Markdown/raw/download path. Generic remains the default; Static
+Demo remains a separate synthetic snapshot. Source binding is not truth or
+entailment verification; reported contradictions are model-reported.
+
+Run the provider-free native proof from the existing development environment:
+
+```bash
+PYTHON_DOTENV_DISABLED=1 LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false \
+  python scripts/research_evidence_delivery_proof.py check
+```
+
+The [walkthrough and code navigation](docs/operations/research-evidence-delivery.md)
+cover the implemented native producer, frozen resolver, fenced delivery, HTTP
+readers and structured UI, four declared synthetic outcomes, temporary fixture
+API and separate paid-proof prerequisites. [Native evidence](docs/evidence/research-evidence-delivery-v1.md)
+records actual graph/file/stream/DB/HTTP observations, not provider quality or
+browser observations. The [delivery ADR](docs/decisions/research-findings-delivery-authority.md)
+sets the authority and source-snippet limits. Historical releases retain their
+original scope.
 
 ## Engineering Depth
 
@@ -176,8 +204,19 @@ The proportional local checks for this surface are:
 python -m pytest tests/unit/test_console_showcase_contracts.py \
   tests/unit/test_demo_console_contracts.py -q
 cd frontend && npm run test && npm run lint && npm run build
-cd .. && python scripts/console_showcase_contracts.py check --root .
+cd .. && python scripts/console_showcase_contracts.py check --root . --allow-historical
 ```
+
+The explicit `--allow-historical` command verifies the retained Static Demo
+captures against their reachable historical source commit/tree, independently
+discovered input paths/fingerprint, and exact PNG metadata/bytes. It reports
+`current_capture_inputs_match: false` for the current structured-reader changes;
+historical provenance does not establish current Static Demo rendering parity.
+Omitting the flag still requires current input paths and fingerprint to match;
+current-render parity requires an honest new capture/manifest when they drift.
+An unreachable historical source always retains that strict current-input
+requirement. The separate [structured Live reader receipt](docs/evidence/research-evidence-delivery-reader-v1.md)
+records current native fixture browser observations.
 
 The full CI proof inventory remains documented in the detailed sections and
 the [CI workflow](.github/workflows/ci.yml).
@@ -583,8 +622,10 @@ decision while canonical episode hold decisions remain historical evidence.
   mode.
 - UI delivery must consume the canonical API and result contract without
   reintroducing a parallel runtime.
-- Markdown-only delivery: canonical research results are returned as Markdown
-  artifacts through the result endpoint.
+- Canonical research results remain Markdown through the result endpoint. The
+  opt-in `generic-evidence-report@1` also provides application-owned findings
+  JSON with frozen source excerpts through the independent findings endpoint.
+  Source binding does not prove truth, entailment or Evidence verification.
 - Durable review and evidence verification are feature-flagged controlled
   workflows, not public multi-user production features.
 - Evidence verification records human decisions and deterministic snapshots; it

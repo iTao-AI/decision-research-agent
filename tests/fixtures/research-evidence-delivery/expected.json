@@ -1,0 +1,63 @@
+{
+  "schema": "dra.research-evidence-proof-expectations.v1",
+  "cases": {
+    "complete": {
+      "execution_status": "completed",
+      "delivery_status": "ready",
+      "requested_question_count": 1,
+      "covered_question_count": 1,
+      "unresolved_question_count": 0,
+      "reference_binding_failure_count": 0,
+      "bound_reference_count": 1,
+      "reported_contradiction_count": 0,
+      "evidence_count": 1,
+      "issue_codes": [],
+      "findings_http_status": 200,
+      "markdown_http_status": 200
+    },
+    "partial": {
+      "execution_status": "completed",
+      "delivery_status": "ready",
+      "requested_question_count": 2,
+      "covered_question_count": 1,
+      "unresolved_question_count": 1,
+      "reference_binding_failure_count": 0,
+      "bound_reference_count": 1,
+      "reported_contradiction_count": 0,
+      "evidence_count": 1,
+      "issue_codes": [],
+      "findings_http_status": 200,
+      "markdown_http_status": 200
+    },
+    "contradictory": {
+      "execution_status": "completed",
+      "delivery_status": "ready",
+      "requested_question_count": 1,
+      "covered_question_count": 1,
+      "unresolved_question_count": 0,
+      "reference_binding_failure_count": 0,
+      "bound_reference_count": 2,
+      "reported_contradiction_count": 1,
+      "evidence_count": 2,
+      "issue_codes": [],
+      "findings_http_status": 200,
+      "markdown_http_status": 200
+    },
+    "insufficient-evidence": {
+      "execution_status": "completed",
+      "delivery_status": "blocked",
+      "requested_question_count": 1,
+      "covered_question_count": 0,
+      "unresolved_question_count": 1,
+      "reference_binding_failure_count": 0,
+      "bound_reference_count": 0,
+      "reported_contradiction_count": 0,
+      "evidence_count": 0,
+      "issue_codes": [
+        "empty_research_output"
+      ],
+      "findings_http_status": 409,
+      "markdown_http_status": 409
+    }
+  }
+}

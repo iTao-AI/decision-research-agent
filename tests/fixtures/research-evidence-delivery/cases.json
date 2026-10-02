@@ -1,0 +1,180 @@
+{
+  "schema": "dra.research-evidence-proof-fixtures.v1",
+  "synthetic": true,
+  "cases": [
+    {
+      "case_id": "complete",
+      "query": "research-evidence-proof:complete",
+      "questions": [
+        {
+          "question_id": "q1",
+          "text": "What synthetic material was observed?"
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://example.com/native-findings-source",
+          "content": "Observed native source: 🧪 durable finding material. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. End of persisted fixture."
+        }
+      ],
+      "candidate": {
+        "schema_version": "dra.research-findings-candidate.v1",
+        "findings": [
+          {
+            "question_id": "q1",
+            "statement": "Synthetic source-bound candidate.",
+            "references": [
+              {
+                "source_url": "https://example.com/native-findings-source",
+                "excerpt": "🧪 durable finding"
+              }
+            ]
+          }
+        ],
+        "dispositions": [
+          {
+            "question_id": "q1",
+            "status": "candidate_findings"
+          }
+        ],
+        "limitations": [
+          "Declared synthetic fixture. Source binding is not truth or entailment verification."
+        ],
+        "reported_contradictions": []
+      }
+    },
+    {
+      "case_id": "partial",
+      "query": "research-evidence-proof:partial",
+      "questions": [
+        {
+          "question_id": "q1",
+          "text": "What synthetic material was observed?"
+        },
+        {
+          "question_id": "q2",
+          "text": "What external replication was observed?"
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://example.com/native-findings-source",
+          "content": "Observed native source: 🧪 durable finding material. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. Synthetic inspection context. End of persisted fixture."
+        }
+      ],
+      "candidate": {
+        "schema_version": "dra.research-findings-candidate.v1",
+        "findings": [
+          {
+            "question_id": "q1",
+            "statement": "Synthetic source-bound candidate.",
+            "references": [
+              {
+                "source_url": "https://example.com/native-findings-source",
+                "excerpt": "🧪 durable finding"
+              }
+            ]
+          }
+        ],
+        "dispositions": [
+          {
+            "question_id": "q1",
+            "status": "candidate_findings"
+          },
+          {
+            "question_id": "q2",
+            "status": "unresolved",
+            "reason": "No replication source in the declared fixture."
+          }
+        ],
+        "limitations": [
+          "Declared synthetic fixture. Source binding is not truth or entailment verification."
+        ],
+        "reported_contradictions": []
+      }
+    },
+    {
+      "case_id": "contradictory",
+      "query": "research-evidence-proof:contradictory",
+      "questions": [
+        {
+          "question_id": "q1",
+          "text": "Which synthetic service window was reported?"
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://example.com/window-a",
+          "content": "Synthetic source A reports a daily window."
+        },
+        {
+          "url": "https://example.com/window-b",
+          "content": "Synthetic source B reports a weekly window."
+        }
+      ],
+      "candidate": {
+        "schema_version": "dra.research-findings-candidate.v1",
+        "findings": [
+          {
+            "question_id": "q1",
+            "statement": "Source A reports a daily window.",
+            "references": [
+              {
+                "source_url": "https://example.com/window-a",
+                "excerpt": "daily window"
+              }
+            ]
+          },
+          {
+            "question_id": "q1",
+            "statement": "Source B reports a weekly window.",
+            "references": [
+              {
+                "source_url": "https://example.com/window-b",
+                "excerpt": "weekly window"
+              }
+            ]
+          }
+        ],
+        "dispositions": [
+          {
+            "question_id": "q1",
+            "status": "candidate_findings"
+          }
+        ],
+        "limitations": [
+          "Declared synthetic fixture. Source binding is not truth or entailment verification."
+        ],
+        "reported_contradictions": [
+          "Fixture model reports conflicting daily and weekly windows; no independent contradiction review."
+        ]
+      }
+    },
+    {
+      "case_id": "insufficient-evidence",
+      "query": "research-evidence-proof:insufficient-evidence",
+      "questions": [
+        {
+          "question_id": "q1",
+          "text": "What independently replicated result was observed?"
+        }
+      ],
+      "sources": [],
+      "candidate": {
+        "schema_version": "dra.research-findings-candidate.v1",
+        "findings": [],
+        "dispositions": [
+          {
+            "question_id": "q1",
+            "status": "unresolved",
+            "reason": "No candidate with supporting replication evidence in this fixture."
+          }
+        ],
+        "limitations": [
+          "Declared synthetic fixture. Source binding is not truth or entailment verification."
+        ],
+        "reported_contradictions": []
+      }
+    }
+  ]
+}

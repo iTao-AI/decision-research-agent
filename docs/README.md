@@ -17,6 +17,11 @@ external evaluation of the public contract surface.
 
 ## How-to And Operations
 
+- [Inspectable Research Findings](operations/research-evidence-delivery.md) —
+  implemented opt-in native producer, frozen source binding, fenced delivery,
+  JSON/Markdown readers and structured Live UI; runnable provider-free fixtures
+  and a separate proposed paid-provider gate.
+
 - [Agent Integration](AGENT_INTEGRATION.md) — use the first-party Tool Client.
 - [Demo Console](demo-console.md) — run Static Demo, consume service-owned Live
   state, reconcile the same create intent, resume known runs with GET only, and
@@ -70,6 +75,8 @@ external evaluation of the public contract surface.
 - [Product Requirements](prd.md) — product intent and current scope.
 - [Framework And Runtime Boundaries](decisions/framework-runtime-boundaries.md) — framework ownership.
 - [Run Identity Boundaries](decisions/run-identity-boundaries.md) — identity scopes.
+- [Research Findings Delivery Authority](decisions/research-findings-delivery-authority.md) —
+  implemented native producer, resolver/readers, source binding and delivery non-claims.
 - [Evidence Verification Authority](decisions/evidence-verification-authority.md) — immutable Evidence decisions.
 - [Evidence-Gated Evolution Authority](decisions/evidence-gated-evolution-authority.md)
   — candidate/verifier isolation and human-owned release/rollback authority.
@@ -104,6 +111,13 @@ external evaluation of the public contract surface.
   and [JSON baseline](evidence/agent-evaluation-sensitivity-v2.json) —
   deterministic provider-free sensitivity evidence over three reviewed
   post-traversal synthetic controls.
+- [Research Evidence Delivery Native Proof](evidence/research-evidence-delivery-v1.md)
+  ([JSON](evidence/research-evidence-delivery-v1.json)) — four declared synthetic
+  complete/partial/contradictory/insufficient outcomes through real native runtime
+  and persisted HTTP readers; browser and paid-provider observations are separate.
+- [Research Evidence Delivery Browser Observation](evidence/research-evidence-delivery-reader-v1.md)
+  — actual local desktop/narrow geometry, keyboard snippet inspection and screenshots
+  against the native synthetic fixture API; no paid-provider or research-quality claim.
 - [Durable HITL Gate Report](evidence/durable-hitl-gate-report.json) — 13-gate result artifact.
 - [Real-Source Proof](evidence/real-source-proof.md) and
   [JSON report](evidence/real-source-proof.json) — bounded proof and limitations.

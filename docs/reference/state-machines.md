@@ -183,6 +183,13 @@ Talent outputs must satisfy the structured contract:
 - every evidence reference resolves to the current run snapshot;
 - review bundle and canonical DecisionBrief artifacts are deterministic.
 
+When a packet has neither findings nor candidate claims, the policy adds the
+`empty_research_output` review trigger. Execution remains `completed`, while
+delivery becomes `review_required`. A human may explicitly resolve a legitimate
+no-findings outcome through the existing review workflow. Findings-only output
+can still be ready under existing reference and review rules; individual packet
+lists do not all need to be nonempty.
+
 Approval permits delivery. It does not verify evidence. Rejection blocks
 delivery and does not start a new research run.
 
@@ -263,3 +270,32 @@ cannot start, change phase, or finalize after a new boot wins.
 Replacement is a new run, not resume. `accepted is not started, completed, or
 successful`; post-commit wake is best effort. There is no heartbeat monitoring,
 periodic scanner, automatic retry, automatic resume, or second recovery hop.
+
+
+## Structured research delivery (implemented)
+
+For opt-in `generic-evidence-report@1`, the native root JSON candidate and frozen
+same-run Evidence pass through application-owned resolution within existing
+fenced finalization:
+
+```mermaid
+stateDiagram-v2
+    running --> completed: native execution finishes
+    completed --> ready: at least one finding and all references bind uniquely
+    completed --> blocked: missing/invalid/empty/ambiguous/unobserved candidate
+    ready --> delivered: independent findings/result read validates package
+```
+
+Both terminal alternatives retain `review_status=not_required`. Execution
+completion alone grants no delivery. The shared recovery lifecycle classifier
+admits completed/not_required/blocked only with the existing closed owner in
+finalization, terminal segment, state-version, dispatch and no-failure-cause
+constraints. Running and failed state admission is unchanged. There is no
+legacy fallback, new review authority or model correction after finalization.
+
+The existing native completion middleware selects the JSON target from
+server-owned runtime profile and gives at most one correction. Null or invalid
+root candidate replacements clear earlier bytes. Failed native source tools
+cannot create authoritative observations for this profile. Cancellation and
+timeout retain the existing frozen-Evidence failure path and expose no findings
+delivery. Stale finalizers cannot replace the accepted terminal package.

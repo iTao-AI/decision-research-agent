@@ -61,6 +61,11 @@ def _trajectory_policy(
     results = [event for event in trajectory if event["kind"] == "tool_result"]
     call_ids = [event["call_id"] for event in calls]
     result_ids = [event["call_id"] for event in results]
+    call_indexes = {
+        event["call_id"]: index
+        for index, event in enumerate(trajectory)
+        if event["kind"] == "tool_call"
+    }
     terminal_indexes = [
         index for index, event in enumerate(trajectory) if event["kind"] == "terminal"
     ]
@@ -68,6 +73,11 @@ def _trajectory_policy(
         len(call_ids) != len(set(call_ids))
         or len(result_ids) != len(set(result_ids))
         or set(call_ids) != set(result_ids)
+        or any(
+            event["kind"] == "tool_result"
+            and call_indexes.get(event["call_id"], len(trajectory)) >= index
+            for index, event in enumerate(trajectory)
+        )
         or terminal_indexes != [len(trajectory) - 1]
     ):
         findings.append(

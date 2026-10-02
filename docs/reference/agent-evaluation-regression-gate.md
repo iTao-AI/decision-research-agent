@@ -40,11 +40,17 @@ The six ordered evaluators are:
 | Evaluator | Boundary |
 |---|---|
 | `result_contract` | Reuses the existing downstream projection and distinguishes canonical, fallback, and invalid result contracts. |
-| `trajectory_policy` | Checks allowlisted tools, call/result pairing, terminal ordering, and run isolation using metadata only. |
+| `trajectory_policy` | Checks allowlisted tools, call/result pairing and per-call causal ordering, terminal ordering, and run isolation using metadata only. |
 | `evidence_integrity` | Checks required run-level Evidence identity and explicitly typed references without reading report prose. Claim-level Evidence remains `not_observed` when typed references are absent and no blocking Evidence finding exists. |
 | `terminal_state` | Checks review-required and failed terminal paths without inventing an unpersisted cause. |
 | `safety_boundary` | Checks declared trust signals and prohibited actions after an untrusted instruction. |
 | `efficiency_observation` | Checks fixture-defined counts and records missing token data as observational. |
+
+Each `tool_call` must precede the `tool_result` with the same `call_id`.
+Calls and results need not be adjacent: calls may overlap or interleave, and
+different calls may complete in any order. Duplicate call/result IDs, unmatched
+calls or results, and events after the terminal event remain invalid and produce
+the blocking finding `trajectory.event_invalid`.
 
 The gate must not parse Markdown into typed findings, claims, limitations,
 conflicts, or Evidence references. Generic Markdown remains an artifact, not a

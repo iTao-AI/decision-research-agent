@@ -82,7 +82,7 @@ summary, and state version. The projection does not expose database paths,
 checkpoint payloads, lease owners, actor fingerprints, raw tracebacks, or local
 artifact paths.
 
-The status projection adds exactly one additive top-level field,
+The failure-cause status extension adds one additive top-level field,
 `failure_cause`, with public schema `dra.run-failure-cause.v1`. Its three exact
 variants are:
 
@@ -125,7 +125,10 @@ it does not read LangGraph checkpoint state.
 
 Ready generic runs return `research-report.md`. Ready Talent runs return the
 current publication artifact when available, otherwise the canonical
-`decision-brief.md` artifact. Delivery is Markdown-only delivery in v0.1.0.
+`decision-brief.md` artifact. The result endpoint continues to return Markdown.
+For `generic-evidence-report@1`, it independently validates the paired canonical
+JSON against frozen same-run Evidence and requires exact deterministic Markdown
+equality; rehashed arbitrary text or foreign references remain unavailable.
 
 The `GET /api/runs/{run_id}/result` response, error envelope, and OpenAPI
 operation remain unchanged. In particular, `409 run_failed` does not include
@@ -144,6 +147,102 @@ Stable errors:
 | `409` | `run_result_unavailable` | Artifact missing, empty, unsafe, too large, or hash-mismatched |
 
 These result endpoint error codes are stable public contract values.
+
+### Structured research: generic-evidence-report@1
+
+The opt-in profile reuses the generic harness and server-owned policy. Its scope
+is `{"questions":[{"question_id":"q1","text":"Research question"}]}`:
+1–5 unique question IDs and nonempty text up to 4096 code points per question.
+An omitted `questions` field defaults to the query as `q1`; an explicit empty
+list is invalid. IDs start with an ASCII letter followed by up to 63 letters,
+digits, underscores or hyphens. Extra scope fields are rejected. The server
+normalizes scope before unkeyed or idempotent creation and dispatch. Invalid
+scope returns `422 invalid_research_scope` without raw validator input.
+
+Native tools write `/workspace/research-findings.json`, at most 256 KiB UTF-8,
+with `dra.research-findings-candidate.v1`: up to 20 findings, at most 10 exact
+source URL/excerpt references per finding, and one disposition per question.
+The model supplies candidate statements and exact observed excerpts; it does
+not supply authoritative Evidence IDs, hashes, verification or delivery state.
+Only root VFS updates are captured. Invalid, null or oversized replacements
+invalidate prior candidate bytes; failed source ToolMessages grant no Evidence
+authority. The existing completion guard makes at most one correction to write
+the new JSON target, selected from server-owned runtime context.
+
+Completed runs can be `ready` or `blocked` with `review_status=not_required`.
+Ready requires at least one source-bound finding and valid question coverage;
+explicit unresolved questions can accompany findings. Missing, malformed,
+empty, ambiguous or unobserved references block the entire package. This profile
+never uses the legacy Markdown fallback. Legacy generic and strict citation
+behavior is unchanged. A bound excerpt does not prove truth or entailment, and
+reported contradictions remain model-reported.
+
+### GET /api/runs/{run_id}/findings
+
+Read-only structured delivery for `generic-evidence-report@1`. Response:
+
+```json
+{
+  "run_id": "run_...",
+  "execution_status": "completed",
+  "delivery_status": "ready",
+  "artifact": {
+    "artifact_id": "research-findings.json",
+    "kind": "research_findings_json",
+    "media_type": "application/json",
+    "content": "<canonical JSON string>",
+    "content_hash": "<SHA-256 of this artifact's actual UTF-8 bytes>"
+  },
+  "report": {
+    "schema_version": "dra.research-findings.v1",
+    "run_id": "run_...",
+    "profile_id": "generic-evidence-report",
+    "profile_version": "1",
+    "questions": [{"question_id": "q1", "text": "Research question"}],
+    "findings": [{
+      "finding_id": "f1", "question_id": "q1", "statement": "Candidate finding",
+      "references": [{
+        "evidence_id": "ev_run_..._<fingerprint>",
+        "evidence_fingerprint": "<64 lowercase hex characters>",
+        "source_url": "https://example.com/source",
+        "source_identity": "https://example.com/source",
+        "snippet": "Observed excerpt", "excerpt": "Observed excerpt",
+        "excerpt_start": 0, "excerpt_end": 16
+      }]
+    }],
+    "dispositions": [{"question_id": "q1", "status": "candidate_findings"}],
+    "limitations": [], "reported_contradictions": []
+  }
+}
+```
+
+`report` is an object containing run/profile/schema identity, accepted questions,
+`findings`, `dispositions`, limitations and reported contradictions. Each finding
+has a stable `f1`, `f2`, … ID and bound references with same-run `evidence_id`,
+`evidence_fingerprint`, source URL/identity, unchanged frozen `snippet`, exact
+`excerpt`, and zero-based half-open **Unicode code-point** offsets
+`excerpt_start`/`excerpt_end`. Offsets are neither UTF-8 bytes nor UTF-16 units.
+
+The reader uses one repository snapshot of run delivery authority, scope,
+artifacts and same-run Evidence rows. It rejects duplicate JSON keys, nonfinite
+numbers, malformed UTF-8, unknown fields, wrong profile/version, invalid own-byte
+hashes, noncanonical Markdown and changed or foreign Evidence references even
+when hashes are recomputed. Both JSON and Markdown independently fit 1 MiB
+UTF-8, inclusive. JSON and Markdown must belong to current artifact selection
+where publication selection exists. No checkpoint, VFS, source refetch or model
+call occurs. Errors match `/result`: `run_not_found`, `run_not_terminal`,
+`run_failed`, `run_review_required`, `run_delivery_blocked` and
+`run_result_unavailable`; ready runs with another profile use the last error.
+
+GET run status adds optional `findings_issues` (closed issue codes, at most 20)
+and `findings_outcome` only for this profile after strict identity/hash validation
+of the persisted diagnostic artifact (at most 4 KiB). Its four bounded counts
+are `requested_question_count` (1–5), `covered_question_count` (0–5),
+`unresolved_question_count` (0–5), and `reference_binding_failure_count` (0–200).
+Corrupt diagnostics omit these fields. Counts describe candidate coverage and
+binding failures; they are not semantic accuracy metrics. Diagnostics contain
+no candidate bytes or raw exception text. Ready packages persist diagnostics
+alongside JSON/Markdown; blocked packages persist diagnostics only.
 
 ### GET /api/runs/{run_id}/artifacts/{artifact_id}
 
@@ -312,7 +411,7 @@ rejected.
 
 `POST /api/runs` defaults `profile_id` to `generic`, `scope` to an empty
 object, and generates `thread_id` when omitted. Unknown profiles return `400
-unknown_profile`; invalid Talent scope returns `422 invalid_research_scope`
+unknown_profile`; invalid Talent or research-findings scope returns `422 invalid_research_scope`
 before execution is scheduled.
 
 ## Error Shape
@@ -395,3 +494,16 @@ EOF
 
 The example intentionally supplies no body or content-type option. The
 recovery key deduplicates replacement creation only, not provider/tool effects.
+
+
+The shared coordinator prompt retains the Markdown default and explicitly allows
+only the server-supplied structured profile envelope to select the JSON target,
+with precedence over legacy Skill output-format wording. The server constructs
+that envelope from validated profile/scope and quotes query/question text as
+untrusted research content. Provider-free tests prove native mechanics and
+delivery authority; they do not prove real-model instruction adherence.
+
+The producer envelope also states the existing intake boundary: Evidence capture
+collapses whitespace and truncates observed snippets to 1000 code points. Exact
+excerpts must occur uniquely and contiguously inside that stored normalized
+snippet; later passages of a longer raw tool result cannot satisfy binding.

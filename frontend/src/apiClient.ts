@@ -4,6 +4,7 @@ import {
   type RunProjection,
   type RunResultResponse
 } from "./runProjection";
+import { parseResearchFindings, STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchFindingsResponse, type ResearchQuestion } from "./researchFindings";
 
 export type { RunProjection, RunResultResponse } from "./runProjection";
 
@@ -66,8 +67,8 @@ export type RunCreateIntent = Readonly<{
   payload: Readonly<{
     query: string;
     thread_id: string;
-    profile_id: "generic";
-    scope: Readonly<Record<string, never>>;
+    profile_id: LiveResearchProfile;
+    scope: Readonly<{ questions?: readonly ResearchQuestion[] }>;
   }>;
 }>;
 
@@ -92,7 +93,8 @@ const ambiguousTransportErrors = new WeakSet<ClientRequestError>();
 
 export function createRunIntent(
   query: string,
-  randomUUID: () => string = () => crypto.randomUUID()
+  randomUUID: () => string = () => crypto.randomUUID(),
+  profileId: LiveResearchProfile = "generic"
 ): RunCreateIntent {
   const validation = validateLiveDemoQuery(query);
   if (!validation.ok) {
@@ -104,8 +106,10 @@ export function createRunIntent(
     payload: Object.freeze({
       query,
       thread_id: `demo-console-${uuid}`,
-      profile_id: "generic" as const,
-      scope: Object.freeze({})
+      profile_id: profileId,
+      scope: profileId === STRUCTURED_RESEARCH_PROFILE
+        ? Object.freeze({ questions: Object.freeze([Object.freeze({ question_id: "q1", text: query })]) })
+        : Object.freeze({})
     })
   });
 }
@@ -216,6 +220,31 @@ export async function getResult(
     throw new ClientRequestError(
       invalidResponse("Canonical result selected fields were malformed.")
     );
+  }
+}
+
+export async function getFindings(
+  baseUrl: string, runId: string, signal?: AbortSignal
+): Promise<ResearchFindingsResponse> {
+  assertValidLiveRunId(runId);
+  let value: unknown;
+  try {
+    value = await requestJson<unknown>(baseUrl, `/api/runs/${encodeURIComponent(runId)}/findings`, { method: "GET", signal });
+  } catch (error) {
+    if (error instanceof ClientRequestError) {
+      const details = error.details;
+      if (Array.from(details.code).length > 128 ||
+          [details.problem, details.cause, details.fix].some((text) => Array.from(text).length > 1024) ||
+          (details.run_id !== undefined && !validateLiveRunId(details.run_id).ok)) {
+        throw new ClientRequestError(invalidResponse("Findings error envelope exceeded safe field bounds."));
+      }
+    }
+    throw error;
+  }
+  try {
+    return parseResearchFindings(value, runId);
+  } catch {
+    throw new ClientRequestError(invalidResponse("Canonical findings selected fields were malformed."));
   }
 }
 

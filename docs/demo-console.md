@@ -140,8 +140,16 @@ historical captures; this structured-reader change does not claim new current
 Static Demo rendering parity.
 
 ```bash
+git fetch --no-tags origin cdd7b07e427b30596f6434a82bfafc1624e3cba5
 python scripts/console_showcase_contracts.py check --root . --allow-historical
 ```
+
+The fetch obtains the manifest's exact original capture commit from the existing
+repository remote. A fresh PR/default-branch checkout may not otherwise contain
+this historical object; the backend CI explicitly fetches it before validation.
+This makes the original source available without rewriting capture identity,
+fingerprint or images. If the source cannot be obtained, historical mode still
+requires current matching and fails on drift.
 
 Explicit historical mode admits current input drift only when the declared
 commit is reachable and its true tree, independently discovered historical

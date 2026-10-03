@@ -172,6 +172,21 @@ cross-module behavior, multiple planned PRs.
 Do not force small work through Level 3. If scope grows, explicitly raise the
 level instead of silently expanding the process.
 
+## Development Roles And Reasoning Effort
+
+Use the current Sol model configured for the workspace, with only `max`, `high`, and `low`:
+
+- `max`: project-owner conversations, PRD and design, architecture and implementation
+  plans, consequential tradeoffs, delivery coordination, and final acceptance.
+- `high`: complex implementation, root-cause investigations, deep code review,
+  and computer or browser operations.
+- `low`: routine implementation, fixes with an identified cause, tests, and mechanical
+  documentation work when the scope is clear and the result is easy to verify.
+
+Select effort by the assigned responsibility and risk, not the output's file format;
+acceptance standards stay the same. The owner conversation keeps its configured effort;
+explicitly assign the model and effort for each new worker. Delegation is optional.
+
 ## Subagent Policy
 
 Subagents are optional. Use a bounded agent when independent context or review
@@ -216,6 +231,8 @@ existing runtime research sub-agent architecture.
   `superpowers:writing-plans` only to fill implementation gaps. The delivery owner
   decides in-scope details; changes to goals, key design, acceptance, or authorization
   return to the owner of the approved design.
+- When implementation is authorized, the handoff states whether the delivery owner
+  may review and decide in-scope plan details; do not infer this from a spec's directory.
 - Check the rules in the actual execution worktree; another checkout's update does
   not update this one. Route unresolved approvals to the designated coordinating
   owner when present, and reuse existing authorization within its scope.

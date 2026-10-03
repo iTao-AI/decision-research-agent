@@ -197,6 +197,9 @@ existing runtime research sub-agent architecture.
   review, QA, and release audits.
 - Use Superpowers primarily for brainstorming, TDD, systematic debugging, plan
   execution, review-finding resolution, and completion verification.
+- Read the current Skill instructions before use. Handoffs include the relevant
+  Skill names and entry points; each worker loads the Skills needed for its task.
+  Briefly identify the chosen method in the existing progress or return.
 - Assign one primary workflow controller per phase. Do not stack Skills with
   overlapping control responsibilities or make every available Skill a
   mandatory gate.

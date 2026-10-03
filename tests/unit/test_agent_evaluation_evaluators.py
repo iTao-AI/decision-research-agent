@@ -77,6 +77,88 @@ def test_canonical_success_has_no_blocking_findings():
     }
 
 
+def test_tool_result_before_its_call_is_a_blocking_regression():
+    observation = _observation("canonical_success")
+    trajectory = observation["trajectory"]
+    trajectory[1], trajectory[2] = trajectory[2], trajectory[1]
+
+    evaluated = evaluate_observation(validate_observation(observation))
+
+    assert evaluated["status"] == "regression"
+    assert evaluated["blocking_finding_codes"] == ["trajectory.event_invalid"]
+    assert evaluated["findings"] == [
+        {
+            "evaluator_id": "trajectory_policy",
+            "code": "trajectory.event_invalid",
+            "severity": "blocking",
+        }
+    ]
+    assert evaluated["expectation_match"] is False
+
+
+@pytest.mark.parametrize(
+    ("event_order", "expected_status", "expected_codes"),
+    [
+        (
+            ["call-1", "call-2", "assistant-1", "result-1", "result-2"],
+            "pass",
+            [],
+        ),
+        (
+            ["call-1", "call-2", "assistant-1", "result-2", "result-1"],
+            "pass",
+            [],
+        ),
+        (
+            ["call-1", "result-2", "call-2", "assistant-1", "result-1"],
+            "regression",
+            ["trajectory.event_invalid"],
+        ),
+    ],
+    ids=["overlapping-calls", "reverse-completion", "result-before-own-call"],
+)
+def test_tool_results_require_their_own_prior_call(
+    event_order, expected_status, expected_codes
+):
+    observation = _observation("canonical_success")
+    events = {event["event_id"]: event for event in observation["trajectory"]}
+    events["call-2"] = {
+        **events["call-1"],
+        "event_id": "call-2",
+        "call_id": "tool-call-2",
+    }
+    events["result-2"] = {
+        **events["result-1"],
+        "event_id": "result-2",
+        "call_id": "tool-call-2",
+    }
+    observation["trajectory"] = [events[event_id] for event_id in event_order] + [
+        events["terminal-1"]
+    ]
+    observation["metrics"]["tool_calls"] = 2
+
+    evaluated = evaluate_observation(validate_observation(observation))
+
+    assert evaluated["status"] == expected_status
+    assert evaluated["blocking_finding_codes"] == expected_codes
+
+
+@pytest.mark.parametrize("event_kind", ["tool_call", "tool_result"])
+def test_duplicate_call_or_result_id_remains_a_blocking_regression(event_kind):
+    observation = _observation("canonical_success")
+    event = next(
+        event for event in observation["trajectory"] if event["kind"] == event_kind
+    )
+    observation["trajectory"].insert(-1, {**event, "event_id": "duplicate-event"})
+    if event_kind == "tool_call":
+        observation["metrics"]["tool_calls"] = 2
+
+    evaluated = evaluate_observation(validate_observation(observation))
+
+    assert evaluated["status"] == "regression"
+    assert evaluated["blocking_finding_codes"] == ["trajectory.event_invalid"]
+
+
 def test_missing_required_evidence_remains_expected_block_not_not_observed():
     evaluated = evaluate_observation(_observation("evidence_missing"))
     evidence = next(

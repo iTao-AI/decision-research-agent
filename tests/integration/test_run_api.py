@@ -1783,6 +1783,14 @@ async def test_run_v2_routes_profile_id_to_agent_execution(tmp_path, monkeypatch
 
     assert captured["profile_id"] == "talent-hiring-signal"
 
+    from api.run_repository import get_run
+
+    run = get_run(run_id=created["run_id"])
+    assert run["execution_status"] == "completed"
+    assert run["review_status"] == "required"
+    assert run["delivery_status"] == "review_required"
+    assert run["review_bundle"]["triggers"] == ["empty_research_output"]
+
 
 @pytest.mark.asyncio
 async def test_talent_run_persists_review_and_canonical_artifacts(tmp_path, monkeypatch):

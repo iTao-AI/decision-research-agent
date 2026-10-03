@@ -18,6 +18,8 @@ from agent.harness_contracts import (
     HarnessRequest,
     HarnessExecutionError,
     ReportCandidate,
+    FINDINGS_CANDIDATE_PATH,
+    capture_findings_candidate,
 )
 from agent.profile_registry import is_generic_family
 from agent.research import (
@@ -146,6 +148,11 @@ class AccumulatorExecutionObserver(ExecutionObserver):
             files = state.get("files")
             if not isinstance(files, Mapping):
                 continue
+            if (self.accumulator.profile_id == "generic-evidence-report"
+                    and FINDINGS_CANDIDATE_PATH.as_posix() in files):
+                candidate, issue = capture_findings_candidate(files[FINDINGS_CANDIDATE_PATH.as_posix()])
+                self.accumulator.findings_candidate = candidate
+                self.accumulator.findings_capture_issue = issue
             file_data = files.get(_REPORT_PATH.as_posix())
             if not isinstance(file_data, Mapping):
                 continue

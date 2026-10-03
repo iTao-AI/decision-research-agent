@@ -139,7 +139,8 @@ def test_deterministic_review_does_not_invent_claims():
     )
 
     assert bundle.claim_snapshots == []
-    assert bundle.status == "not_required"
+    assert bundle.status == "required"
+    assert bundle.triggers == ["empty_research_output"]
 
 
 def test_changed_snapshot_forces_fresh_review():

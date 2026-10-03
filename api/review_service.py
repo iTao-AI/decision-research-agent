@@ -24,6 +24,10 @@ def build_review_bundle(
         if trigger == "verification_snapshot_changed"
     ]
 
+    if not findings and not claims:
+        triggers.append("empty_research_output")
+        actions.append("Review the empty research output before delivery.")
+
     for finding in findings or []:
         if not finding.evidence_refs:
             triggers.append(f"finding_without_evidence:{finding.finding_id}")

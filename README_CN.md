@@ -101,12 +101,31 @@ python tools/decision_research_agent_tool.py run \
 - Console 消费 canonical API 与 result contract，不新增 backend state、DB
   table、API path、credential、review control、verification authority、public
   online execution 或 tenant model。
-- Live Backend 接受一个有界的用户自定义通用研究问题，最多 4096 UTF-8
-  bytes，并通过现有 API contract 消费 service-owned state。当前仓库、运行时
+- Live Backend 接受一个有界的用户自定义研究问题，最多 4096 UTF-8
+  bytes，并通过现有 API contract 消费 service-owned state。Generic 保持默认；
+  显式结构化模式选择 `generic-evidence-report@1`，同时读取 findings JSON 与
+  canonical Markdown。当前仓库、运行时
   配置、Tool Client、Docker 默认值和 health service ID 均使用
   `decision-research-agent`。
 - Live Backend 仍限于 loopback，浏览器不接收或保存 API credential。详见
   [Demo Console](docs/demo-console.md) 与 [API Contract](docs/reference/api-contract.md)。
+
+## 可检查来源的研究发现
+
+`generic-evidence-report@1` 已实现原生候选产出、冻结 Evidence 引用绑定、fenced
+终结、JSON/Markdown HTTP 读者与 Live 结构化展示；默认 generic 和 Static Demo
+保持原有语义。未解答问题可如实保留，矛盾仍为模型报告，来源绑定不证明真实性
+或语义蕴含。
+
+```bash
+PYTHON_DOTENV_DISABLED=1 LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false \
+  python scripts/research_evidence_delivery_proof.py check
+```
+
+[操作说明与代码导航](docs/operations/research-evidence-delivery.md) 提供四组独立声明的
+合成预期、真实 graph/file/stream/DB/HTTP 无 provider 证明、临时 fixture API 和单独
+付费验证前置条件。[原生证明](docs/evidence/research-evidence-delivery-v1.md) 不声称
+provider 质量或浏览器观察；历史发布与证据继续保留各自范围。
 
 ## Engineering Depth
 
@@ -147,8 +166,16 @@ non-authority 边界。
 python -m pytest tests/unit/test_console_showcase_contracts.py \
   tests/unit/test_demo_console_contracts.py -q
 cd frontend && npm run test && npm run lint && npm run build
-cd .. && python scripts/console_showcase_contracts.py check --root .
+cd .. && python scripts/console_showcase_contracts.py check --root . --allow-historical
 ```
+
+显式 `--allow-historical` 按可达的历史 source commit/tree、独立发现的
+输入路径与 fingerprint，以及精确 PNG 元数据/字节核对保留的 Static Demo 截图。
+当前 structured reader 变更对应 `current_capture_inputs_match: false`；历史来源
+验证不证明当前 Static Demo 渲染一致。不带该参数仍要求当前输入路径与 fingerprint
+匹配，发生漂移后需要真实的新采集/manifest 才能证明当前渲染一致。历史来源不可达
+时，该参数也不免除当前输入要求。[单独的 Live reader 记录](docs/evidence/research-evidence-delivery-reader-v1.md)
+保存当前 native fixture 浏览器观察。
 
 完整 CI proof inventory 仍见下方详细章节与 [CI workflow](.github/workflows/ci.yml)。
 
@@ -482,7 +509,9 @@ business acceptance、provider billing、exactly-once、production readiness
   API、schema 或 database migration 要求。
 - 研究运行演示控制台默认使用 Static Demo 模式，也可以通过受控 Live Backend 模式在 loopback backend 创建 ResearchRun。
 - UI 交付必须消费 canonical API 与 result contract，不能重新引入并行 runtime。
-- Markdown-only delivery：canonical 研究结果通过 result endpoint 返回 Markdown artifact。
+- Canonical 研究结果通过 result endpoint 返回 Markdown artifact；可选
+  `generic-evidence-report@1` 通过独立 findings endpoint 提供应用拥有的 JSON
+  与冻结来源片段。来源绑定不证明真实性、语义蕴含或 Evidence 已核验。
 - Durable review 与 evidence verification 是受控 feature-flag workflow，不是公开多用户生产功能。
 - Evidence verification 记录人工决策和确定性 snapshot；不自动检索来源，也不使用 LLM 做证据核验。
 - 已完成的实施历史保留在 Git 中；当前公开中性的项目计划保留在受控的

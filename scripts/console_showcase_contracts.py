@@ -237,7 +237,12 @@ def _require_text(value: Any, code: str) -> str:
     return value
 
 
-def verify_showcase_assets(root: Path) -> dict[str, Any]:
+def verify_showcase_assets(root: Path, *, allow_historical: bool = False) -> dict[str, Any]:
+    """Verify exact captures; current parity stays strict unless history is explicit.
+
+    Historical mode can admit current drift only with a reachable source whose
+    tree, independently discovered inputs and fingerprint all verify below.
+    """
     asset_dir = root / ASSET_RELATIVE_DIR
     manifest = load_showcase_manifest(root)
     if manifest.get("schema_version") != SCHEMA_VERSION:
@@ -262,8 +267,18 @@ def verify_showcase_assets(root: Path) -> dict[str, Any]:
         _fail("showcase_capture_input_fingerprint_invalid")
     if capture_input.get("algorithm") != CAPTURE_INPUT_FINGERPRINT_ALGORITHM:
         _fail("showcase_capture_input_algorithm_invalid")
-    discovered_input_paths = discover_capture_input_paths(root)
-    if capture_input.get("paths") != list(discovered_input_paths):
+    source_reachable = (
+        _source_commit_is_reachable(root, source_commit) if allow_historical else None
+    )
+    allow_current_drift = allow_historical and source_reachable
+    try:
+        discovered_input_paths = discover_capture_input_paths(root)
+    except ValueError as exc:
+        if not allow_current_drift or str(exc) != "showcase_capture_input_set_empty":
+            raise
+        discovered_input_paths = ()
+    current_paths_match = capture_input.get("paths") == list(discovered_input_paths)
+    if not current_paths_match and not allow_current_drift:
         _fail("showcase_capture_input_paths_mismatch")
     declared_capture_input_fingerprint = _require_text(
         capture_input.get("value"),
@@ -271,23 +286,36 @@ def verify_showcase_assets(root: Path) -> dict[str, Any]:
     )
     if not _HEX_64.fullmatch(declared_capture_input_fingerprint):
         _fail("showcase_capture_input_fingerprint_invalid")
-    if compute_capture_input_fingerprint(root) != declared_capture_input_fingerprint:
+    current_capture_inputs_match = False
+    if current_paths_match:
+        try:
+            current_capture_inputs_match = (
+                compute_capture_input_fingerprint(root) == declared_capture_input_fingerprint
+            )
+        except ValueError:
+            # Current malformed/unreadable inputs cannot establish current parity.
+            # Explicit historical mode still must validate every source check below.
+            if not allow_current_drift:
+                raise
+    if not current_capture_inputs_match and not allow_current_drift:
         _fail("showcase_capture_input_fingerprint_mismatch")
 
     current_head = _git(root, "rev-parse", "HEAD")
     if source_commit == current_head:
         _fail("showcase_manifest_self_reference")
-    if _source_commit_is_reachable(root, source_commit):
+    if source_reachable is None:
+        source_reachable = _source_commit_is_reachable(root, source_commit)
+    if source_reachable:
         if _git(root, "show", "-s", "--format=%T", source_commit) != source_tree:
             _fail("showcase_source_tree_mismatch")
         source_files = _git(root, "ls-tree", "-r", "--name-only", source_tree).splitlines()
         if any(path.startswith(f"{ASSET_RELATIVE_DIR.as_posix()}/") for path in source_files):
             _fail("showcase_source_tree_contains_assets")
         source_input_paths = _discover_tree_capture_input_paths(root, source_tree)
-        if source_input_paths != discovered_input_paths:
+        if capture_input.get("paths") != list(source_input_paths):
             _fail("showcase_source_capture_input_paths_mismatch")
         if (
-            _compute_tree_capture_input_fingerprint(root, source_tree, discovered_input_paths)
+            _compute_tree_capture_input_fingerprint(root, source_tree, source_input_paths)
             != declared_capture_input_fingerprint
         ):
             _fail("showcase_source_capture_input_fingerprint_mismatch")
@@ -332,6 +360,7 @@ def verify_showcase_assets(root: Path) -> dict[str, Any]:
         "source_commit": source_commit,
         "source_tree": source_tree,
         "provenance_verification": provenance_verification,
+        "current_capture_inputs_match": current_capture_inputs_match,
         "capture_input_fingerprint": declared_capture_input_fingerprint,
         "sha256": hashes,
     }
@@ -341,9 +370,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Verify deterministic console showcase assets.")
     parser.add_argument("check", nargs="?", choices=("check",), default="check")
     parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--allow-historical", action="store_true",
+        help="allow current input drift only after full reachable historical source verification",
+    )
     args = parser.parse_args()
     try:
-        result = verify_showcase_assets(args.root.resolve())
+        result = verify_showcase_assets(
+            args.root.resolve(), allow_historical=args.allow_historical,
+        )
     except ValueError as exc:
         print(json.dumps({"status": "error", "code": str(exc)}, sort_keys=True))
         return 1

@@ -489,7 +489,7 @@ def _closed_terminal(
             and (
                 (
                     snapshot.review_status == "not_required"
-                    and snapshot.delivery_status == "ready"
+                    and snapshot.delivery_status in {"ready", "blocked"}
                 )
                 or (
                     snapshot.review_status == "required"

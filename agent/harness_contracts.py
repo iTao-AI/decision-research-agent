@@ -44,6 +44,54 @@ class ReportCandidate:
             raise ValueError("report candidate must use the canonical workspace path")
 
 
+MAX_FINDINGS_CANDIDATE_BYTES = 256 * 1024
+FINDINGS_CANDIDATE_PATH = PurePosixPath("/workspace/research-findings.json")
+
+
+@dataclass(frozen=True)
+class FindingsCandidate:
+    """Bounded root virtual-workspace input, never delivery authority."""
+
+    path: PurePosixPath
+    content: str
+
+    def __post_init__(self) -> None:
+        if self.path != FINDINGS_CANDIDATE_PATH:
+            raise ValueError("findings candidate must use the canonical workspace path")
+        if type(self.content) is not str or len(self.content.encode("utf-8")) > MAX_FINDINGS_CANDIDATE_BYTES:
+            raise ValueError("findings candidate must be bounded UTF-8")
+
+
+def capture_findings_candidate(
+    file_data: Any,
+) -> tuple[FindingsCandidate | None, Literal[
+    "candidate_contract_invalid", "candidate_too_large", "candidate_invalid_json",
+] | None]:
+    """Check byte bounds before joining native lines; discard invalid replacements."""
+    if not isinstance(file_data, Mapping):
+        return None, "candidate_contract_invalid"
+    content = file_data.get("content")
+    if type(content) is str:
+        parts = [content]
+    elif type(content) is list and all(type(item) is str for item in content):
+        parts = content
+    else:
+        return None, "candidate_contract_invalid"
+    total = max(0, len(parts) - 1)
+    if total > MAX_FINDINGS_CANDIDATE_BYTES:
+        return None, "candidate_too_large"
+    try:
+        for part in parts:
+            if len(part) > MAX_FINDINGS_CANDIDATE_BYTES - total:
+                return None, "candidate_too_large"
+            total += len(part.encode("utf-8"))
+            if total > MAX_FINDINGS_CANDIDATE_BYTES:
+                return None, "candidate_too_large"
+    except UnicodeError:
+        return None, "candidate_invalid_json"
+    return FindingsCandidate(FINDINGS_CANDIDATE_PATH, "\n".join(parts)), None
+
+
 class ExecutionObserver(Protocol):
     """Application-owned hooks for stream processing and diagnostics."""
 

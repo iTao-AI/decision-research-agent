@@ -1,6 +1,7 @@
 import sys
 import os
 import asyncio
+import json
 import logging
 import re
 import sqlite3
@@ -99,6 +100,9 @@ from api.run_recovery_models import (
     validate_recovery_key,
 )
 from api.run_recovery_repository import create_or_replay_run_recovery
+from api.research_findings import build_research_findings_artifacts
+from agent.research_findings_contracts import validate_research_findings_scope
+from api.research_findings_service import resolve_run_findings
 from api.run_result_service import (
     RunResultUnavailable,
     build_generic_result_artifact,
@@ -614,7 +618,16 @@ async def _run_started_v2_with_persistence(
         review_workflow = None
         artifacts = []
         completed_evidence_entries = result.evidence_entries
-        if execution_status == "completed" and is_generic_family(profile_id):
+        if execution_status == "completed" and profile_id == "generic-evidence-report":
+            findings = build_research_findings_artifacts(
+                run_id=run_id, scope=validate_research_findings_scope(scope or {}, query=query),
+                candidate_content=result.findings_candidate.content if result.findings_candidate else None,
+                capture_issue=result.findings_capture_issue, evidence_entries=result.evidence_entries,
+            )
+            artifacts = findings.artifacts
+            delivery_status = findings.delivery_status
+            completed_evidence_entries = findings.evidence_entries
+        elif execution_status == "completed" and is_generic_family(profile_id):
             artifact = build_generic_result_artifact(result)
             artifacts = [artifact]
             if is_strict_citation_profile(profile_id):
@@ -1292,6 +1305,17 @@ async def create_research_run(
             },
         ) from exc
     validated_scope = request.scope
+    if request.profile_id == "generic-evidence-report":
+        try:
+            validated_scope = validate_research_findings_scope(request.scope, query=request.query).model_dump(mode="json")
+            # Scope text must also be representable in the UTF-8 envelope.
+            json.dumps(validated_scope, ensure_ascii=False).encode("utf-8")
+        except (ValidationError, UnicodeError, ValueError):
+            raise HTTPException(status_code=422, detail={
+                "code": "invalid_research_scope",
+                "problem": "Research findings scope failed bounded validation.",
+                "fix": "Provide 1-5 unique question IDs with non-empty bounded question text.",
+            }) from None
     if request.profile_id == "talent-hiring-signal":
         try:
             validated_scope = ResearchScope.model_validate(request.scope).model_dump(
@@ -1435,6 +1459,17 @@ async def get_research_run_v2(run_id: str):
     if run is None:
         return JSONResponse(status_code=404, content={"detail": "ResearchRun 不存在"})
     return run
+
+
+@app.get("/api/runs/{run_id}/findings")
+async def get_research_run_findings(run_id: str):
+    try:
+        result = await asyncio.to_thread(resolve_run_findings, run_id=run_id)
+    except RunResultUnavailable as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.payload(run_id=run_id))
+    return {"run_id": result.run_id, "execution_status": result.execution_status,
+            "delivery_status": result.delivery_status, "artifact": result.artifact,
+            "report": result.report.model_dump(mode="json")}
 
 
 @app.get("/api/runs/{run_id}/result")

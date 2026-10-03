@@ -186,51 +186,13 @@ def resolve_run_result(
         run = get_run_delivery_snapshot(run_id=run_id, db_path=db_path)
     except RunDeliverySnapshotConflict as exc:
         raise _unavailable() from exc
-    if run is None:
-        raise RunResultUnavailable(
-            status_code=404,
-            code="run_not_found",
-            problem="The requested ResearchRun does not exist.",
-            fix="Check the run_id returned by POST /api/runs.",
-        )
-
+    _require_ready_delivery(run, run_id=run_id)
+    if run["profile_id"] == "generic-evidence-report":
+        from api.research_findings_service import validate_findings_snapshot
+        _, _, artifact = validate_findings_snapshot(run)
+        return ResolvedRunResult(run_id, run["execution_status"], run["delivery_status"], artifact)
     execution_status = run["execution_status"]
     delivery_status = run["delivery_status"]
-    if execution_status in {"pending", "running"}:
-        raise RunResultUnavailable(
-            status_code=409,
-            code="run_not_terminal",
-            problem="The ResearchRun has not reached a terminal state.",
-            fix="Poll GET /api/runs/{run_id} until execution_status is terminal.",
-        )
-    if execution_status == "failed":
-        raise RunResultUnavailable(
-            status_code=409,
-            code="run_failed",
-            problem="The ResearchRun failed and has no deliverable result.",
-            fix="Inspect the bounded run projection and start a new run if needed.",
-        )
-    if delivery_status == "review_required":
-        raise RunResultUnavailable(
-            status_code=409,
-            code="run_review_required",
-            problem="The ResearchRun requires review before delivery.",
-            fix="Complete the review workflow, then retry the result request.",
-        )
-    if delivery_status == "blocked":
-        raise RunResultUnavailable(
-            status_code=409,
-            code="run_delivery_blocked",
-            problem="Delivery is blocked for this ResearchRun.",
-            fix="Start a corrected run if a deliverable result is still needed.",
-        )
-    if delivery_status != "ready":
-        raise RunResultUnavailable(
-            status_code=409,
-            code="run_result_unavailable",
-            problem="No deliverable result is available for this ResearchRun.",
-            fix="Retry after the run reaches ready delivery state.",
-        )
 
     artifact_id = _select_artifact_id(run)
     by_id = {row["artifact_id"]: row for row in run["artifacts"]}
@@ -429,3 +391,51 @@ def _unavailable() -> RunResultUnavailable:
         problem="The persisted result artifact is missing or invalid.",
         fix="Retry later or start a new run if the artifact cannot be recovered.",
     )
+
+
+def _require_ready_delivery(run: dict | None, *, run_id: str) -> None:
+    if run is None:
+        raise RunResultUnavailable(
+            status_code=404,
+            code="run_not_found",
+            problem="The requested ResearchRun does not exist.",
+            fix="Check the run_id returned by POST /api/runs.",
+        )
+
+    execution_status = run["execution_status"]
+    delivery_status = run["delivery_status"]
+    if execution_status in {"pending", "running"}:
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_not_terminal",
+            problem="The ResearchRun has not reached a terminal state.",
+            fix="Poll GET /api/runs/{run_id} until execution_status is terminal.",
+        )
+    if execution_status == "failed":
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_failed",
+            problem="The ResearchRun failed and has no deliverable result.",
+            fix="Inspect the bounded run projection and start a new run if needed.",
+        )
+    if delivery_status == "review_required":
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_review_required",
+            problem="The ResearchRun requires review before delivery.",
+            fix="Complete the review workflow, then retry the result request.",
+        )
+    if delivery_status == "blocked":
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_delivery_blocked",
+            problem="Delivery is blocked for this ResearchRun.",
+            fix="Start a corrected run if a deliverable result is still needed.",
+        )
+    if delivery_status != "ready":
+        raise RunResultUnavailable(
+            status_code=409,
+            code="run_result_unavailable",
+            problem="No deliverable result is available for this ResearchRun.",
+            fix="Retry after the run reaches ready delivery state.",
+        )

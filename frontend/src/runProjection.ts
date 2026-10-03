@@ -1,3 +1,5 @@
+import { FINDINGS_ISSUE_CODES } from "./researchFindings";
+
 export type FailureCauseAvailability =
   | Readonly<{ kind: "unsupported" }>
   | Readonly<{ kind: "not_applicable" }>
@@ -114,6 +116,11 @@ export type RunProjection = Readonly<{
   currentPublication?: CurrentPublicationProjection;
   currentArtifacts?: readonly ArtifactMetadataProjection[];
   failureCause: FailureCauseAvailability;
+  findingsIssues?: readonly string[];
+  findingsOutcome?: Readonly<{
+    requested_question_count: number; covered_question_count: number;
+    unresolved_question_count: number; reference_binding_failure_count: number;
+  }>;
 }>;
 
 export type CanonicalArtifactProjection = Readonly<{
@@ -186,6 +193,9 @@ export function parseRunProjection(value: unknown, expectedRunId?: string): RunP
   const currentArtifacts = hasOwn(record, "current_artifacts")
     ? Object.freeze(expectArray(record.current_artifacts).map(parseArtifactMetadata))
     : undefined;
+  const findingsIssues = hasOwn(record, "findings_issues") ? parseFindingsIssues(record.findings_issues) : undefined;
+  const findingsOutcome = hasOwn(record, "findings_outcome") ? parseFindingsOutcome(record.findings_outcome) : undefined;
+  if ((findingsIssues || findingsOutcome) && record.profile_id !== "generic-evidence-report") invalidResponse();
 
   return Object.freeze({
     run_id: runId,
@@ -205,7 +215,9 @@ export function parseRunProjection(value: unknown, expectedRunId?: string): RunP
     ...(verification === undefined ? {} : { verification }),
     ...(currentPublication === undefined ? {} : { currentPublication }),
     ...(currentArtifacts === undefined ? {} : { currentArtifacts }),
-    failureCause: parseFailureCause(record)
+    failureCause: parseFailureCause(record),
+    ...(findingsIssues === undefined ? {} : { findingsIssues }),
+    ...(findingsOutcome === undefined ? {} : { findingsOutcome })
   });
 }
 
@@ -235,6 +247,31 @@ export function parseRunResult(value: unknown, expectedRunId?: string): RunResul
       content_hash: expectString(artifact.content_hash)
     })
   });
+}
+
+function parseFindingsIssues(value: unknown): readonly string[] {
+  const issues = expectArray(value);
+  if (issues.length > 20) invalidResponse();
+  return Object.freeze(issues.map((value) => {
+    const code = expectString(value);
+    if (!FINDINGS_ISSUE_CODES.has(code)) invalidResponse();
+    return code;
+  }));
+}
+
+function parseFindingsOutcome(value: unknown): NonNullable<RunProjection["findingsOutcome"]> {
+  const row = expectRecord(value);
+  const bounded = (key: string, min: number, max: number) => {
+    const count = expectInteger(row[key]);
+    if (count < min || count > max) invalidResponse();
+    return count;
+  };
+  const requested = bounded("requested_question_count", 1, 5);
+  const covered = bounded("covered_question_count", 0, 5);
+  const unresolved = bounded("unresolved_question_count", 0, 5);
+  if (covered + unresolved > requested) invalidResponse();
+  return Object.freeze({ requested_question_count: requested, covered_question_count: covered,
+    unresolved_question_count: unresolved, reference_binding_failure_count: bounded("reference_binding_failure_count", 0, 200) });
 }
 
 function parseRunSegment(value: unknown): RunSegmentProjection {

@@ -5,6 +5,7 @@ import {
   ClientRequestError,
   createRunIntent,
   getHealth,
+  getFindings,
   getResult,
   getRun,
   isAmbiguousCreateError,
@@ -18,6 +19,7 @@ import {
   type RunProjection,
   type RunResultResponse
 } from "./apiClient";
+import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchFindingsResponse } from "./researchFindings";
 
 export type DemoMode = "static" | "live";
 export type LiveStatus =
@@ -44,6 +46,8 @@ export type LiveRunState = {
   created?: RunCreationResponse;
   error?: ClientError;
   health?: HealthResponse;
+  createProfileId?: LiveResearchProfile;
+  findings?: ResearchFindingsResponse;
   mode: DemoMode;
   result?: RunResultResponse;
   run?: RunProjection;
@@ -119,11 +123,23 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       setState((current) => ({
         baseUrl,
         mode: current.mode,
+        ...(current.createProfileId ? { createProfileId: current.createProfileId } : {}),
         status: current.mode === "static" ? "static" : "idle"
       }));
     },
     [clearRunScope, invalidateRequests]
   );
+
+  const setProfile = useCallback((profileId: LiveResearchProfile) => {
+    invalidateRequests();
+    clearRunScope();
+    setState((current) => ({
+      baseUrl: current.baseUrl, mode: current.mode,
+      ...(current.health ? { health: current.health } : {}),
+      ...(profileId === "generic" ? {} : { createProfileId: profileId }),
+      status: current.mode === "static" ? "static" : current.health ? "ready" : "idle"
+    }));
+  }, [clearRunScope, invalidateRequests]);
 
   const checkHealth = useCallback(async () => {
     const { controller, version } = nextRequest();
@@ -185,6 +201,11 @@ export function useLiveRun(options: LiveRunOptions = {}) {
         }));
 
         if (run.delivery_status === "ready") {
+          const findings = run.profile_id === STRUCTURED_RESEARCH_PROFILE
+            ? await getFindings(baseUrl, runId, signal) : undefined;
+          if (!isCurrent(version)) {
+            return;
+          }
           const result = await getResult(baseUrl, runId, signal);
           if (!isCurrent(version)) {
             return;
@@ -193,6 +214,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
             ...current,
             error: undefined,
             result,
+            findings,
             run,
             status: "result"
           }));
@@ -204,6 +226,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
             ...current,
             error: undefined,
             result: undefined,
+            findings: undefined,
             run,
             status: "terminal"
           }));
@@ -231,6 +254,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       error: undefined,
       mode: "live",
       result: undefined,
+      findings: undefined,
       run: undefined,
       status: "creating"
     }));
@@ -285,7 +309,9 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       );
       setState((current) => ({
         ...current,
-        ...failure
+        ...failure,
+        result: undefined,
+        findings: undefined
       }));
     } finally {
       deadline.dispose();
@@ -293,11 +319,11 @@ export function useLiveRun(options: LiveRunOptions = {}) {
   }, [isCurrent, nextRequest, observeRun, state.baseUrl, waitTimeoutMs]);
 
   const startNewRun = useCallback(async (query: string) => {
-    const intent = createRunIntent(query, randomUUID);
+    const intent = createRunIntent(query, randomUUID, state.createProfileId ?? "generic");
     createIntent.current = intent;
     activeRunId.current = null;
     await createAndObserve(intent);
-  }, [createAndObserve, randomUUID]);
+  }, [createAndObserve, randomUUID, state.createProfileId]);
 
   const attachKnownRun = useCallback(async (runId: string) => {
     const validation = validateLiveRunId(runId);
@@ -315,6 +341,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       created: undefined,
       error: undefined,
       result: undefined,
+      findings: undefined,
       run: undefined,
       status: "polling"
     }));
@@ -333,7 +360,9 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       const failure = classifyObservationFailure(error, runId, deadline.didExpire());
       setState((current) => ({
         ...current,
-        ...failure
+        ...failure,
+        result: undefined,
+        findings: undefined
       }));
     } finally {
       deadline.dispose();
@@ -356,6 +385,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       baseUrl: current.baseUrl,
       ...(current.health ? { health: current.health } : {}),
       mode: current.mode,
+      ...(current.createProfileId ? { createProfileId: current.createProfileId } : {}),
       status: current.mode === "static" ? "static" : current.health ? "ready" : "idle"
     }));
   }, [invalidateRequests]);
@@ -372,6 +402,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       ...current,
       error: undefined,
       result: undefined,
+      findings: undefined,
       status: "polling"
     }));
     try {
@@ -389,7 +420,9 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       const failure = classifyObservationFailure(error, runId, deadline.didExpire());
       setState((current) => ({
         ...current,
-        ...failure
+        ...failure,
+        result: undefined,
+        findings: undefined
       }));
     } finally {
       deadline.dispose();
@@ -405,6 +438,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
     runGoldenPath: startNewRun,
     setBaseUrl,
     setMode,
+    setProfile,
     startNewRun,
     state
   };

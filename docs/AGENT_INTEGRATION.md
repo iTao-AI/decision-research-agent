@@ -350,3 +350,55 @@ Automation must persist and supply `RECOVERY_KEY` in caller-owned durable state
 before network access. The generated key is invocation-local convenience only.
 `--wait` and `--result` poll/fetch the returned replacement, never the source.
 The key deduplicates replacement creation, not provider/tool effects.
+
+
+## Structured research findings (implemented, opt-in)
+
+Use the existing REST create contract with `profile_id=generic-evidence-report`
+and optional `scope.questions` (1–5 unique IDs and bounded nonempty text).
+Omitted questions default to the query as q1. The server normalizes scope before
+keyed creation, so omitted scope and its explicit equivalent replay the same
+intent. Preserve the existing generic and strict-citation modes when structured
+research is not requested.
+
+After polling GET `/api/runs/{run_id}`, require terminal execution and ready
+delivery. GET `/api/runs/{run_id}/findings` returns the independently validated
+`dra.research-findings.v1` report and JSON artifact metadata/content/hash; GET
+`/api/runs/{run_id}/result` keeps its Markdown response contract. Findings are
+source-bound candidates: show accepted questions, quoted observed snippets and
+excerpts, unresolved dispositions, limitations and model-reported contradictions.
+Unicode excerpt offsets count code points; JavaScript consumers must convert
+with `Array.from(snippet)` before slicing. Render source/model strings as text
+and apply the existing safe-link policy; do not fetch arbitrary source URLs.
+
+Completed/blocked runs have no deliverable JSON or Markdown. Inspect the optional
+bounded `findings_issues` and `findings_outcome` status fields, then start a
+corrected run if necessary. These are committed diagnostic counts, not answer
+accuracy, semantic grading or human verification. Corrupt diagnostics are
+omitted. The API never returns VFS candidate text or raw internal exceptions.
+
+Provider-free native regression:
+
+```bash
+python -m pytest -q tests/integration/test_research_findings_native.py tests/integration/test_research_findings_api.py
+```
+
+The native test uses the installed generic harness, deterministic tool-calling
+model, real named researcher/search fixture, native write_file and stream
+adapter, ResearchExecutionService, server dispatch, fenced DB finalization, and
+HTTP findings/result readers. It includes missing/failed-file/failed-source,
+malformed and empty candidate controls. This proves the local deterministic
+boundary; it does not claim real-provider research quality or production benefit.
+
+
+The shared coordinator prompt retains the Markdown default and explicitly allows
+only the server-supplied structured profile envelope to select the JSON target,
+with precedence over legacy Skill output-format wording. The server constructs
+that envelope from validated profile/scope and quotes query/question text as
+untrusted research content. Provider-free tests prove native mechanics and
+delivery authority; they do not prove real-model instruction adherence.
+
+The producer envelope also states the existing intake boundary: Evidence capture
+collapses whitespace and truncates observed snippets to 1000 code points. Exact
+excerpts must occur uniquely and contiguously inside that stored normalized
+snippet; later passages of a longer raw tool result cannot satisfy binding.

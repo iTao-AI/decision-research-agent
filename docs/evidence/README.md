@@ -100,3 +100,16 @@ The Agent evaluation artifacts and baseline review workflow are documented in
 The v2 sensitivity artifacts, commands, diagnosis, and non-claims are
 documented in
 [`docs/reference/agent-evaluation-sensitivity-gate.md`](../reference/agent-evaluation-sensitivity-gate.md).
+
+## Research findings delivery native proof
+
+[Native report](research-evidence-delivery-v1.md) and [JSON receipt](research-evidence-delivery-v1.json)
+record four declared synthetic cases traversing the installed graph, native file
+write/stream, application execution, fenced database and persisted HTTP readers.
+They are local provider-free structural evidence, not a required hosted gate,
+paid-provider quality result, truth/entailment verification or browser receipt.
+The [walkthrough](../operations/research-evidence-delivery.md) separates temporary
+fixture serving and a concrete proposed paid-provider gate. The separate
+[browser observation receipt](research-evidence-delivery-reader-v1.md) records
+actual desktop/narrow geometry, keyboard inspection and synthetic local screenshots.
+Earlier evidence retains its original scope.

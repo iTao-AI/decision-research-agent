@@ -7,6 +7,9 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.*
+!.env.example
+!.env.*.example
 
 # IDE
 .idea/
@@ -21,7 +24,22 @@ Thumbs.db
 # AI Agent internal state (never publish these)
 .agents/
 .claude/
+.codex/
+.gstack/
+.sessions/
+.superpowers/
+.playwright-cli/
 skills-lock.json
+
+# Local verification caches and browser output
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage/
+frontend/test-results/
+frontend/playwright-report/
 
 # Runtime directories
 output/
@@ -39,5 +57,4 @@ frontend/dist/
 
 # RAGFlow Docker images (large tar files)
 ragflow-deploy/*.tar
-.gstack/
 .worktrees/

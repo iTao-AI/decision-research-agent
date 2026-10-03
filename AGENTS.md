@@ -372,6 +372,13 @@ clean and intentional, and remaining risks or skipped checks are reported.
 PR descriptions default to Simplified Chinese with technical literals retained.
 Explain the problem, resulting behavior, actual verification and material limits;
 scale detail to the change. Headings and checkbox style are not extra merge gates.
-After creating or updating a PR, read back its actual identity and content. Correct
-materially stale claims when delivery changes them; a documentation update failure
-is reported as remaining work, separately from the verified code and CI result.
+When checkboxes represent actual gates, pending merge gates use `[ ]`;
+satisfied merge gates must be updated to `[x]`.
+
+After creating or updating a PR, read back its actual identity and content.
+Perform a final PR-body reconciliation when completed CI, merge authorization,
+mergeability, review blockers, or cleanup materially change recorded claims.
+Verify the persisted PR body, update remaining risk, and preserve valid non-claims.
+If a material update or readback fails, you must not report the PR as fully closed;
+report documentation update failures as remaining work, separately from the
+verified code and CI result.

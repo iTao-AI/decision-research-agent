@@ -86,13 +86,13 @@ Use existing `scripts/research_evidence_delivery_proof.py serve` and declared
 **Interfaces:** Document the exact flags, response/error/receipt boundaries and
 reproducible native-server commands defined in the spec.
 
-- [ ] Write usage documentation, including observed verification location,
+- [x] Write usage documentation, including observed verification location,
   strict findings-only configuration, UTF-8 stdout and consumer producer limits.
-- [ ] Run `python -m pytest -q -m 'not docker'` and dependency compatibility;
+- [x] Run `python -m pytest -q -m 'not docker'` and dependency compatibility;
   retain local logs in ignored output, not public documents.
-- [ ] Run a separate manual bounded native-server/consumer command and inspect
+- [x] Run a separate manual bounded native-server/consumer command and inspect
   the actual receipt and canonical Markdown bytes; terminate owned resources.
-- [ ] Run `git diff --check`, inspect the full intended diff and legacy-file
+- [x] Run `git diff --check`, inspect the full intended diff and legacy-file
   preservation; commit documents and completed task checkboxes.
 - [ ] Dispatch one bounded fresh `gpt-6.1-sol/high` whole-branch reviewer, resolve
   actionable findings with regressions and rerun affected/full checks as needed.

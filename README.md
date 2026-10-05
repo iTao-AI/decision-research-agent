@@ -163,6 +163,11 @@ browser observations. The [delivery ADR](docs/decisions/research-findings-delive
 sets the authority and source-snippet limits. Historical releases retain their
 original scope.
 
+For an existing structured run, `findings --run-id` returns JSON with actual
+public Evidence/review states; `--format markdown` emits canonical stored bytes.
+The [read-only CLI and independent consumer](docs/reference/research-findings-cli.md)
+provide commands, bounded errors and a separate-process HTTP consumption proof.
+
 ## Engineering Depth
 
 The implementation separates interface clients from application-owned
@@ -409,6 +414,12 @@ python tools/decision_research_agent_tool.py run \
 
 python tools/decision_research_agent_tool.py result \
   --run-id "$RUN_ID"
+
+python tools/decision_research_agent_tool.py findings \
+  --run-id "$RUN_ID"
+
+python tools/decision_research_agent_tool.py findings \
+  --run-id "$RUN_ID" --format markdown
 ```
 
 Use `--wait --result` for the shortest local golden path when the backend is

@@ -26,6 +26,11 @@ fixture, see the [Downstream Consumer Contract](reference/downstream-consumer-co
 Command-line `--base-url` and `--timeout` override environment defaults. API
 keys are accepted only through environment variables, not CLI arguments.
 
+The read-only `findings` command uses stricter bounded configuration: a
+nonempty timeout must be finite and `0 < timeout <= 60`, with a validated HTTP(S)
+endpoint. Its [usage reference](reference/research-findings-cli.md) defines the
+exact rules; other commands keep the fallback behavior in the table above.
+
 When `API_SECRET` is configured on the service, the Tool Client sends
 `DECISION_RESEARCH_AGENT_API_KEY` as `X-API-Key`. When it is empty,
 credential-free source access is limited so the direct peer and literal Host
@@ -353,6 +358,22 @@ The key deduplicates replacement creation, not provider/tool effects.
 
 
 ## Structured research findings (implemented, opt-in)
+
+Read an already existing structured run through the Tool Client:
+
+```bash
+python tools/decision_research_agent_tool.py findings --run-id "$RUN_ID"
+python tools/decision_research_agent_tool.py findings --run-id "$RUN_ID" --format markdown
+```
+
+JSON retains the findings report/artifact and adds actual public `evidence`,
+`review_status` and `review_decision` observations from that run. Markdown emits
+the exact server-validated stored bytes. Both paths use only GETs without
+create/retry/wait/approve/verify or model calls. The standalone
+`scripts/research_findings_consumer.py` launches this CLI in a separate process,
+checks public delivery independently and writes an exclusive bounded receipt.
+See [command, response, errors and native process proof](reference/research-findings-cli.md).
+The existing generic downstream adapter remains unchanged.
 
 Use the existing REST create contract with `profile_id=generic-evidence-report`
 and optional `scope.questions` (1–5 unique IDs and bounded nonempty text).

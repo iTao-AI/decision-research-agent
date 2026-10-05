@@ -15,6 +15,15 @@ and installed native fixture/browser methods; unchanged dependency locks.
 
 **Spec:** `docs/superpowers/specs/2026-10-05-multi-question-console.md`
 
+**Local acceptance:** completed on 2026-10-06. Independent review covered
+`db6bb55..df3f8a3`, with no actionable findings; the final acceptance-record
+commit changes this document only. Frontend 406 tests, lint/build, focused
+scope/API/native checks and console ownership checks passed. Browser
+observations used the functional `f29bfcb` revision and declared synthetic
+native fixtures; later error-card extraction did not alter scope/reader
+behavior. These checks do not establish autonomous research quality or human
+value. Hosted delivery and the next stage remain outside this local acceptance.
+
 ## Global Constraints
 
 - 1–5 questions; nonblank text, at most 4096 Unicode code points each.
@@ -48,17 +57,17 @@ returns a typed validation result. `createRunIntent(query, randomUUID, profileId
 questions?)` retains old defaults. `startNewRun(query, questions?)` passes the
 complete array to the client boundary.
 
-- [ ] Write failing create-intent tests for exact five-question payload,
+- [x] Write failing create-intent tests for exact five-question payload,
   defensive deep copy, reordered stable IDs, zero/six/duplicate/blank/invalid
   IDs, Unicode limits and unchanged generic/default-one payloads.
-- [ ] Run `npm run test --prefix frontend -- src/apiClient.test.ts`; verify
+- [x] Run `npm run test --prefix frontend -- src/apiClient.test.ts`; verify
   explicit scopes are currently ignored and invalid scopes are accepted.
-- [ ] Implement typed validation and copied/frozen arrays before UUID creation.
-- [ ] Add/run a failing hook test showing a two/five-question lost response
+- [x] Implement typed validation and copied/frozen arrays before UUID creation.
+- [x] Add/run a failing hook test showing a two/five-question lost response
   currently collapses to q1; mutate the caller array then retry.
-- [ ] Pass the optional questions through `startNewRun`; verify original complete
+- [x] Pass the optional questions through `startNewRun`; verify original complete
   bodies and keys match, observed reader remains same-run and errors remain bounded.
-- [ ] Run the two test files, inspect diff, commit `feat: preserve full structured question intent`.
+- [x] Run the two test files, inspect diff, commit `feat: preserve full structured question intent`.
 
 ### Task 2: Stable question editor and observed dispositions
 
@@ -74,39 +83,43 @@ Editor receives `questions`, `language`, `disabled`, `onAdd`, `onRemove`,
 Submission consumes Task 1's optional complete array; the reader consumes the
 existing parsed report's dispositions rather than draft state.
 
-- [ ] Write/run failing App tests for five-question submit, blank-row blocking,
+- [x] Write/run failing App tests for five-question submit, blank-row blocking,
   remove/edit/re-add IDs, first-row removal/query binding and locked recovery.
-- [ ] Implement compact controls with old first-question label and single default;
+- [x] Implement compact controls with old first-question label and single default;
   prevent count overflow/empty scope, retain IDs/text on profile/language changes.
-- [ ] Write/run failing keyboard focus and English editor tests; implement add
+- [x] Write/run failing keyboard focus and English editor tests; implement add
   focus and removal focus without changing lifecycle ownership.
-- [ ] Write/run a failing five-question reader test for explicit observed
+- [x] Write/run a failing five-question reader test for explicit observed
   candidate/unresolved labels with corresponding source and unresolved reasons.
-- [ ] Render service dispositions and retain report-level contradiction caveat;
+- [x] Render service dispositions and retain report-level contradiction caveat;
   keep existing snippet inspection and same-run parser untouched.
-- [ ] Run full frontend tests, inspect diff, commit `feat: add multi-question research scope editor`.
+- [x] Run full frontend tests, inspect diff, commit `feat: add multi-question research scope editor`.
 
 ### Task 3: Integrated local acceptance and documentation
 
 **Files:** Modify `DESIGN.md`, `docs/demo-console.md`,
-`docs/operations/research-evidence-delivery.md` and affected README copy.
+`docs/operations/research-evidence-delivery.md` and affected README copy. The existing error card moved unchanged into
+`frontend/src/presentation/liveErrorCard.tsx`;
+`tests/unit/test_demo_console_contracts.py` retains its ownership/size checks
+with the new owner location. `frontend/src/App.tsx` stays within 500 lines.
 Retain raw fixture/browser receipts only in ignored task output.
 
 **Interfaces:** Reuse existing guarded native fixture API with independently
 declared one/five-question cases, actual UI POST, persisted findings/result
 reader and known-run GET recovery. Use the current in-app browser method.
 
-- [ ] Run frontend test/lint/build and focused existing API/scope/idempotency
+- [x] Run frontend test/lint/build and focused existing API/scope/idempotency
   tests; inspect actual results and unchanged server/dependency files.
-- [ ] Start task-owned local Vite/native fixture processes; submit one and five
+- [x] Start task-owned local Vite/native fixture processes; submit one and five
   questions from actual browser controls; verify persisted scope, same-run
   dispositions/sources, Chinese/English, desktop/narrow layout and keyboard.
-- [ ] Record observed browser limits and actual results in ignored closeout;
+- [x] Record observed browser limits and actual results in ignored closeout;
   stop task-owned processes and release temporary UI overrides.
-- [ ] Update creation/editor/query/ID/recovery documentation and links; run
+- [x] Update creation/editor/query/ID/recovery documentation and links; run
   frontend documentation checks and `git diff --check`.
-- [ ] Commit `docs: document multi-question structured console`.
-- [ ] Dispatch one independent whole-branch review; address Important/Critical
+- [x] Commit `docs: document multi-question structured console`.
+- [x] Dispatch one independent whole-branch review; address Important/Critical
   findings with failing regressions and appropriate suite verification.
-- [ ] Return exact base/HEAD, branch/worktree, diff, actual checks and remaining
-  risks to the coordinating owner once. Do not start hosted delivery or C1.
+Terminal handoff: return exact base/HEAD, branch/worktree, diff, actual checks
+and remaining risks to the coordinating owner once. Do not start hosted
+delivery or C1.

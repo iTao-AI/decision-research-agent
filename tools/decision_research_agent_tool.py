@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -22,6 +23,24 @@ from api.run_recovery_models import RunRecoveryAcceptance
 
 
 _LOCAL_ERROR_DETAILS: dict[str, tuple[str, str, str, bool]] = {
+    "findings_config_invalid": (
+        "The findings configuration is invalid.",
+        "Endpoint, timeout, run identifier or authentication header is unsupported.",
+        "Use an HTTP(S) endpoint and a finite timeout greater than zero and at most 60 seconds.",
+        False,
+    ),
+    "findings_response_invalid": (
+        "The findings delivery response is inconsistent.",
+        "The returned package does not match the requested structured run and stored artifacts.",
+        "Check service compatibility and the run delivery state.",
+        False,
+    ),
+    "response_too_large": (
+        "The service response exceeds the client byte limit.",
+        "The bounded reader rejected an oversized response.",
+        "Check service compatibility before requesting this delivery again.",
+        False,
+    ),
     "connection_failed": (
         "Cannot reach Decision Research Agent.",
         "The configured service endpoint is unavailable.",
@@ -487,6 +506,186 @@ def result(run_id: str, config: ToolConfig) -> dict[str, Any]:
     )
 
 
+_FINDINGS_RESPONSE_BYTES = 4 * 1024 * 1024 + 65536
+_FINDINGS_ARTIFACT_BYTES = 1024 * 1024
+
+
+def _validate_findings_config(config: ToolConfig, run_id: str) -> None:
+    try:
+        endpoint = parse.urlsplit(config.base_url)
+        port = endpoint.port
+        valid = (
+            config.base_url.isascii() and len(config.base_url) <= 2048
+            and not any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in config.base_url)
+            and endpoint.scheme in {"http", "https"} and bool(endpoint.hostname)
+            and endpoint.username is None and endpoint.password is None
+            and not endpoint.query and not endpoint.fragment
+            and (port is None or 0 < port <= 65535)
+            and math.isfinite(config.timeout_seconds) and 0 < config.timeout_seconds <= 60
+            and type(run_id) is str and bool(run_id.strip()) and len(run_id) <= 500
+            and not any(ord(char) < 32 or ord(char) == 127 for char in run_id)
+        )
+        if config.api_key:
+            valid = valid and config.api_key.isascii() and len(config.api_key) <= 4096 and all(
+                32 < ord(char) < 127 for char in config.api_key
+            )
+    except (ValueError, TypeError, AttributeError, UnicodeError):
+        valid = False
+    if not valid:
+        raise ToolClientError("findings_config_invalid")
+
+
+def _findings_config_from_env(args: argparse.Namespace) -> ToolConfig:
+    # Keep the legacy commands' invalid-timeout fallback unchanged.
+    config = config_from_env(args)
+    raw = args.timeout or os.environ.get("DECISION_RESEARCH_AGENT_TIMEOUT_SECONDS", "")
+    try:
+        timeout = float(raw) if raw else ToolConfig.timeout_seconds
+    except (TypeError, ValueError) as exc:
+        raise ToolClientError("findings_config_invalid") from exc
+    config = ToolConfig(config.base_url, config.api_key, timeout)
+    _validate_findings_config(config, args.run_id)
+    return config
+
+
+def _strict_findings_json(text: str) -> Any:
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate key")
+            value[key] = item
+        return value
+    def reject_constant(_):
+        raise ValueError("nonfinite number")
+    value = json.loads(text, object_pairs_hook=unique, parse_constant=reject_constant)
+    # Also reject escaped lone surrogates and numeric overflow such as 1e999.
+    json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    return value
+
+
+def _read_findings_json(response: Any, *, max_bytes: int, deadline: float) -> dict[str, Any]:
+    chunks, size = [], 0
+    read = getattr(response, "read1", response.read)
+    while True:
+        if time.monotonic() >= deadline:
+            raise ToolClientError("request_timeout")
+        chunk = read(min(65536, max_bytes + 1 - size))
+        if time.monotonic() >= deadline:
+            raise ToolClientError("request_timeout")
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > max_bytes:
+            raise ToolClientError("response_too_large")
+        chunks.append(chunk)
+    try:
+        value = _strict_findings_json(b"".join(chunks).decode("utf-8"))
+    except (ValueError, UnicodeError, RecursionError) as exc:
+        raise ToolClientError("invalid_json_response") from exc
+    if type(value) is not dict:
+        raise ToolClientError("json_response_not_object")
+    return value
+
+
+class _FindingsNoRedirect(request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _findings_get_json(path: str, *, config: ToolConfig) -> dict[str, Any]:
+    req = request.Request(_join_url(config.base_url, path), method="GET", headers=_headers(config))
+    deadline = time.monotonic() + config.timeout_seconds
+    try:
+        with request.build_opener(_FindingsNoRedirect()).open(req, timeout=config.timeout_seconds) as response:
+            return _read_findings_json(response, max_bytes=_FINDINGS_RESPONSE_BYTES, deadline=deadline)
+    except error.HTTPError as exc:
+        try:
+            value = _read_findings_json(exc, max_bytes=65536, deadline=deadline)
+        except ToolClientError as parse_error:
+            if parse_error.payload["code"] in {"request_timeout", "response_too_large"}:
+                raise
+            value = {"code": f"http_{exc.code}", "problem": "The server returned a non-JSON error."}
+        raise ToolClientHTTPError(exc.code, value) from exc
+    except ToolClientError:
+        raise
+    except (OSError, error.URLError, TimeoutError) as exc:
+        raise ToolClientError("request_timeout" if _is_timeout_error(exc) else "connection_failed") from exc
+
+
+def _findings_artifact_content(artifact: dict, *, markdown: bool = False) -> str:
+    expected = ("research-report.md", "research_findings_markdown", "text/markdown") if markdown else (
+        "research-findings.json", "research_findings_json", "application/json"
+    )
+    if tuple(artifact[key] for key in ("artifact_id", "kind", "media_type")) != expected:
+        raise ValueError("artifact identity")
+    content = artifact["content"]
+    raw = content.encode("utf-8")
+    if not raw or len(raw) > _FINDINGS_ARTIFACT_BYTES or hashlib.sha256(raw).hexdigest() != artifact["content_hash"]:
+        raise ValueError("artifact bytes")
+    return content
+
+
+def findings(run_id: str, config: ToolConfig, *, output_format: str = "json") -> dict[str, Any] | str:
+    """Read owned delivery only; the persisted service reader remains authority."""
+    _validate_findings_config(config, run_id)
+    path = f"/api/runs/{parse.quote(run_id, safe='')}"
+    package = _findings_get_json(path + "/findings", config=config)
+    try:
+        if (package["run_id"] != run_id or package["execution_status"] != "completed"
+                or package["delivery_status"] != "ready"):
+            raise ValueError("run state")
+        report = package["report"]
+        if (report["run_id"] != run_id or report["schema_version"] != "dra.research-findings.v1"
+                or report["profile_id"] != "generic-evidence-report" or report["profile_version"] != "1"
+                or _strict_findings_json(_findings_artifact_content(package["artifact"])) != report):
+            raise ValueError("report identity")
+    except (KeyError, ValueError, TypeError, AttributeError, UnicodeError, RecursionError) as exc:
+        raise ToolClientError("findings_response_invalid") from exc
+    if output_format == "markdown":
+        saved = _findings_get_json(path + "/result", config=config)
+        try:
+            if any(saved[key] != package[key] for key in ("run_id", "execution_status", "delivery_status")):
+                raise ValueError("result identity")
+            return _findings_artifact_content(saved["artifact"], markdown=True)
+        except (KeyError, ValueError, TypeError, AttributeError, UnicodeError) as exc:
+            raise ToolClientError("findings_response_invalid") from exc
+    status = _findings_get_json(path, config=config)
+    try:
+        if (any(status[key] != package[key] for key in ("run_id", "execution_status", "delivery_status"))
+                or status["profile_id"] != report["profile_id"] or status["profile_version"] != report["profile_version"]
+                or status["scope"]["questions"] != report["questions"]
+                or status["review_status"] not in {"not_required", "required", "resolved"}
+                or (status["review_decision"] is not None and type(status["review_decision"]) is not dict)
+                or type(status["evidence"]) is not list):
+            raise ValueError("status identity")
+        rows = {}
+        for row in status["evidence"]:
+            if (row["run_id"] != run_id or row["evidence_id"] in rows
+                    or row["verification_status"] not in {"verified", "unverified"}
+                    or row["citation_status"] not in {"cited", "uncited"}):
+                raise ValueError("Evidence identity")
+            rows[row["evidence_id"]] = row
+        for finding in report["findings"]:
+            for ref in finding["references"]:
+                if any(rows[ref["evidence_id"]][key] != ref[key] for key in (
+                    "evidence_fingerprint", "source_url", "source_identity", "snippet"
+                )):
+                    raise ValueError("Evidence binding")
+        return {**package, **{key: status[key] for key in ("evidence", "review_status", "review_decision")}}
+    except (KeyError, ValueError, TypeError, AttributeError) as exc:
+        raise ToolClientError("findings_response_invalid") from exc
+
+
+def _emit_findings_output(value: dict | str) -> None:
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout.buffer.write(text.encode("utf-8"))
+        sys.stdout.buffer.flush()
+    else:
+        sys.stdout.write(text)
+
+
 def list_reviews(
     config: ToolConfig,
     *,
@@ -944,6 +1143,10 @@ def _build_parser() -> argparse.ArgumentParser:
     result = subparsers.add_parser("result")
     result.add_argument("--run-id", required=True)
 
+    findings_parser = subparsers.add_parser("findings", help="read existing structured findings without mutations")
+    findings_parser.add_argument("--run-id", required=True)
+    findings_parser.add_argument("--format", choices=("json", "markdown"), default="json")
+
     review = subparsers.add_parser("review")
     review_subparsers = review.add_subparsers(
         dest="review_command",
@@ -1039,6 +1242,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config = config_from_env(args)
     try:
+        if args.command == "findings":
+            config = _findings_config_from_env(args)
+            _emit_findings_output(findings(args.run_id, config, output_format=args.format))
+            return 0
         if args.command == "healthcheck":
             result = healthcheck(config)
         elif args.command == "doctor":
@@ -1268,7 +1475,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except ToolClientError as exc:
-        print(json.dumps(exc.payload, ensure_ascii=False, indent=2))
+        if args.command == "findings":
+            _emit_findings_output(exc.payload)
+        else:
+            print(json.dumps(exc.payload, ensure_ascii=False, indent=2))
         return 1
 
 

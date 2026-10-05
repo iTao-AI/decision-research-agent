@@ -13,6 +13,7 @@ A separate stdlib consumer launches that CLI and validates the public delivery
 package before writing a small receipt. Existing server readers remain unchanged.
 
 **Tech Stack:** Locked Python 3.11 environment, stdlib urllib/subprocess/JSON,
+bounded multiprocessing transport and streaming subprocess collection,
 existing FastAPI service and installed native fixture, pytest.
 
 **Spec:** [Read-only structured findings CLI and consumer](../specs/2026-10-05-structured-findings-cli-consumer.md)
@@ -22,8 +23,11 @@ existing FastAPI service and installed native fixture, pytest.
 - Base: `243a1e935e5ec138b0c68a755345582f69d28940`; isolated `codex/findings-cli-consumer`.
 - Profile/schema: `generic-evidence-report@1`, `dra.research-findings.v1`.
 - Artifact content at most 1 MiB; HTTP at most `4 * 1024 * 1024 + 65536` bytes;
-  error at most 65536 bytes; receipt at most 256 KiB.
+  error at most 65536 bytes; CLI stdout at most 8 MiB; receipt at most 256 KiB.
 - Timeout `0 < timeout <= 60`, finite; consumer deadline `4 * timeout + 10`.
+- Each GET has an absolute deadline including response headers and a separately
+  bounded five-second transport-worker startup; the consumer counts stdout
+  while reading and terminates the child/process group on a breach.
 - No new dependency/lock changes, provider calls, server contracts or authority changes.
 - Local commits authorized; hosted delivery requires separate authorization.
 
@@ -94,10 +98,33 @@ reproducible native-server commands defined in the spec.
   the actual receipt and canonical Markdown bytes; terminate owned resources.
 - [x] Run `git diff --check`, inspect the full intended diff and legacy-file
   preservation; commit documents and completed task checkboxes.
-- [ ] Dispatch one bounded fresh `gpt-6.1-sol/high` whole-branch reviewer, resolve
+- [x] Dispatch one bounded fresh `gpt-6.1-sol/high` whole-branch reviewer, resolve
   actionable findings with regressions and rerun affected/full checks as needed.
-- [ ] Return exact HEAD, branch/worktree, actual checks, consumer/producer proof
+- [x] Return exact HEAD, branch/worktree, actual checks, consumer/producer proof
   boundaries and remaining hosted authorization once. Keep the local branch.
+
+## Integrated local acceptance
+
+The independent review of `a76a208da3617c8bac23d0ab38d6923db632d7e8` found four
+Important transport/configuration/output defects. Actual network/process
+regressions reproduced header trickling past the deadline, malformed HTTP
+tracebacks, invalid raw endpoint/run-ID handling, and whole-child stdout
+buffering before the size check. The owner fixed all four and additionally
+verified deep JSON output expansion and timed-out descendant cleanup. The
+transport worker uses JSON bytes across its private pipe to avoid recursive
+object serialization failures.
+
+Final local validation on 2026-10-05: focused tests **489 passed**; the full
+backend non-Docker suite **3995 passed, 4 deselected**, with two existing
+websockets deprecation warnings. The existing dependency compatibility gate
+returned `approved_diagnostic`; its inputs were unchanged by the review fixes.
+The current real process/HTTP journey again passed for complete, partial and
+contradictory receipts, blocked delivery without a receipt, canonical Markdown
+bytes, and observed verification states. The owner accepted the fixes after
+these checks; no second independent review was performed.
+
+This is local completion only. Hosted checks and publication were not run, and
+the separate autonomous research-quality stage remains frozen.
 
 ## Plan review
 

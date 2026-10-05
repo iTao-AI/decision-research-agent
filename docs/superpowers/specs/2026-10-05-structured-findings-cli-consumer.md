@@ -26,8 +26,9 @@ keys supply endpoint, optional `X-API-Key` and timeout. On this command only,
 nonempty timeout configuration must be finite, greater than zero and at most
 60 seconds; an omitted value uses 10 seconds. The endpoint must be an absolute
 ASCII HTTP(S) URL of at most 2048 characters, without credentials, query,
-fragment or control/whitespace characters, with a valid host and port. A path
-prefix is allowed. A nonblank run ID is at most 500 code points, contains no
+fragment or control/whitespace characters, with an IP literal or valid DNS host
+and port. Raw endpoint whitespace is rejected, not trimmed. A path
+prefix is allowed. A nonblank run ID is valid UTF-8, at most 500 code points, contains no
 control characters and is encoded as one URL path component. Invalid
 configuration returns `findings_config_invalid` before network access.
 
@@ -51,11 +52,14 @@ legacy generic result from becoming a structured findings fallback.
 
 Both formats perform only GETs, without redirects or retries. Successful
 responses are bounded to `4 * 1024 * 1024 + 65536` bytes and error responses to
-65536 bytes. Streaming reads check a request deadline; each blocking network
-operation has the configured timeout. Each of the two reads is bounded by at
-most twice that timeout, excluding local process startup. UTF-8 and JSON must
+65536 bytes. Each GET uses a short-lived transport worker and an absolute
+request deadline covering DNS, connection, TLS, headers and body; local worker
+startup is separately bounded to five seconds. Expired workers are terminated
+and reaped. Streaming body reads also check the deadline. JSON stdout, including
+indentation expansion, is bounded to 8 MiB before any success output. UTF-8 and JSON must
 be valid, with no duplicate keys or nonfinite values. Malformed replies return
-`invalid_json_response`, oversized replies `response_too_large`, and inconsistent
+`invalid_json_response`, malformed HTTP status/framing `invalid_http_response`,
+oversized replies/output `response_too_large`, and inconsistent
 delivery data `findings_response_invalid`. Existing service error codes and
 transport errors are retained. Success exits 0; errors are bounded JSON on
 stdout and exit 1; argparse usage errors exit 2. Findings stdout is UTF-8 even
@@ -75,7 +79,9 @@ server, repository, framework or report validation/rendering modules and never
 reads a database, VFS candidate, workspace or trace. Inherited credentials go
 only to the CLI environment. Its child deadline is `4 * timeout + 10` seconds,
 with a maximum of 250 seconds. Invalid CLI configuration remains a bounded
-failure; child nonzero/invalid JSON/invalid UTF-8/oversized output/timeout never
+failure. Child stdout is counted during collection and capped at 8 MiB; a size
+or deadline breach stops the child and, on POSIX, its process group, even if the
+parent has already exited. Child nonzero/invalid JSON/invalid UTF-8/oversized output/timeout never
 produces a success receipt. The consumer does not expose child stderr or raw
 exceptions.
 

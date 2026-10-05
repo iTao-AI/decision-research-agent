@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
+from http.client import HTTPException
+import ipaddress
 import json
 import math
+import multiprocessing
 import os
 from pathlib import Path
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -38,6 +43,12 @@ _LOCAL_ERROR_DETAILS: dict[str, tuple[str, str, str, bool]] = {
     "response_too_large": (
         "The service response exceeds the client byte limit.",
         "The bounded reader rejected an oversized response.",
+        "Check service compatibility before requesting this delivery again.",
+        False,
+    ),
+    "invalid_http_response": (
+        "The service returned invalid HTTP.",
+        "The response status or framing could not be read safely.",
         "Check service compatibility before requesting this delivery again.",
         False,
     ),
@@ -508,6 +519,20 @@ def result(run_id: str, config: ToolConfig) -> dict[str, Any]:
 
 _FINDINGS_RESPONSE_BYTES = 4 * 1024 * 1024 + 65536
 _FINDINGS_ARTIFACT_BYTES = 1024 * 1024
+_FINDINGS_OUTPUT_BYTES = 8 * 1024 * 1024
+_FINDINGS_WORKER_START_SECONDS = 5.0
+_FINDINGS_HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z", re.ASCII)
+
+
+def _findings_hostname_valid(host: str | None) -> bool:
+    if not host or "%" in host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        name = host[:-1] if host.endswith(".") else host
+        return len(host) <= 253 and all(_FINDINGS_HOST.fullmatch(label) for label in name.split("."))
 
 
 def _validate_findings_config(config: ToolConfig, run_id: str) -> None:
@@ -517,14 +542,16 @@ def _validate_findings_config(config: ToolConfig, run_id: str) -> None:
         valid = (
             config.base_url.isascii() and len(config.base_url) <= 2048
             and not any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in config.base_url)
-            and endpoint.scheme in {"http", "https"} and bool(endpoint.hostname)
+            and endpoint.scheme in {"http", "https"} and _findings_hostname_valid(endpoint.hostname)
             and endpoint.username is None and endpoint.password is None
-            and not endpoint.query and not endpoint.fragment
+            and "?" not in config.base_url and "#" not in config.base_url
             and (port is None or 0 < port <= 65535)
             and math.isfinite(config.timeout_seconds) and 0 < config.timeout_seconds <= 60
             and type(run_id) is str and bool(run_id.strip()) and len(run_id) <= 500
             and not any(ord(char) < 32 or ord(char) == 127 for char in run_id)
         )
+        if type(run_id) is str:
+            run_id.encode("utf-8")
         if config.api_key:
             valid = valid and config.api_key.isascii() and len(config.api_key) <= 4096 and all(
                 32 < ord(char) < 127 for char in config.api_key
@@ -537,13 +564,13 @@ def _validate_findings_config(config: ToolConfig, run_id: str) -> None:
 
 def _findings_config_from_env(args: argparse.Namespace) -> ToolConfig:
     # Keep the legacy commands' invalid-timeout fallback unchanged.
-    config = config_from_env(args)
+    base_url = args.base_url or os.environ.get("DECISION_RESEARCH_AGENT_URL", "") or ToolConfig.base_url
     raw = args.timeout or os.environ.get("DECISION_RESEARCH_AGENT_TIMEOUT_SECONDS", "")
     try:
         timeout = float(raw) if raw else ToolConfig.timeout_seconds
     except (TypeError, ValueError) as exc:
         raise ToolClientError("findings_config_invalid") from exc
-    config = ToolConfig(config.base_url, config.api_key, timeout)
+    config = ToolConfig(base_url, os.environ.get("DECISION_RESEARCH_AGENT_API_KEY", ""), timeout)
     _validate_findings_config(config, args.run_id)
     return config
 
@@ -593,24 +620,95 @@ class _FindingsNoRedirect(request.HTTPRedirectHandler):
         return None
 
 
-def _findings_get_json(path: str, *, config: ToolConfig) -> dict[str, Any]:
+def _findings_request_json(path: str, *, config: ToolConfig) -> dict[str, Any]:
     req = request.Request(_join_url(config.base_url, path), method="GET", headers=_headers(config))
     deadline = time.monotonic() + config.timeout_seconds
     try:
-        with request.build_opener(_FindingsNoRedirect()).open(req, timeout=config.timeout_seconds) as response:
-            return _read_findings_json(response, max_bytes=_FINDINGS_RESPONSE_BYTES, deadline=deadline)
-    except error.HTTPError as exc:
         try:
-            value = _read_findings_json(exc, max_bytes=65536, deadline=deadline)
-        except ToolClientError as parse_error:
-            if parse_error.payload["code"] in {"request_timeout", "response_too_large"}:
-                raise
-            value = {"code": f"http_{exc.code}", "problem": "The server returned a non-JSON error."}
-        raise ToolClientHTTPError(exc.code, value) from exc
+            with request.build_opener(_FindingsNoRedirect()).open(req, timeout=config.timeout_seconds) as response:
+                return _read_findings_json(response, max_bytes=_FINDINGS_RESPONSE_BYTES, deadline=deadline)
+        except error.HTTPError as exc:
+            try:
+                value = _read_findings_json(exc, max_bytes=65536, deadline=deadline)
+            except ToolClientError as parse_error:
+                if parse_error.payload["code"] in {"request_timeout", "response_too_large"}:
+                    raise
+                value = {"code": f"http_{exc.code}", "problem": "The server returned a non-JSON error."}
+            finally:
+                exc.close()
+            raise ToolClientHTTPError(exc.code, value) from exc
     except ToolClientError:
         raise
-    except (OSError, error.URLError, TimeoutError) as exc:
+    except HTTPException as exc:
+        raise ToolClientError("invalid_http_response") from exc
+    except (OSError, error.URLError, TimeoutError, ValueError) as exc:
         raise ToolClientError("request_timeout" if _is_timeout_error(exc) else "connection_failed") from exc
+
+
+def _findings_http_worker(connection, path: str, config: ToolConfig) -> None:
+    # An owned worker can be terminated during DNS, TLS or header reads. Only
+    # JSON primitives and fixed error payloads cross this private local pipe.
+    with open(os.devnull, "w") as sink, redirect_stdout(sink), redirect_stderr(sink):
+        try:
+            connection.send_bytes(b"ready")
+            try:
+                value = _findings_request_json(path, config=config)
+                message = ("ok", value)
+            except ToolClientHTTPError as exc:
+                message = ("http_error", exc.status, exc.payload)
+            except ToolClientError as exc:
+                message = ("error", exc.payload)
+            except Exception:
+                message = ("error", _local_error_payload("connection_failed"))
+            try:
+                raw = json.dumps(message, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+            except (ValueError, UnicodeError, RecursionError):
+                raw = json.dumps(("error", _local_error_payload("invalid_json_response"))).encode("utf-8")
+            if len(raw) > _FINDINGS_OUTPUT_BYTES:
+                raw = json.dumps(("error", _local_error_payload("response_too_large"))).encode("utf-8")
+            connection.send_bytes(raw)
+        except (OSError, EOFError):
+            pass
+        finally:
+            connection.close()
+
+
+def _findings_get_json(path: str, *, config: ToolConfig) -> dict[str, Any]:
+    context = multiprocessing.get_context("spawn")
+    receiving, sending = context.Pipe(duplex=False)
+    worker = context.Process(target=_findings_http_worker, args=(sending, path, config), daemon=True)
+    startup_deadline = time.monotonic() + _FINDINGS_WORKER_START_SECONDS
+    try:
+        worker.start()
+        sending.close()
+        if not receiving.poll(max(0, startup_deadline - time.monotonic())):
+            raise ToolClientError("request_timeout")
+        if receiving.recv_bytes(16) != b"ready":
+            raise ToolClientError("connection_failed")
+        if not receiving.poll(config.timeout_seconds):
+            raise ToolClientError("request_timeout")
+        try:
+            message = _strict_findings_json(receiving.recv_bytes(_FINDINGS_OUTPUT_BYTES).decode("utf-8"))
+        except (ValueError, UnicodeError, RecursionError) as exc:
+            raise ToolClientError("invalid_json_response") from exc
+        if message[0] == "ok":
+            return message[1]
+        if message[0] == "http_error":
+            raise ToolClientHTTPError(message[1], message[2])
+        raise ToolClientError("connection_failed", payload=message[1])
+    except (OSError, EOFError) as exc:
+        raise ToolClientError("connection_failed") from exc
+    finally:
+        receiving.close()
+        sending.close()
+        if worker.pid is not None:
+            if worker.is_alive():
+                worker.terminate()
+            worker.join(timeout=1)
+            if worker.is_alive():
+                worker.kill()
+                worker.join(timeout=1)
+            worker.close()
 
 
 def _findings_artifact_content(artifact: dict, *, markdown: bool = False) -> str:
@@ -678,12 +776,22 @@ def findings(run_id: str, config: ToolConfig, *, output_format: str = "json") ->
 
 
 def _emit_findings_output(value: dict | str) -> None:
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+    if isinstance(value, str):
+        raw = value.encode("utf-8")
+    else:
+        # Bound indentation expansion before emitting any success bytes.
+        raw = bytearray()
+        for part in json.JSONEncoder(ensure_ascii=False, indent=2, allow_nan=False).iterencode(value):
+            encoded = part.encode("utf-8")
+            if len(raw) + len(encoded) + 1 > _FINDINGS_OUTPUT_BYTES:
+                raise ToolClientError("response_too_large")
+            raw.extend(encoded)
+        raw.extend(b"\n")
     if hasattr(sys.stdout, "buffer"):
-        sys.stdout.buffer.write(text.encode("utf-8"))
+        sys.stdout.buffer.write(raw)
         sys.stdout.buffer.flush()
     else:
-        sys.stdout.write(text)
+        sys.stdout.write(raw.decode("utf-8"))
 
 
 def list_reviews(

@@ -13,9 +13,12 @@ import math
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -213,12 +216,50 @@ def _child_deadline(timeout_raw: str) -> float:
     return 4 * value + 10
 
 
+def _run_tool(command: list[str], *, timeout: float) -> subprocess.CompletedProcess:
+    deadline = time.monotonic() + timeout
+    with subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL, start_new_session=(os.name == "posix")) as child:
+        completed = False
+        try:
+            output = bytearray()
+            with selectors.DefaultSelector() as selector:
+                selector.register(child.stdout, selectors.EVENT_READ)
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not selector.select(remaining):
+                        raise subprocess.TimeoutExpired(command, timeout)
+                    chunk = os.read(child.stdout.fileno(), min(65536, MAX_CHILD_BYTES + 1 - len(output)))
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+                    if len(output) > MAX_CHILD_BYTES:
+                        raise ConsumerError("consumer_response_invalid")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(command, timeout)
+            returncode = child.wait(timeout=remaining)
+            completed = True
+            return subprocess.CompletedProcess(command, returncode, bytes(output))
+        finally:
+            if not completed:
+                # Also stop the CLI's transport worker on a POSIX host.
+                if os.name == "posix":
+                    try:
+                        os.killpg(child.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                elif child.poll() is None:
+                    child.kill()
+                child.wait()
+
+
 def consume(args) -> dict:
     raw_timeout = args.timeout or os.environ.get("DECISION_RESEARCH_AGENT_TIMEOUT_SECONDS", "")
     command = [sys.executable, str(TOOL), "--base-url", args.base_url, f"--timeout={args.timeout}",
                "findings", "--run-id", args.run_id]
     try:
-        child = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=_child_deadline(raw_timeout))
+        child = _run_tool(command, timeout=_child_deadline(raw_timeout))
     except subprocess.TimeoutExpired as exc:
         raise ConsumerError("consumer_timeout", retryable=True) from exc
     except OSError as exc:

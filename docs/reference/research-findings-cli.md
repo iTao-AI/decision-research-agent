@@ -25,11 +25,13 @@ or accept credentials as CLI flags.
 
 For **findings only**, a nonempty timeout must be finite and
 `0 < timeout <= 60` seconds; omitted timeout uses 10. The endpoint must be an
-absolute ASCII HTTP(S) URL, at most 2048 characters, with a host/valid port and
-no credentials, query, fragment, whitespace or control characters. A service
-path prefix is allowed. The optional key must be printable ASCII without
+absolute ASCII HTTP(S) URL, at most 2048 characters, with an IP literal or valid
+DNS hostname and port, and no credentials, query, fragment, whitespace or
+control characters. A service
+path prefix is allowed. Raw endpoint whitespace is rejected rather than trimmed.
+The optional key must be printable ASCII without
 whitespace, at most 4096 characters. Run IDs must be nonblank, at most 500 code
-points, without control characters; they are encoded as one path component.
+points, valid UTF-8 and without control characters; they are encoded as one path component.
 Existing commands retain their previous configuration behavior, including
 invalid-timeout fallback.
 
@@ -65,9 +67,11 @@ Only GETs are sent. Neither redirects nor retries are followed. Successful
 HTTP bodies are at most `4 * 1024 * 1024 + 65536` bytes, error bodies at most
 65536 bytes, and each artifact's content at most 1 MiB. JSON parsing rejects
 invalid UTF-8, duplicate keys, nonfinite values and escaped lone surrogates.
-Each network operation has the configured timeout; streaming reads also check
-a request deadline. Each of the two requests is bounded by at most twice the
-timeout, excluding local process startup.
+Each GET runs in a short-lived transport process with an absolute request
+deadline covering DNS, connection, TLS, headers and body. Worker startup has a
+separate five-second limit; timeout terminates and reaps the worker. Streaming
+body reads also check the deadline. JSON stdout is limited to 8 MiB before any
+success bytes are written, including expansion caused by indentation.
 
 Success exits 0. Service/transport/client failures are JSON on stdout and exit
 1. Invalid CLI syntax exits 2 with argparse usage on stderr.
@@ -82,6 +86,7 @@ Success exits 0. Service/transport/client failures are JSON on stdout and exit
 | `findings_config_invalid` | Invalid findings-only configuration before HTTP |
 | `findings_response_invalid` | Inconsistent successful delivery/status/artifact |
 | `invalid_json_response`, `json_response_not_object`, `response_too_large` | Unsupported or oversized response |
+| `invalid_http_response` | Malformed HTTP status or framing |
 | `request_timeout`, `connection_failed` | Bounded transport failure |
 
 No error becomes an empty success, raw candidate or generic result. Source URLs
@@ -115,7 +120,10 @@ same-run Evidence binding, exact code-point offsets and public HTTPS URL
 admission. They do not measure truth, entailment or research quality.
 
 The child deadline is `4 * timeout + 10` seconds, at most 250 seconds, and child
-stdout is accepted only up to 8 MiB. There is no retry. Existing CLI/service
+stdout is accepted only up to 8 MiB. There is no retry. Child output is counted
+while reading, and an oversized or timed-out child is stopped
+immediately. On POSIX, its process group is stopped too, including a transport
+worker that outlives its parent. Existing CLI/service
 error codes are propagated. Local codes are `consumer_timeout`,
 `consumer_process_failed`, `consumer_response_invalid`,
 `consumer_delivery_invalid` and `consumer_output_failed`. Failed consumption
@@ -159,7 +167,8 @@ research, paid-provider behavior or semantic value.
 ```bash
 python -m pytest -q tests/unit/test_research_findings_tool.py \
   tests/unit/test_research_findings_consumer.py \
-  tests/integration/test_research_findings_consumer_journey.py
+  tests/integration/test_research_findings_consumer_journey.py \
+  tests/integration/test_research_findings_transport_boundaries.py
 ```
 
 The existing [generic downstream contract](downstream-consumer-contract.md)

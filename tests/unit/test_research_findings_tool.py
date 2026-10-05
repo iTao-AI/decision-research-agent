@@ -97,6 +97,7 @@ def test_delivery_errors_do_not_read_status_or_fallback_result(monkeypatch, caps
     ("nan", "inf", "-inf", "0", "-1", "61", "invalid")] + [
     ["--base-url", "file:///private/service"], ["--base-url", "http://user:secret@localhost"],
     ["--base-url", "http://localhost/?secret=value"], ["--base-url", "http://localhost/#fragment"],
+    ["--base-url", "http://localhost?"], ["--base-url", "http://localhost#"],
     ["--base-url", "http://localhost:invalid"], ["--base-url", "http://local host"],
     ["--base-url", "http://localhost/\nprivate"]])
 def test_invalid_findings_configuration_fails_before_read(monkeypatch, capsys, args):
@@ -145,3 +146,16 @@ def test_bounded_parser_rejects_unusable_bytes(body, limit, code):
     with pytest.raises(tool.ToolClientError) as error:
         tool._read_findings_json(io.BytesIO(body), max_bytes=limit, deadline=time.monotonic() + 5)
     assert error.value.payload["code"] == code
+
+
+def test_pretty_print_expansion_fails_before_writing_partial_success(monkeypatch, capsys):
+    package, status, result = delivery()
+    extra = ["x"] * 16000
+    for _ in range(300):
+        extra = {"next": extra}
+    package["extra"] = extra
+    assert len(json.dumps(package).encode()) < 100000
+    install_reads(monkeypatch, package, status, result)
+    assert tool.main(["findings", "--run-id", "run_fixture"]) == 1
+    value = json.loads(capsys.readouterr().out)
+    assert value["code"] == "response_too_large" and "report" not in value

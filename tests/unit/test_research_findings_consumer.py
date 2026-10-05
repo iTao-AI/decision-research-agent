@@ -103,7 +103,7 @@ def test_rehashed_invalid_bindings_or_coverage_do_not_pass(consumer, tamper):
     (SimpleNamespace(returncode=2, stdout=b""), "consumer_process_failed"),
 ])
 def test_child_failure_never_writes_a_receipt(consumer, monkeypatch, tmp_path, capsys, child, code):
-    monkeypatch.setattr(consumer.subprocess, "run", lambda *args, **kwargs: child)
+    monkeypatch.setattr(consumer, "_run_tool", lambda *args, **kwargs: child)
     target = tmp_path / "receipt.json"
     assert consumer.main(["--run-id", "run_fixture", "--output", str(target)]) == 1
     assert json.loads(capsys.readouterr().out)["code"] == code
@@ -113,7 +113,7 @@ def test_child_failure_never_writes_a_receipt(consumer, monkeypatch, tmp_path, c
 def test_child_timeout_is_bounded_and_not_reported_as_success(consumer, monkeypatch, tmp_path, capsys):
     def timeout(*args, **kwargs):
         raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
-    monkeypatch.setattr(consumer.subprocess, "run", timeout)
+    monkeypatch.setattr(consumer, "_run_tool", timeout)
     target = tmp_path / "receipt.json"
     assert consumer.main(["--run-id", "run_fixture", "--output", str(target)]) == 1
     assert json.loads(capsys.readouterr().out)["code"] == "consumer_timeout"
@@ -125,7 +125,7 @@ def test_existing_receipt_is_preserved_before_starting_a_child(consumer, monkeyp
     target.write_bytes(b"owned by another invocation")
     def unexpected(*args, **kwargs):
         pytest.fail("existing receipt started a child")
-    monkeypatch.setattr(consumer.subprocess, "run", unexpected)
+    monkeypatch.setattr(consumer, "_run_tool", unexpected)
     assert consumer.main(["--run-id", "run_fixture", "--output", str(target)]) == 1
     assert target.read_bytes() == b"owned by another invocation"
     assert json.loads(capsys.readouterr().out)["code"] == "consumer_output_failed"
@@ -150,7 +150,7 @@ def test_exclusive_publication_cannot_overwrite_a_racing_output(consumer, tmp_pa
 
 
 def test_oversized_child_output_has_no_receipt(consumer, monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(consumer.subprocess, "run", lambda *args, **kwargs:
+    monkeypatch.setattr(consumer, "_run_tool", lambda *args, **kwargs:
                         SimpleNamespace(returncode=0, stdout=b" " * (8 * 1024 * 1024 + 1)))
     target = tmp_path / "oversized.json"
     assert consumer.main(["--run-id", "run_fixture", "--output", str(target)]) == 1

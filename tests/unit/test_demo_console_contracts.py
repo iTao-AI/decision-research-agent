@@ -303,6 +303,7 @@ def test_frontend_presentation_families_have_direct_owners():
             r"\bfunction countSummary\b",
             r"\bfunction buildScreenSummary\b",
         ),
+        "liveErrorCard.tsx": (r"\bfunction LiveErrorCard\b",),
     }
 
     assert set(path.name for path in PRESENTATION_ROOT.glob("*.tsx")) >= set(expected_modules)
@@ -327,6 +328,5 @@ def test_frontend_presentation_families_have_direct_owners():
         "buildStaticConsoleProjection",
         "buildLiveConsoleProjection",
         "function LiveDemoPanel",
-        "function LiveErrorCard",
     ):
         assert required in app

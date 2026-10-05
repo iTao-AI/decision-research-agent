@@ -322,8 +322,7 @@ function LiveDemoPanel({
     "live-query-bytes",
     ...(queryValidation.ok ? [] : ["live-query-feedback"])
   ].join(" ");
-  const canStartNewRun =
-    isLive && queryValidation.ok && (!isStructured || scopeValidation.ok) && ["ready", "terminal", "result"].includes(state.status);
+  const canStartNewRun = isLive && queryValidation.ok && (!isStructured || scopeValidation.ok) && ["ready", "terminal", "result"].includes(state.status);
   const knownRunLocked =
     !isLive ||
     !state.health ||

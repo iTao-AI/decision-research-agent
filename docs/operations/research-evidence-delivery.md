@@ -14,6 +14,30 @@ remains unverified unless the separate human verification workflow records a
 decision. Approval permits delivery and does not verify Evidence. Reported
 contradictions remain model-reported.
 
+## Read an existing run through the CLI
+
+```bash
+python tools/decision_research_agent_tool.py findings --run-id "$RUN_ID"
+python tools/decision_research_agent_tool.py findings --run-id "$RUN_ID" --format markdown
+mkdir -p output
+python scripts/research_findings_consumer.py --run-id "$RUN_ID" \
+  --output output/findings-receipt.json
+```
+
+Use the configured existing backend; `--base-url` and `--timeout` precede the
+Tool Client subcommand. JSON preserves the report and adds actual public
+Evidence/review states. Markdown returns the canonical stored bytes. The
+independent stdlib consumer launches the real CLI subprocess, checks same-run
+binding/hash/offset/coverage and publishes a small receipt without overwriting
+an existing file. None of these reads creates or retries research, waits,
+approves, verifies, fetches sources or calls a model.
+
+The [CLI and consumer reference](../reference/research-findings-cli.md) provides
+configuration, exact response/errors, limits and the actual separate-process
+HTTP proof. Partial/unresolved and model-reported contradictory outcomes stay
+visible. Completed/blocked runs return the existing error and no receipt.
+Receipt checks are structural and cannot turn approval into Evidence verification.
+
 ## Provider-free native check
 
 Use the existing Python 3.11 development environment with the locked project

@@ -18,6 +18,38 @@ async function ready(result: Hook) {
 }
 
 describe("structured live observation", () => {
+  it("replays the complete original five-question intent after a lost response and draft edits", async () => {
+    const bodies: string[] = [], keys: string[] = [];
+    const draft = [
+      { question_id: "q1", text: "First" }, { question_id: "q3", text: "Second" },
+      { question_id: "q5", text: "Third" }, { question_id: "q7", text: "Fourth" },
+      { question_id: "q9", text: "Fifth" }
+    ];
+    const { result } = setup(async (url, init) => {
+      if (init?.method === "POST") {
+        bodies.push(String(init.body)); keys.push(new Headers(init.headers).get("Idempotency-Key")!);
+        if (bodies.length === 1) throw new TypeError("lost response");
+        return response({ run_id: "run_structured", segment_id: "segment", status: "started", thread_id: "demo-console-fixed", idempotent_replay: true });
+      }
+      return response(url.endsWith("/health") ? health : url.endsWith("/findings") ? findingsResponse() : url.endsWith("/result") ? markdownResult() : structuredRun());
+    });
+    await ready(result);
+    act(() => result.current.setProfile("generic-evidence-report"));
+    await act(() => result.current.startNewRun("First", draft));
+    expect(result.current.state.status).toBe("reconciliation_required");
+    draft[0].text = "Late edit"; draft.reverse(); draft.pop();
+    await act(() => result.current.retryCreate());
+    expect(JSON.parse(bodies[0]).scope).toEqual({ questions: [
+      { question_id: "q1", text: "First" }, { question_id: "q3", text: "Second" },
+      { question_id: "q5", text: "Third" }, { question_id: "q7", text: "Fourth" },
+      { question_id: "q9", text: "Fifth" }
+    ] });
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(keys).toEqual(["run-create-console-fixed", "run-create-console-fixed"]);
+    expect(result.current.state.created?.idempotent_replay).toBe(true);
+    expect(result.current.state.status).toBe("result");
+  });
+
   it("uses the observed attached profile despite the generic form selection and retains Markdown", async () => {
     const urls: string[] = [];
     const { result } = setup(async (url) => {

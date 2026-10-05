@@ -19,7 +19,7 @@ import {
   type RunProjection,
   type RunResultResponse
 } from "./apiClient";
-import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchFindingsResponse } from "./researchFindings";
+import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchFindingsResponse, type ResearchQuestion } from "./researchFindings";
 
 export type DemoMode = "static" | "live";
 export type LiveStatus =
@@ -318,8 +318,8 @@ export function useLiveRun(options: LiveRunOptions = {}) {
     }
   }, [isCurrent, nextRequest, observeRun, state.baseUrl, waitTimeoutMs]);
 
-  const startNewRun = useCallback(async (query: string) => {
-    const intent = createRunIntent(query, randomUUID, state.createProfileId ?? "generic");
+  const startNewRun = useCallback(async (query: string, questions?: readonly ResearchQuestion[]) => {
+    const intent = createRunIntent(query, randomUUID, state.createProfileId ?? "generic", questions);
     createIntent.current = intent;
     activeRunId.current = null;
     await createAndObserve(intent);

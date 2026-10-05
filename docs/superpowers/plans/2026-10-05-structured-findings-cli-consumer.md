@@ -64,17 +64,17 @@ Existing command functions/signatures/transport behavior remain intact.
 Use existing `scripts/research_evidence_delivery_proof.py serve` and declared
 `tests/fixtures/research-evidence-delivery/{cases,expected}.json` unchanged.
 
-- [ ] Write consumer rejection tests for cross-run, offset, URL, coverage,
+- [x] Write consumer rejection tests for cross-run, offset, URL, coverage,
   rehashed content, false verification, child failure/timeout and existing output.
-- [ ] Write actual server-process / CLI-process / consumer-process journey tests:
+- [x] Write actual server-process / CLI-process / consumer-process journey tests:
   complete ready with unverified references; partial 2/1 unresolved;
   contradictory 2 references/1 reported contradiction; insufficient blocked,
   no receipt; Markdown equals direct HTTP's canonical content bytes.
-- [ ] Add controlled negative-only server fixtures for pending/wrong-profile,
+- [x] Add controlled negative-only server fixtures for pending/wrong-profile,
   approval plus unverified, tampering and actual slow/invalid UTF-8 HTTP.
-- [ ] Observe failures before implementing the stdlib-only consumer.
-- [ ] Implement independent validation and exclusive bounded receipt creation.
-- [ ] Run all new regressions and existing findings/native/generic consumer tests;
+- [x] Observe failures before implementing the stdlib-only consumer.
+- [x] Implement independent validation and exclusive bounded receipt creation.
+- [x] Run all new regressions and existing findings/native/generic consumer tests;
   require green and clean diff; commit intentional implementation and tests.
 
 ## Task 3: Documentation and integrated acceptance

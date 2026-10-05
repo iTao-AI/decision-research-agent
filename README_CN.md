@@ -101,9 +101,11 @@ python tools/decision_research_agent_tool.py run \
 - Console 消费 canonical API 与 result contract，不新增 backend state、DB
   table、API path、credential、review control、verification authority、public
   online execution 或 tenant model。
-- Live Backend 接受一个有界的用户自定义研究问题，最多 4096 UTF-8
+- 默认 Generic 的 Live Backend 接受一个有界的用户自定义研究问题，最多 4096 UTF-8
   bytes，并通过现有 API contract 消费 service-owned state。Generic 保持默认；
-  显式结构化模式选择 `generic-evidence-report@1`，同时读取 findings JSON 与
+  显式结构化模式选择 `generic-evidence-report@1`，可编辑 1–5 个明确问题，
+  每项最多 4096 个 Unicode 字符，第一项同时作为 query；新增、删除和编辑保留
+  问题 ID，丢响应重试保留完整冻结 scope。同时读取 findings JSON 与
   canonical Markdown。当前仓库、运行时
   配置、Tool Client、Docker 默认值和 health service ID 均使用
   `decision-research-agent`。

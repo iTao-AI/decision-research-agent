@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DEFAULT_LIVE_DEMO_QUERY,
-  type ClientError,
   validateLiveDemoQuery,
   validateLiveRunId
 } from "./apiClient";
@@ -39,6 +38,7 @@ import {
 import { buildScreenSummary, ObservationValue, observationLabel } from "./presentation/observation";
 import { ResearchFindingsReader } from "./presentation/researchFindingsReader";
 import { ResearchScopeEditor } from "./presentation/researchScopeEditor";
+import { LiveErrorCard } from "./presentation/liveErrorCard";
 import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchQuestion } from "./researchFindings";
 import { RESEARCH_QUESTIONS_MAX, validateResearchQuestions } from "./researchScope";
 
@@ -497,17 +497,5 @@ function LiveDemoPanel({
         )}
       </div>
     </section>
-  );
-}
-
-function LiveErrorCard({ error, fallbackFix }: { error: ClientError; fallbackFix: string }) {
-  const fix = error.code === "connection_failed" ? fallbackFix : error.fix || fallbackFix;
-  return (
-    <article className="live-error-card">
-      <strong>{error.code}</strong>
-      <p>{error.problem}</p>
-      <small>{fix}</small>
-      {error.run_id && <code>{error.run_id}</code>}
-    </article>
   );
 }

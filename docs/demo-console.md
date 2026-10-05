@@ -9,9 +9,10 @@ the canonical result without owning business authority. It has two modes:
 
 - **Static Demo** renders a deterministic bundled snapshot and requires no
   backend, provider, or credentials. The default case asks `客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`, recommends an internal knowledge assistant, and exposes three local full-text sources with exact claim-to-excerpt links.
-- **Live Backend** accepts one bounded user-authored research question. Generic
-  research remains the default; **结构化证据研究 / Structured evidence research**
-  explicitly selects `generic-evidence-report@1` with one `q1`. The console
+- **Live Backend** keeps one bounded question for default generic research;
+  **结构化证据研究 / Structured evidence research** explicitly selects
+  `generic-evidence-report@1` with 1–5 questions in a compact scope editor.
+  Its default is one `q1`; add/remove/edit retains stable question IDs. The console
   creates the selected ResearchRun against a local backend, polls bounded
   status, and renders the canonical Markdown result returned by
   `GET /api/runs/{run_id}/result`. It also allows a retained known `run_id` to
@@ -42,12 +43,22 @@ Its HTTP proof remains separate from actual browser observations and paid runs.
 
 Select **真实后端 / Live Backend**, check health, then explicitly choose
 **结构化证据研究 / Structured evidence research** in **研究模式 / Research mode**.
-Enter a research question and select **运行并获取结果 / Run and fetch result**.
-The browser submits the exact original query and an immutable nested
-`{questions: [{question_id: "q1", text: query}]}` scope. The API also supports
-1–5 questions for other consumers; the console does not invent questions for
-attached runs. Accepted question text shown in the report is service-owned
-and may reflect server scope normalization.
+Enter 1–5 explicit questions in **研究范围 / Research scope**, using **新增问题 /
+Add question** and each row's **删除 / Remove** control. The default remains
+one `q1`; edits and deletions do not renumber surviving IDs, and newly added
+rows receive new IDs. At least one question must remain. Every row must be
+nonblank and at most 4096 Unicode code points; the first current row supplies
+the exact query and retains the console's 4096 UTF-8 byte bound.
+
+Select **运行并获取结果 / Run and fetch result** to submit the complete ordered
+scope once. The browser copies and deeply freezes every question ID and text
+before HTTP; pending creation/observation/reconciliation locks all scope
+controls. Add focuses the new question; removal focuses a surviving question.
+The single-question request remains
+`{questions: [{question_id: "q1", text: query}]}`. The console does not invent
+questions for attached runs. Accepted question text and candidate/unresolved
+dispositions shown in the report are service-owned and may reflect server
+scope normalization. Editing a new draft does not change an observed report.
 
 Only an observed ready run of the structured profile triggers `/findings`.
 The reader presents accepted questions, source-bound candidate findings, exact
@@ -252,9 +263,10 @@ Open `http://127.0.0.1:5173`, select **Live Backend**, keep Backend base URL as
 
 1. Select **检查后端 / Check backend**.
 2. Confirm the service reports ready.
-3. Keep the default generic mode or explicitly select Structured evidence
-   research, then enter one nonblank research question in the editable multiline field. The
-   Console accepts at most 4096 UTF-8 bytes and shows the current byte count.
+3. Keep the default generic mode and enter one question, or select Structured
+   evidence research and edit 1–5 questions. The first question supplies the
+   query, accepts at most 4096 UTF-8 bytes and shows the current byte count;
+   other structured questions show the 4096 Unicode code-point bound.
 4. Select **运行并获取结果 / Run and fetch result**.
 5. Inspect the returned `run_id`, terminal state, and canonical artifact.
 
@@ -275,7 +287,8 @@ keeps one temporary keyed request in memory. The question is sent exactly as
 entered; the Console does not trim, normalize, translate, case-fold, or rewrite
 it. If the create acknowledgement is ambiguous, use **重试同一请求 / Retry
 same request** to resend the same key and byte-equivalent request, including
-the exact submitted question, selected profile, and nested scope, or explicitly
+the exact submitted query, selected profile, and complete nested scope with
+every stable question ID and text in order, or explicitly
 discard it. Do not start a
 replacement request while reconciliation is pending. A page refresh discards
 the in-memory reconciliation capability; the draft is browser-session-only and

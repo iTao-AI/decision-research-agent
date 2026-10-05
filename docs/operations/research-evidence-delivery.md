@@ -122,10 +122,19 @@ cases; attachment uses the service-observed profile:
 
 To observe creation, explicitly select **结构化证据研究 / Structured evidence
 research** and enter the complete, contradictory or insufficient fixture query.
-The form creates one `q1` whose text equals that query. The partial fixture has
-two accepted questions, so use its seeded attachment to observe unresolved
-coverage; the form does not author multi-question scopes. Additional created
-runs have fresh deterministic creation identities within this server lifetime.
+The default form creates one `q1` whose text equals that query. The console
+also supports 1–5 explicit questions, but this four-case proof launcher matches
+the exact fixture query to its declared candidate. The partial fixture's two
+accepted texts differ from that query, so attach its seeded run to reproduce
+this existing case without changing the declaration. Additional created runs
+have fresh deterministic creation identities within this server lifetime.
+
+For ordinary structured creation, use **研究范围 / Research scope** to add,
+remove and edit explicit questions. IDs remain stable after editing/removing
+rows; the first current row supplies the exact query. All questions are
+submitted in one immutable scope and ambiguous create retries reuse that
+complete scope and the original key. The fixture launcher remains limited to
+its declared synthetic cases and is not an arbitrary research backend.
 
 Ready structured runs show candidate statements, all bound source URLs,
 verbatim excerpts, full persisted snippets, unresolved questions, limitations,

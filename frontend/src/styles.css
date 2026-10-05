@@ -364,6 +364,59 @@ h3 {
   line-height: 1.45;
 }
 
+.research-scope-editor {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #d8d2c4;
+  border-radius: 8px;
+}
+
+.research-scope-editor legend {
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.research-scope-row {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.research-scope-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.research-scope-row-heading label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.research-scope-row-heading button {
+  flex-shrink: 0;
+  padding: 0 12px;
+}
+
+.research-scope-editor textarea {
+  min-height: 64px;
+}
+
+.research-scope-add {
+  justify-self: start;
+  padding: 0 16px;
+}
+
+.research-question-disposition {
+  display: inline-block;
+  color: #6b7280;
+  font-size: 13px;
+}
+
 .live-known-run-field small {
   color: #6b7280;
   line-height: 1.45;

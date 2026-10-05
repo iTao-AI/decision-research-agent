@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DEFAULT_LIVE_DEMO_QUERY,
-  type ClientError,
   validateLiveDemoQuery,
   validateLiveRunId
 } from "./apiClient";
@@ -38,7 +37,10 @@ import {
 } from "./presentation/technicalScreens";
 import { buildScreenSummary, ObservationValue, observationLabel } from "./presentation/observation";
 import { ResearchFindingsReader } from "./presentation/researchFindingsReader";
-import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile } from "./researchFindings";
+import { ResearchScopeEditor } from "./presentation/researchScopeEditor";
+import { LiveErrorCard } from "./presentation/liveErrorCard";
+import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchQuestion } from "./researchFindings";
+import { RESEARCH_QUESTIONS_MAX, validateResearchQuestions } from "./researchScope";
 
 export type { ShowcaseState } from "./presentation/showcaseWorkspace";
 
@@ -299,7 +301,13 @@ function LiveDemoPanel({
     state.status
   );
   const hasKnownRunError = state.status === "error" && Boolean(state.error?.run_id);
-  const [queryDraft, setQueryDraft] = useState(DEFAULT_LIVE_DEMO_QUERY);
+  const [questionDrafts, setQuestionDrafts] = useState<readonly ResearchQuestion[]>([{ question_id: "q1", text: DEFAULT_LIVE_DEMO_QUERY }]);
+  const nextQuestionId = useRef(2);
+  const queryDraft = questionDrafts[0].text;
+  const isStructured = state.createProfileId === STRUCTURED_RESEARCH_PROFILE;
+  const scopeValidation = validateResearchQuestions(questionDrafts);
+  const editQuestion = (questionId: string, text: string) =>
+    setQuestionDrafts((current) => current.map((question) => question.question_id === questionId ? { ...question, text } : question));
   const [knownRunDraft, setKnownRunDraft] = useState("");
   const queryValidation = validateLiveDemoQuery(queryDraft);
   const knownRunValidation = validateLiveRunId(knownRunDraft);
@@ -314,8 +322,7 @@ function LiveDemoPanel({
     "live-query-bytes",
     ...(queryValidation.ok ? [] : ["live-query-feedback"])
   ].join(" ");
-  const canStartNewRun =
-    isLive && queryValidation.ok && ["ready", "terminal", "result"].includes(state.status);
+  const canStartNewRun = isLive && queryValidation.ok && (!isStructured || scopeValidation.ok) && ["ready", "terminal", "result"].includes(state.status);
   const knownRunLocked =
     !isLive ||
     !state.health ||
@@ -371,7 +378,12 @@ function LiveDemoPanel({
             onChange={(event) => liveRun.setBaseUrl(event.target.value)}
           />
         </label>
-        <div className="live-query-field">
+        {isStructured ? <ResearchScopeEditor language={language} questions={questionDrafts} disabled={queryLocked}
+          onEdit={editQuestion} onRemove={(questionId) => setQuestionDrafts((current) => current.length > 1 ? current.filter((q) => q.question_id !== questionId) : current)}
+          onAdd={() => {
+            const question_id = `q${nextQuestionId.current++}`;
+            setQuestionDrafts((current) => current.length < RESEARCH_QUESTIONS_MAX ? [...current, { question_id, text: "" }] : current);
+          }} /> : <div className="live-query-field">
           <label htmlFor="live-research-question">{t.live.question}</label>
           <textarea
             aria-describedby={queryDescribedBy}
@@ -380,7 +392,7 @@ function LiveDemoPanel({
             id="live-research-question"
             rows={4}
             value={queryDraft}
-            onChange={(event) => setQueryDraft(event.target.value)}
+            onChange={(event) => editQuestion(questionDrafts[0].question_id, event.target.value)}
           />
           <small id="live-query-hint">{t.live.questionHint}</small>
           <small className="live-query-bytes" id="live-query-bytes">
@@ -391,7 +403,7 @@ function LiveDemoPanel({
               {queryValidation.reason === "blank" ? t.live.queryBlank : t.live.queryTooLarge}
             </p>
           )}
-        </div>
+        </div>}
         <div className="live-known-run-field">
           <label htmlFor="live-known-run">{t.live.knownRun}</label>
           <input
@@ -423,7 +435,7 @@ function LiveDemoPanel({
         <button
           disabled={!canStartNewRun}
           type="button"
-          onClick={() => liveRun.startNewRun(queryDraft)}
+          onClick={() => liveRun.startNewRun(queryDraft, isStructured ? questionDrafts : undefined)}
         >
           {t.live.runResult}
         </button>
@@ -484,17 +496,5 @@ function LiveDemoPanel({
         )}
       </div>
     </section>
-  );
-}
-
-function LiveErrorCard({ error, fallbackFix }: { error: ClientError; fallbackFix: string }) {
-  const fix = error.code === "connection_failed" ? fallbackFix : error.fix || fallbackFix;
-  return (
-    <article className="live-error-card">
-      <strong>{error.code}</strong>
-      <p>{error.problem}</p>
-      <small>{fix}</small>
-      {error.run_id && <code>{error.run_id}</code>}
-    </article>
   );
 }

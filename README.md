@@ -126,11 +126,14 @@ troubleshooting, and authenticated local runtime boundaries.
 - The console consumes canonical API and result contracts. It does not add
   backend state, database tables, API paths, credentials, review controls,
   verification authority, public online execution, or a tenant model.
-- Live Backend accepts one bounded user-authored research question of
+- Generic Live Backend accepts one bounded user-authored research question of
   at most 4096 UTF-8 bytes and consumes service-owned state through the existing
   API contract. Generic is the default; explicit structured research selects
-  `generic-evidence-report@1` and reads source-bound candidates through
-  `GET /api/runs/{run_id}/findings` alongside canonical Markdown. The active
+  `generic-evidence-report@1` with 1–5 explicit questions, each at most 4096
+  Unicode code points, and reads source-bound candidates through
+  `GET /api/runs/{run_id}/findings` alongside canonical Markdown. The first
+  question supplies the exact query; add/remove/edit preserves question IDs,
+  and ambiguous retries retain the complete immutable scope. The active
   repository, runtime configuration, Tool Client,
   Docker defaults, and health service identifier use
   `decision-research-agent`.

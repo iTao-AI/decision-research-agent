@@ -52,7 +52,9 @@ retry automatically.
 Live Backend retains the existing stage rail, technical screen navigation,
 and Markdown report reader. Generic research remains the default. An explicit
 Structured evidence research selection creates `generic-evidence-report@1`
-with one `q1` question. A ready observed run of that profile adds a structured
+with 1–5 explicit questions, starting with one `q1` draft. The compact scope
+editor supports add/remove/edit while retaining each question's ID. A ready
+observed run of that profile adds a structured
 reader before the canonical Markdown reader, with accepted questions,
 source-bound candidate findings, exact excerpts, full persisted snippets,
 unresolved dispositions, model-reported contradictions, and limitations.
@@ -189,10 +191,11 @@ python tools/decision_research_agent_tool.py run \
 - Live Backend mode may call `/health`, `POST /api/runs`,
   `/api/runs/{run_id}`, `/api/runs/{run_id}/result`, and the ready observed
   structured profile's `/api/runs/{run_id}/findings`.
-- Live Backend accepts one bounded user-authored research question; generic is
-  the default and structured evidence research is opt-in. The
-  question must be nonblank and no more than 4096 UTF-8 bytes; this is a
-  browser consumer bound, not a backend schema change.
+- Generic Live Backend accepts one bounded user-authored research question;
+  structured evidence research is opt-in and accepts 1–5 explicit questions.
+  Each structured question is nonblank and at most 4096 Unicode code points.
+  The first question supplies the exact query and is additionally limited to
+  4096 UTF-8 bytes. These are browser consumer checks, not a backend schema change.
 - Live Backend is local-only in the current slice. It uses one explicit CORS
   origin and a loopback-bound backend with `API_SECRET` unset because the
   console does not accept or store API credentials.
@@ -213,21 +216,31 @@ run-specific data is never rendered. Static fixtures cannot fill gaps in a
 Live projection; missing, not-applicable, unsupported, and observed-empty
 values remain explicit.
 
-Live Backend accepts one bounded user-authored research question. Generic
-remains the default; the explicit structured selection submits
-`generic-evidence-report` with `{questions: [{question_id: "q1", text: query}]}`.
-The initial example is editable, but the submitted question must be nonblank and
-at most 4096 UTF-8 bytes. The Console sends the string exactly as entered,
+Generic Live Backend accepts one bounded user-authored research question.
+Generic remains the default; the explicit structured selection submits
+`generic-evidence-report` with the complete ordered `questions` scope. The
+single-question default remains `{questions: [{question_id: "q1", text: query}]}`.
+The editor accepts 1–5 explicit questions, each nonblank and at most 4096
+Unicode code points; the first current question supplies the query and retains
+the 4096 UTF-8 bytes bound. The Console sends every string exactly as entered,
 including surrounding spaces and line breaks; it does not trim, normalize,
-translate, case-fold, or rewrite it. The draft and its temporary create intent
-are browser-session-only. Service-owned status and result authority remain
-outside the browser.
+translate, case-fold, or rewrite it. Server normalization determines accepted
+question text. The draft and its temporary create intent are browser-session-only.
+Service-owned status and result authority remain outside the browser.
+
+Question IDs are allocated once per added draft row and are never renumbered
+by edits, removal or reordering. Removed IDs are not reused during that draft's
+browser lifetime. Add focuses the new question and remove focuses a surviving
+question; at least one and at most five remain. The request copies every row
+and deeply freezes the complete scope before HTTP. Scope controls are locked
+during create, observation and pending reconciliation. Changing drafts after
+a completed result does not change the accepted questions shown by its reader.
 
 Idempotency-Key is header-only and browser-session scoped. A new-run action
 creates one in-memory intent before transport begins. If its create response is
 ambiguous, the operator may retry the same key and byte-equivalent request,
 including the exact submitted question, selected profile, and deeply frozen
-scope, or discard that pending intent. The key
+scope (every ID and text in order), or discard that pending intent. The key
 is never rendered, placed in the URL or request body, or stored in browser
 persistence. A page refresh discards the in-memory reconciliation capability.
 

@@ -5,6 +5,7 @@ import {
   type RunResultResponse
 } from "./runProjection";
 import { parseResearchFindings, STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchFindingsResponse, type ResearchQuestion } from "./researchFindings";
+import { validateResearchQuestions } from "./researchScope";
 
 export type { RunProjection, RunResultResponse } from "./runProjection";
 
@@ -94,11 +95,23 @@ const ambiguousTransportErrors = new WeakSet<ClientRequestError>();
 export function createRunIntent(
   query: string,
   randomUUID: () => string = () => crypto.randomUUID(),
-  profileId: LiveResearchProfile = "generic"
+  profileId: LiveResearchProfile = "generic",
+  questions?: readonly ResearchQuestion[]
 ): RunCreateIntent {
   const validation = validateLiveDemoQuery(query);
   if (!validation.ok) {
     throw new RangeError(`live_demo_query_${validation.reason}`);
+  }
+  let scope: RunCreateIntent["payload"]["scope"] = Object.freeze({});
+  if (profileId === STRUCTURED_RESEARCH_PROFILE) {
+    const rows = questions ?? [{ question_id: "q1", text: query }];
+    const scopeValidation = validateResearchQuestions(rows);
+    if (!scopeValidation.ok) {
+      throw new RangeError(`research_scope_${scopeValidation.reason}`);
+    }
+    scope = Object.freeze({
+      questions: Object.freeze(rows.map(({ question_id, text }) => Object.freeze({ question_id, text })))
+    });
   }
   const uuid = randomUUID();
   return Object.freeze({
@@ -107,9 +120,7 @@ export function createRunIntent(
       query,
       thread_id: `demo-console-${uuid}`,
       profile_id: profileId,
-      scope: profileId === STRUCTURED_RESEARCH_PROFILE
-        ? Object.freeze({ questions: Object.freeze([Object.freeze({ question_id: "q1", text: query })]) })
-        : Object.freeze({})
+      scope
     })
   });
 }

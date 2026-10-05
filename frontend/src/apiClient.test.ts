@@ -19,6 +19,67 @@ import {
 const BASE_URL = "http://127.0.0.1:8000";
 const FIXED_UUID = "11111111-2222-4333-8444-555555555555";
 
+describe("complete structured question intent", () => {
+  const profile = "generic-evidence-report" as const;
+  it("submits all five questions with stable IDs and exact original text", () => {
+    const questions = [
+      { question_id: "q1", text: "  第一问题\n😀  " },
+      { question_id: "q3", text: "Second retained question" },
+      { question_id: "q7", text: "Third question" },
+      { question_id: "q8", text: "Fourth question" },
+      { question_id: "q9", text: "Fifth question" }
+    ];
+    const intent = createRunIntent(questions[0].text, () => FIXED_UUID, profile, questions);
+    expect(intent.payload.scope.questions).toEqual([
+      { question_id: "q1", text: "  第一问题\n😀  " },
+      { question_id: "q3", text: "Second retained question" },
+      { question_id: "q7", text: "Third question" },
+      { question_id: "q8", text: "Fourth question" },
+      { question_id: "q9", text: "Fifth question" }
+    ]);
+  });
+
+  it("copies and freezes rows without freezing the caller's editable draft", () => {
+    const draft = [{ question_id: "q5", text: "First" }, { question_id: "q2", text: "Second" }];
+    const intent = createRunIntent("First", () => FIXED_UUID, profile, draft);
+    draft[0].text = "Changed after submission";
+    draft.reverse();
+    draft.push({ question_id: "q9", text: "New" });
+    expect(intent.payload.scope.questions).toEqual([
+      { question_id: "q5", text: "First" }, { question_id: "q2", text: "Second" }
+    ]);
+    expect(Object.isFrozen(intent.payload.scope.questions)).toBe(true);
+    expect(intent.payload.scope.questions!.every(Object.isFrozen)).toBe(true);
+    expect(Object.isFrozen(draft)).toBe(false);
+  });
+
+  it.each([
+    [[], "count"],
+    [Array.from({ length: 6 }, (_, i) => ({ question_id: `q${i + 1}`, text: "Question" })), "count"],
+    [[{ question_id: "q1", text: "One" }, { question_id: "q1", text: "Two" }], "duplicate_id"],
+    [[{ question_id: "q1", text: " \n " }], "blank"],
+    [[{ question_id: "q1", text: "😀".repeat(4097) }], "too_large"],
+    [[{ question_id: "q1\n", text: "Question" }], "question_id"],
+    [[{ question_id: "1q", text: "Question" }], "question_id"],
+    [[{ question_id: "q".repeat(65), text: "Question" }], "question_id"]
+  ] as const)("rejects invalid explicit scope before allocating an intent (%s)", (questions, reason) => {
+    const uuid = vi.fn(() => FIXED_UUID);
+    expect(() => createRunIntent("Question", uuid, profile, questions)).toThrow(`research_scope_${reason}`);
+    expect(uuid).not.toHaveBeenCalled();
+  });
+
+  it("keeps scope code-point limits distinct from the existing query byte limit", () => {
+    const questions = [{ question_id: "q1", text: "First" }, { question_id: "q2", text: "😀".repeat(4096) }];
+    expect(createRunIntent("First", () => FIXED_UUID, profile, questions).payload.scope.questions?.[1].text).toBe("😀".repeat(4096));
+    expect(() => createRunIntent("😀".repeat(1025), () => FIXED_UUID, profile, questions)).toThrow("live_demo_query_too_large");
+  });
+
+  it("preserves the default single question and generic empty scope", () => {
+    expect(createRunIntent("Original", () => FIXED_UUID, profile).payload.scope).toEqual({ questions: [{ question_id: "q1", text: "Original" }] });
+    expect(createRunIntent("Original", () => FIXED_UUID, "generic", [{ question_id: "q3", text: "Extra" }]).payload.scope).toEqual({});
+  });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();

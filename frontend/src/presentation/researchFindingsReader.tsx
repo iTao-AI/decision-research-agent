@@ -13,7 +13,11 @@ export function ResearchFindingsReader({ language, findings }: { language: Langu
       <section aria-label={t.questions}>
         <h3>{t.questions}</h3>
         <ol className="research-question-list">
-          {report.questions.map((question) => <li key={question.question_id}>{question.text}</li>)}
+          {report.questions.map((question) => <li key={question.question_id}>
+            <span>{question.text}</span>{" "}
+            <small className="research-question-disposition">{report.dispositions.find((d) => d.question_id === question.question_id)?.status === "candidate_findings"
+              ? t.candidateDisposition : t.unresolvedDisposition}</small>
+          </li>)}
         </ol>
       </section>
       <section aria-label={t.findings}>

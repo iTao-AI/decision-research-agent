@@ -30,6 +30,7 @@ Directory presence does not confer verification or current release authority.
 | Artifact | Boundary |
 |---|---|
 | [durable-hitl-gate-report.json](durable-hitl-gate-report.json) | Machine-readable result for the 13 controlled single-node SQLite durability and safety gates; the capability remains disabled by default. |
+| [source-archive-findings-reproduction-v1.json](source-archive-findings-reproduction-v1.json) | Selected local observation of four declared synthetic native/HTTP/CLI/consumer cases from an exact tracked source archive and fresh locked Python environment. Optional operator reproduction, not a required CI/release baseline, installable-package result or quality verification; see the [guide](../operations/source-archive-findings-reproduction.md). |
 
 ## Historical Reviewed Record
 

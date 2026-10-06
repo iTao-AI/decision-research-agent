@@ -1,0 +1,194 @@
+{
+  "schema": "dra.source-archive-findings-reproduction.v1",
+  "verification_date": "2026-10-06",
+  "verification_state": "locally_observed_structural_reproduction",
+  "synthetic": true,
+  "source_asset": {
+    "source_commit": "0be49fec33be42d424b2f70ddb3c3dcd1e10af31",
+    "source_tree": "bbcdf2fd84b953fef8b2c733ef29a437878b198a",
+    "form": "tracked-source-archive",
+    "archive_sha256": "ed3c4139951a9f8448974b901b02189f97065fdc8e87a022a51e7c7204359718",
+    "archive_bytes": 9492480,
+    "prefix": "decision-research-agent/",
+    "embedded_commit_matches": true,
+    "source_files": 522,
+    "source_bytes": 9051342,
+    "git_blob_and_mode_agreement": true,
+    "forbidden_path_count": 0,
+    "version": "0.1.9",
+    "constraints_sha256": "180a3b0986ac793d46ad47497d8abb990b38fd75d73ce0289bb652ca366565e7",
+    "package_build_metadata_present": false
+  },
+  "environment": {
+    "python": "3.11.15",
+    "locked_distribution_count": 97,
+    "all_locked_versions_match": true,
+    "bootstrap_extras": {
+      "pip": "24.0",
+      "setuptools": "79.0.1"
+    },
+    "isolated_from_user_site": true,
+    "compatibility_gate": "approved_diagnostic",
+    "source_import_roots_from_archive": true,
+    "dependency_import_root_from_new_venv": true
+  },
+  "entries": {
+    "producer": "scripts/research_evidence_delivery_proof.py serve",
+    "cli": "tools/decision_research_agent_tool.py findings",
+    "consumer": "scripts/research_findings_consumer.py",
+    "declarations": "tests/fixtures/research-evidence-delivery/cases.json",
+    "expectations": "tests/fixtures/research-evidence-delivery/expected.json",
+    "operator_guide": "docs/operations/source-archive-findings-reproduction.md"
+  },
+  "scope": {
+    "producer": "installed graph with declared programmed model and source fixtures; real application execution/finalization/persisted readers",
+    "consumer": "public loopback HTTP, existing CLI and independent stdlib consumer; no database/workspace/trace reads provide acceptance",
+    "source_form": "full tracked source archive; no source overlay or installable-package claim",
+    "fresh_tmp_before_start": true,
+    "models_and_sources": "declared programmed synthetic fixtures",
+    "measurements": {
+      "truth": "not_measured",
+      "entailment": "not_measured",
+      "autonomous_research_quality": "not_measured",
+      "human_value": "not_measured"
+    }
+  },
+  "cases": [
+    {
+      "case_id": "complete",
+      "passed": true,
+      "observed": {
+        "run_id": "run_6bc0b688d0ac536eb2d612086d406868",
+        "requested_questions": 1,
+        "candidate_questions": 1,
+        "unresolved_questions": 0,
+        "references": 1,
+        "reported_contradictions": 0,
+        "verification_states": [
+          "unverified"
+        ],
+        "json_sha256": "d8dd1de9e1add0a4c7d3271e1d18b3016cd85494d02bb73c15f26760128b34e7",
+        "json_bytes": 1916,
+        "markdown_sha256": "7fbd80ba0b8079be7970cf37039f31d5c95fee7ac8914f36de84a8317310ae9e",
+        "markdown_bytes": 1761,
+        "literal_non_ascii_json": true,
+        "literal_non_ascii_markdown": true,
+        "cli_json_exit": 0,
+        "cli_markdown_exit": 0,
+        "consumer_exit": 0
+      },
+      "checks": {
+        "http_outcome_matches_declaration": true,
+        "cli_projection_matches_public_reader": true,
+        "same_run_references": true,
+        "canonical_json_own_byte_hash": true,
+        "canonical_markdown_exact_utf8": true,
+        "valid_utf8_under_ascii_process_encoding": true,
+        "dispositions_and_contradictions_preserved": true,
+        "independent_consumer_checks_passed": true,
+        "public_business_state_unchanged_by_consumption": true
+      }
+    },
+    {
+      "case_id": "partial",
+      "passed": true,
+      "observed": {
+        "run_id": "run_e4383ba9ee7353e89f6cc82563dd1470",
+        "requested_questions": 2,
+        "candidate_questions": 1,
+        "unresolved_questions": 1,
+        "references": 1,
+        "reported_contradictions": 0,
+        "verification_states": [
+          "unverified"
+        ],
+        "json_sha256": "70236e4312e65a601c0c5235f995fe2da61333dc919ff13c6834e2e9165850ef",
+        "json_bytes": 2087,
+        "markdown_sha256": "053fdc1cb1afec6d7018748a302afd005d0e016b9e2f917c14488e283b804576",
+        "markdown_bytes": 1879,
+        "literal_non_ascii_json": true,
+        "literal_non_ascii_markdown": true,
+        "cli_json_exit": 0,
+        "cli_markdown_exit": 0,
+        "consumer_exit": 0
+      },
+      "checks": {
+        "http_outcome_matches_declaration": true,
+        "cli_projection_matches_public_reader": true,
+        "same_run_references": true,
+        "canonical_json_own_byte_hash": true,
+        "canonical_markdown_exact_utf8": true,
+        "valid_utf8_under_ascii_process_encoding": true,
+        "dispositions_and_contradictions_preserved": true,
+        "independent_consumer_checks_passed": true,
+        "public_business_state_unchanged_by_consumption": true
+      }
+    },
+    {
+      "case_id": "contradictory",
+      "passed": true,
+      "observed": {
+        "run_id": "run_558e4f7a1d965b018568e8669dd6f2be",
+        "requested_questions": 1,
+        "candidate_questions": 1,
+        "unresolved_questions": 0,
+        "references": 2,
+        "reported_contradictions": 1,
+        "verification_states": [
+          "unverified"
+        ],
+        "json_sha256": "5728b092a52ebeef3fb6408e96b234ce2efd8ba4faa6c99282ae6942d72ef988",
+        "json_bytes": 1602,
+        "markdown_sha256": "1ae990d09b015c2d2ba31214ec4a9ba5d93781a34af8f7bf35ea36562ca2c325",
+        "markdown_bytes": 1269,
+        "literal_non_ascii_json": false,
+        "literal_non_ascii_markdown": true,
+        "cli_json_exit": 0,
+        "cli_markdown_exit": 0,
+        "consumer_exit": 0
+      },
+      "checks": {
+        "http_outcome_matches_declaration": true,
+        "cli_projection_matches_public_reader": true,
+        "same_run_references": true,
+        "canonical_json_own_byte_hash": true,
+        "canonical_markdown_exact_utf8": true,
+        "valid_utf8_under_ascii_process_encoding": true,
+        "dispositions_and_contradictions_preserved": true,
+        "independent_consumer_checks_passed": true,
+        "public_business_state_unchanged_by_consumption": true
+      }
+    },
+    {
+      "case_id": "insufficient-evidence",
+      "passed": true,
+      "observed": {
+        "run_id": "run_d057d451d4785220aa34d5887f3e061d",
+        "requested_questions": 1,
+        "candidate_questions": 0,
+        "unresolved_questions": 1,
+        "references": 0,
+        "code": "run_delivery_blocked",
+        "cli_json_exit": 1,
+        "cli_markdown_exit": 1,
+        "consumer_exit": 1,
+        "success_receipt_created": false
+      },
+      "checks": {
+        "http_outcome_matches_declaration": true,
+        "blocked_error_code_preserved": true,
+        "nonzero_exit": true,
+        "no_success_receipt": true,
+        "no_empty_or_generic_fallback": true,
+        "public_business_state_unchanged_by_consumption": true
+      }
+    }
+  ],
+  "completion": {
+    "passed": true,
+    "source_files_and_modes_unchanged_after_run": true,
+    "service_exit": 130,
+    "owned_port_released": true,
+    "raw_receipts": "retained in an ignored task-owned output directory; not committed"
+  }
+}

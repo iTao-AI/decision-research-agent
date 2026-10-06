@@ -164,6 +164,11 @@ negative states and tampering; they do not replace that positive chain.
 This proves deterministic plumbing and structural consumption, not autonomous
 research, paid-provider behavior or semantic value.
 
+For a verified fresh environment using a complete tracked source archive and
+the existing lock, see the [source-archive reproduction guide](../operations/source-archive-findings-reproduction.md)
+and its selected archive/environment and four-case evidence. It records source
+form explicitly and makes no wheel or installed application-package claim.
+
 ```bash
 python -m pytest -q tests/unit/test_research_findings_tool.py \
   tests/unit/test_research_findings_consumer.py \

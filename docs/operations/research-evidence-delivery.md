@@ -38,6 +38,10 @@ HTTP proof. Partial/unresolved and model-reported contradictory outcomes stay
 visible. Completed/blocked runs return the existing error and no receipt.
 Receipt checks are structural and cannot turn approval into Evidence verification.
 
+The [source-archive reproduction guide](source-archive-findings-reproduction.md)
+records the same service/CLI/consumer boundary from a complete tracked archive,
+new locked Python environment and fresh stores, including actual blocked failure.
+
 ## Provider-free native check
 
 Use the existing Python 3.11 development environment with the locked project

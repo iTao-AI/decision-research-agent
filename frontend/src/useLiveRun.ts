@@ -254,7 +254,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       error: undefined,
       mode: "live",
       result: undefined,
-      findings: undefined,
+      // Keep the local draft mounted until acknowledgement; no current run/reader is rendered.
       run: undefined,
       status: "creating"
     }));
@@ -270,6 +270,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
         ...current,
         created,
         error: undefined,
+        findings: undefined,
         status: "polling"
       }));
 

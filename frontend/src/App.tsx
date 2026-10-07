@@ -167,7 +167,9 @@ export default function App({
                 key={JSON.stringify([liveRun.state.baseUrl, liveRun.state.mode, liveRun.state.createProfileId ?? "generic",
                   liveRun.state.findings.run_id, liveRun.state.findings.artifact.content_hash])}
                 language={language} findings={liveRun.state.findings}
-                disabled={liveRun.state.mode !== "live" || liveRun.state.status !== "result" || !liveRun.state.health || Boolean(liveRun.state.error)}
+                sourceReportVisible={liveRun.state.run?.run_id === liveRun.state.findings.run_id}
+                onCancelWithoutSource={() => document.getElementById("live-known-run")?.focus()}
+                disabled={liveRun.state.mode !== "live" || !["result", "ready"].includes(liveRun.state.status) || !liveRun.state.health || Boolean(liveRun.state.error)}
                 onStart={(questions) => liveRun.startNewRun(questions[0].text, questions, STRUCTURED_RESEARCH_PROFILE)} />}
               {liveRun.state.run?.profile_id === STRUCTURED_RESEARCH_PROFILE && !liveRun.state.findings && (
                 <section className="research-findings-diagnostics" aria-label={t.research.diagnostics}>

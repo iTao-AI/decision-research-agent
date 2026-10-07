@@ -26,7 +26,7 @@ ORIGINAL_SCOPE = {"questions": [
 
 
 @contextmanager
-def scripted_service(directory, origin=None):
+def scripted_service(directory, origin=None, reject_browser_create=False):
     """Scripted outcome only; real create, dispatch, finalizer and readers remain."""
     from scripts.research_evidence_delivery_proof import guarded_runtime
     with guarded_runtime(directory, origin) as (server, patch, attempted):
@@ -35,6 +35,7 @@ def scripted_service(directory, origin=None):
         from agent.run_result import ExecutionOutcome
         from starlette.middleware import Middleware
         from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.responses import JSONResponse
         requests, executions = [], []
 
         async def record_requests(request, call_next):
@@ -45,10 +46,14 @@ def scripted_service(directory, origin=None):
                 requests.append(row)
                 with (directory / "requests.jsonl").open("a", encoding="utf-8") as output:
                     output.write(json.dumps(row, ensure_ascii=False) + "\n")
+                if reject_browser_create and len(requests) == 2:
+                    return JSONResponse({"code": "service_unavailable", "problem": "Declared fixture rejection",
+                        "cause": "Rejected before service admission", "fix": "Check backend and confirm a new intent",
+                        "retryable": False}, status_code=503)
             return await call_next(request)
 
         patch.setattr(server.app, "user_middleware", [
-            Middleware(BaseHTTPMiddleware, dispatch=record_requests), *server.app.user_middleware])
+            *server.app.user_middleware, Middleware(BaseHTTPMiddleware, dispatch=record_requests)])
         patch.setattr(server.app, "middleware_stack", None)
 
         async def execute(query, thread_id, **kwargs):
@@ -154,7 +159,26 @@ def test_public_all_unresolved_fixture_remains_blocked_without_a_report(tmp_path
             assert attempted == []
 
 
-def serve(directory, origin, port, seconds):
+def test_explicit_fixture_rejection_creates_no_run_and_later_fresh_intent_succeeds(tmp_path):
+    from fastapi.testclient import TestClient
+    with scripted_service(tmp_path, origin="http://127.0.0.1:5179", reject_browser_create=True) as (app, requests, executions, attempted):
+        with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000)) as client:
+            old, original = create_and_read(client, {"query": ORIGINAL_SCOPE["questions"][0]["text"],
+                "profile_id": PROFILE, "scope": ORIGINAL_SCOPE}, "fixture-source-key")
+            payload = {"query": "Edited after a definite rejection", "thread_id": "fixture-recovered-thread",
+                       "profile_id": PROFILE, "scope": {"questions": [{"question_id": "q1", "text": "Edited after a definite rejection"}]}}
+            rejected = client.post("/api/runs", json=payload, headers={"Idempotency-Key": "fixture-rejected-key",
+                                                                     "Origin": "http://127.0.0.1:5179"})
+            assert rejected.status_code == 503 and rejected.json()["code"] == "service_unavailable"
+            assert rejected.headers["Access-Control-Allow-Origin"] == "http://127.0.0.1:5179"
+            assert executions == [old["run_id"]] and read_package(client, old["run_id"]) == original
+            recovered, package = create_and_read(client, payload, "fixture-recovered-key")
+            assert recovered["run_id"] != old["run_id"] and package[0]["scope"] == payload["scope"]
+            assert len(executions) == 2 and len(requests) == 3 and attempted == []
+            assert read_package(client, old["run_id"]) == original
+
+
+def serve(directory, origin, port, seconds, reject_browser_create=False):
     """Bounded actual HTTP fixture for the browser; source run created via POST."""
     from fastapi.testclient import TestClient
     from scripts.research_evidence_delivery_proof import loopback
@@ -166,12 +190,13 @@ def serve(directory, origin, port, seconds):
             or parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment):
         raise ValueError("draft_fixture_origin_invalid")
     directory.mkdir(parents=True, exist_ok=True)
-    with scripted_service(directory, origin) as (app, requests, executions, attempted):
+    with scripted_service(directory, origin, reject_browser_create) as (app, requests, executions, attempted):
         with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000)) as client:
             source, original = create_and_read(client, {"query": ORIGINAL_SCOPE["questions"][0]["text"],
                 "thread_id": "draft-fixture-source", "profile_id": PROFILE, "scope": ORIGINAL_SCOPE}, "draft-fixture-source-key")
         snapshot = {"source_run": source, "original_package": original,
-            "producer": "scripted outcome and declared source; actual public service/persistence", "model_calls": 0}
+            "producer": "scripted outcome and declared source; actual public service/persistence", "model_calls": 0,
+            "reject_first_browser_create": reject_browser_create}
         (directory / "source-package.json").write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps({"api": f"http://127.0.0.1:{port}", "origin": origin, "source_run_id": source["run_id"],
                           "producer": snapshot["producer"], "expires_after_seconds": seconds}), flush=True)
@@ -194,7 +219,9 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8019)
     parser.add_argument("--seconds", type=int, default=900)
     parser.add_argument("--directory", type=Path, required=True)
+    parser.add_argument("--reject-first-browser-create", action="store_true",
+                        help="Declare one 503 before admission, then allow ordinary creates for input-recovery acceptance")
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535 or not 1 <= args.seconds <= 1800:
         parser.error("fixture port must be 1024–65535 and duration 1–1800 seconds")
-    serve(args.directory, args.origin, args.port, args.seconds)
+    serve(args.directory, args.origin, args.port, args.seconds, args.reject_first_browser_create)

@@ -13,10 +13,12 @@ type PreparedDraft = {
 };
 
 /** Browser-local input preparation. Accepted report and creation authority stay on the service. */
-export function ResearchFollowUp({ language, findings, disabled, onStart }: {
+export function ResearchFollowUp({ language, findings, disabled, sourceReportVisible, onCancelWithoutSource, onStart }: {
   language: Language;
   findings: ResearchFindingsResponse;
   disabled: boolean;
+  sourceReportVisible: boolean;
+  onCancelWithoutSource: () => void;
   onStart: (questions: readonly ResearchQuestion[]) => Promise<void>;
 }) {
   const t = copy[language].research;
@@ -76,7 +78,7 @@ export function ResearchFollowUp({ language, findings, disabled, onStart }: {
   };
 
   return <>
-    <ResearchFindingsReader language={language} findings={findings} followUp={unresolved.length ? {
+    {sourceReportVisible && <ResearchFindingsReader language={language} findings={findings} followUp={unresolved.length ? {
       selectedQuestionIds: selected,
       disabled,
       onToggleQuestion: (questionId) => {
@@ -85,7 +87,7 @@ export function ResearchFollowUp({ language, findings, disabled, onStart }: {
       },
       onPrepare: prepare,
       prepareButtonRef: prepareButton
-    } : undefined} />
+    } : undefined} />}
     {draft && <section className="research-follow-up" role="region" aria-label={t.followUp.title} ref={draftRegion}>
       <h2>{t.followUp.title}</h2>
       <p>{t.followUp.boundary}</p>
@@ -118,7 +120,10 @@ export function ResearchFollowUp({ language, findings, disabled, onStart }: {
       <div className="research-draft-actions">
         <button type="button" disabled={disabled || replacePending || !scopeValid} onClick={start}>{t.followUp.confirm}</button>
         <button type="button" disabled={disabled} onClick={() => {
-          setDraft(undefined); setReplacePending(false); prepareButton.current?.focus();
+          setDraft(undefined); setReplacePending(false);
+          if (prepareButton.current && !prepareButton.current.disabled) prepareButton.current.focus();
+          else if (prepareButton.current) prepareButton.current.closest("article")?.querySelector<HTMLInputElement>('input[type="checkbox"]:not([disabled])')?.focus();
+          else onCancelWithoutSource();
         }}>{t.followUp.cancel}</button>
       </div>
     </section>}

@@ -37,6 +37,9 @@ test fixtures; no installation or dependency changes.
 - Endpoint/profile/mode/source changes and late findings: no stale draft submit.
 - Pending reconciliation/observation or known-run errors: retain existing locks
   and exact retry intent, with no extra creation.
+- Successful health recheck and definite create rejection: preserve input scope,
+  unlock only after health recovery, and hide prior reader until its source is
+  observed again. Ambiguous recovery must remain locked to its frozen intent.
 - Large/blank edits and overlapping editor IDs: clear feedback, unique labels,
   normal 1–5 creation/download and narrow keyboard use remain intact.
 

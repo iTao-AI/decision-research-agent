@@ -39,6 +39,11 @@ approval or artifacts.
 - Checking, creating, polling, reconciliation, interrupted observation and
   known-run errors lock preparation, draft edits and submission according to
   the existing gates. Duplicate confirmation cannot create a second intent.
+- Successful health rechecks preserve and unlock edits. Until create
+  acknowledgement, input state remains recoverable with the old reader hidden;
+  a definite rejection permits editing/new confirmation only after health
+  recovers. Ambiguous creation retains only the frozen intent's recovery path.
+  Acknowledgement or context invalidation clears the old draft.
 - Only unresolved questions from an accepted current response are selectable.
   Generic runs, invalid/blocked findings and rejected all-unresolved packages
   gain no accepted report or continuation action. With no unresolved questions,
@@ -55,7 +60,10 @@ the same bounds. Separate editors have unique field/hint IDs and clear labels.
 Chinese and English labels describe selection, the old report reference,
 replacement, cancellation and explicit creation. Keyboard selection,
 preparation, editing, add/remove, replacement and cancellation retain sensible
-focus. At 1440px and 390px the draft fields/actions remain readable and usable.
+  focus. At 1440px and 390px the draft fields/actions remain readable and usable.
+
+Cancellation returns to preparation, an enabled source checkbox if selection is
+empty, or the known-run input when a rejected create has hidden the old reader.
 
 ## Acceptance And Evidence Boundary
 

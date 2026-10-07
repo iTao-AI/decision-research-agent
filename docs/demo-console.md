@@ -128,8 +128,8 @@ verification, approval or backend lineage. The old structured report and its
 canonical Markdown download remain readable until submission. Preparing again
 shows **替换当前草稿 / Replace current draft** and **保留当前草稿 / Keep current draft**;
 replacement happens only after that explicit choice. **取消新研究草稿 / Cancel new
-research draft** restores focus to preparation and leaves the ordinary editor
-and old report intact.
+research draft** restores focus to preparation, or a source checkbox if nothing
+is selected, and leaves the ordinary editor and old report intact.
 
 Only **确认并运行新研究 / Confirm and run new research** creates an independent
 structured run through the normal create-intent endpoint. It uses a fresh key,
@@ -145,6 +145,15 @@ clears the local draft and selection. Busy/recovery/error states lock editing
 and confirmation; late responses cannot restore an expired draft. Invalid,
 blocked, generic and rejected all-unresolved reports gain no continuation action.
 With no unresolved questions, the action is absent.
+
+Successful health rechecks unlock existing edits. Before a new create is
+acknowledged, its input draft stays in browser memory and the previous reader
+is hidden. A definite create rejection retains the inputs but keeps them locked
+until health succeeds; the user can edit and explicitly create a fresh intent.
+The input cache is not a new accepted report or Evidence. An ambiguous response
+still requires the original frozen intent's exact retry or explicit discard.
+Acknowledgement and context changes clear the old draft. If the source reader
+is absent, cancellation returns focus to the known-run input.
 
 The draft is browser-session-only. Deterministic service fixtures and browser
 observations demonstrate creation/persistence and interaction separately; they
@@ -184,6 +193,13 @@ compare the canonical Markdown bytes against `source-package.json`. The server
 stops after the bounded duration or Ctrl-C and writes `service-summary.json`;
 retain only task-owned ignored receipts and stop the frontend when finished.
 These observations establish service persistence and rendered interaction only.
+For a declared HTTP rejection before service admission, add
+`--reject-first-browser-create`. The first browser create returns a fixed 503,
+creates no run, and preserves the input-recovery scenario; later creates follow
+the normal service path. This fault injection is test-only and does not claim
+that a rejected request produced a persisted run. The injected response must
+traverse the existing CORS middleware; otherwise the browser observes an
+ambiguous network failure and correctly requires exact-intent reconciliation.
 
 ## Showcase Frames
 

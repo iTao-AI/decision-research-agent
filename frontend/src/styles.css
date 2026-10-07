@@ -2925,7 +2925,8 @@ pre {
 }
 
 .research-findings-reader,
-.research-findings-diagnostics {
+.research-findings-diagnostics,
+.research-follow-up {
   min-width: 0;
   margin-bottom: 24px;
   padding: 24px;
@@ -3143,7 +3144,8 @@ pre {
 
 @media (max-width: 700px) {
   .research-findings-reader,
-  .research-findings-diagnostics {
+  .research-findings-diagnostics,
+  .research-follow-up {
     padding: 16px;
   }
 
@@ -3151,4 +3153,76 @@ pre {
   .research-full-snippet {
     padding: 12px;
   }
+}
+
+.research-follow-up-controls button,
+.research-follow-up button {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #b9d1f5;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font: inherit;
+  cursor: pointer;
+}
+
+.research-follow-up-controls button:disabled,
+.research-follow-up button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.research-follow-up-controls button:focus-visible,
+.research-follow-up button:focus-visible,
+.research-follow-up textarea:focus-visible,
+.research-unresolved-selection input:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+.research-unresolved-selection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.research-follow-up textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88px;
+  padding: 10px;
+  border: 1px solid #b9b3a7;
+  border-radius: 6px;
+  background: #fff;
+  color: #15171a;
+  font: inherit;
+}
+
+.research-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.research-draft-reference,
+.research-draft-replacement {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid #d8d2c4;
+  border-radius: 6px;
+  background: #f7f5ef;
+}
+
+.research-draft-reference li {
+  white-space: pre-wrap;
+}
+
+.research-draft-replacement {
+  border-color: #d97706;
+  background: #fffbeb;
 }

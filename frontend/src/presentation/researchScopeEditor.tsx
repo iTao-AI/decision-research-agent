@@ -4,13 +4,17 @@ import { copy, type Language } from "../i18n";
 import type { ResearchQuestion } from "../researchFindings";
 import { RESEARCH_QUESTIONS_MAX, validateResearchQuestions } from "../researchScope";
 
-export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRemove, onEdit }: {
+export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRemove, onEdit,
+  idPrefix = "research-scope", legend, questionLabel }: {
   questions: readonly ResearchQuestion[];
   language: Language;
   disabled: boolean;
   onAdd: () => void;
   onRemove: (questionId: string) => void;
   onEdit: (questionId: string, text: string) => void;
+  idPrefix?: string;
+  legend?: string;
+  questionLabel?: (index: number) => string;
 }) {
   const t = copy[language];
   const fields = useRef(new Map<string, HTMLTextAreaElement>());
@@ -22,10 +26,10 @@ export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRe
   }, [questions]);
 
   return <fieldset className="live-query-field research-scope-editor" disabled={disabled}>
-    <legend>{t.research.scopeTitle}</legend>
-    <small id="research-scope-hint">{t.research.scopeHint}</small>
+    <legend>{legend ?? t.research.scopeTitle}</legend>
+    <small id={`${idPrefix}-hint`}>{t.research.scopeHint}</small>
     {questions.map((question, index) => {
-      const id = `research-scope-${question.question_id}`;
+      const id = `${idPrefix}-${question.question_id}`;
       const scopeValidation = validateResearchQuestions([question]);
       const queryValidation = index === 0 ? validateLiveDemoQuery(question.text) : undefined;
       const valid = scopeValidation.ok && (!queryValidation || queryValidation.ok);
@@ -34,7 +38,7 @@ export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRe
         : !scopeValidation.ok && scopeValidation.reason === "too_large" ? t.research.scopeTooLarge : t.research.scopeBlank;
       return <div className="research-scope-row" key={question.question_id}>
         <div className="research-scope-row-heading">
-          <label htmlFor={id}>{index === 0 ? t.live.question : t.research.questionNumber(index + 1)}</label>
+          <label htmlFor={id}>{questionLabel ? questionLabel(index + 1) : index === 0 ? t.live.question : t.research.questionNumber(index + 1)}</label>
           <button type="button" disabled={disabled || questions.length === 1}
             aria-label={t.research.removeQuestion(index + 1)} onClick={() => {
               focusNext.current = (questions[index + 1] ?? questions[index - 1]).question_id;
@@ -43,7 +47,7 @@ export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRe
         </div>
         <textarea id={id} rows={2} disabled={disabled} value={question.text}
           ref={(element) => { if (element) fields.current.set(question.question_id, element); else fields.current.delete(question.question_id); }}
-          aria-invalid={!valid} aria-describedby={`research-scope-hint ${id}-count${valid ? "" : ` ${id}-feedback`}`}
+          aria-invalid={!valid} aria-describedby={`${idPrefix}-hint ${id}-count${valid ? "" : ` ${id}-feedback`}`}
           onChange={(event) => onEdit(question.question_id, event.target.value)} />
         <small id={`${id}-count`}>{index === 0 ? t.live.queryBytes(queryValidation!.utf8Bytes) : t.research.questionPoints(Array.from(question.text).length)}</small>
         {!valid && <p className="live-query-feedback" id={`${id}-feedback`}>{feedback}</p>}

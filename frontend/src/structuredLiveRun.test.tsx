@@ -18,6 +18,22 @@ async function ready(result: Hook) {
 }
 
 describe("structured live observation", () => {
+  it("uses an explicit draft profile through normal fresh intent creation without changing the ordinary form", async () => {
+    const posts: { body: unknown; key: string | null }[] = [];
+    const { result } = setup(async (url, init) => {
+      if (init?.method === "POST") {
+        posts.push({ body: JSON.parse(String(init.body)), key: new Headers(init.headers).get("Idempotency-Key") });
+        return response({ run_id: "run_structured", segment_id: "segment", status: "started", thread_id: "demo-console-fixed", idempotent_replay: false });
+      }
+      return response(url.endsWith("/health") ? health : url.endsWith("/findings") ? findingsResponse() : url.endsWith("/result") ? markdownResult() : structuredRun());
+    });
+    await ready(result);
+    await act(() => result.current.startNewRun("New draft", [{ question_id: "q1", text: "New draft" }], "generic-evidence-report"));
+    expect(posts).toEqual([{ body: { query: "New draft", thread_id: "demo-console-fixed", profile_id: "generic-evidence-report",
+      scope: { questions: [{ question_id: "q1", text: "New draft" }] } }, key: "run-create-console-fixed" }]);
+    expect(result.current.state.createProfileId).toBeUndefined();
+    expect(result.current.state.status).toBe("result");
+  });
   it("replays the complete original five-question intent after a lost response and draft edits", async () => {
     const bodies: string[] = [], keys: string[] = [];
     const draft = [

@@ -318,8 +318,8 @@ export function useLiveRun(options: LiveRunOptions = {}) {
     }
   }, [isCurrent, nextRequest, observeRun, state.baseUrl, waitTimeoutMs]);
 
-  const startNewRun = useCallback(async (query: string, questions?: readonly ResearchQuestion[]) => {
-    const intent = createRunIntent(query, randomUUID, state.createProfileId ?? "generic", questions);
+  const startNewRun = useCallback(async (query: string, questions?: readonly ResearchQuestion[], profileId?: LiveResearchProfile) => {
+    const intent = createRunIntent(query, randomUUID, profileId ?? state.createProfileId ?? "generic", questions);
     createIntent.current = intent;
     activeRunId.current = null;
     await createAndObserve(intent);

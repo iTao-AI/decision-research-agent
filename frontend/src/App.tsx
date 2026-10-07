@@ -36,7 +36,7 @@ import {
   RunLifecycle
 } from "./presentation/technicalScreens";
 import { buildScreenSummary, ObservationValue, observationLabel } from "./presentation/observation";
-import { ResearchFindingsReader } from "./presentation/researchFindingsReader";
+import { ResearchFollowUp } from "./presentation/researchFollowUp";
 import { ResearchScopeEditor } from "./presentation/researchScopeEditor";
 import { LiveErrorCard } from "./presentation/liveErrorCard";
 import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchQuestion } from "./researchFindings";
@@ -163,7 +163,12 @@ export default function App({
             />
           ) : (
             <>
-              {liveRun.state.findings && <ResearchFindingsReader key={liveRun.state.findings.run_id} language={language} findings={liveRun.state.findings} />}
+              {liveRun.state.findings && <ResearchFollowUp
+                key={JSON.stringify([liveRun.state.baseUrl, liveRun.state.mode, liveRun.state.createProfileId ?? "generic",
+                  liveRun.state.findings.run_id, liveRun.state.findings.artifact.content_hash])}
+                language={language} findings={liveRun.state.findings}
+                disabled={liveRun.state.mode !== "live" || liveRun.state.status !== "result" || !liveRun.state.health || Boolean(liveRun.state.error)}
+                onStart={(questions) => liveRun.startNewRun(questions[0].text, questions, STRUCTURED_RESEARCH_PROFILE)} />}
               {liveRun.state.run?.profile_id === STRUCTURED_RESEARCH_PROFILE && !liveRun.state.findings && (
                 <section className="research-findings-diagnostics" aria-label={t.research.diagnostics}>
                   <h2>{t.research.diagnostics}</h2><p>{t.research.unavailable}</p>

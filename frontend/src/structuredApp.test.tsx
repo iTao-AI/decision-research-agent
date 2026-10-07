@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -130,10 +130,73 @@ describe("explicit structured console", () => {
     expect(screen.getByText("证据不足")).toBeInTheDocument();
     expect(screen.getByText("两个来源的更新时间存在矛盾")).toBeInTheDocument();
     expect(screen.getByText("片段绑定不证明结论真实")).toBeInTheDocument();
+    const directory = screen.getByRole("navigation", { name: "问题目录" });
+    expect(within(directory).getAllByRole("button")).toHaveLength(2);
+    expect(directory).not.toHaveTextContent("原始问题");
+    fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "New editable draft" } });
+    expect(directory).not.toHaveTextContent("New editable draft");
+    await user.click(within(directory).getByRole("button", { name: /未解决问题/ }));
+    expect(within(screen.getByRole("region", { name: "未解决问题" })).getByText("证据不足")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "下载报告" }).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "English" }));
     expect(screen.getByRole("heading", { name: "Source-bound candidate findings" })).toBeInTheDocument();
     expect(screen.getByText("Binding locates the candidate in an observed source snippet. It does not prove source truth or claim entailment; Evidence verification remains service-owned.")).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Question directory" })).getByRole("button", { name: /未解决问题/ })).toHaveAttribute("aria-current", "location");
+    await user.click(screen.getByRole("tab", { name: "Raw" }));
+    expect(screen.getByRole("tabpanel").textContent).toBe("# Canonical report");
+  });
+
+  it("clears reader selection and opened source when attaching another run or switching profile", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/health")) return new Response(JSON.stringify({ service: "decision-research-agent", status: "ok" }));
+      const runId = url.includes("run_next") ? "run_next" : "run_first";
+      const value = findingsResponse(runId);
+      value.report.questions[0].text = `${runId} accepted question`;
+      value.report.findings[0].statement = `${runId} observed candidate`;
+      value.artifact.content = JSON.stringify(value.report);
+      return new Response(JSON.stringify(url.endsWith("/findings") ? value : url.endsWith("/result") ? markdownResult(runId) : structuredRun(runId)));
+    }));
+    const user = userEvent.setup(); render(<StrictMode><App /></StrictMode>);
+    await user.click(screen.getByRole("button", { name: "真实后端" }));
+    await user.click(screen.getByRole("button", { name: "检查后端" }));
+    const runField = screen.getByRole("textbox", { name: "已知 run_id" });
+    await user.type(runField, "run_first");
+    await user.click(screen.getByRole("button", { name: "观察已知运行" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "run_first accepted question" })).toBeInTheDocument());
+    await user.click(within(screen.getByRole("navigation", { name: "问题目录" })).getAllByRole("button")[0]);
+    await user.click(screen.getByRole("button", { name: "查看完整持久化片段" }));
+    expect(screen.getByRole("region", { name: "完整持久化片段" })).toBeInTheDocument();
+    await user.clear(runField); await user.type(runField, "run_next");
+    await user.click(screen.getByRole("button", { name: "观察已知运行" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "run_next accepted question" })).toBeInTheDocument());
+    expect(screen.queryByRole("region", { name: "run_first accepted question" })).not.toBeInTheDocument();
+    expect(screen.queryByText("run_first observed candidate")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "完整持久化片段" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "问题目录" })).getAllByRole("button").every((button) => !button.hasAttribute("aria-current"))).toBe(true);
+    await user.selectOptions(screen.getByRole("combobox", { name: "研究模式" }), "generic-evidence-report");
+    expect(screen.queryByRole("navigation", { name: "问题目录" })).not.toBeInTheDocument();
+    expect(screen.queryByText("run_next observed candidate")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下载报告" })).not.toBeInTheDocument();
+  });
+
+  it("keeps an all-unresolved zero-findings run blocked without fabricating question regions from the draft", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input); urls.push(url);
+      return new Response(JSON.stringify(url.endsWith("/health") ? { service: "decision-research-agent", status: "ok" } :
+        { ...structuredRun("all_unresolved", "blocked"), findings_issues: ["empty_research_output"],
+          findings_outcome: { requested_question_count: 5, covered_question_count: 0, unresolved_question_count: 5, reference_binding_failure_count: 0 } }));
+    }));
+    const user = await structuredEditor();
+    fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "Unaccepted editable draft" } });
+    await user.type(screen.getByRole("textbox", { name: "已知 run_id" }), "all_unresolved");
+    await user.click(screen.getByRole("button", { name: "观察已知运行" }));
+    await waitFor(() => expect(screen.getByText("empty_research_output")).toBeInTheDocument());
+    expect(screen.queryByRole("navigation", { name: "问题目录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Unaccepted editable draft" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下载报告" })).not.toBeInTheDocument();
+    expect(urls.some((url) => /\/(result|findings)$/.test(url))).toBe(false);
   });
 
   it("shows service blocked reasons without findings or report download", async () => {

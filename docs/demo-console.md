@@ -61,16 +61,27 @@ dispositions shown in the report are service-owned and may reflect server
 scope normalization. Editing a new draft does not change an observed report.
 
 Only an observed ready run of the structured profile triggers `/findings`.
-The reader presents accepted questions, source-bound candidate findings, exact
-excerpts, and **查看完整持久化片段 / Inspect full persisted snippet** controls.
+The compact **问题目录 / Question directory** shows the accepted questions in
+report order with their original candidate/unresolved dispositions. Use Tab
+to reach an entry and Enter or Space to scroll to and focus that question's
+reading region. Repeating a selection repeats the navigation. Every region
+stays visible and contains the full accepted question plus all of its existing
+candidate findings and bound sources, or its existing unresolved reason.
+The directory's two-line text preview does not truncate the full question.
+It never reads the editable scope draft to fill report facts.
+
+Source-bound findings retain exact excerpts and **查看完整持久化片段 / Inspect
+full persisted snippet** controls.
 Opening inspection focuses the full snippet region; **返回引用片段 / Return to
 excerpt** restores focus. The region scrolls and wraps long Unicode text on
 narrow screens. These are persisted snippets, not complete webpages or new
 source fetches. All candidate/source/contradiction strings render as text;
 unsafe or credential-bearing URLs have no actionable link.
 
-Unresolved question reasons, limitations, and model-reported contradictions
-remain visible. Source binding locates material in an observed source snippet;
+Unresolved reasons stay within their question regions. Limitations and
+model-reported contradictions remain globally visible after the questions;
+the UI does not assign a report-level contradiction to a particular question.
+Source binding locates material in an observed source snippet;
 it does not prove truth or entailment, and model-reported contradictions have
 not been independently reviewed. The existing canonical Markdown reader, raw
 view, and exact UTF-8 download remain available after both reads succeed.
@@ -86,7 +97,10 @@ authority; the browser does not perform independent Evidence verification.
 A completed but blocked run does not fetch findings or Markdown and exposes
 only optional bounded service diagnostic codes and counts. Counts represent
 question coverage, unresolved dispositions, and reference binding failures,
-not answer accuracy. Missing diagnostics are not a readiness signal. Findings
+not answer accuracy. In particular, an all-unresolved zero-findings run remains
+blocked as `empty_research_output`, with no reader or download; the console
+does not invent missing question reasons or deliver a substitute report.
+Missing diagnostics are not a readiness signal. Findings
 read failures clear both reader presentations and show a bounded client error.
 Switching profile, backend URL, or static/live mode clears the active run and
 invalidates stale responses. Ambiguous create retry preserves the original

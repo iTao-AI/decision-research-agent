@@ -58,6 +58,16 @@ observed run of that profile adds a structured
 reader before the canonical Markdown reader, with accepted questions,
 source-bound candidate findings, exact excerpts, full persisted snippets,
 unresolved dispositions, model-reported contradictions, and limitations.
+Its compact question directory retains each accepted question's observed
+candidate/unresolved disposition. Selecting an entry scrolls to and focuses
+that question's complete reading region, including every candidate and bound
+source or the existing unresolved reason. All regions stay visible in accepted
+question order; the directory does not filter or summarize the report. Full
+question text remains in the reading region even when the directory preview
+wraps to two lines. Model-reported contradictions and limitations remain global.
+Run/profile changes clear the previous reader selection and source inspection.
+An all-unresolved zero-findings run remains blocked under the current service
+contract, with diagnostics and no structured reader or report download.
 Attached runs select the reader from the service-observed profile, regardless
 of the form selection. The UI continues to render only observed service-owned
 state.

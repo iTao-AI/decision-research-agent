@@ -63,18 +63,18 @@ test fixtures; no installation or dependency changes.
 - Optional reader controls expose unresolved selection/prepare and a prepare
   button ref. Optional editor ID prefix/legend/question labels preserve defaults.
 
-- [ ] Write behavior tests before product code: selected unresolved text,
+- [x] Write behavior tests before product code: selected unresolved text,
   independent ordinary edits, zero preparation POSTs, fresh explicit create
   scope/key/thread, duplicate clicks, explicit replacement/cancellation/focus,
   1–5/byte validation, context/stale/recovery/error gates and report download.
-- [ ] Verify RED: `npm run test -- src/researchFollowUp.test.tsx
+- [x] Verify RED: `npm run test -- src/researchFollowUp.test.tsx
   src/structuredLiveRun.test.tsx`; missing prepare/manual-draft behavior must fail.
-- [ ] Implement the smallest context-keyed component and optional interfaces.
+- [x] Implement the smallest context-keyed component and optional interfaces.
   Context key includes endpoint/mode/form profile/source run/artifact identity;
   existing hook fencing rejects late responses. Keep old report until submission.
-- [ ] Verify GREEN with the same targeted command, then `npm run test`,
+- [x] Verify GREEN with the same targeted command, then `npm run test`,
   `npm run lint`, `npm run build`, and `git diff --check`.
-- [ ] Update the guide/design with user actions and local/service evidence
+- [x] Update the guide/design with user actions and local/service evidence
   boundaries; commit intentional files as a semantic frontend change.
 
 ### Task 2: Actual service/persistence and browser acceptance
@@ -93,13 +93,13 @@ test fixtures; no installation or dependency changes.
   exact accepted scope, artifact bytes/hashes, Evidence ownership and empty
   inherited approval/verification state.
 
-- [ ] Add/run public-service assertions for a mixed old report and edited new
+- [x] Add/run public-service assertions for a mixed old report and edited new
   scope; new intent/key/run must differ, exact retry must reconcile its own new
   run, and original status/findings/result/Evidence remain byte-identical.
-- [ ] Run the new test plus the relevant existing create/findings contract tests
+- [x] Run the new test plus the relevant existing create/findings contract tests
   using the already installed locked Python runtime with provider keys removed.
   Expected: all selected tests pass, without Docker or provider calls.
-- [ ] Run real Chinese/English browser flows at 1440px and 390px against the
+- [x] Run real Chinese/English browser flows at 1440px and 390px against the
   bounded local fixture. Record keyboard/focus, replacement/cancel, validation,
   actual request counts, created scope/new identity and reread old result.
 - [ ] Review the whole branch in one fresh context, resolve material findings

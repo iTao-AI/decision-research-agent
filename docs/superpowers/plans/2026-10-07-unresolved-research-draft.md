@@ -105,9 +105,26 @@ test fixtures; no installation or dependency changes.
 - [x] Run real Chinese/English browser flows at 1440px and 390px against the
   bounded local fixture. Record keyboard/focus, replacement/cancel, validation,
   actual request counts, created scope/new identity and reread old result.
-- [ ] Review the whole branch in one fresh context, resolve material findings
+- [x] Review the whole branch in one fresh context, resolve material findings
   with targeted RED→GREEN evidence, and rerun affected checks only as needed.
-- [ ] Verify exact HEAD/diff/clean state, unchanged dependency/backend inventory,
+- [x] Verify exact HEAD/diff/clean state, unchanged dependency/backend inventory,
   retained evidence and primary; commit only intentional fixture/test/docs files.
-- [ ] Return one local READY report with actual commands/counts, separate React,
+- [x] Return one local READY report with actual commands/counts, separate React,
   scripted-producer service and browser evidence, limitations and hosted candidate.
+
+## Local Acceptance Record
+
+- Product and recovery regressions were developed RED→GREEN. One fresh whole-
+  branch review identified two Important recovery defects and a cancellation
+  focus defect; all were fixed with failing regressions before implementation.
+- Final frontend: 436 tests passed, lint/build passed. Relevant public service
+  tests: 109 passed, including pre-admission rejection with a browser Origin.
+- Actual rendered Chromium: Chinese/English at 1440×900 and 390×844; preparation
+  and editing added zero POST. Manual creation, exact ambiguous retry, definite
+  rejection input recovery, keyboard return and context expiry were observed.
+- Producer/source material remained explicitly scripted. Actual public routes,
+  dispatch/finalizer/SQLite/readers preserved the old package and independently
+  owned new scope/Evidence. Model calls and external attempts remained zero.
+- Task-owned temporary services/browser sessions were stopped. Local source,
+  plans and ignored evidence remain preserved. Hosted delivery awaits separate
+  authorization; no provider quality, Docker, release or deployment claim.

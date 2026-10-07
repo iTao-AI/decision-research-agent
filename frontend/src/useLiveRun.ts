@@ -254,7 +254,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
       error: undefined,
       mode: "live",
       result: undefined,
-      findings: undefined,
+      // Keep the local draft mounted until acknowledgement; no current run/reader is rendered.
       run: undefined,
       status: "creating"
     }));
@@ -270,6 +270,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
         ...current,
         created,
         error: undefined,
+        findings: undefined,
         status: "polling"
       }));
 
@@ -318,8 +319,8 @@ export function useLiveRun(options: LiveRunOptions = {}) {
     }
   }, [isCurrent, nextRequest, observeRun, state.baseUrl, waitTimeoutMs]);
 
-  const startNewRun = useCallback(async (query: string, questions?: readonly ResearchQuestion[]) => {
-    const intent = createRunIntent(query, randomUUID, state.createProfileId ?? "generic", questions);
+  const startNewRun = useCallback(async (query: string, questions?: readonly ResearchQuestion[], profileId?: LiveResearchProfile) => {
+    const intent = createRunIntent(query, randomUUID, profileId ?? state.createProfileId ?? "generic", questions);
     createIntent.current = intent;
     activeRunId.current = null;
     await createAndObserve(intent);

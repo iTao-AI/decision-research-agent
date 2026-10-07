@@ -1,16 +1,31 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type Ref } from "react";
 import { copy, type Language } from "../i18n";
 import type { BoundSourceReference, ResearchFindingsReport, ResearchFindingsResponse } from "../researchFindings";
 import { safeHttpUrl } from "./resultReader";
 
-export function ResearchFindingsReader({ language, findings }: { language: Language; findings: ResearchFindingsResponse }) {
+type UnresolvedQuestionControls = {
+  selectedQuestionIds: readonly string[];
+  disabled: boolean;
+  onToggleQuestion: (questionId: string) => void;
+  onPrepare: () => void;
+  prepareButtonRef: Ref<HTMLButtonElement>;
+};
+
+export function ResearchFindingsReader({ language, findings, followUp }: {
+  language: Language; findings: ResearchFindingsResponse; followUp?: UnresolvedQuestionControls;
+}) {
   const t = copy[language].research;
   const report = findings.report;
   return (
     <article className="research-findings-reader" aria-label={t.title}>
       <h2>{t.title}</h2>
       <p className="research-binding-boundary">{t.boundary}</p>
-      <QuestionReport key={`${report.run_id}/${report.profile_id}@${report.profile_version}`} language={language} report={report} />
+      {followUp && <section className="research-follow-up-controls" aria-label={t.followUp.selectionTitle}>
+        <h3>{t.followUp.selectionTitle}</h3><p>{t.followUp.selectionHint}</p>
+        <button type="button" ref={followUp.prepareButtonRef} disabled={followUp.disabled || !followUp.selectedQuestionIds.length}
+          onClick={followUp.onPrepare}>{t.followUp.prepare}</button>
+      </section>}
+      <QuestionReport key={`${report.run_id}/${report.profile_id}@${report.profile_version}`} language={language} report={report} followUp={followUp} />
       <section aria-label={t.contradictions}>
         <h3>{t.contradictions}</h3><p>{t.contradictionsBoundary}</p>
         <TextEntries entries={report.reported_contradictions} empty={t.none} />
@@ -22,7 +37,7 @@ export function ResearchFindingsReader({ language, findings }: { language: Langu
   );
 }
 
-function QuestionReport({ language, report }: { language: Language; report: ResearchFindingsReport }) {
+function QuestionReport({ language, report, followUp }: { language: Language; report: ResearchFindingsReport; followUp?: UnresolvedQuestionControls }) {
   const t = copy[language].research;
   const id = useId();
   const [selectedQuestion, setSelectedQuestion] = useState<string>();
@@ -70,7 +85,15 @@ function QuestionReport({ language, report }: { language: Language; report: Rese
           </small>
           <h4 id={`${question.regionId}-heading`}>{question.text}</h4>
         </div>
-        {question.disposition.status === "unresolved" ? <p className="research-question-reason">{question.disposition.reason}</p> :
+        {question.disposition.status === "unresolved" ? <>
+          <p className="research-question-reason">{question.disposition.reason}</p>
+          {followUp && <label className="research-unresolved-selection">
+            <input type="checkbox" aria-label={t.followUp.selectQuestion(index + 1)} disabled={followUp.disabled}
+              checked={followUp.selectedQuestionIds.includes(question.question_id)}
+              onChange={() => followUp.onToggleQuestion(question.question_id)} />
+            <span>{t.followUp.selectQuestion(index + 1)}</span>
+          </label>}
+        </> :
           question.findings.map((finding) => <article className="research-finding" key={finding.finding_id}>
             <p className="research-candidate-statement">{finding.statement}</p>
             {finding.references.map((reference, referenceIndex) => <SourceInspection

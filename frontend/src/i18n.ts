@@ -127,6 +127,15 @@ export const copy = {
     },
     research: {
       mode: "研究模式", genericMode: "通用研究（默认）", structuredMode: "结构化证据研究",
+      followUp: {
+        selectionTitle: "准备下一次研究", selectionHint: "勾选未解决问题，将原问题放入独立的新草稿。",
+        selectQuestion: (n: number) => `选择未解决问题 ${n}`, prepare: "准备新研究草稿",
+        title: "新研究草稿", question: (n: number) => `新研究问题 ${n}`,
+        boundary: "准备与编辑不会开始研究。确认后会创建独立研究；旧报告、来源依据和复核记录不会带入。",
+        profile: "新研究模式", reference: "来源报告参照", sourceRun: "来源 run_id",
+        replaceWarning: "已有一份新研究草稿。替换会丢弃其中的编辑。",
+        replace: "替换当前草稿", keep: "保留当前草稿", cancel: "取消新研究草稿", confirm: "确认并运行新研究"
+      },
       modeHint: "结构化模式支持 1–5 个明确问题；已知运行按后端实际 profile 读取。切换模式会清除当前运行观察。",
       scopeTitle: "研究范围", scopeHint: "列出 1–5 个需要回答的问题，一次提交完整范围。第一项同时作为研究问题发送。",
       addQuestion: "新增问题", remove: "删除", removeQuestion: (n: number) => `删除问题 ${n}`,
@@ -431,6 +440,15 @@ export const copy = {
     },
     research: {
       mode: "Research mode", genericMode: "Generic research (default)", structuredMode: "Structured evidence research",
+      followUp: {
+        selectionTitle: "Prepare the next research", selectionHint: "Select unresolved questions to put their original text in a separate new draft.",
+        selectQuestion: (n: number) => `Select unresolved question ${n}`, prepare: "Prepare new research draft",
+        title: "New research draft", question: (n: number) => `New research question ${n}`,
+        boundary: "Preparation and editing do not start research. Confirmation creates independent research; the old report, evidence and review records are not carried over.",
+        profile: "New research mode", reference: "Source report reference", sourceRun: "Source run_id",
+        replaceWarning: "A new research draft already exists. Replacing it discards its edits.",
+        replace: "Replace current draft", keep: "Keep current draft", cancel: "Cancel new research draft", confirm: "Confirm and run new research"
+      },
       modeHint: "Structured mode supports 1–5 explicit questions; attached runs use the service-observed profile. Switching clears the current run observation.",
       scopeTitle: "Research scope", scopeHint: "List 1–5 questions to answer and submit the complete scope once. The first item is also sent as the research query.",
       addQuestion: "Add question", remove: "Remove", removeQuestion: (n: number) => `Remove question ${n}`,

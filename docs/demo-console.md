@@ -112,6 +112,95 @@ prove the structured live path, real-provider quality, or semantic accuracy.
 Desktop/narrow browser inspection is a separate integrated acceptance step;
 component keyboard/Unicode checks do not substitute for rendered observations.
 
+## Prepare A New Research From Unresolved Questions
+
+Read an accepted `generic-evidence-report@1` with unresolved questions. In each
+unresolved question region, use **选择未解决问题 / Select unresolved question**,
+then **准备新研究草稿 / Prepare new research draft**. The independent **新研究草稿 /
+New research draft** contains only the selected original question text. Edit it
+into a more specific question, or add/remove questions within the same 1–5 and
+length bounds. Preparation and editing do not send a create request or start
+research. The ordinary editor's existing edits remain intact.
+
+The source run and original unresolved reasons remain in **来源报告参照 / Source
+report reference**. They are local reading references, not new Evidence,
+verification, approval or backend lineage. The old structured report and its
+canonical Markdown download remain readable until submission. Preparing again
+shows **替换当前草稿 / Replace current draft** and **保留当前草稿 / Keep current draft**;
+replacement happens only after that explicit choice. **取消新研究草稿 / Cancel new
+research draft** restores focus to preparation, or a source checkbox if nothing
+is selected, and leaves the ordinary editor and old report intact.
+
+Only **确认并运行新研究 / Confirm and run new research** creates an independent
+structured run through the normal create-intent endpoint. It uses a fresh key,
+caller thread and run with only the new query/profile/scope; it never replays
+the source request or copies its findings, Evidence or review state. An attached
+structured report can prepare this draft while the ordinary generic form stays
+selected. The draft clearly states its own structured mode. A lost response
+uses the existing exact-new-intent retry; known-run observation remains GET-only.
+The source report can still be read later by its retained run ID.
+
+Switching endpoint, mode, ordinary form profile, source run or accepted artifact
+clears the local draft and selection. Busy/recovery/error states lock editing
+and confirmation; late responses cannot restore an expired draft. Invalid,
+blocked, generic and rejected all-unresolved reports gain no continuation action.
+With no unresolved questions, the action is absent.
+
+Successful health rechecks unlock existing edits. Before a new create is
+acknowledged, its input draft stays in browser memory and the previous reader
+is hidden. A definite create rejection retains the inputs but keeps them locked
+until health succeeds; the user can edit and explicitly create a fresh intent.
+The input cache is not a new accepted report or Evidence. An ambiguous response
+still requires the original frozen intent's exact retry or explicit discard.
+Acknowledgement and context changes clear the old draft. If the source reader
+is absent, cancellation returns focus to the known-run input.
+
+The draft is browser-session-only. Deterministic service fixtures and browser
+observations demonstrate creation/persistence and interaction separately; they
+do not prove autonomous research quality, source truth, entailment or a passed
+human value gate. No model settings, backend workflow or lineage is added.
+
+### Deterministic Local Acceptance Fixture
+
+Verified on 2026-10-07, the fixture below exercises the real public service,
+dispatch, finalizer and SQLite readers while scripting only the producer's
+outcome and declared source material. It strips provider credentials and
+rejects external transports. It does not execute the installed research graph
+or establish autonomous research quality.
+
+With the project's existing Python and frontend dependencies available, run:
+
+```bash
+PYTHON_DOTENV_DISABLED=1 python -m pytest -q \
+  tests/integration/test_unresolved_research_draft.py
+
+PYTHON_DOTENV_DISABLED=1 python tests/integration/test_unresolved_research_draft.py serve \
+  --origin http://127.0.0.1:5179 --port 8019 --seconds 900 \
+  --directory output/unresolved-research-draft/local-session
+```
+
+Use a fresh, task-owned ignored directory for each session. In another terminal
+from `frontend/`, run `npm run dev -- --host 127.0.0.1 --port 5179 --strictPort`.
+Select Live Backend, set the base URL to `http://127.0.0.1:8019`,
+check health, and observe the source run ID printed by the fixture. Its accepted
+report has one candidate question and two unresolved questions.
+
+Check selection/preparation/editing/replacement/cancellation before submitting;
+`requests.jsonl` must gain no create entry for those actions. Each explicit
+submission must add one new create intent with an edited scope, new key/thread/run
+and independently owned Evidence. Reread the original status/findings/result and
+compare the canonical Markdown bytes against `source-package.json`. The server
+stops after the bounded duration or Ctrl-C and writes `service-summary.json`;
+retain only task-owned ignored receipts and stop the frontend when finished.
+These observations establish service persistence and rendered interaction only.
+For a declared HTTP rejection before service admission, add
+`--reject-first-browser-create`. The first browser create returns a fixed 503,
+creates no run, and preserves the input-recovery scenario; later creates follow
+the normal service path. This fault injection is test-only and does not claim
+that a rejected request produced a persisted run. The injected response must
+traverse the existing CORS middleware; otherwise the browser observes an
+ambiguous network failure and correctly requires exact-intent reconciliation.
+
 ## Showcase Frames
 
 The public Static Demo has three deterministic capture states under
@@ -392,3 +481,7 @@ python -m pytest tests/unit/test_frontend_retirement.py \
   tests/unit/test_documentation_contracts.py \
   tests/unit/test_demo_console_contracts.py -q
 ```
+
+The Python contract suite also owns presentation structure gates, including
+`App.tsx <= 500` lines and direct presentation-module ownership. Run it for
+frontend composition changes; the npm checks alone do not cover these gates.

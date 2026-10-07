@@ -72,6 +72,26 @@ Attached runs select the reader from the service-observed profile, regardless
 of the form selection. The UI continues to render only observed service-owned
 state.
 
+For an accepted report with unresolved questions, each unresolved reading region
+offers selection for a separate new research draft. Preparation copies only
+question text; source run and original reasons remain local reading references.
+The ordinary form's existing edits and selected profile remain intact. Repeated
+preparation requires an explicit replace/keep decision. Cancellation returns to
+the report, and the canonical Markdown reader/download remain available before
+manual submission. No continuation action appears without unresolved questions
+or without an accepted structured report.
+
+The new draft reuses the 1–5-question scope editor and validation. Its explicit
+confirmation calls the normal new-run intent path with the structured profile,
+even when an attached structured report was read under a generic ordinary form.
+Preparation/editing never send POST or start execution. New intent, key, thread
+and run identities are independent; old findings, Evidence, approval and artifacts
+are not copied, and the retry/lineage API is not used. A context key covering
+endpoint, mode, form profile, source run and accepted artifact resets the local
+selection/draft. Existing request fencing ignores late responses; recovery and
+known-run error gates remain binding. Chinese/English keyboard controls use
+distinct field IDs and focus the prepared draft or replacement decision.
+
 The technical disclosure retains the six operator screens:
 
 1. Command Center

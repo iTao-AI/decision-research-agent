@@ -519,28 +519,36 @@ def run_execution_recovery_marker_present(*, db_path: str) -> bool:
 def verify_run_execution_recovery_connection(
     connection: sqlite3.Connection,
 ) -> dict[str, int]:
+    """Validate one read snapshot without ending a caller-owned transaction."""
     connection.row_factory = sqlite3.Row
-    marker = connection.execute(
-        "SELECT checksum FROM schema_migrations WHERE version=?",
-        (RUN_EXECUTION_RECOVERY_MIGRATION_VERSION,),
-    ).fetchall()
-    if len(marker) != 1 or marker[0]["checksum"] != RUN_EXECUTION_RECOVERY_MIGRATION_CHECKSUM:
-        raise RunExecutionConflict("run_execution_recovery_unavailable")
-    _verify_exact_schema(connection)
-    _require(connection.execute("PRAGMA foreign_key_check").fetchone() is None)
-    _verify_rows(connection)
-    boot_rows = connection.execute(
-        "SELECT COUNT(*) AS count FROM run_execution_boot_v1"
-    ).fetchone()["count"]
-    return {
-        "boot_rows": boot_rows,
-        "owner_rows": connection.execute(
-            "SELECT COUNT(*) AS count FROM run_execution_owners_v1"
-        ).fetchone()["count"],
-        "lineage_rows": connection.execute(
-            "SELECT COUNT(*) AS count FROM run_recovery_retries_v1"
-        ).fetchone()["count"],
-    }
+    owns_read_transaction = not connection.in_transaction
+    if owns_read_transaction:
+        connection.execute("BEGIN")
+    try:
+        marker = connection.execute(
+            "SELECT checksum FROM schema_migrations WHERE version=?",
+            (RUN_EXECUTION_RECOVERY_MIGRATION_VERSION,),
+        ).fetchall()
+        if len(marker) != 1 or marker[0]["checksum"] != RUN_EXECUTION_RECOVERY_MIGRATION_CHECKSUM:
+            raise RunExecutionConflict("run_execution_recovery_unavailable")
+        _verify_exact_schema(connection)
+        _require(connection.execute("PRAGMA foreign_key_check").fetchone() is None)
+        _verify_rows(connection)
+        boot_rows = connection.execute(
+            "SELECT COUNT(*) AS count FROM run_execution_boot_v1"
+        ).fetchone()["count"]
+        return {
+            "boot_rows": boot_rows,
+            "owner_rows": connection.execute(
+                "SELECT COUNT(*) AS count FROM run_execution_owners_v1"
+            ).fetchone()["count"],
+            "lineage_rows": connection.execute(
+                "SELECT COUNT(*) AS count FROM run_recovery_retries_v1"
+            ).fetchone()["count"],
+        }
+    finally:
+        if owns_read_transaction:
+            connection.execute("ROLLBACK")
 
 
 def verify_run_execution_recovery_schema(*, db_path: str) -> dict[str, int]:

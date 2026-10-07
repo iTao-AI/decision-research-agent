@@ -114,6 +114,7 @@ describe("unresolved report to independent editable research draft", () => {
     expect(draft.getByRole("button", { name: "确认并运行新研究" })).toBeDisabled();
     await user.click(draft.getByRole("button", { name: "保留当前草稿" }));
     expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveValue("Keep my edited draft");
+    expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "准备新研究草稿" }));
     await user.click(draft.getByRole("button", { name: "替换当前草稿" }));
     expect(draft.getAllByRole("textbox")).toHaveLength(2);

@@ -46,6 +46,7 @@ export function ResearchFollowUp({ language, findings, disabled, onStart }: {
   }, [draft?.revision]);
   useEffect(() => {
     if (replacePending) replaceButton.current?.focus();
+    else draftRegion.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
   }, [replacePending]);
 
   const replaceDraft = () => {

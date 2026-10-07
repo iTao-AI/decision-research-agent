@@ -481,3 +481,7 @@ python -m pytest tests/unit/test_frontend_retirement.py \
   tests/unit/test_documentation_contracts.py \
   tests/unit/test_demo_console_contracts.py -q
 ```
+
+The Python contract suite also owns presentation structure gates, including
+`App.tsx <= 500` lines and direct presentation-module ownership. Run it for
+frontend composition changes; the npm checks alone do not cover these gates.

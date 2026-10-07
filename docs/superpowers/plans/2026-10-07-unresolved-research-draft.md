@@ -112,7 +112,7 @@ test fixtures; no installation or dependency changes.
 - [x] Return one local READY report with actual commands/counts, separate React,
   scripted-producer service and browser evidence, limitations and hosted candidate.
 
-## Local Acceptance Record
+## Initial Local Acceptance Record (2026-10-07)
 
 - Product and recovery regressions were developed RED→GREEN. One fresh whole-
   branch review identified two Important recovery defects and a cancellation
@@ -128,3 +128,25 @@ test fixtures; no installation or dependency changes.
 - Task-owned temporary services/browser sessions were stopped. Local source,
   plans and ignored evidence remain preserved. Hosted delivery awaits separate
   authorization; no provider quality, Docker, release or deployment claim.
+
+## Local Structural Gate Repair (2026-10-08)
+
+- The first [PR-head CI run](https://github.com/iTao-AI/decision-research-agent/actions/runs/37616510001)
+  failed with 4018 passed and one failure: the existing presentation-owner test
+  found `App.tsx` at 507 lines against its `<= 500` limit. This retained failure
+  supplies RED; the limit and the test remain unchanged.
+- Move the live-state key, source-reader match, lock, cancellation focus and
+  explicit structured callback into stateless `LiveResearchFollowUp` in the
+  existing presentation module. `App.tsx` returns to 500 lines; the original
+  draft component's state, handlers and DOM body remain byte-identical.
+- GREEN: the whole `tests/unit/test_demo_console_contracts.py` file passed
+  13 tests. Focused draft/structured-hook tests passed 35; full frontend passed
+  436 tests in 13 files, with lint and build successful.
+- Targeted review preserves endpoint/mode/form-profile/source/hash child-key
+  expiry, source-reader matching, health unlock, definite-rejection input
+  retention and ambiguous frozen-intent replay. It adds no DOM or runtime owner.
+- Reuse the earlier 109 service tests and actual browser evidence with their
+  original boundaries: backend, hook, service fixtures, tests, CSS and UI body
+  inputs are unchanged. Neither was rerun for this composition-only repair.
+  The new candidate still requires hosted verification; the first failed run
+  is retained, with no claim of merge, release, deployment or quality acceptance.

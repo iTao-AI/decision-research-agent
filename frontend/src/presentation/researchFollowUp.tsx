@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { validateLiveDemoQuery } from "../apiClient";
 import { copy, type Language } from "../i18n";
-import type { ResearchFindingsResponse, ResearchQuestion } from "../researchFindings";
+import { STRUCTURED_RESEARCH_PROFILE, type ResearchFindingsResponse, type ResearchQuestion } from "../researchFindings";
 import { RESEARCH_QUESTIONS_MAX, validateResearchQuestions } from "../researchScope";
+import type { useLiveRun } from "../useLiveRun";
 import { ResearchFindingsReader } from "./researchFindingsReader";
 import { ResearchScopeEditor } from "./researchScopeEditor";
 
@@ -11,6 +12,29 @@ type PreparedDraft = {
   references: readonly { questionId: string; text: string; reason: string }[];
   revision: number;
 };
+
+/** Stateless live adapter; the child key owns context expiry and draft recovery. */
+export function LiveResearchFollowUp({ language, liveRun }: {
+  language: Language;
+  liveRun: Pick<ReturnType<typeof useLiveRun>, "state" | "startNewRun">;
+}) {
+  const { state, startNewRun } = liveRun;
+  const findings = state.findings;
+  if (!findings) return null;
+
+  return <ResearchFollowUp
+    key={JSON.stringify([
+      state.baseUrl, state.mode, state.createProfileId ?? "generic",
+      findings.run_id, findings.artifact.content_hash
+    ])}
+    language={language}
+    findings={findings}
+    sourceReportVisible={state.run?.run_id === findings.run_id}
+    onCancelWithoutSource={() => document.getElementById("live-known-run")?.focus()}
+    disabled={state.mode !== "live" || !["result", "ready"].includes(state.status) || !state.health || Boolean(state.error)}
+    onStart={(questions) => startNewRun(questions[0].text, questions, STRUCTURED_RESEARCH_PROFILE)}
+  />;
+}
 
 /** Browser-local input preparation. Accepted report and creation authority stay on the service. */
 export function ResearchFollowUp({ language, findings, disabled, sourceReportVisible, onCancelWithoutSource, onStart }: {

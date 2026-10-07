@@ -53,6 +53,21 @@ acquire application-lifespan writer authority.
 This is a stopped-writer upgrade. Do not start a second process while the first
 still holds the gate.
 
+### Schema Verification Reads
+
+The recovery verifier reads the marker, schema, foreign keys, lifecycle,
+owners, lineage, and returned counts in one consistent transaction. When a
+caller already owns a transaction, verification uses it without committing,
+rolling back, or changing its pending writes. Otherwise, the verifier opens
+its own read transaction and releases it on both success and failure.
+Validation rules and bounded error handling remain unchanged.
+
+Verification does not set journal mode or acquire application writer
+authority. The concurrent-write regression uses a test-owned WAL database so
+a legal dispatch start can commit between verification reads; separate DELETE
+and WAL cases cover transaction ownership and release. These test modes do
+not introduce a production journal configuration change.
+
 ## Writer Gate Diagnostics
 
 ### `run_execution_writer_already_active`

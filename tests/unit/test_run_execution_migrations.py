@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 
@@ -611,3 +612,201 @@ def test_010_connection_verifier_consumes_one_normalized_projection(
     with migrations._connect(str(path)) as connection:
         verify_run_execution_recovery_connection(connection)
     assert len(seen) == 1
+
+
+def _snapshot_fixture(tmp_path, *, journal_mode, running=False):
+    migrated = _migrated(tmp_path, running=running)
+    path = tmp_path / "verification.db"
+    # Copy the exact migrated schema/data into a fresh test-owned database.
+    # Other fixture connections must not interfere with journal-mode selection.
+    with closing(sqlite3.connect(migrated)) as source:
+        with closing(sqlite3.connect(path)) as target:
+            source.backup(target)
+            assert target.execute(
+                f"PRAGMA journal_mode={journal_mode}",
+            ).fetchone()[0] == journal_mode.lower()
+    return path
+
+
+@pytest.mark.parametrize("interleave_at", ["lifecycle", "counts"])
+def test_010_connection_verifier_keeps_lifecycle_and_counts_in_one_snapshot(
+    tmp_path, monkeypatch, interleave_at,
+):
+    import api.run_execution_migrations as migrations
+
+    path = _migrated(tmp_path)
+    boot_id = new_boot_id()
+    activate_run_execution_boot(db_path=str(path), boot_id=boot_id)
+    run = create_run(db_path=str(path), thread_id="snapshot", query="snapshot")
+    claim = claim_run_dispatch(
+        db_path=str(path),
+        worker_id=f"dispatch_worker_{'b' * 32}",
+        boot_id=boot_id,
+        lease_seconds=30,
+        run_id=run["run_id"],
+    )
+    assert claim is not None
+    # WAL lets the real atomic writer commit during an open read snapshot.
+    # This test setting does not change the verifier's journal policy.
+    with closing(sqlite3.connect(path)) as setup:
+        assert setup.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+    assert verify_run_execution_recovery_schema(db_path=str(path)) == {
+        "boot_rows": 1, "owner_rows": 0, "lineage_rows": 0,
+    }
+    started = []
+
+    def start_once():
+        if started:
+            return
+        # Set the guard before start's own schema validation re-enters verifier.
+        started.append(None)
+        started[0] = start_run_dispatch(db_path=str(path), claim=claim)
+        assert started[0] is not None
+
+    if interleave_at == "lifecycle":
+        original = migrations.classify_recovery_lifecycle
+
+        def classify_after_atomic_start(snapshot, *, role, current_boot_id):
+            start_once()
+            return original(snapshot, role=role, current_boot_id=current_boot_id)
+
+        monkeypatch.setattr(
+            migrations, "classify_recovery_lifecycle", classify_after_atomic_start,
+        )
+    else:
+        original_rows = migrations._verify_rows
+
+        def count_after_atomic_start(connection):
+            original_rows(connection)
+            start_once()
+
+        monkeypatch.setattr(migrations, "_verify_rows", count_after_atomic_start)
+
+    connection = migrations._connect(str(path))
+    try:
+        report = verify_run_execution_recovery_connection(connection)
+        assert report == {"boot_rows": 1, "owner_rows": 0, "lineage_rows": 0}
+        assert connection.in_transaction is False
+    finally:
+        connection.close()
+    assert len(started) == 1 and started[0] is not None
+    assert verify_run_execution_recovery_schema(db_path=str(path)) == {
+        "boot_rows": 1, "owner_rows": 1, "lineage_rows": 0,
+    }
+    with closing(sqlite3.connect(path)) as final:
+        assert final.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert final.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert final.execute(
+            "SELECT execution_status, state_version FROM research_runs_v2 "
+            "WHERE run_id=?", (run["run_id"],),
+        ).fetchone() == ("running", 1)
+
+
+@pytest.mark.parametrize("journal_mode", ["DELETE", "WAL"])
+@pytest.mark.parametrize("invalid", [None, "marker", "schema", "lifecycle", "sqlite"])
+def test_010_connection_verifier_releases_its_read_transaction_on_every_exit(
+    tmp_path, journal_mode, invalid,
+):
+    import api.run_execution_migrations as migrations
+
+    path = _snapshot_fixture(
+        tmp_path, journal_mode=journal_mode, running=invalid == "lifecycle",
+    )
+    with closing(sqlite3.connect(path)) as setup, setup:
+        if invalid == "marker":
+            setup.execute(
+                "UPDATE schema_migrations SET checksum='wrong' "
+                "WHERE version='010_run_execution_recovery'",
+            )
+        elif invalid == "schema":
+            setup.execute("DROP INDEX idx_run_execution_owners_status_boot_created")
+        elif invalid == "lifecycle":
+            setup.execute("UPDATE research_runs_v2 SET execution_status='running'")
+        elif invalid == "sqlite":
+            setup.execute("DROP TABLE schema_migrations")
+    connection = migrations._connect(str(path))
+    read_transactions = []
+
+    def observe_read(statement):
+        if statement.lstrip().startswith("SELECT"):
+            read_transactions.append(connection.in_transaction)
+
+    connection.set_trace_callback(observe_read)
+    try:
+        assert connection.in_transaction is False
+        if invalid is None:
+            assert verify_run_execution_recovery_connection(connection) == {
+                "boot_rows": 0, "owner_rows": 0, "lineage_rows": 0,
+            }
+        else:
+            expected = sqlite3.OperationalError if invalid == "sqlite" else RunExecutionConflict
+            with pytest.raises(expected):
+                verify_run_execution_recovery_connection(connection)
+        assert connection.in_transaction is False
+        if invalid != "sqlite":
+            assert read_transactions and all(read_transactions)
+        assert connection.execute("PRAGMA journal_mode").fetchone()[0] == journal_mode.lower()
+        # The same connection remains usable and can acquire/release a writer.
+        connection.execute("BEGIN IMMEDIATE")
+        connection.rollback()
+    finally:
+        connection.close()
+    if invalid == "sqlite":
+        with pytest.raises(RunExecutionConflict, match="run_execution_recovery_unavailable"):
+            verify_run_execution_recovery_schema(db_path=str(path))
+
+
+@pytest.mark.parametrize("journal_mode", ["DELETE", "WAL"])
+@pytest.mark.parametrize("caller_begin", ["BEGIN IMMEDIATE", "SAVEPOINT caller"])
+@pytest.mark.parametrize("invalid", [False, True])
+def test_010_connection_verifier_preserves_caller_transaction_and_pending_state(
+    tmp_path, journal_mode, caller_begin, invalid,
+):
+    import api.run_execution_migrations as migrations
+
+    path = _snapshot_fixture(tmp_path, journal_mode=journal_mode)
+    with closing(sqlite3.connect(path)) as setup:
+        original_marker = setup.execute(
+            "SELECT checksum FROM schema_migrations "
+            "WHERE version='010_run_execution_recovery'",
+        ).fetchone()[0]
+    connection = migrations._connect(str(path))
+    try:
+        connection.execute(caller_begin)
+        connection.execute(
+            "INSERT INTO run_execution_boot_v1 VALUES ('application', ?, ?)",
+            ("caller-boot", "2026-10-07T00:00:00+00:00"),
+        )
+        if invalid:
+            connection.execute(
+                "UPDATE schema_migrations SET checksum='wrong' "
+                "WHERE version='010_run_execution_recovery'",
+            )
+        pending_changes = connection.total_changes
+        if invalid:
+            with pytest.raises(RunExecutionConflict, match="run_execution_recovery_unavailable"):
+                verify_run_execution_recovery_connection(connection)
+        else:
+            assert verify_run_execution_recovery_connection(connection) == {
+                "boot_rows": 1, "owner_rows": 0, "lineage_rows": 0,
+            }
+        assert connection.in_transaction is True
+        assert connection.total_changes == pending_changes
+        assert connection.execute("SELECT boot_id FROM run_execution_boot_v1").fetchone()[0] == "caller-boot"
+        with closing(sqlite3.connect(path)) as observer:
+            assert observer.execute("SELECT COUNT(*) FROM run_execution_boot_v1").fetchone()[0] == 0
+            assert observer.execute(
+                "SELECT checksum FROM schema_migrations "
+                "WHERE version='010_run_execution_recovery'",
+            ).fetchone()[0] == original_marker
+        if caller_begin == "SAVEPOINT caller":
+            connection.execute("ROLLBACK TO caller")
+            connection.execute("RELEASE caller")
+        else:
+            connection.rollback()
+        assert connection.in_transaction is False
+        assert verify_run_execution_recovery_connection(connection) == {
+            "boot_rows": 0, "owner_rows": 0, "lineage_rows": 0,
+        }
+    finally:
+        connection.close()

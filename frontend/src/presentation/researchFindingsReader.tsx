@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { copy, type Language } from "../i18n";
-import type { BoundSourceReference, ResearchFindingsResponse } from "../researchFindings";
+import type { BoundSourceReference, ResearchFindingsReport, ResearchFindingsResponse } from "../researchFindings";
 import { safeHttpUrl } from "./resultReader";
 
 export function ResearchFindingsReader({ language, findings }: { language: Language; findings: ResearchFindingsResponse }) {
@@ -10,39 +10,7 @@ export function ResearchFindingsReader({ language, findings }: { language: Langu
     <article className="research-findings-reader" aria-label={t.title}>
       <h2>{t.title}</h2>
       <p className="research-binding-boundary">{t.boundary}</p>
-      <section aria-label={t.questions}>
-        <h3>{t.questions}</h3>
-        <ol className="research-question-list">
-          {report.questions.map((question) => <li key={question.question_id}>
-            <span>{question.text}</span>{" "}
-            <small className="research-question-disposition">{report.dispositions.find((d) => d.question_id === question.question_id)?.status === "candidate_findings"
-              ? t.candidateDisposition : t.unresolvedDisposition}</small>
-          </li>)}
-        </ol>
-      </section>
-      <section aria-label={t.findings}>
-        <h3>{t.findings}</h3>
-        {report.questions.map((question) => {
-          const related = report.findings.filter((finding) => finding.question_id === question.question_id);
-          return related.length > 0 && <section className="research-question-findings" key={question.question_id}>
-            <h4>{question.text}</h4>
-            {related.map((finding) => <article className="research-finding" key={finding.finding_id}>
-              <p className="research-candidate-statement">{finding.statement}</p>
-              {finding.references.map((reference, index) => <SourceInspection
-                key={`${finding.finding_id}-${index}`} language={language} reference={reference} />)}
-            </article>)}
-          </section>;
-        })}
-      </section>
-      <section aria-label={t.unresolved}>
-        <h3>{t.unresolved}</h3>
-        {report.dispositions.some((d) => d.status === "unresolved") ? <ul>
-          {report.dispositions.filter((d) => d.status === "unresolved").map((disposition) => <li key={disposition.question_id}>
-            <strong>{report.questions.find((q) => q.question_id === disposition.question_id)?.text}</strong>
-            <p>{disposition.reason}</p>
-          </li>)}
-        </ul> : <p>{t.none}</p>}
-      </section>
+      <QuestionReport key={`${report.run_id}/${report.profile_id}@${report.profile_version}`} language={language} report={report} />
       <section aria-label={t.contradictions}>
         <h3>{t.contradictions}</h3><p>{t.contradictionsBoundary}</p>
         <TextEntries entries={report.reported_contradictions} empty={t.none} />
@@ -52,6 +20,65 @@ export function ResearchFindingsReader({ language, findings }: { language: Langu
       </section>
     </article>
   );
+}
+
+function QuestionReport({ language, report }: { language: Language; report: ResearchFindingsReport }) {
+  const t = copy[language].research;
+  const id = useId();
+  const [selectedQuestion, setSelectedQuestion] = useState<string>();
+  const regions = useRef(new Map<string, HTMLElement>());
+  const questions = report.questions.map((question, index) => ({
+    ...question,
+    regionId: `${id}-question-${index}`,
+    disposition: report.dispositions.find((entry) => entry.question_id === question.question_id)!,
+    findings: report.findings.filter((finding) => finding.question_id === question.question_id)
+  }));
+  const navigate = (questionId: string) => {
+    setSelectedQuestion(questionId);
+    const region = regions.current.get(questionId);
+    region?.focus({ preventScroll: true });
+    region?.scrollIntoView?.({ block: "start", behavior: "auto" });
+  };
+  return <div className="research-question-report">
+    <section aria-label={t.questions}>
+      <h3>{t.questions}</h3>
+      <nav aria-label={t.questionDirectory}>
+        <ol className="research-question-list">
+          {questions.map((question, index) => <li key={question.question_id}>
+            <button type="button" aria-controls={question.regionId}
+              aria-current={selectedQuestion === question.question_id ? "location" : undefined}
+              onClick={() => navigate(question.question_id)}>
+              <span className="research-question-number">{index + 1}</span>
+              <span className="research-question-link-text">{question.text}</span>
+              <small className={`research-question-disposition research-disposition-${question.disposition.status}`}>
+                {question.disposition.status === "candidate_findings" ? t.candidateDisposition : t.unresolvedDisposition}
+              </small>
+            </button>
+          </li>)}
+        </ol>
+      </nav>
+    </section>
+    <section aria-label={t.byQuestion}>
+      <h3>{t.byQuestion}</h3>
+      {questions.map((question, index) => <section className="research-question-findings" key={question.question_id}
+        id={question.regionId} aria-labelledby={`${question.regionId}-heading`} tabIndex={-1}
+        ref={(element) => { if (element) regions.current.set(question.question_id, element); else regions.current.delete(question.question_id); }}>
+        <div className="research-question-heading">
+          <p className="research-question-order">{t.questionNumber(index + 1)}</p>
+          <small className={`research-question-disposition research-disposition-${question.disposition.status}`}>
+            {question.disposition.status === "candidate_findings" ? t.candidateDisposition : t.unresolvedDisposition}
+          </small>
+          <h4 id={`${question.regionId}-heading`}>{question.text}</h4>
+        </div>
+        {question.disposition.status === "unresolved" ? <p className="research-question-reason">{question.disposition.reason}</p> :
+          question.findings.map((finding) => <article className="research-finding" key={finding.finding_id}>
+            <p className="research-candidate-statement">{finding.statement}</p>
+            {finding.references.map((reference, referenceIndex) => <SourceInspection
+              key={`${finding.finding_id}-${referenceIndex}`} language={language} reference={reference} />)}
+          </article>)}
+      </section>)}
+    </section>
+  </div>;
 }
 
 function TextEntries({ entries, empty }: { entries: readonly string[]; empty: string }) {

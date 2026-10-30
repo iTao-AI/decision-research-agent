@@ -8,7 +8,8 @@ React console in deterministic Static Demo mode.
 
 - Python 3.11
 - Git
-- Provider credentials for a real research run
+- Selected model provider configuration before backend startup, and valid
+  credentials for a real research run
 - Node.js `22.22.2` or later within `22.x`, or `24.15.0` or later within `24.x`
 
 Keep credentials in `.env`. Do not pass API keys on the command line or commit
@@ -103,6 +104,11 @@ python tools/decision_research_agent_tool.py doctor
 `doctor` returns structured JSON. Required failures include a bounded cause and
 fix; optional disabled workflows do not block a generic run.
 
+It checks service identity, the compiled Talent profile manifest, and optional
+review/verification health. It does not invoke the model or research tools, so
+`status=ok` does not validate provider credentials, model availability, or the
+ability to complete a research run.
+
 ## 5. Create A Canonical Run
 
 ```bash
@@ -140,9 +146,10 @@ npm ci
 npm run dev -- --host 127.0.0.1
 ```
 
-Open `http://127.0.0.1:5173`. The console starts in Static Demo mode and shows
-the run lifecycle, evidence, review, verification, canonical result, and
-architecture boundaries without creating a ResearchRun.
+Open `http://127.0.0.1:5173`. Static Demo starts with a synthetic decision,
+option comparison, supporting sources, and a report reader. The operator
+lifecycle, Evidence, review, verification, result, and architecture screens sit
+inside the collapsed technical console. No ResearchRun is created.
 
 To connect the console to the local backend, follow the bounded setup in the
 [Demo Console guide](demo-console.md). Live Backend requires an exact CORS
@@ -154,8 +161,10 @@ accept or store API credentials.
 ### Provider configuration is missing
 
 Set the provider URL, model name, and API key in `.env`, then restart the
-backend. Use `doctor` to distinguish provider configuration from optional
-review or verification flags.
+backend. The default model client needs its configured key at startup.
+`doctor` distinguishes API/profile access from optional disabled review or
+verification workflows; it does not test whether the provider accepts the key
+or can execute the selected model.
 
 ### Authentication returns 401
 

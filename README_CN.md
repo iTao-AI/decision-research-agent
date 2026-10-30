@@ -72,6 +72,7 @@ stable `v0.1.8` release 仍保持不变。
 git clone https://github.com/iTao-AI/decision-research-agent.git
 cd decision-research-agent
 cp .env.example .env
+# 启动 backend 前，编辑 .env 并配置所选 model provider。
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r constraints.txt
@@ -248,7 +249,7 @@ flowchart TB
     subgraph Deployment["Deployment Boundary"]
         Local["Loopback local service"]
         Flags["Default-disabled controlled features"]
-        PublicDemo["Deterministic demo videos"]
+        PublicDemo["Static showcase captures"]
     end
 
     CLI --> API
@@ -275,10 +276,11 @@ flowchart TB
 
 - [Architecture Deep Dive](docs/architecture.md)
 - [Demo Console](docs/demo-console.md)
-- [Demo videos](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
+- [公开项目展示](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
 
-Demo videos 是 deterministic loopback contract demos，不是 live provider
-research recordings，也不是 public production service 或在线多用户部署证明。
+外部项目展示页提供精选截图及源码、release 链接；交互体验请运行上文的本地
+Static Demo。展示资产不代表 live provider research recordings、公开生产服务或
+在线多用户部署证明。
 
 ## 运行时快速开始详情
 
@@ -289,6 +291,7 @@ healthcheck、doctor、创建 run 并读取 canonical result。
 git clone https://github.com/iTao-AI/decision-research-agent.git
 cd decision-research-agent
 cp .env.example .env
+# 启动 backend 前，编辑 .env 并配置所选 model provider。
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r constraints.txt
@@ -452,7 +455,7 @@ business acceptance、provider billing、exactly-once、production readiness
 - [Architecture Deep Dive](docs/architecture.md)
 - [Demo Console Design](DESIGN.md)
 - [Demo Console Guide](docs/demo-console.md)
-- [Demo videos](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
+- [公开项目展示](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
 - [Getting Started](docs/getting-started.md)
 - [Contributing](CONTRIBUTING.md)
 - [Agent Integration](docs/AGENT_INTEGRATION.md)

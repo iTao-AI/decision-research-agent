@@ -57,6 +57,10 @@ The exact health response remains:
 
 Both commands report `service=decision-research-agent`.
 
+`doctor` checks service identity and the compiled Talent profile manifest. It
+does not invoke a model or research tools; success does not validate provider
+credentials, model availability, or end-to-end research readiness.
+
 `doctor` also checks the controlled durable review runtime. When the feature is
 disabled, the durable review check reports `disabled` and the overall command
 can still succeed. When enabled, worker, schema, checkpoint compatibility, and

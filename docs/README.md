@@ -7,7 +7,7 @@ privacy-first tracing/evaluation, and the application database is business
 authority.
 
 Use the repository README for a 30-second overview, the Architecture Deep Dive
-for 3-minute technical depth, and the Demo Console or demo videos for fast
+for 3-minute technical depth, and the Demo Console or public project showcase for fast
 external evaluation of the public contract surface.
 
 ## Tutorial
@@ -25,7 +25,7 @@ external evaluation of the public contract surface.
 - [Agent Integration](AGENT_INTEGRATION.md) — use the first-party Tool Client.
 - [Demo Console](demo-console.md) — run Static Demo, consume service-owned Live
   state, reconcile the same create intent, resume known runs with GET only, and
-  understand the video demo boundary.
+  understand the public showcase and recording boundary.
 - [Observability](observability.md) — configure privacy-first LangSmith traces.
 - [Secure Local Runtime](operations/secure-local-runtime.md) — operate the
   source-loopback and authenticated Compose launch boundaries, verify health

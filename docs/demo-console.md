@@ -277,13 +277,16 @@ parity after drift; neither this flag nor the separate
 [structured Live browser receipt](evidence/research-evidence-delivery-reader-v1.md)
 creates a new Static Demo capture.
 
-## Demo Video Boundary
+<a id="demo-video-boundary"></a>
 
-Public demo videos for Decision Research Agent are deterministic loopback contract demos.
-They show the console and canonical result contract in a repeatable local
-demonstration path. They are not live provider research recordings, not public
-production service recordings, and not evidence of an online multi-user
-deployment.
+## Public Showcase And Demo Video Boundary
+
+The linked public project showcase currently presents selected screenshots and
+source/release links. Run Static Demo locally for interactive exploration.
+Demonstration recordings, where retained as evidence, remain deterministic loopback contract demos.
+They are not live provider research recordings, public production service
+recordings, or evidence of an online multi-user deployment. The external page
+does not establish current local-render parity or research quality.
 
 ## Prerequisites
 
@@ -485,3 +488,13 @@ python -m pytest tests/unit/test_frontend_retirement.py \
 The Python contract suite also owns presentation structure gates, including
 `App.tsx <= 500` lines and direct presentation-module ownership. Run it for
 frontend composition changes; the npm checks alone do not cover these gates.
+
+For optional scripted browser smoke checks, use an already installed CLI and
+a task-owned named session (`-s=your-task`). Verified on 2026-10-30 with
+`playwright-cli` 0.1.20: navigation can return a `[Snapshot](...yml)` file link,
+while `snapshot` can return fenced inline YAML. Accept either output before
+reading element refs, and refresh the snapshot after a DOM change. Quote URLs
+with query strings or pass them as argument arrays to avoid shell globbing.
+Completion means checking overview/evidence/blocked, the report/download gates,
+and the absence of Static Demo backend requests; a parsed snapshot alone is
+not a successful smoke check.

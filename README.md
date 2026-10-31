@@ -95,6 +95,7 @@ remains unchanged.
 git clone https://github.com/iTao-AI/decision-research-agent.git
 cd decision-research-agent
 cp .env.example .env
+# Edit .env and configure the selected model provider before starting the backend.
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r constraints.txt
@@ -305,7 +306,7 @@ flowchart TB
     subgraph Deployment["Deployment Boundary"]
         Local["Loopback local service"]
         Flags["Default-disabled controlled features"]
-        PublicDemo["Deterministic demo videos"]
+        PublicDemo["Static showcase captures"]
     end
 
     CLI --> API
@@ -333,11 +334,12 @@ used for diagnostics, not as the ResearchRun or EvidenceLedger ledger.
 
 - [Architecture Deep Dive](docs/architecture.md)
 - [Demo Console](docs/demo-console.md)
-- [Demo videos](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
+- [Public project showcase](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
 
-The demo videos are deterministic loopback contract demos. They are not live
-provider research recordings, not a public production service, and not evidence
-of an online multi-user deployment.
+The external project showcase presents selected screenshots and source/release
+links. Use the local Static Demo above for interactive exploration. Presentation
+assets are not live provider research recordings, a public production service,
+or evidence of an online multi-user deployment.
 
 ## Runtime Quick Start Details
 
@@ -349,6 +351,7 @@ canonical result.
 git clone https://github.com/iTao-AI/decision-research-agent.git
 cd decision-research-agent
 cp .env.example .env
+# Edit .env and configure the selected model provider before starting the backend.
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r constraints.txt
@@ -568,7 +571,7 @@ decision while canonical episode hold decisions remain historical evidence.
 - [Architecture Deep Dive](docs/architecture.md)
 - [Demo Console Design](DESIGN.md)
 - [Demo Console Guide](docs/demo-console.md)
-- [Demo videos](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
+- [Public project showcase](https://itao-ai.github.io/my-website/#/projects/decision-research-agent)
 - [Getting Started](docs/getting-started.md)
 - [Contributing](CONTRIBUTING.md)
 - [Agent Integration](docs/AGENT_INTEGRATION.md)

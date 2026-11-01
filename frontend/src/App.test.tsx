@@ -1214,9 +1214,22 @@ describe("Decision Research Agent demo console", () => {
     await user.click(screen.getByRole("button", { name: "真实后端" }));
     await user.click(screen.getByRole("button", { name: "检查后端" }));
     await screen.findByText("后端可用");
-    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    });
 
-    expect(await screen.findByText("run_wait_timeout")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(19);
+    });
+    expect(screen.queryByText("run_wait_timeout")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByText("run_wait_timeout")).toBeInTheDocument();
     expect(screen.getAllByText("run_live_deadline").length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });

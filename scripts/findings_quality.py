@@ -65,18 +65,45 @@ def main(argv=None) -> int:
     intake.add_argument("--output", required=True, type=Path)
     intake.add_argument("--origin", choices=("actual_local_run", "synthetic_control"), default="actual_local_run")
     replay = commands.add_parser("replay", help="Write the deterministic offline comparison and blind review sheet.")
-    replay.add_argument("--dataset", required=True, type=Path)
+    replay_source = replay.add_mutually_exclusive_group(required=True)
+    replay_source.add_argument("--dataset", type=Path)
+    replay_source.add_argument("--recorded-live", type=Path)
     replay.add_argument("--output-dir", required=True, type=Path)
     replay.add_argument("--case", action="append", type=Path, default=[])
     replay.add_argument("--observation", action="append", type=Path, default=[])
     replay.add_argument("--reviews", type=Path)
+    replay.add_argument("--generation-reviews", type=Path)
+    live = commands.add_parser("run-live", help="Execute the separately approved public generator and Judge experiment.")
+    live.add_argument("--output-dir", required=True, type=Path)
+    live.add_argument("--allow-live", action="store_true")
+    live.add_argument("--approval", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "run-live":
+            from scripts.findings_quality_live import run_live
+            from scripts.findings_quality_transport import LiveCallError
+
+            try:
+                status = run_live(args.output_dir, allow_live=args.allow_live, approval=args.approval)
+            except LiveCallError as exc:
+                status = exc.code
+            print(status)
+            return int(status != "completed")
         if args.command == "replay":
             from scripts.findings_quality_replay import load_replay, write_report
 
-            result = load_replay(args.dataset, case_paths=args.case, review_path=args.reviews,
-                                 observation_paths=args.observation)
+            if args.recorded_live:
+                from scripts.findings_quality_live import replay_capture
+
+                if args.case or args.observation:
+                    raise QualityError("case intake and receipt observations require a frozen dataset replay")
+                result = replay_capture(args.recorded_live, reviews=read_json(args.reviews) if args.reviews else [],
+                                        generation_reviews=read_json(args.generation_reviews) if args.generation_reviews else [])
+            else:
+                if args.generation_reviews:
+                    raise QualityError("generation reviews require a captured generation run")
+                result = load_replay(args.dataset, case_paths=args.case, review_path=args.reviews,
+                                     observation_paths=args.observation)
             write_report(args.output_dir, result)
             return 0
         package = read_json(args.delivery)

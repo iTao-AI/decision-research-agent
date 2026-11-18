@@ -1,6 +1,7 @@
 """DeepAgents-native generic research harness assembly."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -341,6 +342,7 @@ def build_generic_harness(
     *,
     model: Any,
     skills_root: Path | None = None,
+    network_search_override: Callable[..., str] | None = None,
 ) -> DeepAgentsHarness:
     """Compile the generic coordinator from release-owned assets and policy."""
     root = (skills_root or _DEFAULT_SKILLS_ROOT).resolve()
@@ -356,7 +358,9 @@ def build_generic_harness(
         },
     )
     permissions = tuple(build_filesystem_permissions())
-    researchers = compile_generic_researchers(model=model)
+    researchers = compile_generic_researchers(
+        model=model, network_search_override=network_search_override,
+    )
     _register_generic_harness_profile(model)
     graph = create_deep_agent(
         model=model,

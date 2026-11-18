@@ -1,0 +1,80 @@
+{
+  "schema": "findings-quality-budget-proposal-v1",
+  "provider": "OpenAI",
+  "endpoint": "https://api.openai.com/v1/chat/completions",
+  "model": "gpt-5.4-mini-2026-03-17",
+  "pricing_usd_per_million": {
+    "input": "0.75",
+    "output": "4.50"
+  },
+  "pricing_checked_on": "2026-11-19",
+  "sources": {
+    "model_and_pricing": "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
+    "request_contract": "https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create/"
+  },
+  "configuration": {
+    "reasoning_effort": "none",
+    "service_tier": "default",
+    "store": false,
+    "stream": false,
+    "retries": 0
+  },
+  "scope": {
+    "fixture_id": "sqlite-foreign-keys",
+    "arms": [
+      "A",
+      "B"
+    ],
+    "generation_requests": 2,
+    "judge_requests": 10,
+    "inputs": "Two coordinator requests over the same frozen public SQLite passage and tool history, up to eight public calibration claims, and the bound findings from the two arms.",
+    "candidate_change": "Preserve the object, version and applicable conditions from the quoted source and identify a missing condition when it cannot be established."
+  },
+  "budget": {
+    "max_requests": 12,
+    "max_input_tokens_per_request": 40000,
+    "max_output_tokens_per_request": 2048,
+    "max_input_tokens": 480000,
+    "max_output_tokens": 24576,
+    "max_elapsed_seconds": 120,
+    "max_estimated_microusd": 480000
+  },
+  "max_reserved_estimate_usd": "0.470592",
+  "estimation": "Reserve one input token per UTF-8 request byte plus 256 for service framing, and reserve the full output allowance per request. Price at the verified standard uncached token rates. Provider-reported usage is checked when available. These are local estimates.",
+  "stopping_rules": [
+    "Require explicit opt-in tied to SHA-256 of the exact reviewed proposal bytes and verify frozen file digests before any request.",
+    "Stop before sending a request that exceeds a request, token, estimated spend or elapsed-time limit.",
+    "Stop after a provider error, timeout, invalid response, unexpected service tier, receipt failure or reported token overrun.",
+    "Keep successful and unfinished rows distinct. Keep receipts local and preserve missing usage as null.",
+    "Stop when either arm cannot produce an independently validated delivery. Preserve any completed result.",
+    "If generation yields more distinct claims than the remaining Judge budget, leave excess predictions unavailable."
+  ],
+  "files": {
+    "agent/deepagents_harness.py": "9b10aa4eb638a175c699dc7d9ea2b950a0c65294759b00ec131f9e78c1e5739c",
+    "agent/profile_middleware.py": "e31e1f41dd62d0d7612194da616024bfb60bd94532b15d5c056dc1edfc6a52e8",
+    "agent/prompts.py": "6015526f8de018045b5f438ef496655c72572aa930942d6bec70a4e6c7aee600",
+    "agent/research_agents.py": "87ffee10b7eaed2c4b89fa98d03be8cae6bcbee1cf31c2de50f3090fec6dfa16",
+    "agent/research_findings_contracts.py": "fec06f629b87c54c066e33a0c93f5cf7e6f2860575b352dc985983a32166b691",
+    "agent/run_result.py": "f2f9a47a960ede8a01469f3149ed60a1e2b5896ed5786cdd92cbff7b1cc7b267",
+    "api/research_execution_service.py": "c8eafdf6692920d06958c7e4b19d6140489d3625123c9dcecb701dd1be6e84b3",
+    "api/research_findings.py": "4caf5dafbecba47103cc11609b2361bbee2a28d8ca9388d6a516bb3cede2d25b",
+    "api/research_findings_service.py": "b64acf17be73a079b546d2acb844d3aadbde1d737f3a62b72d74b027797a5116",
+    "benchmarks/findings-quality-v1/annotations.json": "0c36612b9bb14e506cf695375b3a89907df350784b01ba0a33c194460f1be674",
+    "benchmarks/findings-quality-v1/cases.json": "8fb4530f913a4d7e2a35f8db5f2f07640ea112309c7cdfffd0ffbc20c98db2f0",
+    "benchmarks/findings-quality-v1/native-rubric.json": "15b099d170aa1b9b5f63670349eedb3ae6d22f5ed82176447d5d2974e7682549",
+    "benchmarks/findings-quality-v1/native.sqlite-foreign-keys.json": "178c3af99661cdcaf3d48968c986bc8223f9106932faf440e45d76977b0b19b8",
+    "constraints.txt": "8fb34681693dbe2ab7d210dd955a24696b68e70d7d9398397f7cd43fbb2c43e4",
+    "scripts/findings_quality.py": "54370f561e760c24bdbf2acff8191e2e57caa187ce2f1b57ec746cd19efadff9",
+    "scripts/findings_quality_io.py": "97771428897e384aecbeef8d9920fe8d26dc8d28eb343f5ea1688e3decdf0402",
+    "scripts/findings_quality_live.py": "ac850a0a0da794e840bd34c342a995a8c9764ffdf342a1a45abaee9c191a8626",
+    "scripts/findings_quality_native.py": "2f5ab1a4186bcb32dd5addaf8eb533b1dea71a85b5d0b7792ab5ca1d35065f4b",
+    "scripts/findings_quality_replay.py": "f10e2642181a6bea2d3871ea40814b091fbb63f6efeedf2786cd637ecd69f197",
+    "scripts/findings_quality_transport.py": "86fbe08fa597c2c52d2a5f5a8a4e77370400aa99359639ffe2b78b3a6a39771a",
+    "scripts/research_findings_consumer.py": "206777d6fc03576fe4aad272013d5bd676327f1683bf06cda1506d253f893967",
+    "skills/evidence-synthesis-and-reporting/SKILL.md": "1089425175b18f6d678ad49a3ae3b54047b61c27e755dacde00bf1f89618e672",
+    "skills/research-planning/SKILL.md": "824ac733bd9f0938f14574783164a9711fc3061fb73f1d2c50cf2609033d854e",
+    "tools/mysql_tools.py": "cfbb47fb818f1c94653e66fb779d828052dc635f4d32932e45858006c6c47f76",
+    "tools/ragflow_tools.py": "49cb1477977ee5c115fb18465dbcd6f8856f033bc59cdf0a09ce18a8b5c57998",
+    "tools/tavily_tools.py": "90ec81447d29c44a2a4cac846c32f73a7383919ebf03f16a82efc3b61024756d"
+  }
+}

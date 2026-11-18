@@ -1,0 +1,27 @@
+{
+  "schema_version": "dra.findings-quality-native-fixture.v1",
+  "fixture_id": "sqlite-foreign-keys",
+  "provenance": {
+    "kind": "public_documentation_synthetic_history",
+    "source_url": "https://sqlite.org/foreignkeys.html",
+    "locator": "2. Enabling Foreign Key Support",
+    "checked_on": "2026-11-19"
+  },
+  "query": "Research how SQLite's Foreign Key Support guide describes default enforcement and what it can establish about a particular application connection.",
+  "scope": {
+    "questions": [
+      {"question_id": "q1", "text": "What does the guide say about default SQLite foreign key enforcement and the scope of enabling it?"},
+      {"question_id": "q2", "text": "Does the guide establish whether foreign key enforcement is enabled on the particular connection my application is using now?"}
+    ]
+  },
+  "research_task": "Locate the public SQLite documentation's statement about default foreign key enforcement.",
+  "search_query": "site:sqlite.org/foreignkeys.html default foreign key constraints",
+  "frozen_search_result": {
+    "results": [
+      {
+        "url": "https://sqlite.org/foreignkeys.html",
+        "content": "Foreign key constraints are disabled by default (for backwards compatibility), so must be enabled separately for each database connection."
+      }
+    ]
+  }
+}

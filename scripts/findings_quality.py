@@ -64,8 +64,21 @@ def main(argv=None) -> int:
     intake.add_argument("--expected-behavior")
     intake.add_argument("--output", required=True, type=Path)
     intake.add_argument("--origin", choices=("actual_local_run", "synthetic_control"), default="actual_local_run")
+    replay = commands.add_parser("replay", help="Write the deterministic offline comparison and blind review sheet.")
+    replay.add_argument("--dataset", required=True, type=Path)
+    replay.add_argument("--output-dir", required=True, type=Path)
+    replay.add_argument("--case", action="append", type=Path, default=[])
+    replay.add_argument("--observation", action="append", type=Path, default=[])
+    replay.add_argument("--reviews", type=Path)
     args = parser.parse_args(argv)
     try:
+        if args.command == "replay":
+            from scripts.findings_quality_replay import load_replay, write_report
+
+            result = load_replay(args.dataset, case_paths=args.case, review_path=args.reviews,
+                                 observation_paths=args.observation)
+            write_report(args.output_dir, result)
+            return 0
         package = read_json(args.delivery)
         if not isinstance(package, dict):
             raise QualityError("delivery must be a JSON object")

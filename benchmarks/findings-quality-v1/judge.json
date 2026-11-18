@@ -1,0 +1,408 @@
+[
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "1a5c95eca987bbebd70e1af8e82e385e20c518417dbdedd6c4021f36551386ca",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "The command checks freshness and reports the stale lockfile without updating it.",
+          "rationale": "The cited extract describes a check and identifies the equivalent non-updating freshness option.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The cited extract describes a check and identifies the equivalent non-updating freshness option.",
+      "verdict": "supported"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "290167576b5e446b1624ddd16b3f603666f57996b7dba6849b83159d9f0f6832",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1",
+        "R2"
+      ],
+      "parts": [
+        {
+          "assertion": "The pilot must be run in Region East.",
+          "rationale": "Memo A directly supports East and the equally scoped memo B directly requires West.",
+          "reference_ids": [
+            "R1",
+            "R2"
+          ]
+        }
+      ],
+      "rationale": "Memo A directly supports East and the equally scoped memo B directly requires West.",
+      "verdict": "conflicting_evidence"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "2c6d4dd0c266cc15abf28ce7766b33ea34ed339602bb04809d58eb931f1026d7",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "Ruff applies services/ruff.toml to services/app.py and leaves the root settings out.",
+          "rationale": "The extract specifies the nearest config and excludes parent inheritance during discovery.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The extract specifies the nearest config and excludes parent inheritance during discovery.",
+      "verdict": "supported"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "50c9731626e6b1c94c89a81e898160ee9e5b5e6282f2dda5039f3a24c933b781",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1",
+        "R2"
+      ],
+      "parts": [
+        {
+          "assertion": "The region requirement took effect on 1 April 2026.",
+          "rationale": "The citations omit an effective date and give no other information from which to infer April 1.",
+          "reference_ids": [
+            "R1",
+            "R2"
+          ]
+        }
+      ],
+      "rationale": "The citations omit an effective date and give no other information from which to infer April 1.",
+      "verdict": "insufficient_evidence"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "51948775e7f0ce525b186f73b9a899f00e9956b82092bf630df32413878f7642",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "The benchmark producer has recorded a passed human value gate.",
+          "rationale": "The scripted assertion reverses an explicit denial in the cited passage.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The scripted assertion reverses an explicit denial in the cited passage.",
+      "verdict": "contradicted"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "51ce47dccf84194d1635a8a2c5c5fa5758ea5cf89e123d5c2a217233beaed8bd",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "Authority over the research run, evidence ledger, artifact metadata, and delivery status rests with the application database.",
+          "rationale": "The cited sentence assigns every listed responsibility to the application database.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The cited sentence assigns every listed responsibility to the application database.",
+      "verdict": "supported"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "7bc981eafd71cb6c78660fbb26bb2be92e1cc16377d3366ee90793952bf09175",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "In uv 0.9.9, exact sync removes the package and inexact sync retains it.",
+          "rationale": "The pinned release documentation describes both behaviors.",
+          "reference_ids": [
+            "R1"
+          ]
+        },
+        {
+          "assertion": "The same behavior holds in every later release.",
+          "rationale": "The pinned release excerpt cannot settle later releases.",
+          "reference_ids": []
+        }
+      ],
+      "rationale": "The pinned 0.9.9 extract supports the comparison for that release only.",
+      "verdict": "insufficient_evidence"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "8a788a0c5aa086d6e1fbf8743dc1ade52abc94fed030c2c66021f1a2476ddb2e",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "A bound source reference verifies source truth, entailment, answer accuracy and human value.",
+          "rationale": "The scripted assertion reverses an explicit denial in the cited passage.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The scripted assertion reverses an explicit denial in the cited passage.",
+      "verdict": "contradicted"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "9d899fe632601c0bd1e607b506d78ffc390910f5c0976628a807a838cd021f8e",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "A bound citation alone cannot establish source truth, entailment, answer accuracy, or human value.",
+          "rationale": "The citation expressly separates source binding from checks of truth, entailment, accuracy, and value.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The citation expressly separates source binding from checks of truth, entailment, accuracy, and value.",
+      "verdict": "supported"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "abd653283759650866936d4cd1ac30bb457491f6327c9ffc19cb1e11e6b92b5c",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "The command silently updates the stale lockfile so it passes the check.",
+          "rationale": "The cited check is equivalent to rejecting stale input, with no lockfile update.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The cited check is equivalent to rejecting stale input, with no lockfile update.",
+      "verdict": "contradicted"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "b510028a543e2d39b924640d6461648518a1f4f3201361e1782fd8616f5a6669",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1",
+        "R2"
+      ],
+      "parts": [
+        {
+          "assertion": "Memo A names Region East and memo B names Region West; the supplied policies disagree.",
+          "rationale": "The passages require opposite regions for the same pilot, exactly the disagreement the statement describes.",
+          "reference_ids": [
+            "R1",
+            "R2"
+          ]
+        }
+      ],
+      "rationale": "The passages require opposite regions for the same pilot, exactly the disagreement the statement describes.",
+      "verdict": "supported"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "c00d1013008eb57fd114ff47f88f26837b206af45819ceec2a4606a226e245db",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "Ruff merges the root settings into the services configuration automatically for services/app.py.",
+          "rationale": "The extract explicitly says discovery ignores parent config and requires extend for deliberate inheritance.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The extract explicitly says discovery ignores parent config and requires extend for deliberate inheritance.",
+      "verdict": "contradicted"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "d25597f893f787af8b8be106e10846ad8d2bdb0ae474cc159a06890dd3edb5a6",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "The benchmark's human value gate remains unpassed.",
+          "rationale": "The passage expressly says the repository records no successful human value gate.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The passage expressly says the repository records no successful human value gate.",
+      "verdict": "supported"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "e57fdb2f459d1d1ba2b582b1e3ba9134503430cbca5f76bcfa8ce2cc2cea36bf",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1",
+        "R2"
+      ],
+      "parts": [
+        {
+          "assertion": "Neither of the supplied memos establishes when the region requirement took effect.",
+          "rationale": "Both passages explicitly lack an effective date.",
+          "reference_ids": [
+            "R1",
+            "R2"
+          ]
+        }
+      ],
+      "rationale": "Both passages explicitly lack an effective date.",
+      "verdict": "supported"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "e8920012b231f0356819b38ed1c37a96ae097e35e4b2949999d5500e1aee54e3",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "The supplied config applies to every analyzed file, and relative exclusions are interpreted from the repository root when the command starts there.",
+          "rationale": "The cited material specifies both global config scope and working-directory-relative paths.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The cited material specifies both global config scope and working-directory-relative paths.",
+      "verdict": "supported"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "f33b8c4f23ce5c689f627740da8adfa33db4e24b8b19bc741329ab728159836e",
+    "judgment": null,
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "timeout",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  },
+  {
+    "basis": "scripted_fixture",
+    "input_sha256": "fc791b4090387d871f9293352fbea3a50c1888564fd7202650010b6729bf87e4",
+    "judgment": {
+      "matched_reference_ids": [
+        "R1"
+      ],
+      "parts": [
+        {
+          "assertion": "Default sync removes that package, while uv sync --inexact retains it.",
+          "rationale": "The extract explicitly distinguishes exact and inexact sync for this case.",
+          "reference_ids": [
+            "R1"
+          ]
+        }
+      ],
+      "rationale": "The extract explicitly distinguishes exact and inexact sync for this case.",
+      "verdict": "supported"
+    },
+    "model": "findings-quality-scripted-judge@1",
+    "outcome": "completed",
+    "resources": {},
+    "rubric_version": "citation-support-v1"
+  }
+]

@@ -35,8 +35,9 @@ inputs. Replaying identical inputs yields byte-identical files.
   valid finding. One report is absent and another arm never starts.
 - The replay includes 18 synthetic claims and three dated historical
   pointers. Sixteen scripted verdicts complete, one Judge timeout stays
-  unscored and one reference fails structural checks. Eight blind reviews
-  are pending. The result is `insufficient_evidence`.
+  unscored and one reference fails structural checks. Eight claims are
+  available for optional human calibration, with zero human labels recorded.
+  The result is `insufficient_evidence`.
 
 The [corpus provenance](provenance.md) records source pins, licensing, the old
 pilot rows and the development and holdout split. The two inverted controls
@@ -87,11 +88,55 @@ case. The report identifies the earliest evidenced deviation and records
 reviewer disagreement, missed answerable points and broken evidence as
 triage signals.
 
-## Review independently
+## Score with a blind Judge
+
+Use an LLM for the first pass on every structurally scorable claim. Give the
+Judge only the question, statement, exact cited excerpts and source versions.
+Apply the same citation-support rubric and Judge to both generation arms.
+The standard blind sheet is the smaller sample for optional human calibration.
+To export the full set of scorable claim inputs from a replay, run this from
+the repository root and direct stdout to a fresh local file.
+
+```sh
+python - output/findings-quality-v1/report.json <<'PYTHON'
+import sys
+from pathlib import Path
+from scripts.findings_quality_io import json_bytes, read_json
+from scripts.findings_quality_replay import judge_input
+
+inputs = {}
+for case in read_json(Path(sys.argv[1]))["cases"]:
+    identity = case.get("judge_input_sha256")
+    if identity:
+        inputs[identity] = {"review_id": identity, **judge_input(case)}
+sys.stdout.buffer.write(json_bytes([inputs[key] for key in sorted(inputs)]))
+PYTHON
+```
+
+Match retained model receipts by exact input digest and the Judge and rubric
+identity when available. Reuse matching scores and send only uncovered
+inputs to the Judge. Keep the model verdict, matched citation IDs and
+rationale beside the original input digest in local output. Preserve
+structural errors and missing predictions as separate outcomes.
+
+When a disagreement could change the decision, check the fixed-version
+source first. Use a runnable check or a second blinded Judge when either
+can settle it. Record insufficient evidence if the technical question
+remains unsettled. Ask the operator about tradeoffs that need their
+judgment, such as acceptable costs or regressions in their use case.
+
+On 2026-11-19 an independent Codex pass scored all eight frozen blind-sheet
+claims. The eight verdicts agreed with the synthetic expectations. This
+measures agreement on that fixture set. Keep that receipt in local output
+under its model provenance. The human calibration denominator remains zero.
+Evaluating a change in generation quality requires comparable observed outputs
+from both A and B.
+
+## Optionally calibrate against human reviews
 
 Open only `blind-review.md` or `blind-review.json` before reviewing. Each
 group contains the question, statement, every cited excerpt, source versions
-and an opaque review ID. Save a JSON array with one row per completed review.
+and an opaque review ID. Save a JSON array with one row per completed human review.
 
 ```json
 [
@@ -106,10 +151,10 @@ and an opaque review ID. Save a JSON array with one row per completed review.
 ]
 ```
 
-Replay with `--reviews FILE` and a fresh output directory. Unreturned rows
-remain pending. The four-class calibration uses completed model predictions
-paired with independent human reviews. Scripted verdicts exercise the
-accounting. They cannot supply model-calibration measurements. The report
+Replay human labels with `--reviews FILE` and a fresh output directory.
+The four-class calibration counts only independently human-reviewed rows
+paired with completed model predictions. Report synthetic expectation
+agreement and model-to-model agreement separately. The calibration report
 shows unsupported claims passed as supported, supported claims failed,
 unavailable predictions and uncovered classes.
 
@@ -153,10 +198,12 @@ same-run passage and compares the canonical artifact bytes. Replaying it
 makes zero requests and preserves stopped and unstarted rows. If native
 parity cannot be established, the report identifies a standalone prompt
 experiment. Inspect every regression and changed material assertion in the
-comparison. To assess task coverage, review `generation-review-sheet.json`
-before looking at either arm's identity. Import the assessments with
-`--generation-reviews FILE`. Each row has the sheet's `review_id`,
-`reviewer`, `review_date`, `blind: true`, a `claims` array with one
+comparison. Give every blind input in `generation-review-sheet.json` to
+the same Judge for task coverage, including required points, justified
+unresolved questions and overclaims. Import the assessments with
+`--generation-reviews FILE`. Record the model identity in `reviewer` for a
+model assessment and preserve its local receipt. Each row has the sheet's
+`review_id`, `reviewer`, `review_date`, `blind: true`, a `claims` array with one
 `{finding_id, covered_points, forbidden_matches, new_material}` per finding,
 and an `unresolved` array with one `{question_id, justified}` per unresolved
 question. Use rubric point IDs and exact forbidden-claim labels. A missing

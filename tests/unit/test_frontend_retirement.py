@@ -21,7 +21,7 @@ def test_frontend_package_declares_maintained_lts_node_contract():
             "@testing-library/dom",
         )
     } == {
-        "jsdom": "^30.0.1",
+        "jsdom": "^30.1.3",
         "@testing-library/jest-dom": "^7.0.1",
         "@testing-library/dom": "^10.4.1",
     }
@@ -45,12 +45,12 @@ def test_frontend_lock_preserves_identity_and_testing_target_closure():
             "@testing-library/dom",
         )
     } == {
-        "jsdom": "^30.0.1",
+        "jsdom": "^30.1.3",
         "@testing-library/jest-dom": "^7.0.1",
         "@testing-library/dom": "^10.4.1",
     }
 
-    assert lock["packages"]["node_modules/jsdom"]["version"] == "30.0.1"
+    assert lock["packages"]["node_modules/jsdom"]["version"] == "30.1.3"
     assert (
         lock["packages"]["node_modules/@testing-library/jest-dom"]["version"]
         == "7.0.1"

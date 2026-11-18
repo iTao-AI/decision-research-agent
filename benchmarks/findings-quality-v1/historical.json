@@ -1,0 +1,44 @@
+[
+  {
+    "case_id": "history-pair-003-delivery-gap",
+    "title": "Pair 003 request stopped before transport",
+    "date": "2026-09-21",
+    "origin": "historical_review",
+    "primary_artifact_available": false,
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": null,
+      "basis": "Dated offline investigation based on the preserved evaluation journal and status. The recorded DRA arm produced no canonical report, and its next request exceeded the local body-size guard. This identifies a run stop before any finding could be assessed.",
+      "locator": "d9f55e9dcbff8f798e13e133712eb07947c2884b:docs/evidence/research-task-quality-offline-investigation-2026-09-21.md#conclusion"
+    },
+    "details": "The rejected request body and a delivered statement with its exact citations are unavailable to this dataset."
+  },
+  {
+    "case_id": "history-pair-006-growth-attribution",
+    "title": "Pair 006 request-growth attribution",
+    "date": "2026-09-28",
+    "origin": "historical_review",
+    "primary_artifact_available": false,
+    "diagnosis": {
+      "status": "hypothesis",
+      "earliest_stage": null,
+      "basis": "Follow-up measured a local pre-transport size stop and an increase after a tool-call response. The long preceding generation is a plausible contributor; the request composition and role remain unknown.",
+      "locator": "67dfb2c46e6d5e64e6c96df12c695b55796dd090:docs/evidence/research-task-quality-pair-006-offline-followup-2026-09-28.md#what-the-retained-data-can-show"
+    },
+    "details": "Neither the rejected request nor any delivered finding for this event is available to this dataset."
+  },
+  {
+    "case_id": "history-quality-pilot-tool-scope-stop",
+    "title": "First paid quality-pilot case stopped at the tool-scope guard",
+    "date": "2026-10-03",
+    "origin": "historical_review",
+    "primary_artifact_available": false,
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": "source_retrieval",
+      "basis": "The pilot guide records pilot_tool_scope_denied under the former three-researcher construction.",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:docs/operations/research-quality-pilot.md#L157-L169"
+    },
+    "details": "The guide records no rejected-request trajectory. The attempted researcher and any semantic finding error remain unobserved."
+  }
+]

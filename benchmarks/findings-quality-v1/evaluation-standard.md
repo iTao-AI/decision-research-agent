@@ -38,7 +38,12 @@ defines the existing contracts.
 Write short, independently checkable points per question. State what the
 answer must cover, what would be a material overclaim, and what information
 is missing when an unresolved disposition is expected. Accept equivalent
-wording. Keep the rubric on the assessment side.
+wording. Keep the rubric on the assessment side. Put the supplied task facts
+needed to judge the claim in the accepted question or blind input. For example,
+a claim about a file-specific result may depend on the original directory
+layout and available configuration files. When an evaluation input omitted
+a stated premise, keep the original judgment and rejudge with that premise
+restored. Retain the separate input hashes and the same statement and citations.
 
 | Check | DRA practice |
 | --- | --- |

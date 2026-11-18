@@ -133,7 +133,8 @@ PYTHON_DOTENV_DISABLED=1 LANGSMITH_TRACING=false LANGCHAIN_TRACING_V2=false \
 
 The [live proposal](budget-proposal.json) is ready for a separate authorization
 decision. It binds the exact public inputs, candidate code, Judge rubric,
-environment, model and request budget. Use `run-live` only after approval of
+environment, model and request budget. Live setup snapshots the approved Skill
+files before generation and rejects any extra discovered Skill file. Use `run-live` only after approval of
 the exact proposal digest. The adapter reads `FINDINGS_QUALITY_OPENAI_API_KEY`
 when the first request passes its preflight limits. Use an ignored local path
 for output and supply the approved digest as `PROPOSAL_SHA256`.
@@ -145,8 +146,10 @@ python scripts/findings_quality.py replay --recorded-live output/findings-qualit
   --output-dir output/findings-quality-live-review
 ```
 
-The capture retains the candidate before binding, validated delivery when
-available, allowlisted receipts and the archived proposal. Replaying it
+The capture journals candidate bytes before the native write and binder, then
+stores validated delivery when available, allowlisted receipts and the
+archived proposal. Replay rebinds the captured candidate against the frozen
+same-run passage and compares the canonical artifact bytes. Replaying it
 makes zero requests and preserves stopped and unstarted rows. If native
 parity cannot be established, the report identifies a standalone prompt
 experiment. Inspect every regression and changed material assertion in the

@@ -25,9 +25,11 @@ from langsmith import tracing_context
 
 from agent.deepagents_harness import build_generic_harness
 from agent.harness_contracts import FINDINGS_CANDIDATE_PATH, MAX_FINDINGS_CANDIDATE_BYTES
+from agent.research import EvidenceEntry
 from agent.research_findings_contracts import ResearchFindingsScope
 from agent.run_result import OutcomeBox
 from agent.source_url_policy import is_publishable_source_url
+from api.publication_repository import evidence_verification_enabled, init_publication_schema
 from api.research_execution_service import ResearchExecutionService
 from api.research_findings import RESEARCH_FINDINGS_PROFILE_ID, build_research_findings_artifacts
 from api.research_findings_service import resolve_run_findings
@@ -258,6 +260,7 @@ async def run_native_arm(
     fixture: NativeFixture,
     arm: Literal["A", "B"],
     generate: Callable[[NativeGenerationRequest], Awaitable[AIMessage]],
+    skills_root: Path | None = None,
 ) -> NativeArmResult:
     """Run a single frozen arm and independently read the same-run delivery."""
     if arm not in {"A", "B"}:
@@ -284,6 +287,7 @@ async def run_native_arm(
         "request_sha256": None,
         "tools_sha256": None,
         "visible_source": None,
+        "delivery_sha256": None,
     }
     model = _FrozenHistoryModel(fixture=fixture, arm=arm, generate_candidate=generate, observations=receipt)
     receipt = model.observations
@@ -297,13 +301,15 @@ async def run_native_arm(
     with TemporaryDirectory(prefix="dra-findings-quality-") as scratch, tracing_context(enabled=False):
         root = Path(scratch)
         db_path = str(root / "evaluation.sqlite3")
+        if evidence_verification_enabled():
+            init_publication_schema(db_path)
         identifiers = create_run(
             db_path=db_path, thread_id=f"eval_{uuid4().hex}", query=fixture.query,
             profile_id=RESEARCH_FINDINGS_PROFILE_ID, scope=scope_data,
         )
         run_id = identifiers["run_id"]
         receipt.update(run_id=run_id, segment_id=identifiers["segment_id"])
-        harness = build_generic_harness(model=model, network_search_override=replay_search)
+        harness = build_generic_harness(model=model, network_search_override=replay_search, skills_root=skills_root)
         outcome_box = OutcomeBox()
         try:
             outcome = await ResearchExecutionService(harness=harness, project_root=root).execute(
@@ -355,9 +361,26 @@ async def run_native_arm(
                 "review_status": stored["review_status"],
                 "review_decision": None,
             }
-            validate_delivery(delivery, run_id)
+            validated = validate_delivery(delivery, run_id)
+            receipt["delivery_sha256"] = validated["artifact"]["content_hash"]
     return NativeArmResult(receipt, candidate, delivery)
 
+
+
+def rebind_captured_report(fixture: NativeFixture, *, candidate: str, delivery: dict, receipt: dict) -> bool:
+    """Require the canonical report from that candidate and the fixture's one frozen passage."""
+    run_id = receipt["run_id"]
+    entry = EvidenceEntry(thread_id="findings-quality-replay", query_text=fixture.query, subagent_name="network_search",
+                          tool_name="internet_search", source_url=fixture.source_url, snippet=fixture.passage)
+    fingerprints = [entry.evidence_fingerprint]
+    if (receipt["frozen_evidence_fingerprints"] != fingerprints
+            or [row["evidence_fingerprint"] for row in delivery["evidence"]] != fingerprints):
+        return False
+    rebound = build_research_findings_artifacts(
+        run_id=run_id, scope=ResearchFindingsScope.model_validate_json(fixture.scope_json),
+        candidate_content=candidate, evidence_entries=[entry],
+    )
+    return rebound.delivery_status == "ready" and rebound.artifacts[0]["content"] == delivery["artifact"]["content"]
 
 def _decode_candidate(message: dict[str, Any]) -> AIMessage:
     calls = [

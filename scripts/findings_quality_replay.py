@@ -18,7 +18,7 @@ ID = re.compile(r"[a-zA-Z0-9_-]{1,100}\Z")
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 JUDGE_OUTCOMES = ("completed", "timeout", "provider_failure", "invalid_response", "not_started", "budget_exhausted")
 GENERATION_OUTCOMES = ("delivered", "report_absent", "not_started", "structural_error", "timeout",
-                       "provider_failure", "invalid_response", "budget_exhausted", "filtered", "declined")
+                       "provider_failure", "invalid_response", "budget_exhausted", "filtered", "declined", "local_experiment_failure")
 
 
 def _require(condition, message):
@@ -201,6 +201,8 @@ def _grade_arm(row, task, by_case):
     result = {"arm": row["arm"], "outcome": state, "basis": row["basis"], "started": started,
               "run_id": row.get("run_id"), "report_hash": row.get("report_hash"), "resources": resources,
               "passed": None, "questions": []}
+    if "candidate_retained" in row:
+        result["candidate_retained"] = row["candidate_retained"]
     if state != "delivered":
         _require(not row.get("claims") and not row.get("dispositions"), "non-delivery cannot supply scorable findings")
         return result
@@ -513,7 +515,8 @@ def _render_report(report):
                     changes.append("justified unresolved")
                 details.append(" · ".join([_cell(question["question_id"]), _cell(question["text"]), points, links, *changes]))
             rows.append([_cell(pair["task_id"]), arm, _cell(row["basis"]), _cell(row["run_id"]), _cell(row["outcome"]),
-                         _cell(pair["comparison"]), "<br>".join(details) or "—"])
+                         _cell(pair["comparison"]), "<br>".join(details) or
+                         ("Candidate retained" if row.get("candidate_retained") else "—")])
     lines.extend(_table(("Task", "Arm", "Basis", "Run", "Outcome", "Pair", "Questions and findings"), rows))
 
     lines += ["", "## Judge calibration", "",

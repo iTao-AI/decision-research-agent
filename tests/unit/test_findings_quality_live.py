@@ -73,3 +73,27 @@ def test_capture_replay_leaves_unstarted_arms_and_calibration_visible(tmp_path):
     assert report["calibration"]["reviewed"] == 0
     assert report["case_outcomes"] == {"judge_unobserved": 8}
     assert report["native_comparison"]["parity"] == "unobserved"
+
+
+def test_approved_skill_snapshot_rejects_extra_discoverable_skills_and_freezes_bytes(tmp_path, monkeypatch):
+    import hashlib
+    from scripts import findings_quality_live as capture
+    from scripts.findings_quality_io import QualityError
+
+    root = tmp_path / "repo"
+    monkeypatch.setattr(capture, "ROOT", root)
+    approved = root / "skills/reporting/SKILL.md"
+    approved.parent.mkdir(parents=True)
+    approved.write_text("Approved bytes.", encoding="utf-8")
+    paths = {"skills/reporting/SKILL.md": hashlib.sha256(approved.read_bytes()).hexdigest()}
+    extra = root / "skills/untracked/SKILL.md"
+    extra.parent.mkdir()
+    extra.write_text("Unapproved text.", encoding="utf-8")
+    with pytest.raises(QualityError, match="skill inventory"):
+        capture._freeze_live_skills(paths, tmp_path / "rejected")
+    assert not (tmp_path / "rejected").exists()
+    extra.unlink()
+    extra.parent.rmdir()
+    snapshot = capture._freeze_live_skills(paths, tmp_path / "approved")
+    approved.write_text("Later local edit.", encoding="utf-8")
+    assert (snapshot / "reporting/SKILL.md").read_text() == "Approved bytes."

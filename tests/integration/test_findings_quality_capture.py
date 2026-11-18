@@ -117,3 +117,63 @@ def test_full_scripted_capture_replays_blind_and_counts_real_interface_calls(tmp
     assert assessed["decision"]["status"] == "insufficient_evidence"
     write_report(tmp_path / "report", assessed)
     assert (tmp_path / "report/generation-review-sheet.json").is_file()
+
+
+def test_capture_replay_rejects_a_different_rehashed_report_for_the_same_run(tmp_path):
+    import hashlib
+
+    import pytest
+    from scripts.findings_quality_io import QualityError
+    from scripts.research_findings_consumer import validate_delivery
+
+    replies = iter([scripted_generation(), httpx.Response(503)])
+    assert run_scripted(tmp_path, lambda request: next(replies)) == "provider_failure"
+    path = tmp_path / "generation-A.json"
+    capture = json.loads(path.read_text())
+    delivery = capture["delivery"]
+    delivery["report"]["findings"][0]["statement"] = "The bound passage proves enforcement is always enabled."
+    raw = json.dumps(delivery["report"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    delivery["artifact"]["content"] = raw
+    delivery["artifact"]["content_hash"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    validate_delivery(delivery, delivery["run_id"])
+    path.write_text(json.dumps(capture), encoding="utf-8")
+    with pytest.raises(QualityError, match="delivery hash"):
+        replay_capture(tmp_path)
+    capture["receipt"]["delivery_sha256"] = delivery["artifact"]["content_hash"]
+    path.write_text(json.dumps(capture), encoding="utf-8")
+    with pytest.raises(QualityError, match="rebound candidate"):
+        replay_capture(tmp_path)
+
+
+def test_successful_model_candidate_survives_a_local_finalization_failure(tmp_path, monkeypatch):
+    from scripts import findings_quality_native
+
+    def unavailable(**_):
+        raise RuntimeError("local finalization interrupted")
+
+    monkeypatch.setattr(findings_quality_native, "finalize_run_transaction", unavailable)
+    calls = []
+    def reply(request):
+        calls.append(request.url)
+        return scripted_generation()
+
+    assert run_scripted(tmp_path, reply) == "local_experiment_failure"
+    assert len(calls) == 1
+    retained = json.loads((tmp_path / "candidate-A.json").read_text())
+    assert json.loads(retained["candidate_content"]) == candidate()
+    result = replay_capture(tmp_path)
+    pair, = result["generation"]["pairs"]
+    assert pair["A"]["outcome"] == "local_experiment_failure"
+    assert pair["A"]["candidate_retained"] is True
+    assert pair["A"]["resources"]["calls"] == 1
+    assert pair["B"]["outcome"] == "not_started"
+
+
+def test_native_capture_initializes_an_isolated_database_with_publication_enabled(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_ENABLE_EVIDENCE_VERIFICATION", "true")
+    replies = iter([scripted_generation(), httpx.Response(503)])
+    assert run_scripted(tmp_path, lambda request: next(replies)) == "provider_failure"
+    report = replay_capture(tmp_path)
+    pair, = report["generation"]["pairs"]
+    assert pair["A"]["outcome"] == "delivered"
+    assert pair["B"]["outcome"] == "provider_failure"

@@ -5,6 +5,9 @@ one change to the coordinator's candidate-generation instruction. The
 application still owns report delivery and Evidence state. Use the comparison
 to decide whether a prompt change merits another evaluation.
 
+Use the [evaluation standard](evaluation-standard.md) to design a case, choose
+scoring denominators, and decide whether a paired change warrants adoption.
+
 ## Replay and inspect
 
 From the repository root, use Python 3.11. The frozen replay and intake use

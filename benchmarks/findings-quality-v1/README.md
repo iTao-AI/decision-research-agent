@@ -197,7 +197,10 @@ python scripts/findings_quality.py replay --recorded-live output/findings-qualit
 The capture journals candidate bytes before the native write and binder, then
 stores validated delivery when available, allowlisted receipts and the
 archived proposal. Replay rebinds the captured candidate against the frozen
-same-run passage and compares the canonical artifact bytes. Replaying it
+same-run passage and compares the canonical artifact bytes. The native source
+locator records start and end offsets in the model-facing tool message.
+Decoding the JSON string fragment at that span recovers the exact passage,
+including quotes and backslashes. Replaying the capture
 makes zero requests and preserves stopped and unstarted rows. If native
 parity cannot be established, the report identifies a standalone prompt
 experiment. Inspect every regression and changed material assertion in the

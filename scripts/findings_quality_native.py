@@ -218,13 +218,16 @@ class _FrozenHistoryModel(BaseChatModel):
             if item.get("tool_call_id") == _TASK_CALL_ID
         )
         source_text = wire[source_index]["content"]
+        # The frozen search result embeds the passage inside a JSON string.
+        encoded_passage = _canonical(self.fixture.passage)[1:-1]
         if (
             not isinstance(source_text, str)
-            or source_text.count(self.fixture.passage) != 1
+            or source_text.count(encoded_passage) != 1
             or self.fixture.source_url not in source_text
             or self.fixture.search_result not in source_text
         ):
             raise ValueError("native_frozen_source_not_visible")
+        source_start = source_text.index(encoded_passage)
         if self.arm == "B":
             if wire[0]["role"] != "system" or type(wire[0]["content"]) is not str:
                 raise ValueError("native_system_format_changed")
@@ -243,7 +246,8 @@ class _FrozenHistoryModel(BaseChatModel):
                 "passage": self.fixture.passage,
                 "passage_sha256": _hash(self.fixture.passage.encode("utf-8")),
                 "message_index": source_index,
-                "start": source_text.index(self.fixture.passage),
+                "start": source_start,
+                "end": source_start + len(encoded_passage),
                 "tool_call_id": _TASK_CALL_ID,
             },
         )

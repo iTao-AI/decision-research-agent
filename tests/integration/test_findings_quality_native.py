@@ -271,3 +271,29 @@ async def test_native_chat_adapter_can_only_execute_candidate_write(arm, tool_na
     assert transport_record["provider_response_id"] == "chatcmpl-frozen-proof"
     assert transport_record["input_tokens"] == 2048
     assert transport_record["output_tokens"] == 281
+
+
+@pytest.mark.asyncio
+async def test_native_locates_json_escaped_passage_and_binds_original_excerpt(tmp_path):
+    from scripts.findings_quality_native import load_native_fixture, run_native_arm
+
+    quoted = 'A "SQLite" note for C:\\examples says to enable it separately for each database connection.'
+    recipe = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    recipe["fixture_id"] = "sqlite-escaped-source"
+    recipe["frozen_search_result"]["results"][0]["content"] = quoted
+    path = tmp_path / "fixture.json"
+    path.write_text(json.dumps(recipe), encoding="utf-8")
+    requests = []
+
+    async def generate(request):
+        requests.append(request)
+        return candidate_write(excerpt=quoted)
+
+    result = await run_native_arm(fixture=load_native_fixture(path), arm="A", generate=generate)
+    assert result.receipt["outcome"] == "delivered"
+    source = result.receipt["visible_source"]
+    wire = requests[0].messages[source["message_index"]]["content"]
+    encoded_span = wire[source["start"]:source["end"]]
+    assert encoded_span != quoted
+    assert json.loads('"' + encoded_span + '"') == source["passage"] == quoted
+    assert result.delivery["report"]["findings"][0]["references"][0]["excerpt"] == quoted

@@ -1,0 +1,33 @@
+{
+  "fixture_id": "postgres-control",
+  "frozen_search_result": {
+    "results": [
+      {
+        "content": "sets the default transaction characteristics for subsequent transactions of a session. [excerpt gap] These defaults can be overridden by SET TRANSACTION for an individual transaction.",
+        "url": "https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml"
+      }
+    ]
+  },
+  "provenance": {
+    "checked_on": "2026-11-19",
+    "kind": "public_documentation_synthetic_history",
+    "locator": "SET TRANSACTION, Description, lines 56–61. Inline command markup removed, source wrapping normalized, omitted prose marked.",
+    "source_url": "https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml"
+  },
+  "query": "On PostgreSQL 16.0 this session reports default_transaction_isolation = read committed immediately before BEGIN. The session default has not changed. The open transaction immediately ran SET TRANSACTION ISOLATION LEVEL SERIALIZABLE successfully and has had no further isolation changes. How does the known session default relate to the isolation of an individual transaction in this session? What is the current transaction's actual isolation level on the supplied facts?",
+  "research_task": "Retrieve the pinned source passage needed to answer the research question.",
+  "schema_version": "dra.findings-quality-native-fixture.v1",
+  "scope": {
+    "questions": [
+      {
+        "question_id": "q1",
+        "text": "How does the known session default relate to the isolation of an individual transaction in this session?"
+      },
+      {
+        "question_id": "q2",
+        "text": "What is the current transaction's actual isolation level on the supplied facts?"
+      }
+    ]
+  },
+  "search_query": "PostgreSQL 16.0 rules for the stated question"
+}

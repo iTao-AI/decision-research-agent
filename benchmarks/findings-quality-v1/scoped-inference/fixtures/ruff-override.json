@@ -1,0 +1,29 @@
+{
+  "fixture_id": "ruff0146-known-override-layout",
+  "frozen_search_result": {
+    "results": [
+      {
+        "content": "the \"closest\" config file in the directory hierarchy is used for every individual file [excerpt gap] via `--config`, those settings are used for _all_ analyzed files",
+        "url": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md"
+      }
+    ]
+  },
+  "provenance": {
+    "checked_on": "2026-11-19",
+    "kind": "public_documentation_synthetic_history",
+    "locator": "Pinned configuration.md, Config file discovery. Two exact excerpts on nearest discovery and explicit --config; joined by an explicit gap marker.",
+    "source_url": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md"
+  },
+  "query": "I run Ruff 0.14.6 from the repository root on scripts/check.py and services/app.py. These are the only Ruff configuration files in the relevant paths: ruff.toml, services/ruff.toml, and scripts/ruff.toml. None uses extend and no other CLI overrides are set. For Ruff 0.14.6, which ruff.toml governs scripts/check.py during automatic discovery, and which config governs scripts/check.py and services/app.py when the root ruff.toml is passed via --config?",
+  "research_task": "Retrieve the pinned source passage needed to answer the research question.",
+  "schema_version": "dra.findings-quality-native-fixture.v1",
+  "scope": {
+    "questions": [
+      {
+        "question_id": "q1",
+        "text": "For Ruff 0.14.6, which ruff.toml governs scripts/check.py during automatic discovery, and which config governs scripts/check.py and services/app.py when the root ruff.toml is passed via --config?"
+      }
+    ]
+  },
+  "search_query": "Ruff 0.14.6 configuration file discovery and explicit --config"
+}

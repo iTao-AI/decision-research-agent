@@ -8,6 +8,8 @@ to decide whether a prompt change merits another evaluation.
 Use the [evaluation standard](evaluation-standard.md) to design a case, choose
 scoring denominators, and decide whether a paired change warrants adoption.
 
+The [scoped inference report](scoped-inference/report.md) records a separate controlled Codex comparison of the default and the Ruff-specific instruction. Its public fixtures, retained candidates and frozen assessments replay through the native DRA binder without model calls.
+
 ## Replay and inspect
 
 From the repository root, use Python 3.11. The frozen replay and intake use

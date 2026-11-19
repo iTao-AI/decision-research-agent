@@ -1,0 +1,71 @@
+{
+  "run_id": "run_synthetic_findings_quality_demo",
+  "execution_status": "completed",
+  "delivery_status": "ready",
+  "review_status": "not_required",
+  "review_decision": null,
+  "artifact": {
+    "artifact_id": "research-findings.json",
+    "kind": "research_findings_json",
+    "media_type": "application/json",
+    "content": "{\"dispositions\":[{\"question_id\":\"q1\",\"status\":\"candidate_findings\"}],\"findings\":[{\"finding_id\":\"f1\",\"question_id\":\"q1\",\"references\":[{\"evidence_fingerprint\":\"ef17117e6ffb385677223862ebdeda520bce23626b27b6c9268d84abe42533a8\",\"evidence_id\":\"ev_run_synthetic_findings_quality_demo_ef17117e6ffb385677223862ebdeda520bce23626b27b6c9268d84abe42533a8\",\"excerpt\":\"It does not verify source truth, entailment, answer accuracy or human value.\",\"excerpt_end\":134,\"excerpt_start\":58,\"snippet\":\"Source binding proves where candidate material came from. It does not verify source truth, entailment, answer accuracy or human value. Reported contradictions remain model-reported. Human verification and approval retain their existing authority: approval permits delivery and does not verify Evidence. Diagnostics expose fixed issue codes and counts, never raw model text, exceptions or private paths.\",\"source_identity\":\"https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md\",\"source_url\":\"https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md\"}],\"statement\":\"A bound source reference verifies source truth, entailment, answer accuracy and human value.\"}],\"limitations\":[\"Synthetic intake demonstration built from the frozen pilot control.\"],\"profile_id\":\"generic-evidence-report\",\"profile_version\":\"1\",\"questions\":[{\"question_id\":\"q1\",\"text\":\"Does a bound source reference prove truth and entailment?\"}],\"reported_contradictions\":[],\"run_id\":\"run_synthetic_findings_quality_demo\",\"schema_version\":\"dra.research-findings.v1\"}",
+    "content_hash": "611721239261dd2ec4c89f3367390533547430aa04e5fcd2b2e95b2127645513"
+  },
+  "report": {
+    "schema_version": "dra.research-findings.v1",
+    "run_id": "run_synthetic_findings_quality_demo",
+    "profile_id": "generic-evidence-report",
+    "profile_version": "1",
+    "questions": [
+      {
+        "question_id": "q1",
+        "text": "Does a bound source reference prove truth and entailment?"
+      }
+    ],
+    "findings": [
+      {
+        "finding_id": "f1",
+        "question_id": "q1",
+        "statement": "A bound source reference verifies source truth, entailment, answer accuracy and human value.",
+        "references": [
+          {
+            "evidence_id": "ev_run_synthetic_findings_quality_demo_ef17117e6ffb385677223862ebdeda520bce23626b27b6c9268d84abe42533a8",
+            "evidence_fingerprint": "ef17117e6ffb385677223862ebdeda520bce23626b27b6c9268d84abe42533a8",
+            "source_url": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+            "source_identity": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+            "snippet": "Source binding proves where candidate material came from. It does not verify source truth, entailment, answer accuracy or human value. Reported contradictions remain model-reported. Human verification and approval retain their existing authority: approval permits delivery and does not verify Evidence. Diagnostics expose fixed issue codes and counts, never raw model text, exceptions or private paths.",
+            "excerpt": "It does not verify source truth, entailment, answer accuracy or human value.",
+            "excerpt_start": 58,
+            "excerpt_end": 134
+          }
+        ]
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      }
+    ],
+    "reported_contradictions": [],
+    "limitations": [
+      "Synthetic intake demonstration built from the frozen pilot control."
+    ]
+  },
+  "evidence": [
+    {
+      "evidence_id": "ev_run_synthetic_findings_quality_demo_ef17117e6ffb385677223862ebdeda520bce23626b27b6c9268d84abe42533a8",
+      "evidence_fingerprint": "ef17117e6ffb385677223862ebdeda520bce23626b27b6c9268d84abe42533a8",
+      "source_url": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+      "source_identity": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+      "snippet": "Source binding proves where candidate material came from. It does not verify source truth, entailment, answer accuracy or human value. Reported contradictions remain model-reported. Human verification and approval retain their existing authority: approval permits delivery and does not verify Evidence. Diagnostics expose fixed issue codes and counts, never raw model text, exceptions or private paths.",
+      "citation_status": "cited",
+      "verification_status": "unverified",
+      "run_id": "run_synthetic_findings_quality_demo"
+    }
+  ],
+  "provenance": {
+    "origin": "synthetic_control",
+    "case_id": "control-entailment-flip"
+  }
+}

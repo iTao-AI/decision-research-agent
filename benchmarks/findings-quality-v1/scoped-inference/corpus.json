@@ -1,0 +1,2642 @@
+{
+  "instructions": {
+    "generic": {
+      "byte_length": 228,
+      "sha256": "4ecd1349a32b76fcdb7625c9af3ab9b725c220ee27acb1b979fb345e10d58a3d",
+      "text": "When stating a finding, preserve the object, version and applicable conditions shown in the quoted evidence. If a necessary qualification cannot be established from the cited material, identify the missing evidence or condition."
+    },
+    "scoped": {
+      "byte_length": 280,
+      "sha256": "6557cd45e7c5ee7044fc618cf217012678c0bcfae071c8657aa095f6fda5cebf",
+      "text": "Before adding a file-specific conclusion, check whether the supplied scenario and source establish the applicable configuration for that file. If a nearer configuration could change the answer and its presence is unobserved, state the condition or leave that inference unresolved."
+    }
+  },
+  "models": {
+    "effort": "high",
+    "generator": "gpt-6.2-sol",
+    "judge": "gpt-6.2-astra"
+  },
+  "pairs": [
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\"schema_version\": \"dra.research-findings-candidate.v1\", \"findings\": [{\"question_id\": \"q1\", \"statement\": \"With automatic discovery in Ruff 0.14.6, `scripts/ruff.toml` governs `scripts/check.py` because it is the closest configuration file in that file’s directory hierarchy.\", \"references\": [{\"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\", \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"}]}, {\"question_id\": \"q1\", \"statement\": \"When Ruff 0.14.6 is run from the repository root with `--config ruff.toml`, the root `ruff.toml` governs both `scripts/check.py` and `services/app.py` because the explicitly supplied settings apply to all analyzed files.\", \"references\": [{\"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\", \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"}]}], \"dispositions\": [{\"question_id\": \"q1\", \"status\": \"candidate_findings\"}]}",
+          "candidate_sha256": "a5d047585b9940e740f82553f56851ecac7d0e76981649e919451150ccd5e340",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "auto-scripts-layout"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The automatic-discovery clause names scripts/ruff.toml as the closest config governing scripts/check.py in this layout."
+              },
+              {
+                "covered_points": [
+                  "explicit-root-both"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "The --config ruff.toml clause names the root config and both targets, and explains that its settings apply to all analyzed files."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "0b8f11177c175aa4be6e8dc8bc4b900b0c7c86a37180050d13e596c1b358d3f6",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "b6ad93f150ebe36a83f26993c060defec6c6ec2c80728fad52f2849bb1217ee7",
+          "original_report_sha256": "5b6bfaeef4fdb5e198b471c291106b70667665d73ecd949c49786bdc6355eb67",
+          "original_run_id": "run_6424a6832c314d3eaf193ff683df2f7f",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "152e771718c378d173064121d454f2b246a45a69bbc37ef104b86d5fb58d164a",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "scripts/ruff.toml is the closest configuration and governs scripts/check.py under automatic discovery.",
+                    "rationale": "The exhaustive list places a configuration in the file’s own directory. R1 selects the closest configuration for that individual file.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The stipulated scripts/ configuration is in the target’s own directory, so the discovery rule selects it.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "e93699ea7c922537c46d94fcc45fbcb86d648b8cd4b28500346d644e73cc301e",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Both scripts/check.py and services/app.py use the explicitly selected root ruff.toml.",
+                    "rationale": "The question identifies the root file as the CLI argument and identifies both files as analyzed. R1 gives the selected settings effect for all analyzed files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "An explicit configuration supplies settings for all analyzed files.",
+                    "rationale": "R1 states this scope directly for --config.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "R1 states the all-files scope that explains why both targets use the explicitly named root configuration.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With automatic discovery and the stated configuration files, `scripts/ruff.toml` governs `scripts/check.py` because it is the closest configuration file in that file’s directory hierarchy.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"When you run from the repository root with `--config ruff.toml`, the explicitly selected root `ruff.toml` governs both `scripts/check.py` and `services/app.py`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "0f95ad7bdb6ac5cfcacf3599e871aa0be634a2b0e118d90afb6b9ded39dd79cc",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "auto-scripts-layout"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The statement selects scripts/ruff.toml for scripts/check.py during automatic discovery and identifies it as the closest configuration in the stated layout."
+              },
+              {
+                "covered_points": [
+                  "explicit-root-both"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "The statement identifies the explicitly selected root ruff.toml as governing both named targets when invoked from the root."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "b391e0c62a582e04694e9454650faee72e0bf34a4d123c18f991d2a51c1e3db7",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "2a943380a2bb1882e87ed87b15fbeeee3c038eb4d880abbdd738cc86e64a76e8",
+          "original_report_sha256": "780698be057768d2c4b5ecd5ed75189fb8f1ce78f81255b7a205d42c69b5137c",
+          "original_run_id": "run_db204d472685482c9b8c0e5a81051d46",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "4c3520a0f1d3feb0d1304d10b8e444aac2f6dc9d95f7bea4782ee3dacded5098",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "scripts/ruff.toml is the closest configuration and governs scripts/check.py under automatic discovery.",
+                    "rationale": "The exhaustive list places a configuration in the file’s own directory. R1 selects the closest configuration for that individual file.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "R1 and the listed configuration in scripts/ together determine the governing file.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "94f00fcb11718ccdf116f9ddd1a31493b6d91f0a9c46bb69993af1a7ec853466",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Both scripts/check.py and services/app.py use the explicitly selected root ruff.toml.",
+                    "rationale": "The question identifies the root file as the CLI argument and identifies both files as analyzed. R1 gives the selected settings effect for all analyzed files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "R1 covers both targets despite the local configurations stipulated in each target directory.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "ruff-conditions/override",
+      "outcome": "both_pass",
+      "phase": "ruff-conditions",
+      "task_id": "ruff-override"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With automatic discovery in Ruff 0.14.6, `scripts/check.py` uses the repository-root `ruff.toml`, the closest configuration in that file's directory hierarchy.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"When run from the repository root with `--config ruff.toml`, Ruff 0.14.6 uses the repository-root `ruff.toml` for both `scripts/check.py` and `services/app.py`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "63d283eb64196b0acc4cf432cf3ef9823c9f371dd992fa887c30294470988661",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "auto-scripts-layout"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The automatic-discovery clause directly assigns the repository-root ruff.toml to scripts/check.py as the closest configuration in its hierarchy."
+              },
+              {
+                "covered_points": [
+                  "explicit-root-both"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "The statement names the root working directory, --config ruff.toml, and use of the repository-root ruff.toml for each of the two specified files."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "cbd9a5d977dfb7d4891c8ce762213a18ace910dd44c6cc73585b0b0a8ba20499",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "b9f19ecf0c3c1dced276bed7d271079ed762f0e0d032e48e39d939d2ad71e737",
+          "original_report_sha256": "6d7f4b7c05dfb6a5f039f2aed5a0006f8f410fed31615148f6925d40a2571a92",
+          "original_run_id": "run_1e9b04d6dec345cd86949b22cd9f75d7",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "7af51f280359d599408ec864c384e680c68ad25d27adad686d58dc2d6735c37c",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The root ruff.toml is the closest configuration and governs scripts/check.py during discovery.",
+                    "rationale": "The exhaustive list has no scripts/ configuration. services/ is a sibling of scripts/ and the root is its parent. Applying R1 to that hierarchy selects the root.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The complete layout leaves the repository root as the nearest configured ancestor of scripts/check.py.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "c3a97459446c9b3d2b96dcc4ea321a55419150d6c6f20acf18003611a9059c62",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Both scripts/check.py and services/app.py use the explicitly selected root ruff.toml.",
+                    "rationale": "The question identifies the root file as the CLI argument and identifies both files as analyzed. R1 gives the selected settings effect for all analyzed files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "R1 applies the root settings chosen by this command to both named analyzed files.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With Ruff 0.14.6 automatic discovery, the repository-root `ruff.toml` governs `scripts/check.py`. Under the stated file layout, it is the closest configuration in that file’s directory hierarchy.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"When invoked from the repository root with `--config ruff.toml`, Ruff 0.14.6 applies the repository-root `ruff.toml` to both `scripts/check.py` and `services/app.py`, including the file under `services/`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "ec1746817f429f29fb9f13b6d7e112151cedaee3c7cf3189f3b5a97cb5274bf2",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "auto-scripts-layout"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The finding names the repository-root ruff.toml as the closest configuration governing scripts/check.py under automatic discovery in this two-config layout."
+              },
+              {
+                "covered_points": [
+                  "explicit-root-both"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "The explicit root invocation applies the repository-root ruff.toml to both named files, including services/app.py."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "982da770e2cc9a98b1066a345d30a149065746287a8c024c608d6bbb1c2c83e9",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "b03678b9e8787e18f0e5196fc662e1b5cc4b9f430087db724735a97b8325348b",
+          "original_report_sha256": "a50dac3d2d251509903433993e415d611884fc9c20e9f62492e3f8d853d39a3d",
+          "original_run_id": "run_10af84f8ce504f00b9cbcb16bf8f5be8",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "d071858625d037e955463deb336fdd03e9f7fc43c45181f7a3802cc4b945457d",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The root ruff.toml is the closest configuration and governs scripts/check.py during discovery.",
+                    "rationale": "The exhaustive list has no scripts/ configuration. services/ is a sibling of scripts/ and the root is its parent. Applying R1 to that hierarchy selects the root.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The root configuration is the nearest candidate on the scripts/ path in the exhaustive file list. R1 therefore selects it.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "532d91c1b37d60c0b42bca69f10f3e7c461a8fea9f6aa25f3f8bdd1f67365474",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Both scripts/check.py and services/app.py use the explicitly selected root ruff.toml.",
+                    "rationale": "The question identifies the root file as the CLI argument and identifies both files as analyzed. R1 gives the selected settings effect for all analyzed files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The named root file is selected via the command line, so its settings apply even to the target inside services/.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "ruff-conditions/root",
+      "outcome": "both_pass",
+      "phase": "ruff-conditions",
+      "task_id": "ruff-root"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With automatic discovery in Ruff 0.14.6, Ruff selects the closest configuration separately for each file. In this layout, `services/app.py` uses `services/ruff.toml`, and `scripts/check.py` uses the repository-root `ruff.toml`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"When run from the repository root with `--config ruff.toml`, Ruff 0.14.6 uses the repository-root settings for both `scripts/check.py` and `services/app.py`, bypassing discovery of `services/ruff.toml`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "1cc03be3aafd68d30ab729c7d32a7d994cecdf1086f6fb61a28cdc847d776633",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "automatic-nearest"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The automatic-discovery clause assigns services/ruff.toml to services/app.py using the per-file closest-config rule. Its extra assertion about scripts/check.py assumes the absence of a closer config in scripts/, which the scenario leaves open."
+              },
+              {
+                "covered_points": [
+                  "explicit-all"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "The explicit-invocation clause assigns root settings to both named files and explicitly says discovery of services/ruff.toml is bypassed."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "6440fad9ede09ea812cc5306757de43980f5201a53059f15fff71059c373d5e5",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "19092ff802d9ea99a0f3d7dcc2e3522f7cf75ad6458e90dbd7af9a8fd00e0b59",
+          "original_report_sha256": "16c3bede068a99b70b9a72fc283b7f53348fc7f416c157ba6ad62cf628369300",
+          "original_run_id": "run_5472e8510cd0465380584e6991d4870a",
+          "passed": false,
+          "retained_historical_baseline": true,
+          "semantic": {
+            "f1": {
+              "input_sha256": "437d730eda654dd688f8f99a31630e8120fa74f2772bbe8c0b7a35343a7e37ea",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Automatic discovery selects the closest configuration for each file.",
+                    "rationale": "R1 explicitly states the per-file closest-configuration rule.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Automatic discovery selects services/ruff.toml for services/app.py.",
+                    "rationale": "The scenario places a ruff.toml in the file's own directory, so the stated closest-directory rule selects the services configuration among the described files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Automatic discovery selects the repository-root ruff.toml for scripts/check.py.",
+                    "rationale": "The question establishes a root configuration but gives no configuration inventory for scripts/. Under the cited rule, a configuration in scripts/ could change the result.",
+                    "reference_ids": []
+                  }
+                ],
+                "rationale": "The per-file selection rule and its application to services/app.py are supported. The question does not establish that the root configuration is the closest one for scripts/check.py.",
+                "verdict": "insufficient_evidence"
+              }
+            },
+            "f2": {
+              "input_sha256": "c5755d1066ce92ac35aa27c711c02ee81724e2ca23e54eee4fd3a93176b290f5",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The explicit root configuration applies to both checked files, including services/app.py.",
+                    "rationale": "The command is run at the repository root and the accepted question identifies the explicitly passed file as the root ruff.toml. The quotation applies those settings to all analyzed files, so the services configuration does not take precedence.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The question identifies the explicit root configuration and both analyzed files. Applying its settings to all analyzed files establishes the result for both paths and overrides the closer services configuration.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With automatic discovery, Ruff chooses the closest configuration separately for each file. In the stated layout, services/app.py uses services/ruff.toml. scripts/check.py uses the root ruff.toml if there is no closer applicable configuration in scripts/.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"When run from the repository root with --config ruff.toml, Ruff applies the root ruff.toml to both scripts/check.py and services/app.py, overriding automatic discovery for that invocation.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "348e4730c8df62dc74b451c49dd0c7d46e481d1a95e55bfd50d351629ae8c2b1",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "automatic-nearest"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The automatic-discovery clause explicitly assigns services/ruff.toml to services/app.py. The conditional on a closer scripts/ config qualifies only the separate statement about scripts/check.py."
+              },
+              {
+                "covered_points": [
+                  "explicit-all"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "The --config clause names the root ruff.toml as the config applied to both scripts/check.py and services/app.py for this invocation."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "915d1efee4ffd51950effe2e14fe534caeefd7610c5e3dbbd53093f470352f80",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "79d40fab50b5b352ef561f4ec6530fc238e422c8370815a3576d7aaf8cb276c3",
+          "original_report_sha256": "81c90b9035421861bb5daeebc9aff2b122af06b05090f15ce9cd18cd3976f451",
+          "original_run_id": "run_e518a214994a4d4682e9e66b25b4f5e5",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "36606ef6ee4eea684be46f0e13ef7cbbe6b824a8dc0a400c2d15811423e046e7",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Discovery chooses the closest configuration separately for each target.",
+                    "rationale": "R1 specifies the closest configuration for every individual file.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery selects services/ruff.toml for services/app.py in the stated layout.",
+                    "rationale": "The services/ configuration named by the question sits in the same directory as app.py and is closer than the root under R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "If scripts/ has no closer applicable configuration, discovery selects the root ruff.toml for scripts/check.py.",
+                    "rationale": "The question places a configuration in the parent of scripts/. The assertion conditions the root selection on the absence of a closer applicable configuration, exactly what R1 requires.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The services/ selection follows from its stated configuration. The scripts/ conclusion is explicitly conditional on absence of a closer file.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "04c86cff93643676355ad00345a01d2546b604856db69493cff2297854c77cd0",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Both scripts/check.py and services/app.py use the explicitly selected root ruff.toml.",
+                    "rationale": "The question identifies the root file as the CLI argument and identifies both files as analyzed. R1 gives the selected settings effect for all analyzed files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The closer services/ruff.toml does not supersede the root selection in this invocation.",
+                    "rationale": "R1 makes the explicit settings applicable to all analyzed files, which includes services/app.py even though its directory also contains a configuration.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The CLI selection covers both named targets, including the target beneath services/.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "ruff-conditions/unknown",
+      "outcome": "candidate_only",
+      "phase": "ruff-conditions",
+      "task_id": "ruff-unknown"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"Under EditorConfig 0.17.2, scripts/check.py has indent_style = tab and end_of_line = lf. The closer scripts/.editorconfig overrides the root file's indent_style because precedence applies to property pairs. The root file's end_of_line remains effective because the closer file supplies no end_of_line pair. Both values follow from the two specified files, so neither depends on any unobserved configuration.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/editorconfig/specification/blob/329077a5649b013903c2aeaa5617afb70fcc9eaf/index.rst\",\n          \"excerpt\": \"If multiple EditorConfig files have matching sections, the rules from the closer EditorConfig file are read last, so pairs in closer files take precedence.\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}\n",
+          "candidate_sha256": "e933230fe0ab7de3d1f98e56e6c277f2b0b27274527d07a034f46599cab9c16f",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "indent-style",
+                  "end-of-line"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The finding explicitly assigns tab through the closer indent_style override and retains root lf because the closer file supplies no end_of_line pair. It treats both files as specified."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "d47f49a791abf4e586877f5f7ed1fee7b5f0f2f443556690a62fe59da4a55c4d",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "8199b2018c2cedd338e73f7ee8a4ec17d79554f67651c827505fb6408d2225d7",
+          "original_report_sha256": "69b851213542f4b79a4b38f377973a3f93ee837f03bf31b695578a6b50e7a7c9",
+          "original_run_id": "run_53f2ded6994740f28648374b8f82d4d2",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "b222c3b694e3bff4d2a9a3d6e0d17d32983aaac16e3d47d18116ef762b7199fd",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "indent_style = tab is effective because the closer matching pair overrides the root indentation setting.",
+                    "rationale": "The root specifies space and the nearer file specifies tab for the same key. R1 gives priority to the closer pair.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "end_of_line = lf stays effective from the root because there is no nearer pair for that property.",
+                    "rationale": "The nearer file is stipulated to contain only indent_style. Under R1 the matching root lf pair has no closer competitor.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Neither effective value depends on unobserved configuration.",
+                    "rationale": "The scenario exhausts the applicable files. R1 applied to the specified pairs fixes both properties.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "All relevant file contents are specified. Only indent_style has competing matching pairs.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"For scripts/check.py, the effective settings are indent_style = tab and end_of_line = lf. The matching scripts/.editorconfig is closer, so its indent_style pair takes precedence over the repository-root value. It contains no end_of_line pair, so the repository-root value remains in effect. The scenario supplies both applicable configurations and rules out any others, so neither value depends on unobserved configuration.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/editorconfig/specification/blob/329077a5649b013903c2aeaa5617afb70fcc9eaf/index.rst\",\n          \"excerpt\": \"If multiple EditorConfig files have matching sections, the rules from the closer EditorConfig file are read last, so pairs in closer files take precedence.\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "520bceda8432edb63e6aa1345dd7a5c6f5acaca2de62b3e2bb4eff536c066c6c",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "indent-style",
+                  "end-of-line"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The finding gives tab from the closer matching indent_style pair and lf from the root because the closer file contains no end_of_line pair. Both are stated as effective values."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "ce63730d791f0670939ef908332e703c5b21a95c0cd901e31a9e2d0ff6476035",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "1170ce3321a72f266b8c23dcd8b37f6ea15f8510fdbbeae6826493f8efe8731f",
+          "original_report_sha256": "77b1cb9cfb775dc97b486d38d4180a2c6fdac5e73274ed753b321651e2a40824",
+          "original_run_id": "run_d8f758b4917c47558026e4355ae94d79",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "2f64ccfc375cd7a77b994f2c95d5d9cdf8c7ccd6a761787b533e67f8c247055c",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The effective indent_style is tab from scripts/.editorconfig.",
+                    "rationale": "Both stipulated sections match and set indent_style. R1 gives the nearer pair priority over the root space value.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The effective end_of_line remains lf from the repository root.",
+                    "rationale": "The nearer section is stipulated to have no other setting. R1 therefore gives no nearer line-ending pair priority over the matching root pair.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Neither value depends on unobserved configuration.",
+                    "rationale": "The scenario excludes any other applicable configuration. Applying R1 to all stipulated candidates determines the pair.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The nearer matching indentation setting wins, and the root supplies the only applicable line-ending setting.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "editorconfig/override",
+      "outcome": "both_pass",
+      "phase": "editorconfig",
+      "task_id": "editorconfig-override"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"For scripts/check.py, the repository-root settings supply indent_style = space and end_of_line = lf. Both values apply if scripts/.editorconfig is absent or has no matching setting for either property. If a matching section in scripts/.editorconfig supplies a property, the closer file takes precedence for that property. A matching setting for only one property leaves the other at its root value. The effective pair therefore depends on which of the two properties the unobserved file supplies in matching sections and what values it supplies.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/editorconfig/specification/blob/329077a5649b013903c2aeaa5617afb70fcc9eaf/index.rst\",\n          \"excerpt\": \"If multiple EditorConfig files have matching sections, the rules from the closer EditorConfig file are read last, so pairs in closer files take precedence.\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ],\n  \"limitations\": [\n    \"The scenario leaves the existence and contents of scripts/.editorconfig unknown, so it does not determine a single effective pair.\"\n  ]\n}\n",
+          "candidate_sha256": "1ecff6543429666a5777b6d94311291eb76fceb0effa4117c20fb184508323d5",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "indent-style",
+                  "end-of-line"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The finding names space and lf as the root settings, conditions their application on matching settings for each key, and explains that a single nearer setting leaves the other root value in effect."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "25d2178d6beba27c1ecdfc002b9c225d7c054a5813e5aeaf0425df467c758f40",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "649e473870d7ee6750a4494365037f634ddfaf60b44bce7ae088f45df09feeb3",
+          "original_report_sha256": "eff52a785279b7b06a4ec6c85cc8d5c01121390843301b8a8472508bc4beedbb",
+          "original_run_id": "run_2f22eaf8c69b4764b9dd3861626e5ce9",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "067c4909c5181af5e11012c657e387c755f13692700eb7e7a18232121867d148",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The root supplies space and lf, and both apply if the nearer file is absent or supplies neither matching key.",
+                    "rationale": "The scenario gives the two matching root pairs. In either stated case there is no closer pair for R1 to prioritize for these keys.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "A matching pair in the nearer file has priority for its key and can leave the other root key effective.",
+                    "rationale": "R1 assigns precedence to pairs in the closer matching file. A pair for only one property leaves the other root pair without a competitor.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The effective pair depends on the keys and values in any matching nearer section.",
+                    "rationale": "The nearer file is the sole possible additional source, and its existence and contents are unknown. R1 explains exactly how an applicable nearer pair could determine a value.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "Both root pairs are known. The only unresolved fact relevant to each key is whether a closer matching pair supplies its value.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"For scripts/check.py, the root configuration supplies indent_style = space and end_of_line = lf. Each value applies unless a matching section in scripts/.editorconfig supplies a pair for that property. A nearer pair takes precedence for its own property, so the nearer file can affect one value independently of the other. If the nearer file is absent or supplies neither pair in a matching section, both root values apply.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/editorconfig/specification/blob/329077a5649b013903c2aeaa5617afb70fcc9eaf/index.rst\",\n          \"excerpt\": \"If multiple EditorConfig files have matching sections, the rules from the closer EditorConfig file are read last, so pairs in closer files take precedence.\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ],\n  \"limitations\": [\n    \"The existence and contents of scripts/.editorconfig are unobserved. The precedence rule establishes the conditional answer, but the final pair of effective values cannot be determined uniquely from the scenario.\"\n  ]\n}\n",
+          "candidate_sha256": "275171bd9d5425a802196347cb44a3ce45a2b414c55572e77b38ba2d1e30abd4",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "indent-style",
+                  "end-of-line"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The finding gives space and lf and says each applies unless the nearer matching section supplies a pair for that property. It explicitly allows independent changes."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "2c2c3417d57c67dde60e9af430df36693e9289814fbaec1104fb6248a7c088ed",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "fa5f8c50ad5ef865ccc6466f4cc2c70c276cbda2787637f0ffdfb6c1fae1c2e8",
+          "original_report_sha256": "326241af01d6e80d265409dffe40debe66bcb9bd126c2349a123e595dabfb3b1",
+          "original_run_id": "run_e2be55b777d04b9186db3583831b94f0",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "8eab7540cec930ea020b5fffbfd770c6c88d8b10093d8dc863cba44553174ba9",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The matching root supplies indent_style = space and end_of_line = lf, each effective in the absence of a nearer matching pair for that key.",
+                    "rationale": "The root values are stipulated. R1 makes a closer matching pair the relevant competitor for each property.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "A nearer matching pair can independently determine one of the two properties.",
+                    "rationale": "R1 assigns priority at the level of pairs. A nearer pair for a single key can determine that key while leaving the other at its root value.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Both root values apply if the nearer file is absent or supplies neither matching pair.",
+                    "rationale": "In either conditional case there is no applicable closer pair under R1 for either key, and the scenario excludes other paths.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The statement correctly gives one conditional answer per property while the nearer file is unobserved.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "editorconfig/unknown",
+      "outcome": "both_pass",
+      "phase": "editorconfig",
+      "task_id": "editorconfig-unknown"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"Under EditorConfig 0.17.2, scripts/check.py gets indent_style = space and end_of_line = lf from the matching repository-root .editorconfig section. The closer scripts/.editorconfig supplies only insert_final_newline = true. Precedence applies to individual property pairs, so that section leaves both root values in effect. Neither value depends on unobserved configuration because the scenario rules out any other applicable configuration.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/editorconfig/specification/blob/329077a5649b013903c2aeaa5617afb70fcc9eaf/index.rst\",\n          \"excerpt\": \"If multiple EditorConfig files have matching sections, the rules from the closer EditorConfig file are read last, so pairs in closer files take precedence.\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "a7eff56e998a1b0bfde324aed7167ddcf4d98c3668707e6e1ab58b79573604c6",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "indent-style",
+                  "end-of-line"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The finding names space and lf as inherited from the root and states that the only nearer pair concerns insert_final_newline. Both values are definite under the stated scenario."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "8623aa59b94c48fbb537175f7d3bf2d9542f5e93f192b33b3f01bbee63ae5c55",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "a9014ff2f23c9ec571473de34b9d4031fdf482cd4b0be72a1a8feea0f3be2dac",
+          "original_report_sha256": "4e84e1e5ae28266e6d79227ae65b188c664d423da4f78f164af5a7b65af5d8bd",
+          "original_run_id": "run_cd2b31c3f02b4ffdb6bdab475603f240",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "14ab72881678fd55feb154d1a73e8690d9c28e2abdfbba795ea98e841ee89c27",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The root supplies effective indent_style = space and end_of_line = lf.",
+                    "rationale": "The root section matches by stipulation. R1 prioritizes closer pairs, and the only nearer pair concerns a different key.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The nearer section supplies only insert_final_newline = true, leaving both requested values effective.",
+                    "rationale": "The scenario gives the entire nearer section. Under the pair-level precedence in R1 its newline-insertion setting competes with neither requested pair.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Neither value depends on unobserved configuration.",
+                    "rationale": "Every possible source of a competing pair under R1 is accounted for by the two stipulated paths and their relevant settings.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "Both requested properties come only from the root under these stipulations, so their values are determined.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\"schema_version\": \"dra.research-findings-candidate.v1\", \"findings\": [{\"question_id\": \"q1\", \"statement\": \"Under EditorConfig 0.17.2, scripts/check.py gets indent_style = space and end_of_line = lf from the repository-root .editorconfig. Matching pairs in the closer scripts/.editorconfig take precedence for the keys they set. Its only pair, insert_final_newline = true, leaves the two root values in effect. The scenario specifies the full contents of the closer file and rules out any other applicable configuration, so neither value depends on an unobserved configuration.\", \"references\": [{\"source_url\": \"https://github.com/editorconfig/specification/blob/329077a5649b013903c2aeaa5617afb70fcc9eaf/index.rst\", \"excerpt\": \"If multiple EditorConfig files have matching sections, the rules from the closer EditorConfig file are read last, so pairs in closer files take precedence.\"}]}], \"dispositions\": [{\"question_id\": \"q1\", \"status\": \"candidate_findings\"}], \"limitations\": [], \"reported_contradictions\": []}",
+          "candidate_sha256": "24cf38b8cf5d1033cb17bbccd0d962081150a9c5cb912486bb273fb36cc73444",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "indent-style",
+                  "end-of-line"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "The finding attributes the effective space and lf values to the root and explains that the nearer section sets only insert_final_newline. It treats the closer file's contents as known."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "800f94b9a5e7f68197b5a0b6cd8f9333c28a1dcd11ec83da21d46379e00d84ed",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "27d59e614886adfdeb9ad5e69198936a64f9bdc0bc6585c095e9850101525bde",
+          "original_report_sha256": "603e19f3fe2eaada11bc55fe08be65a0d010973b5999b4f7b590439ee4710827",
+          "original_run_id": "run_1e85a05c396e42038fe751f5ad36f1ed",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "48a2a7cd42b7fefd2d727b1860d2ddd4925f1a3dc863cacba96b24938a22ce1a",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "A closer matching pair takes precedence for its own key.",
+                    "rationale": "R1 specifies the precedence of pairs when multiple files have matching sections.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The sole nearer insert_final_newline = true pair leaves indent_style = space and end_of_line = lf effective from the root.",
+                    "rationale": "The stipulated nearer file contains only the newline-insertion key. Under R1 that distinct key does not displace either requested matching root pair.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Neither effective value depends on an unobserved configuration.",
+                    "rationale": "The fully specified nearer file and the matching root section exhaust the applicable paths, so there are no unknown candidates for either precedence decision in R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The closer matching section contributes a separate key. Neither requested root pair has a nearer competitor.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "editorconfig/unrelated",
+      "outcome": "both_pass",
+      "phase": "editorconfig",
+      "task_id": "editorconfig-unrelated"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\"schema_version\":\"dra.research-findings-candidate.v1\",\"findings\":[{\"question_id\":\"q1\",\"statement\":\"With automatic discovery in Ruff 0.14.6, each file uses its nearest config. `scripts/check.py` uses the repository-root `ruff.toml` and `services/app.py` uses `services/ruff.toml`. Passing `--config ruff.toml` from the repository root applies the root `ruff.toml` to both files.\",\"references\":[{\"source_url\":\"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\"excerpt\":\"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"},{\"source_url\":\"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\"excerpt\":\"via `--config`, those settings are used for _all_ analyzed files\"}]}],\"dispositions\":[{\"question_id\":\"q1\",\"status\":\"candidate_findings\"}]}",
+          "candidate_sha256": "6801301320bc6c6e974b9c8fc86cc1a7b7578de57513ef4e935c3084b2af6263",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "automatic-nearest",
+                  "explicit-all"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "It assigns services/ruff.toml to services/app.py under discovery and the explicit root ruff.toml to both files."
+              }
+            ],
+            "optional_inference": {
+              "classification": "assertion_without_support",
+              "quote": "`scripts/check.py` uses the repository-root `ruff.toml` and `services/app.py` uses `services/ruff.toml`.",
+              "rationale": "The finding assigns the root file to scripts/check.py under automatic discovery even though the scenario leaves open whether scripts/ contains a nearer configuration."
+            },
+            "unresolved": []
+          },
+          "coverage_input_sha256": "18b9a88e07e83fb3de70395a52a70754b3e0cc6a77a5abbaefee37762cfc5efc",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "19092ff802d9ea99a0f3d7dcc2e3522f7cf75ad6458e90dbd7af9a8fd00e0b59",
+          "original_report_sha256": "3f4f77b13dfe6c976978a8abcff05fa86b5b5b07ca583a72ccef8f15cfee8bcb",
+          "original_run_id": "run_0019cd43d73b42a6a58615ccc32e9772",
+          "passed": false,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "072f7e3e386725c55877730c62bc13c07e385a125c2cb452c5310d53a89bf5cd",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Automatic discovery selects the nearest configuration separately for each file.",
+                    "rationale": "R1 states the nearest-in-hierarchy rule for each individual file.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery selects the root ruff.toml for scripts/check.py.",
+                    "rationale": "R1 gives the selection rule, but the question does not stipulate that scripts/ has no closer configuration. The assertion is unconditional.",
+                    "reference_ids": []
+                  },
+                  {
+                    "assertion": "Discovery selects services/ruff.toml for services/app.py.",
+                    "rationale": "The question places the file and configuration in the same directory. This is closer than the repository root under R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The explicitly named root ruff.toml applies to scripts/check.py and services/app.py.",
+                    "rationale": "The question identifies the root file as the argument and both paths as analyzed files. The excerpt says the supplied settings apply to all analyzed files.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The rules support the explicit invocation and the discovery outcome for services/app.py. An unconditional discovery outcome for scripts/check.py additionally requires knowing that scripts/ has no nearer configuration.",
+                "verdict": "insufficient_evidence"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With automatic discovery, Ruff selects the closest configuration separately for each file. In the stated layout, `services/app.py` uses `services/ruff.toml`. `scripts/check.py` uses the root `ruff.toml` if there is no closer configuration in `scripts/`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"When `--config ruff.toml` is passed from the repository root, the root configuration applies to both `scripts/check.py` and `services/app.py`. The file in `services/` does not take precedence for that invocation.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "c28f45ea4bc0edc984021625ca18eb24053de1bba0988c902332115a0e1674c3",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "automatic-nearest"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "It explicitly gives services/ruff.toml as the automatically selected config for services/app.py."
+              },
+              {
+                "covered_points": [
+                  "explicit-all"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "It applies the explicit root config to both named files and rules out precedence of the services config in that invocation."
+              }
+            ],
+            "optional_inference": {
+              "classification": "conditional",
+              "quote": "`scripts/check.py` uses the root `ruff.toml` if there is no closer configuration in `scripts/`.",
+              "rationale": "The finding makes selection of the root file under automatic discovery conditional on the absence of a nearer configuration in scripts/."
+            },
+            "unresolved": []
+          },
+          "coverage_input_sha256": "74e0374330fa5e7b89de3ebbb4319efc4938a52a1fa826e8bbea0bf621e8d7a5",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "79d40fab50b5b352ef561f4ec6530fc238e422c8370815a3576d7aaf8cb276c3",
+          "original_report_sha256": "23ebe12a1b165079dff2f4d0cf832af17d03b41f02f2010124a2729950c9dfb7",
+          "original_run_id": "run_ec5b3b8b13de436ead48dedfb4e41a8f",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "5ad30e119947409b55f2b3646c572bbf17b1ed39f757f17549728e693861c183",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Automatic discovery selects the nearest configuration separately for each file.",
+                    "rationale": "R1 states the nearest-in-hierarchy rule for each individual file.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery selects services/ruff.toml for services/app.py.",
+                    "rationale": "The question places the file and configuration in the same directory. This is closer than the repository root under R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery uses the root configuration for scripts/check.py if scripts/ has no nearer configuration.",
+                    "rationale": "Under this condition the parent directory is the repository root, where the question places a configuration. It is therefore the nearest under R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The stated nearest-file rule yields the services result directly and the scripts result under its stated condition.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "bcb49c3760264e0b363789b3b770292ddea281dc102960ea990e6e98ced96f44",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The explicitly named root ruff.toml applies to scripts/check.py and services/app.py.",
+                    "rationale": "The question identifies the root file as the argument and both paths as analyzed files. The excerpt says the supplied settings apply to all analyzed files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The closer services/ruff.toml does not take precedence for this explicit invocation.",
+                    "rationale": "All analyzed files receive the explicitly supplied root settings, including services/app.py.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The scope of the explicit root configuration includes both files and settles precedence for this invocation.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "ruff-repeat/pair-1",
+      "outcome": "candidate_only",
+      "phase": "ruff-repeat",
+      "task_id": "ruff-unknown"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With automatic discovery, Ruff selects the closest configuration separately for each file, so `services/app.py` uses `services/ruff.toml`. When invoked from the repository root with `--config ruff.toml`, Ruff applies the root `ruff.toml` to both `scripts/check.py` and `services/app.py`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        },\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "f7394b2df1cd4eacf4bab7f321081cc572251902d2de9ef48a90a74357a7a481",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "automatic-nearest",
+                  "explicit-all"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "It gives the discovered config for services/app.py and names both files governed by the explicitly passed root config."
+              }
+            ],
+            "optional_inference": {
+              "classification": "omitted",
+              "quote": null,
+              "rationale": "The automatic-discovery answer identifies the configuration for services/app.py. The only assignment for scripts/check.py appears in the explicit --config invocation."
+            },
+            "unresolved": []
+          },
+          "coverage_input_sha256": "57e99e755c49c53c16d03f1c3b597c61852bef8b314fc0d598ff5d553ea35c23",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "19092ff802d9ea99a0f3d7dcc2e3522f7cf75ad6458e90dbd7af9a8fd00e0b59",
+          "original_report_sha256": "78b543ab6cc31bcd7ecb8a332ebe68428e49d8e6515fa1b634d8c9e85c367d22",
+          "original_run_id": "run_40ba097618ff435bab9763aef8a8e0b7",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "ed882ff8a35bcc8cf14790323dfce116746c041e47d25ec76fd9a50c03c9cca4",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Automatic discovery selects the nearest configuration separately for each file.",
+                    "rationale": "R1 states the nearest-in-hierarchy rule for each individual file.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery selects services/ruff.toml for services/app.py.",
+                    "rationale": "The question places the file and configuration in the same directory. This is closer than the repository root under R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The explicitly named root ruff.toml applies to scripts/check.py and services/app.py.",
+                    "rationale": "The question identifies the root file as the argument and both paths as analyzed files. The excerpt says the supplied settings apply to all analyzed files.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "R1 establishes the services discovery result under the stated layout. R2 establishes the effect of explicitly selecting the root configuration for both inputs.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With automatic discovery in Ruff 0.14.6, the closest configuration is selected separately for each file. In the described layout, services/app.py uses services/ruff.toml. For scripts/check.py, the root ruff.toml applies if there is no nearer Ruff configuration in scripts/.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"When run from the repository root with --config ruff.toml, Ruff uses that root file for both scripts/check.py and services/app.py.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}\n",
+          "candidate_sha256": "4dbd89c3dcb82f191a3af3fc9a9e0a37a14c4ecc976a5fe6cb69964b72fba0a7",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "automatic-nearest"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "It assigns services/ruff.toml to services/app.py in the described layout."
+              },
+              {
+                "covered_points": [
+                  "explicit-all"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "It identifies both targets as governed by the root file passed via --config."
+              }
+            ],
+            "optional_inference": {
+              "classification": "conditional",
+              "quote": "For scripts/check.py, the root ruff.toml applies if there is no nearer Ruff configuration in scripts/.",
+              "rationale": "The finding makes selection of the root file under automatic discovery conditional on the absence of a nearer configuration in scripts/."
+            },
+            "unresolved": []
+          },
+          "coverage_input_sha256": "74db06b466b1d866a020accbb8d387e3e52214841885e227b8d3ef2af05059eb",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "79d40fab50b5b352ef561f4ec6530fc238e422c8370815a3576d7aaf8cb276c3",
+          "original_report_sha256": "a61cd1da3b776159f8949ec7f40cb51391ac1f55596c0c46f151533e80b621e0",
+          "original_run_id": "run_1b342f001a88496d9a3295f573352ff6",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "182b12304673b8094995ee0ca005f969cb7f1c55cba4da9c2f034ce391ff66e5",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Automatic discovery selects the nearest configuration separately for each file.",
+                    "rationale": "R1 states the nearest-in-hierarchy rule for each individual file.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery selects services/ruff.toml for services/app.py.",
+                    "rationale": "The question places the file and configuration in the same directory. This is closer than the repository root under R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery uses the root configuration for scripts/check.py if scripts/ has no nearer configuration.",
+                    "rationale": "Under this condition the parent directory is the repository root, where the question places a configuration. It is therefore the nearest under R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "R1 and the stipulated layout establish the services result. The scripts result correctly states its additional premise as a condition.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "74efe0b5875c77c90706b70f851e06cde79ac5b528c0a3811f3c8d95f3698237",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The explicitly named root ruff.toml applies to scripts/check.py and services/app.py.",
+                    "rationale": "The question identifies the root file as the argument and both paths as analyzed files. The excerpt says the supplied settings apply to all analyzed files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The named argument and both input paths are given, and the admitted excerpt covers all analyzed files.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "ruff-repeat/pair-2",
+      "outcome": "both_pass",
+      "phase": "ruff-repeat",
+      "task_id": "ruff-unknown"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With automatic discovery, Ruff 0.14.6 selects the closest configuration for each file. It uses `services/ruff.toml` for `services/app.py` and the repository-root `ruff.toml` for `scripts/check.py`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"When you run Ruff 0.14.6 from the repository root with `--config ruff.toml`, the repository-root config applies to both `scripts/check.py` and `services/app.py`, overriding the per-file discovery of `services/ruff.toml`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}\n",
+          "candidate_sha256": "ae00e23ea570fbcac3baefe1bd25ce9db043494430d041fd32d85a4ffe775a44",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "automatic-nearest"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "It names services/ruff.toml as the discovered config for services/app.py."
+              },
+              {
+                "covered_points": [
+                  "explicit-all"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "It says the explicit root config governs both files, overriding discovery of the services config."
+              }
+            ],
+            "optional_inference": {
+              "classification": "assertion_without_support",
+              "quote": "It uses `services/ruff.toml` for `services/app.py` and the repository-root `ruff.toml` for `scripts/check.py`.",
+              "rationale": "The finding assigns the root file to scripts/check.py under automatic discovery even though the scenario leaves open whether scripts/ contains a nearer configuration."
+            },
+            "unresolved": []
+          },
+          "coverage_input_sha256": "97f0cddc60c19fe769236ec586a3c603ca31ca9c168bf033f28b185bcac407c0",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "19092ff802d9ea99a0f3d7dcc2e3522f7cf75ad6458e90dbd7af9a8fd00e0b59",
+          "original_report_sha256": "0560880dca734f59e52fbb559be69055a97f5fb50b4a4a685db7a8c07373a8b2",
+          "original_run_id": "run_1e70e41bdab243a389d642e1b82f1e36",
+          "passed": false,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "9e5c1ad3d0cd9b266a43d3202e17fa599c260abf955bb27cd58acc4a609898b9",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Automatic discovery selects the nearest configuration separately for each file.",
+                    "rationale": "R1 states the nearest-in-hierarchy rule for each individual file.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery selects services/ruff.toml for services/app.py.",
+                    "rationale": "The question places the file and configuration in the same directory. This is closer than the repository root under R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery selects the root ruff.toml for scripts/check.py.",
+                    "rationale": "R1 gives the selection rule, but the question does not stipulate that scripts/ has no closer configuration. The assertion is unconditional.",
+                    "reference_ids": []
+                  }
+                ],
+                "rationale": "The nearest-file rule establishes the services result, but the question does not establish the absence of a configuration closer to scripts/check.py than the root.",
+                "verdict": "insufficient_evidence"
+              }
+            },
+            "f2": {
+              "input_sha256": "0f1498df2e59a9254a288b1bde9027a3a97b1dd536cf66ca9bb66f58b20f59ba",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The explicitly named root ruff.toml applies to scripts/check.py and services/app.py.",
+                    "rationale": "The question identifies the root file as the argument and both paths as analyzed files. The excerpt says the supplied settings apply to all analyzed files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The closer services/ruff.toml does not take precedence for this explicit invocation.",
+                    "rationale": "All analyzed files receive the explicitly supplied root settings, including services/app.py.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Per-file discovery would select services/ruff.toml for services/app.py.",
+                    "rationale": "The additional clause identifies a specific discovery outcome. The admitted excerpt only gives the effect of supplying --config. Proximity in the stated layout does not itself establish the automatic selection rule.",
+                    "reference_ids": []
+                  }
+                ],
+                "rationale": "The explicit invocation is established. Calling this an override of the per-file discovery of services/ruff.toml also asserts which configuration discovery would find, and the row supplies no rule for discovery.",
+                "verdict": "insufficient_evidence"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"With automatic discovery, Ruff 0.14.6 selects the closest configuration separately for each file. For `services/app.py`, that is `services/ruff.toml`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"the \\\"closest\\\" config file in the directory hierarchy is used for every individual file\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"From the repository root, passing `--config ruff.toml` makes Ruff 0.14.6 use the root `ruff.toml` for both `scripts/check.py` and `services/app.py`. The closer `services/ruff.toml` is bypassed in this invocation.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md\",\n          \"excerpt\": \"via `--config`, those settings are used for _all_ analyzed files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    }\n  ],\n  \"limitations\": [\n    \"Under automatic discovery, the root `ruff.toml` applies to `scripts/check.py` if no closer applicable configuration exists in `scripts/`. The scenario does not establish whether one exists.\"\n  ]\n}\n",
+          "candidate_sha256": "3109e44f8800c62001a0697a1c402699ed26551b981a20a3116c0f32b558af23",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "automatic-nearest"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "rationale": "It directly identifies services/ruff.toml as the closest config for services/app.py."
+              },
+              {
+                "covered_points": [
+                  "explicit-all"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "rationale": "It says the explicit root config applies to both named files and bypasses the closer services config."
+              }
+            ],
+            "optional_inference": {
+              "classification": "omitted",
+              "quote": null,
+              "rationale": "The automatic-discovery answer identifies the configuration for services/app.py. The only assignment for scripts/check.py appears in the explicit --config invocation."
+            },
+            "unresolved": []
+          },
+          "coverage_input_sha256": "6df89a9046b81875888e1d1730a20fd07c04999902ace39fafc9457fa718c49b",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "79d40fab50b5b352ef561f4ec6530fc238e422c8370815a3576d7aaf8cb276c3",
+          "original_report_sha256": "d7b192a168db6aec7bf76c0b669c6f25a8b7cbebc697334b68610462e40b91ba",
+          "original_run_id": "run_25f3fd9eb6794215aa0f0176c383f6d7",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "5cb6648c9b8b238b2e49e43d7ffaf9dba439eba1150f341d515bf934e56b22c3",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Automatic discovery selects the nearest configuration separately for each file.",
+                    "rationale": "R1 states the nearest-in-hierarchy rule for each individual file.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Discovery selects services/ruff.toml for services/app.py.",
+                    "rationale": "The question places the file and configuration in the same directory. This is closer than the repository root under R1.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "The excerpt supplies the per-file rule and the question places the services configuration in the same directory as app.py.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "e1d7940373d0b482a446c44a723f77ba618476786d7096f5103694df05e1fa7d",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The explicitly named root ruff.toml applies to scripts/check.py and services/app.py.",
+                    "rationale": "The question identifies the root file as the argument and both paths as analyzed files. The excerpt says the supplied settings apply to all analyzed files.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The closer services/ruff.toml does not take precedence for this explicit invocation.",
+                    "rationale": "All analyzed files receive the explicitly supplied root settings, including services/app.py.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "All analyzed files use the supplied root settings in this invocation, including the file alongside services/ruff.toml.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "ruff-repeat/pair-3",
+      "outcome": "candidate_only",
+      "phase": "ruff-repeat",
+      "task_id": "ruff-unknown"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"Go 1.22 changed range-loop variables declared with `:=`, such as `v`, from one variable shared across the loop to a separate variable for each iteration. The module enables the new semantics by declaring `go 1.22` or later in `go.mod`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"per-iteration scope instead of per-loop scope\"\n        },\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"only apply in packages contained in modules that declare `go 1.22` or later in their `go.mod` files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    },\n    {\n      \"question_id\": \"q2\",\n      \"status\": \"unresolved\",\n      \"reason\": \"The module’s `go` directive is unobserved, so the Go 1.22.0 toolchain alone does not determine the scope. With the stated absence of overrides, `v` is per-iteration if the module declares `go 1.22` or later and per-loop if the module uses an earlier Go language version.\"\n    }\n  ]\n}",
+          "candidate_sha256": "91ca01838a77649e7203137fc3c231720420ead211ab6d5e442faa7a3df9d837",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "scope-change",
+                  "module-threshold"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "One shared variable and a separate variable per iteration describe both scopes. The finding identifies the go.mod threshold."
+              }
+            ],
+            "unresolved": [
+              {
+                "justified": true,
+                "question_id": "q2",
+                "rationale": "The reason identifies the unobserved module directive and distinguishes the outcomes for earlier and later language versions."
+              }
+            ]
+          },
+          "coverage_input_sha256": "24cfaebef571f92a418d5e50fc9c9433b2d1ffa987544fd3a53b4e0d7bb1f731",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "03df99ac69a1813915306babebcf7147c85e0c99f64fb7d380b34e453890a413",
+          "original_report_sha256": "d31da49109b344f83efee9698075adff4a9c854bfcd1ca873b152e6287d397b2",
+          "original_run_id": "run_d6fa6b8cb7944d538fce1ad72906ddab",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "a26bf042cadf956d376a9b41b48f650393d3f2f0d379dc02023a773c53308aee",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The Go 1.22 change gives range variables declared with :=, such as v, separate per-iteration bindings in place of a single loop binding.",
+                    "rationale": "R1 supplies both scopes and the scenario supplies the declaration form.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "Declaring go 1.22 or later in go.mod enables the semantics.",
+                    "rationale": "R2 supplies the enabling directive. The statement explains the rule without assigning a value to the unobserved directive.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The excerpts support the language change and how a module enables it even when its actual directive has not been observed.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\"schema_version\": \"dra.research-findings-candidate.v1\", \"findings\": [{\"question_id\": \"q1\", \"statement\": \"Go 1.22 changed variables declared by a range loop with := from one variable shared across the loop to a fresh variable for each iteration. With no language-version overrides, the new behavior applies to packages in modules whose go.mod declares go 1.22 or later.\", \"references\": [{\"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\", \"excerpt\": \"per-iteration scope instead of per-loop scope\"}, {\"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\", \"excerpt\": \"only apply in packages contained in modules that declare `go 1.22` or later in their `go.mod` files\"}]}], \"dispositions\": [{\"question_id\": \"q1\", \"status\": \"candidate_findings\"}, {\"question_id\": \"q2\", \"status\": \"unresolved\", \"reason\": \"The module's go directive is unobserved, so the Go 1.22.0 toolchain alone does not determine v's scope. With the stated absence of overrides, v has per-iteration scope if the module declares go 1.22 or later and the build succeeds with this toolchain. With an earlier directive, v has per-loop scope.\"}]}",
+          "candidate_sha256": "eac69dbe6f8cbf25945b20862e86b30a73dda8cfe9ff467554e8c02be9cc0704",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "scope-change",
+                  "module-threshold"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding describes the former shared variable and the fresh variable on each iteration, and gives the module directive threshold."
+              }
+            ],
+            "unresolved": [
+              {
+                "justified": true,
+                "question_id": "q2",
+                "rationale": "The reason identifies the missing go directive and gives both conditional outcomes."
+              }
+            ]
+          },
+          "coverage_input_sha256": "1190b5b7e8f3bb654592aac184a264d526b179a79470296dd9c89f69f0a468f0",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "e3d1d1acee29b4c58732a85e288020600a4185ef64aeff332833de1d25532fab",
+          "original_report_sha256": "3793162d213d3000db8d6f2b1d3e45ab88631f122b907fdc7edef50a74b74e90",
+          "original_run_id": "run_6be74e914f2f4371b45d287df6e8b142",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "1062317a09a94105ee0e49a90e2c238b848b91b20cee177ea0ba5c3e507b9749",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "A range variable declared with := changes from one shared variable to one variable per iteration under Go 1.22 semantics.",
+                    "rationale": "R1 gives both sides of the scope change. The question identifies v as declared by the range loop.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "With the stipulated absence of overrides, the change applies to packages in modules declaring go 1.22 or later.",
+                    "rationale": "R2 states the module directive and threshold. The statement does not infer the unobserved directive.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "Both the scope transition and the directive threshold follow from the excerpts. Neither claim depends on knowing the actual module directive.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "cross-family/go-challenge",
+      "outcome": "both_pass",
+      "phase": "cross-family",
+      "task_id": "go-challenge"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"Go 1.22 changed range variables declared with `:=` from per-loop scope to per-iteration scope. Each iteration gets its own variable. The change applies to packages in modules whose `go.mod` declares `go 1.22` or later.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"per-iteration scope instead of per-loop scope\"\n        },\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"only apply in packages contained in modules that declare `go 1.22` or later in their `go.mod` files\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q2\",\n      \"statement\": \"In the stated build, `v` has per-loop scope. The module declares `go 1.21` and no language-version override applies, so the Go 1.22.0 toolchain uses the earlier loop-variable semantics for this file.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"per-iteration scope instead of per-loop scope\"\n        },\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"only apply in packages contained in modules that declare `go 1.22` or later in their `go.mod` files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    },\n    {\n      \"question_id\": \"q2\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "24d915e494cb2aa2842b141e6bf655f8f82bcdb64c551dc1081c2ef9a44d8c07",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "scope-change",
+                  "module-threshold"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding names both old and new scope and states the required module directive."
+              },
+              {
+                "covered_points": [
+                  "older-module"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding directly assigns per-loop scope to v using the stipulated go 1.21 directive and absence of overrides."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "4fff9f1906565a62c04fa7826197397ce3a3401ce6b616031461a52b7ff5b49a",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "3ec15a59c09ee6d986042e48f0b683493b06db3fbb227de1b7226f7598ecd406",
+          "original_report_sha256": "f582535c8eecc04dc409406da48af50a33082998199bc836bcca19b3663a7beb",
+          "original_run_id": "run_b7f371fcd45d48bd9fdc0ddc51e9c732",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "4bbf073fb59cbf7272f9e7388e63ec70a1ed0ce0d4a49bbf298bb7d6ce41d81b",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Go 1.22 semantics change range variables declared with := from per-loop to per-iteration scope, with a separate variable for each iteration.",
+                    "rationale": "R1 identifies the former and new scopes for the loop variable described in the question.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The change applies to packages in modules declaring go 1.22 or later in go.mod.",
+                    "rationale": "R2 gives that threshold. The preceding scope description refers to the language change rather than asserting this go 1.21 module opts in.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The language change and its go.mod eligibility rule are both supported. This describes the general rule requested by the accepted question.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "73062c54df4315ac645a4b60a7274889751adf24932c479e27734eb969f194e3",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The module declares go 1.21 and the absence of language-version overrides leaves the earlier semantics in effect despite the Go 1.22.0 toolchain.",
+                    "rationale": "The scenario fixes all three build facts. R2 limits the change to modules declaring go 1.22 or later, which excludes this module.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  },
+                  {
+                    "assertion": "v therefore has per-loop scope in this exact build.",
+                    "rationale": "R1 identifies per-loop scope as the earlier behavior. R2 and the stated go 1.21 directive establish that it applies here.",
+                    "reference_ids": [
+                      "R1",
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The go 1.21 directive excludes the change, leaving the earlier per-loop scope in this build.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"Go 1.22 introduced per-iteration scope for loop variables declared by the loop, so a range variable declared with `:=` gets a fresh variable on each iteration under the new semantics. The module enables these semantics with a `go 1.22` or later directive in its `go.mod`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"per-iteration scope instead of per-loop scope\"\n        },\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"only apply in packages contained in modules that declare `go 1.22` or later in their `go.mod` files\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q2\",\n      \"statement\": \"In the supplied build, `v` is per-loop, with one variable reused across iterations. The containing module declares `go 1.21`, below the `go 1.22` threshold. Using the Go 1.22.0 toolchain does not by itself enable the new scope, and the scenario excludes language-version overrides.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"per-iteration scope instead of per-loop scope\"\n        },\n        {\n          \"source_url\": \"https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md\",\n          \"excerpt\": \"only apply in packages contained in modules that declare `go 1.22` or later in their `go.mod` files\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    },\n    {\n      \"question_id\": \"q2\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}\n",
+          "candidate_sha256": "fad0cfa95a8ba7ee957bbc90f8e2c47f61492ed1ec755bbaf068be997855d51c",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "module-threshold"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding gives the module directive threshold and the new per-iteration behavior. It omits the former per-loop scope required by the scope-change point."
+              },
+              {
+                "covered_points": [
+                  "older-module"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding directly identifies the reused per-loop variable and explains it using the actual module directive and lack of overrides."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "ef03cc31c7b64ed9a24114148124b0bf1dfaf07beeeced0c8589e6a1dc944cc1",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "94e6d7fb7354402a759703c3048f0e4ad2048db680380e848b4ec6c488354757",
+          "original_report_sha256": "40a729b79575b08ca246cd216f955e8f6f7ebeb07a70e2dbea081d7db32db18a",
+          "original_run_id": "run_8a0a711b5f614edeb1c5b05d04eee12e",
+          "passed": false,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "674c0f9431090225bea33a504ed1da7b113121427625433f624d8654ea4c1feb",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Under Go 1.22 semantics a loop-declared variable, including a := range variable, is fresh on each iteration.",
+                    "rationale": "Per-iteration scope in R1 supports this conditional description of the new semantics.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "A go 1.22 or later directive in go.mod enables those semantics for the module’s packages.",
+                    "rationale": "R2 gives the enabling directive. In context the statement describes how to enable the semantics, with no claim that the given go 1.21 module has that directive.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The description explicitly conditions the fresh variable on the new semantics and identifies the correct enabling directive.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "a63963718700a1f0149fe354d149caf47fbce265063e26ced688dd444585d3b2",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The containing module declares go 1.21, below the go 1.22 threshold.",
+                    "rationale": "The module version is stipulated, and R2 gives the minimum module directive for the change.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  },
+                  {
+                    "assertion": "The Go 1.22.0 toolchain alone does not enable new scope here and no override applies.",
+                    "rationale": "The toolchain version and absence of overrides are stipulated. R2 requires the module directive, independently of this toolchain version.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  },
+                  {
+                    "assertion": "v has per-loop scope, reusing a single variable across iterations in this build.",
+                    "rationale": "R1 identifies the pre-change scope and R2 excludes the given module from the new semantics.",
+                    "reference_ids": [
+                      "R1",
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The toolchain version, module directive and absence of overrides are stipulated. The excerpts justify applying the old scope to this loop.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "cross-family/go-control",
+      "outcome": "original_only",
+      "phase": "cross-family",
+      "task_id": "go-control"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"In this session, Read Committed is the isolation level a transaction uses by default. An individual transaction can override the session default with SET TRANSACTION.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\",\n          \"excerpt\": \"sets the default transaction characteristics for subsequent transactions of a session.\"\n        },\n        {\n          \"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\",\n          \"excerpt\": \"These defaults can be overridden by SET TRANSACTION for an individual transaction.\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    },\n    {\n      \"question_id\": \"q2\",\n      \"status\": \"unresolved\",\n      \"reason\": \"The session default establishes which level the open transaction would use absent an override. The supplied facts neither identify the current isolation setting nor establish that the transaction used the default without an override, so its actual isolation level is undetermined.\"\n    }\n  ]\n}\n",
+          "candidate_sha256": "51b33178aa0f4fb893a476eedc5e9146e49acaec0145d1e8de6a58ae4f90fae4",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "session-default",
+                  "individual-override"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding identifies Read Committed as the default and SET TRANSACTION as the individual override."
+              }
+            ],
+            "unresolved": [
+              {
+                "justified": true,
+                "question_id": "q2",
+                "rationale": "The reason identifies both the unobserved current isolation setting and the uncertainty about whether an override was applied."
+              }
+            ]
+          },
+          "coverage_input_sha256": "b85171c17ab4968dd7e3b13794eb2f8c1f10964494b3c5e513970eb5a252aa8b",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "9264830a838baeaa9db8ca6fa971b1ba2bc0c34c7a71febf2ec95fe05b1a8398",
+          "original_report_sha256": "d2fe59b9074e36c7a27567876db37bc7369d785e650fec0456ac79139c67aca7",
+          "original_run_id": "run_dd963fd2ef3c4a79902d331b23e617b6",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "15a5b3572818db03a6cbcbdb68f1e37d24ee1749aa0677f38deaf54a18c160ae",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Read Committed is this session’s default isolation level for transactions.",
+                    "rationale": "The session reports read committed immediately before BEGIN and the default is unchanged. R1 explains the effect on subsequent transactions.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "An individual transaction can override the default via SET TRANSACTION.",
+                    "rationale": "R2 explicitly permits this override. The finding makes no claim about the open transaction’s observed level.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The measured value is a session default. The two excerpts explain its role and the possible individual override.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"The session’s `read committed` setting supplies the default isolation for subsequent transactions. An individual transaction can override that default with `SET TRANSACTION`.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\",\n          \"excerpt\": \"sets the default transaction characteristics for subsequent transactions of a session.\"\n        },\n        {\n          \"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\",\n          \"excerpt\": \"These defaults can be overridden by SET TRANSACTION for an individual transaction.\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    },\n    {\n      \"question_id\": \"q2\",\n      \"status\": \"unresolved\",\n      \"reason\": \"The open transaction would use `read committed` if no transaction-specific override applies. The supplied facts leave both the current isolation setting and whether an override applies unknown, so its actual isolation is undetermined.\"\n    }\n  ]\n}",
+          "candidate_sha256": "0f4a36a1974dea1395e97500e5c46dfce8d851c1a5d1fbfea7bf1e9fc9eeabd3",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "session-default",
+                  "individual-override"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding identifies the session default and names SET TRANSACTION as the override for one transaction."
+              }
+            ],
+            "unresolved": [
+              {
+                "justified": true,
+                "question_id": "q2",
+                "rationale": "The reason explicitly leaves both the live setting and the occurrence of an override unknown, with Read Committed given conditionally."
+              }
+            ]
+          },
+          "coverage_input_sha256": "f609dc129d6458938bad9d44d0df8909259da6f331db7e1d85a2ee7a3619aa42",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "33c3b579d1386b8d344331cc7a579adbb0b45c1910c9e1b892d7f9f54dbea268",
+          "original_report_sha256": "22baad9dc67715d91c94769bb7b3a64eeab300544e4f8c94d55a8dbde2a431f2",
+          "original_run_id": "run_472ad9c5358d40a8a377e2e20b87e41a",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "a4dd97b228a499e771bc2937b4a1f7fd70bcf166a0a459a59c0fc9cf862ef5bb",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The session’s read committed setting is the default isolation for subsequent transactions.",
+                    "rationale": "R1 describes the session default’s effect, and the scenario supplies its concrete value.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "SET TRANSACTION can override the default for one transaction.",
+                    "rationale": "R2 explicitly states the command and scope. This conditional claim does not require observation of the open transaction’s actual setting.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The finding correctly distinguishes the observed default from a possible per-transaction override.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "cross-family/postgres-challenge",
+      "outcome": "both_pass",
+      "phase": "cross-family",
+      "task_id": "postgres-challenge"
+    },
+    {
+      "arms": {
+        "A": {
+          "candidate_content": "{\n  \"schema_version\": \"dra.research-findings-candidate.v1\",\n  \"findings\": [\n    {\n      \"question_id\": \"q1\",\n      \"statement\": \"The session's read committed setting supplies the starting isolation level for transactions in the session. SET TRANSACTION can override that default for an individual transaction, with the session default still applying to later transactions that have no override.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\",\n          \"excerpt\": \"sets the default transaction characteristics for subsequent transactions of a session.\"\n        },\n        {\n          \"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\",\n          \"excerpt\": \"These defaults can be overridden by SET TRANSACTION for an individual transaction.\"\n        }\n      ]\n    },\n    {\n      \"question_id\": \"q2\",\n      \"statement\": \"The open transaction's actual isolation level is SERIALIZABLE. The successful SET TRANSACTION ISOLATION LEVEL SERIALIZABLE applied the per-transaction override, and the supplied facts specify no later isolation changes.\",\n      \"references\": [\n        {\n          \"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\",\n          \"excerpt\": \"These defaults can be overridden by SET TRANSACTION for an individual transaction.\"\n        }\n      ]\n    }\n  ],\n  \"dispositions\": [\n    {\n      \"question_id\": \"q1\",\n      \"status\": \"candidate_findings\"\n    },\n    {\n      \"question_id\": \"q2\",\n      \"status\": \"candidate_findings\"\n    }\n  ]\n}",
+          "candidate_sha256": "795a2b7f638f6b158383f03abf3e5d399c3615801f60fe9498007d3f6b0c4a8b",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "session-default",
+                  "individual-override"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding identifies the starting level and the individual override. Later transactions without an override illustrate the stated default."
+              },
+              {
+                "covered_points": [
+                  "known-override"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding states the actual isolation level and identifies the successful override that established it."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "ebc3a47375c377faadcb549656e8e75e329b03940706b7bc0136f75662d6204b",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "5fbc907cd8a560e8807ea3d92497ead79fdec5e9b84bac751972e74116d32a44",
+          "original_report_sha256": "c317d12cee8e9ad5a715b08e464d36ed480fe440111ddc26e02bf13264ead62c",
+          "original_run_id": "run_0b6e230fece741afad45352c1508195e",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "9deadb6a53f28cd07ba5c3548e32bc29978b4bf27db692577cbb79704501f84e",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The read committed session setting supplies the starting isolation default.",
+                    "rationale": "The scenario gives its exact value and R1 establishes that session defaults govern subsequent transactions.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "SET TRANSACTION can override the default for an individual transaction.",
+                    "rationale": "R2 expressly authorizes an individual override.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  },
+                  {
+                    "assertion": "Later transactions without their own override retain the session default.",
+                    "rationale": "R1 applies the unchanged session default to subsequent transactions. R2 confines the override to the individual transaction.",
+                    "reference_ids": [
+                      "R1",
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The observed default supplies the starting value. The override is confined to one transaction, so later unmodified transactions retain the session default.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "2863344f533ed417a836e367dad50d3614c221573d5827e590bb08edf6b45783",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The successful SET TRANSACTION ISOLATION LEVEL SERIALIZABLE overrode the default for this transaction.",
+                    "rationale": "R1 supplies the per-transaction scope of the override. The scenario supplies the successful command and the concrete level.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The actual isolation level of the open transaction is SERIALIZABLE and there were no later isolation changes.",
+                    "rationale": "The scenario expressly excludes a subsequent change, so the level set by this individual override is still effective.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "R1 and the successful, unrevised SERIALIZABLE command establish the effective transaction level.",
+                "verdict": "supported"
+              }
+            }
+          }
+        },
+        "C": {
+          "candidate_content": "{\"schema_version\": \"dra.research-findings-candidate.v1\", \"findings\": [{\"question_id\": \"q1\", \"statement\": \"The session's read committed setting supplies the default isolation level for subsequent transactions. SET TRANSACTION can override that default for an individual transaction, and the session default remains read committed on the supplied facts.\", \"references\": [{\"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\", \"excerpt\": \"sets the default transaction characteristics for subsequent transactions of a session.\"}, {\"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\", \"excerpt\": \"These defaults can be overridden by SET TRANSACTION for an individual transaction.\"}]}, {\"question_id\": \"q2\", \"statement\": \"The open transaction is running at SERIALIZABLE isolation. Its successful SET TRANSACTION ISOLATION LEVEL SERIALIZABLE command overrode the read committed session default for this transaction, and the supplied facts state there were no further isolation changes.\", \"references\": [{\"source_url\": \"https://github.com/postgres/postgres/blob/c372fbbd8e911f2412b80a8c39d7079366565d67/doc/src/sgml/ref/set_transaction.sgml\", \"excerpt\": \"These defaults can be overridden by SET TRANSACTION for an individual transaction.\"}]}], \"dispositions\": [{\"question_id\": \"q1\", \"status\": \"candidate_findings\"}, {\"question_id\": \"q2\", \"status\": \"candidate_findings\"}]}",
+          "candidate_sha256": "520d7ee9bc4598ff9d6fe4dd6b3f428c9b3b5dd474bedcc0869eaccb2d5b8d67",
+          "coverage": {
+            "claims": [
+              {
+                "covered_points": [
+                  "session-default",
+                  "individual-override"
+                ],
+                "finding_id": "f1",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding states the default and the mechanism for an individual override. The unchanged session setting restates a scenario fact."
+              },
+              {
+                "covered_points": [
+                  "known-override"
+                ],
+                "finding_id": "f2",
+                "forbidden_matches": [],
+                "new_material_assertions": [],
+                "rationale": "The finding explicitly assigns SERIALIZABLE isolation to the open transaction and links it to the successful command."
+              }
+            ],
+            "unresolved": []
+          },
+          "coverage_input_sha256": "d65b8ef42d847f30487c2273795f9531936367e9ccc1ac967a76266c667f4a39",
+          "delivery_outcome": "delivered",
+          "generation_input_sha256": "c365e783fa5b782f01f74bc8fb902face5a846b46dd0710d9ae1cbaf6022d217",
+          "original_report_sha256": "0440511766a7b87c96b994395727f67fe7ed81f5a4dd2f5303979566c3bf8bd5",
+          "original_run_id": "run_55e6ce604fab4cbaa5c2702b101e58f8",
+          "passed": true,
+          "retained_historical_baseline": false,
+          "semantic": {
+            "f1": {
+              "input_sha256": "df69a9a02565b8032892952069b10bde3e46417af0c2491624c50bead73616b4",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1",
+                  "R2"
+                ],
+                "parts": [
+                  {
+                    "assertion": "Read committed is the session default for subsequent transactions.",
+                    "rationale": "The scenario supplies the session setting. R1 describes its role as the default for subsequent transactions.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "SET TRANSACTION can override this default for an individual transaction.",
+                    "rationale": "R2 expressly gives that command and individual scope.",
+                    "reference_ids": [
+                      "R2"
+                    ]
+                  },
+                  {
+                    "assertion": "The session default remains read committed in the supplied scenario.",
+                    "rationale": "The scenario says the default did not change. The individual override in R2 is consistent with preserving the session setting described by R1.",
+                    "reference_ids": [
+                      "R1",
+                      "R2"
+                    ]
+                  }
+                ],
+                "rationale": "The session default and individual override are distinct in the excerpts and the scenario expressly keeps the former unchanged.",
+                "verdict": "supported"
+              }
+            },
+            "f2": {
+              "input_sha256": "e0400c05a7eab93ba4d6462dc240bfd6cab96c66b3cc10a7ceb8efab5d6ab785",
+              "judgment": {
+                "matched_reference_ids": [
+                  "R1"
+                ],
+                "parts": [
+                  {
+                    "assertion": "The successful SET TRANSACTION ISOLATION LEVEL SERIALIZABLE command overrode the read committed default for this transaction.",
+                    "rationale": "The scenario supplies both concrete levels and the successful command. R1 gives the command its per-transaction override effect.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  },
+                  {
+                    "assertion": "The open transaction is currently SERIALIZABLE because no subsequent isolation change occurred.",
+                    "rationale": "The scenario explicitly excludes later changes, so the individual override described by R1 still determines the effective level.",
+                    "reference_ids": [
+                      "R1"
+                    ]
+                  }
+                ],
+                "rationale": "R1 supplies the override rule. The scenario supplies the original session default, successful command, selected level, and absence of later changes.",
+                "verdict": "supported"
+              }
+            }
+          }
+        }
+      },
+      "id": "cross-family/postgres-control",
+      "outcome": "both_pass",
+      "phase": "cross-family",
+      "task_id": "postgres-control"
+    }
+  ],
+  "phases": {
+    "cross-family": {
+      "local_result_sha256": "d85d31e60a62075254d30d8f9bc0da1483fd3859b1ba474b361982dbd88066f8",
+      "plan_sha256": "bddafba3f5c9b40e2aeb9a1e27b071aac5c3ed4e4789aac7ecad25e8c13502e6",
+      "preregistered_plan": {
+        "candidate_instruction": "Before adding a file-specific conclusion, check whether the supplied scenario and source establish the applicable configuration for that file. If a nearer configuration could change the answer and its presence is unobserved, state the condition or leave that inference unresolved.",
+        "cases": {
+          "go-challenge": {
+            "arms": {
+              "A": {
+                "candidate": "candidate-08.json",
+                "input": "input-03df99ac69a1.json",
+                "input_sha256": "03df99ac69a1813915306babebcf7147c85e0c99f64fb7d380b34e453890a413",
+                "slot": "08"
+              },
+              "C": {
+                "candidate": "candidate-04.json",
+                "input": "input-e3d1d1acee29.json",
+                "input_sha256": "e3d1d1acee29b4c58732a85e288020600a4185ef64aeff332833de1d25532fab",
+                "slot": "04"
+              }
+            },
+            "family": "go",
+            "fixture": "fixture-go-challenge.json",
+            "fixture_sha256": "8b862f10d2fdbf07382c83b4bac0f8c84aeef44ff9f75b12e51ded8e1ead409f",
+            "kind": "challenge",
+            "rubric": "rubric-go-challenge.json",
+            "rubric_sha256": "bfa5fe55a6e2c1196aaee352b7718a07062721c3938aa1750314da7f7a3ed1a7",
+            "source_version": "Go 1.22 loop-variable change; official design note pinned at af871f5d42e869aac0512d7fa773bc3cd7913f4d",
+            "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+            "visible_source_sha256": "052ede94628fd5f55a276ffb4f7905de857c474a22723891f3bb0507624e4613"
+          },
+          "go-control": {
+            "arms": {
+              "A": {
+                "candidate": "candidate-01.json",
+                "input": "input-3ec15a59c09e.json",
+                "input_sha256": "3ec15a59c09ee6d986042e48f0b683493b06db3fbb227de1b7226f7598ecd406",
+                "slot": "01"
+              },
+              "C": {
+                "candidate": "candidate-05.json",
+                "input": "input-94e6d7fb7354.json",
+                "input_sha256": "94e6d7fb7354402a759703c3048f0e4ad2048db680380e848b4ec6c488354757",
+                "slot": "05"
+              }
+            },
+            "family": "go",
+            "fixture": "fixture-go-control.json",
+            "fixture_sha256": "f42d65825152d3eab03429e16f3d9edb1db19292d7f4d6d252b55886ed23970f",
+            "kind": "control",
+            "rubric": "rubric-go-control.json",
+            "rubric_sha256": "66434c2f441fec02d880ba6929ed56822e4b0fbb1c34e6944a81b046ab8396e4",
+            "source_version": "Go 1.22 loop-variable change; official design note pinned at af871f5d42e869aac0512d7fa773bc3cd7913f4d",
+            "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+            "visible_source_sha256": "052ede94628fd5f55a276ffb4f7905de857c474a22723891f3bb0507624e4613"
+          },
+          "postgres-challenge": {
+            "arms": {
+              "A": {
+                "candidate": "candidate-03.json",
+                "input": "input-9264830a838b.json",
+                "input_sha256": "9264830a838baeaa9db8ca6fa971b1ba2bc0c34c7a71febf2ec95fe05b1a8398",
+                "slot": "03"
+              },
+              "C": {
+                "candidate": "candidate-06.json",
+                "input": "input-33c3b579d138.json",
+                "input_sha256": "33c3b579d1386b8d344331cc7a579adbb0b45c1910c9e1b892d7f9f54dbea268",
+                "slot": "06"
+              }
+            },
+            "family": "postgres",
+            "fixture": "fixture-postgres-challenge.json",
+            "fixture_sha256": "0e92ff77d3e6749f7685b588e6e4690a192dca193ba552c85cf07a66cd57643e",
+            "kind": "challenge",
+            "rubric": "rubric-postgres-challenge.json",
+            "rubric_sha256": "3e3ab8d4b3e8618f52f49916a7eb5d6898cfaf79cc04db7a35fce3f0fe66aa1f",
+            "source_version": "PostgreSQL 16.0, c372fbbd8e911f2412b80a8c39d7079366565d67",
+            "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+            "visible_source_sha256": "bcf119dc26d5c993651ab5612c33c2ca6c956f56d34e9f700885de7869e3a6e0"
+          },
+          "postgres-control": {
+            "arms": {
+              "A": {
+                "candidate": "candidate-07.json",
+                "input": "input-5fbc907cd8a5.json",
+                "input_sha256": "5fbc907cd8a560e8807ea3d92497ead79fdec5e9b84bac751972e74116d32a44",
+                "slot": "07"
+              },
+              "C": {
+                "candidate": "candidate-02.json",
+                "input": "input-c365e783fa5b.json",
+                "input_sha256": "c365e783fa5b782f01f74bc8fb902face5a846b46dd0710d9ae1cbaf6022d217",
+                "slot": "02"
+              }
+            },
+            "family": "postgres",
+            "fixture": "fixture-postgres-control.json",
+            "fixture_sha256": "66054b2cbffad77b28cd3691f59f81b90504e252a706b3d36bd30780c8853712",
+            "kind": "control",
+            "rubric": "rubric-postgres-control.json",
+            "rubric_sha256": "7317a468e7c418fd668acb405c67132c6d1d07cb73221af2ea62093c1a621fa6",
+            "source_version": "PostgreSQL 16.0, c372fbbd8e911f2412b80a8c39d7079366565d67",
+            "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+            "visible_source_sha256": "bcf119dc26d5c993651ab5612c33c2ca6c956f56d34e9f700885de7869e3a6e0"
+          }
+        },
+        "date": "2026-11-19",
+        "decision_rule": "Recommend the scoped candidate only with at least one candidate-only pass outside Ruff on a new family, no candidate-only serious regression or wrong abstention on known controls, no material unresolved scoring question, and enough observed resource evidence for the claimed scope. Otherwise retain A. Count every preregistered case, regardless of outcome.",
+        "generator": "gpt-6.2-sol",
+        "git_head": "44563f31e6c815d03afcb54a472ddf5bc8e3f30b",
+        "instruction_fingerprints": {
+          "generic": {
+            "byte_length": 228,
+            "sha256": "4ecd1349a32b76fcdb7625c9af3ab9b725c220ee27acb1b979fb345e10d58a3d",
+            "text": "When stating a finding, preserve the object, version and applicable conditions shown in the quoted evidence. If a necessary qualification cannot be established from the cited material, identify the missing evidence or condition."
+          },
+          "scoped": {
+            "byte_length": 280,
+            "sha256": "6557cd45e7c5ee7044fc618cf217012678c0bcfae071c8657aa095f6fda5cebf",
+            "text": "Before adding a file-specific conclusion, check whether the supplied scenario and source establish the applicable configuration for that file. If a nearer configuration could change the answer and its presence is unobserved, state the condition or leave that inference unresolved."
+          }
+        },
+        "judge": "gpt-6.2-astra",
+        "mode": "controlled Codex next-turn comparison with native DRA delivery replay",
+        "origin": "preregistered synthetic challenges and controls on two independent source and task families",
+        "reasoning_effort": "high",
+        "resource_policy": "Compare observed dispatches and delivery counts; leave per-call token, provider cost, and pure generation latency unknown if not measured equivalently.",
+        "schema": "dra.findings-quality.cross-family-plan.v1",
+        "source_checks": {
+          "go": {
+            "observed_excerpt_sha256": "052ede94628fd5f55a276ffb4f7905de857c474a22723891f3bb0507624e4613",
+            "source_sha256": "a85cd925bcbdb01e537be56aa29c4416a28ae83c4f2912b745a9b16717901fdf",
+            "version": "Go 1.22 loop-variable change; official design note pinned at af871f5d42e869aac0512d7fa773bc3cd7913f4d"
+          },
+          "postgres": {
+            "observed_excerpt_sha256": "bcf119dc26d5c993651ab5612c33c2ca6c956f56d34e9f700885de7869e3a6e0",
+            "source_sha256": "33554463a2c9da1cf2c72cc27d4647d557204bb13a03cfeccb1b83f237a46589",
+            "version": "PostgreSQL 16.0, c372fbbd8e911f2412b80a8c39d7079366565d67"
+          }
+        }
+      }
+    },
+    "editorconfig": {
+      "local_result_sha256": "df9d0ec47d7cb4978eed472bd9317381bc1f4200c674a759363f8aeab47c3b59",
+      "plan_sha256": "109769fbe41ccc852101385a374a6f9ef32519d2aedf14a53268537b6c8b5aa5"
+    },
+    "ruff-conditions": {
+      "local_result_sha256": "99641b67f1f5ad3dd2d4c33053d67bd2a010a8962ad0063658c8e40951d5f562",
+      "plan_sha256": "8aec87d9da691cf7df28177061db809f7a7fdb46d9ed70b70a7eb7b72d80baf5"
+    },
+    "ruff-repeat": {
+      "local_result_sha256": "6751def3240f291834dd42fceee80b2041fdef5658e7a0b97ff4c17b19c45a41",
+      "plan_sha256": "f2568069feb2333289ed992ecaa35fae20980707220461fbeb68be22cb652a3b"
+    }
+  },
+  "schema": "dra.findings-quality.scoped-inference-corpus.v1",
+  "source_observation_head": "44563f31e6c815d03afcb54a472ddf5bc8e3f30b",
+  "tasks": {
+    "editorconfig-override": {
+      "family": "editorconfig",
+      "fixture": "editorconfig-override.json",
+      "fixture_sha256": "7c3c38ff21402392da0596cd8de043710742a44d4ba2f248f550607fc4d20846",
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Applies the root value space to indent_style despite the nearer override.",
+            "Makes end_of_line absent or genuinely indeterminate because the nearer file exists."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "indent-style",
+              "text": "States directly that indent_style is tab, from the closer matching section."
+            },
+            {
+              "point_id": "end-of-line",
+              "text": "States directly that end_of_line is lf, inherited from the root because the nearer file does not override it."
+            }
+          ],
+          "text": "Under EditorConfig 0.17.2, what are the effective indent_style and end_of_line for scripts/check.py, and what, if anything, depends on an unobserved configuration?",
+          "unresolved_expectation": null
+        }
+      ],
+      "source_version": "EditorConfig specification 0.17.2, 329077a5649b013903c2aeaa5617afb70fcc9eaf",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "a70391297f121b30d57384862f0667a9f6860b6844dc43da2d993ebccfa216c7"
+    },
+    "editorconfig-unknown": {
+      "family": "editorconfig",
+      "fixture": "editorconfig-unknown.json",
+      "fixture_sha256": "a108149c2af41caffc736547751aab619f22f4890938365f93dda7ac67864bf5",
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Assigns either key a definite effective value without conditioning it on no applicable closer override.",
+            "Says the presence of any nearer file by itself suppresses both root properties."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "indent-style",
+              "text": "indent_style is space if no matching nearer pair overrides or removes that key; the actual value depends on whether such a pair exists."
+            },
+            {
+              "point_id": "end-of-line",
+              "text": "end_of_line is lf if no matching nearer pair overrides or removes that key; the actual value depends on whether such a pair exists."
+            }
+          ],
+          "text": "Under EditorConfig 0.17.2, what are the effective indent_style and end_of_line for scripts/check.py, and what, if anything, depends on an unobserved configuration?",
+          "unresolved_expectation": null
+        }
+      ],
+      "source_version": "EditorConfig specification 0.17.2, 329077a5649b013903c2aeaa5617afb70fcc9eaf",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "a70391297f121b30d57384862f0667a9f6860b6844dc43da2d993ebccfa216c7"
+    },
+    "editorconfig-unrelated": {
+      "family": "editorconfig",
+      "fixture": "editorconfig-unrelated.json",
+      "fixture_sha256": "df8bf26f38624571d9e9d5496c13ba8e11258a2d0c1bc2c80c6effc803120ddc",
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Says the nearer file's existence suppresses one or both root values.",
+            "Makes either property genuinely indeterminate or contingent on unstated further checks."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "indent-style",
+              "text": "States directly that indent_style is space, inherited from the repository root."
+            },
+            {
+              "point_id": "end-of-line",
+              "text": "States directly that end_of_line is lf, inherited from the repository root."
+            }
+          ],
+          "text": "Under EditorConfig 0.17.2, what are the effective indent_style and end_of_line for scripts/check.py, and what, if anything, depends on an unobserved configuration?",
+          "unresolved_expectation": null
+        }
+      ],
+      "source_version": "EditorConfig specification 0.17.2, 329077a5649b013903c2aeaa5617afb70fcc9eaf",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "a70391297f121b30d57384862f0667a9f6860b6844dc43da2d993ebccfa216c7"
+    },
+    "go-challenge": {
+      "family": "go",
+      "fixture": "go-challenge.json",
+      "fixture_sha256": "8b862f10d2fdbf07382c83b4bac0f8c84aeef44ff9f75b12e51ded8e1ead409f",
+      "rubric": [
+        {
+          "forbidden_claims": [],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "scope-change",
+              "text": "The relevant declared loop variable used to have per-loop scope and the new semantics give per-iteration scope."
+            },
+            {
+              "point_id": "module-threshold",
+              "text": "The new behavior requires the module's go directive to be 1.22 or later in this setup."
+            }
+          ],
+          "text": "What loop-variable scope changed with Go 1.22, and which module directive enables the new behavior here?",
+          "unresolved_expectation": null
+        },
+        {
+          "forbidden_claims": [
+            "Assigns either variable scope as definite based only on the installed Go 1.22 toolchain."
+          ],
+          "question_id": "q2",
+          "required_points": [],
+          "text": "Is v in this exact build per-loop or per-iteration on the supplied facts?",
+          "unresolved_expectation": "The module go directive is missing. With Go 1.22.0 installed the module could still declare an older version or select 1.22 semantics."
+        }
+      ],
+      "source_version": "Go 1.22 loop-variable change; official design note pinned at af871f5d42e869aac0512d7fa773bc3cd7913f4d",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "052ede94628fd5f55a276ffb4f7905de857c474a22723891f3bb0507624e4613"
+    },
+    "go-control": {
+      "family": "go",
+      "fixture": "go-control.json",
+      "fixture_sha256": "f42d65825152d3eab03429e16f3d9edb1db19292d7f4d6d252b55886ed23970f",
+      "rubric": [
+        {
+          "forbidden_claims": [],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "scope-change",
+              "text": "The relevant declared loop variable used to have per-loop scope and the new semantics give per-iteration scope."
+            },
+            {
+              "point_id": "module-threshold",
+              "text": "The new behavior requires the module's go directive to be 1.22 or later in this setup."
+            }
+          ],
+          "text": "What loop-variable scope changed with Go 1.22, and which module directive enables the new behavior here?",
+          "unresolved_expectation": null
+        },
+        {
+          "forbidden_claims": [
+            "Claims that v is per-iteration or indeterminate because the installed compiler is Go 1.22."
+          ],
+          "question_id": "q2",
+          "required_points": [
+            {
+              "point_id": "older-module",
+              "text": "Directly states that v retains per-loop scope under the stipulated go 1.21 module directive."
+            }
+          ],
+          "text": "Is v in this exact build per-loop or per-iteration on the supplied facts?",
+          "unresolved_expectation": null
+        }
+      ],
+      "source_version": "Go 1.22 loop-variable change; official design note pinned at af871f5d42e869aac0512d7fa773bc3cd7913f4d",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "052ede94628fd5f55a276ffb4f7905de857c474a22723891f3bb0507624e4613"
+    },
+    "postgres-challenge": {
+      "family": "postgres",
+      "fixture": "postgres-challenge.json",
+      "fixture_sha256": "0e92ff77d3e6749f7685b588e6e4690a192dca193ba552c85cf07a66cd57643e",
+      "rubric": [
+        {
+          "forbidden_claims": [],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "session-default",
+              "text": "Read committed is the starting session default for transactions."
+            },
+            {
+              "point_id": "individual-override",
+              "text": "The individual transaction can override the session default with SET TRANSACTION."
+            }
+          ],
+          "text": "How does the known session default relate to the isolation of an individual transaction in this session?",
+          "unresolved_expectation": null
+        },
+        {
+          "forbidden_claims": [
+            "Assigns a definite current isolation level solely from the observed session default."
+          ],
+          "question_id": "q2",
+          "required_points": [],
+          "text": "What is the current transaction's actual isolation level on the supplied facts?",
+          "unresolved_expectation": "The transaction-specific mode or live isolation value was not observed. Both an unmodified default and a transaction-specific override are compatible with the facts."
+        }
+      ],
+      "source_version": "PostgreSQL 16.0, c372fbbd8e911f2412b80a8c39d7079366565d67",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "bcf119dc26d5c993651ab5612c33c2ca6c956f56d34e9f700885de7869e3a6e0"
+    },
+    "postgres-control": {
+      "family": "postgres",
+      "fixture": "postgres-control.json",
+      "fixture_sha256": "66054b2cbffad77b28cd3691f59f81b90504e252a706b3d36bd30780c8853712",
+      "rubric": [
+        {
+          "forbidden_claims": [],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "session-default",
+              "text": "Read committed is the starting session default for transactions."
+            },
+            {
+              "point_id": "individual-override",
+              "text": "The individual transaction can override the session default with SET TRANSACTION."
+            }
+          ],
+          "text": "How does the known session default relate to the isolation of an individual transaction in this session?",
+          "unresolved_expectation": null
+        },
+        {
+          "forbidden_claims": [
+            "Treats the current transaction as read committed or undetermined despite its observed successful override."
+          ],
+          "question_id": "q2",
+          "required_points": [
+            {
+              "point_id": "known-override",
+              "text": "Directly states that this transaction is serializable because of the successful per-transaction override."
+            }
+          ],
+          "text": "What is the current transaction's actual isolation level on the supplied facts?",
+          "unresolved_expectation": null
+        }
+      ],
+      "source_version": "PostgreSQL 16.0, c372fbbd8e911f2412b80a8c39d7079366565d67",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "bcf119dc26d5c993651ab5612c33c2ca6c956f56d34e9f700885de7869e3a6e0"
+    },
+    "ruff-override": {
+      "family": "ruff",
+      "fixture": "ruff-override.json",
+      "fixture_sha256": "51c874874bfc6fba9cf7430d0883253ee483606413459c69be42060e09500b14",
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Under automatic discovery, scripts/check.py uses the root ruff.toml.",
+            "The explicit root setting is overridden by a local configuration."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "auto-scripts-layout",
+              "text": "Automatic discovery selects scripts/ruff.toml for scripts/check.py."
+            },
+            {
+              "point_id": "explicit-root-both",
+              "text": "Explicit --config ruff.toml selects the repository root config for both analyzed files."
+            }
+          ],
+          "text": "For Ruff 0.14.6, which ruff.toml governs scripts/check.py during automatic discovery, and which config governs scripts/check.py and services/app.py when the root ruff.toml is passed via --config?",
+          "unresolved_expectation": null
+        }
+      ],
+      "source_version": "Ruff 0.14.6, 59c6cb521d26380120f8522476fd09d296bf4f2e",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "fa9e0903a7927f2ce4bc5b9a37ff52a294bff29c7cdbeb4b2e742d206b734358"
+    },
+    "ruff-root": {
+      "family": "ruff",
+      "fixture": "ruff-root.json",
+      "fixture_sha256": "bec1cde3cc70fc9b6aa121139ff86f21d966b46451e60d631748e522958bfcbf",
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Under automatic discovery, scripts/check.py uses a nearer scripts config.",
+            "The explicit root setting is overridden by a local configuration."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "auto-scripts-layout",
+              "text": "Automatic discovery selects the root ruff.toml for scripts/check.py."
+            },
+            {
+              "point_id": "explicit-root-both",
+              "text": "Explicit --config ruff.toml selects the repository root config for both analyzed files."
+            }
+          ],
+          "text": "For Ruff 0.14.6, which ruff.toml governs scripts/check.py during automatic discovery, and which config governs scripts/check.py and services/app.py when the root ruff.toml is passed via --config?",
+          "unresolved_expectation": null
+        }
+      ],
+      "source_version": "Ruff 0.14.6, 59c6cb521d26380120f8522476fd09d296bf4f2e",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "fa9e0903a7927f2ce4bc5b9a37ff52a294bff29c7cdbeb4b2e742d206b734358"
+    },
+    "ruff-unknown": {
+      "family": "ruff",
+      "fixture": "ruff-unknown.json",
+      "fixture_sha256": "d1a68db9fe15d51a3126ee074fdbeb15a90c6fd54c4e89cdb4e4a1554e643d88",
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "The nearer services/ruff.toml still governs services/app.py when the root config was passed explicitly.",
+            "Automatic discovery merges the nearest and parent configs in this no-extend scenario."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "automatic-nearest",
+              "text": "Automatic discovery selects services/ruff.toml for services/app.py."
+            },
+            {
+              "point_id": "explicit-all",
+              "text": "Explicitly passed root ruff.toml governs both analyzed files, including services/app.py."
+            }
+          ],
+          "text": "For Ruff 0.14.6, which configuration applies to services/app.py with automatic discovery and which applies when the project root's ruff.toml is explicitly passed via --config while checking both files?",
+          "unresolved_expectation": null
+        }
+      ],
+      "source_version": "Ruff 0.14.6, 59c6cb521d26380120f8522476fd09d296bf4f2e",
+      "tools_sha256": "af8049057c511045e34337e4e5d93448586cc70adeeb3dcf7cda47dde06d0d70",
+      "visible_source_sha256": "fa9e0903a7927f2ce4bc5b9a37ff52a294bff29c7cdbeb4b2e742d206b734358"
+    }
+  },
+  "totals": {
+    "both_pass": 9,
+    "candidate_only": 3,
+    "original_only": 1
+  },
+  "trace": {
+    "go_control_independent_adjudication": [
+      {
+        "q1_module_threshold_covered": true,
+        "q1_scope_change_covered": true,
+        "q2_correct": true,
+        "rationale": "Q1 explicitly says “from per-loop scope to per-iteration scope” and sets the module threshold at “`go 1.22` or later.” Q2 directly states that “`v` has per-loop scope” under the stipulated `go 1.21` directive and absence of an override.",
+        "review_id": "4fff9f1906565a62c04fa7826197397ce3a3401ce6b616031461a52b7ff5b49a",
+        "whole_report_scope_change_covered": true
+      },
+      {
+        "q1_module_threshold_covered": true,
+        "q1_scope_change_covered": false,
+        "q2_correct": true,
+        "rationale": "Q1 specifies “a fresh variable on each iteration” and a “`go 1.22` or later directive.” Its finding leaves the previous scope unspecified, although its citation mentions it. Q2 supplies the earlier rule for the stipulated `go 1.21` module: “`v` is per-loop, with one variable reused across iterations.” Together the findings cover both scopes.",
+        "review_id": "ef03cc31c7b64ed9a24114148124b0bf1dfaf07beeeced0c8589e6a1dc944cc1",
+        "whole_report_scope_change_covered": true
+      }
+    ],
+    "historical_cpython_pointer_sha256": "db3073fe34e7a8b0ac43870618f025a74afd90658b1fcdce8b13e2956d40d34a",
+    "initial_corrected_judge_input_sha256": "437d730eda654dd688f8f99a31630e8120fa74f2772bbe8c0b7a35343a7e37ea",
+    "ruff_badcase_id": "bad-2b4dce6dc6e95e7cf62275b4ca18e0c0d74ebb2096a5993bc01bf79ef18b6c86",
+    "ruff_badcase_sha256": "cca53e603ca0992880639a777339238eb62a214a75c2e3323b78ca8eb4aee352",
+    "ruff_counterexample": {
+      "basis": "deduction from the pinned closest-config rule under two layouts consistent with the original request",
+      "cases": [
+        {
+          "configuration_files": [
+            "ruff.toml",
+            "services/ruff.toml"
+          ],
+          "scripts/check.py_automatic": "ruff.toml",
+          "services/app.py_automatic": "services/ruff.toml"
+        },
+        {
+          "configuration_files": [
+            "ruff.toml",
+            "scripts/ruff.toml",
+            "services/ruff.toml"
+          ],
+          "scripts/check.py_automatic": "scripts/ruff.toml",
+          "services/app.py_automatic": "services/ruff.toml"
+        }
+      ],
+      "source": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md#L255-L282"
+    }
+  }
+}

@@ -1,0 +1,286 @@
+[
+  {
+    "arm": "A",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "uv-lock-check-supported",
+        "covered_points": [
+          "answer1"
+        ],
+        "forbidden_matches": [],
+        "new_material": false
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      },
+      {
+        "justified": false,
+        "question_id": "q2",
+        "reason": "The scripted arm withheld an answer.",
+        "status": "unresolved"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "answerable-abstentions"
+  },
+  {
+    "arm": "B",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "uv-lock-check-supported",
+        "covered_points": [
+          "answer1"
+        ],
+        "forbidden_matches": [],
+        "new_material": false
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      },
+      {
+        "justified": false,
+        "question_id": "q2",
+        "reason": "The scripted arm withheld an answer.",
+        "status": "unresolved"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "answerable-abstentions"
+  },
+  {
+    "arm": "A",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "control-entailment-flip",
+        "covered_points": [],
+        "forbidden_matches": [
+          "Treat a bound source as verification of truth, entailment, accuracy or value."
+        ],
+        "new_material": false
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "citation-binding"
+  },
+  {
+    "arm": "B",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "binding-support-limit",
+        "covered_points": [
+          "answer1"
+        ],
+        "forbidden_matches": [],
+        "new_material": true
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "citation-binding"
+  },
+  {
+    "arm": "A",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "memo-east-required",
+        "covered_points": [],
+        "forbidden_matches": [
+          "Choose one region without explaining the directly opposing policy."
+        ],
+        "new_material": false
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      },
+      {
+        "justified": true,
+        "question_id": "q2",
+        "reason": "Neither frozen memo states an effective date.",
+        "status": "unresolved"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "memo-conflict"
+  },
+  {
+    "arm": "B",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "memo-conflict-described",
+        "covered_points": [
+          "answer1"
+        ],
+        "forbidden_matches": [],
+        "new_material": true
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      },
+      {
+        "justified": true,
+        "question_id": "q2",
+        "reason": "Neither frozen memo states an effective date.",
+        "status": "unresolved"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "memo-conflict"
+  },
+  {
+    "arm": "A",
+    "basis": "scripted_fixture",
+    "claims": [],
+    "dispositions": [],
+    "outcome": "report_absent",
+    "resources": {},
+    "run_id": null,
+    "task_id": "missing-delivery"
+  },
+  {
+    "arm": "B",
+    "basis": "scripted_fixture",
+    "claims": [],
+    "dispositions": [],
+    "outcome": "not_started",
+    "resources": {},
+    "run_id": null,
+    "task_id": "missing-delivery"
+  },
+  {
+    "arm": "A",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "ruff-config-precedence",
+        "covered_points": [
+          "answer1"
+        ],
+        "forbidden_matches": [],
+        "new_material": false
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "ruff-control"
+  },
+  {
+    "arm": "B",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "ruff-config-merged",
+        "covered_points": [],
+        "forbidden_matches": [
+          "Assert the parent config is merged through automatic discovery."
+        ],
+        "new_material": true
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "ruff-control"
+  },
+  {
+    "arm": "A",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "uv-lock-check-supported",
+        "covered_points": [
+          "answer1"
+        ],
+        "forbidden_matches": [],
+        "new_material": false
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "uv-control"
+  },
+  {
+    "arm": "B",
+    "basis": "scripted_fixture",
+    "claims": [
+      {
+        "case_id": "uv-lock-check-supported",
+        "covered_points": [
+          "answer1"
+        ],
+        "forbidden_matches": [],
+        "new_material": false
+      }
+    ],
+    "dispositions": [
+      {
+        "question_id": "q1",
+        "status": "candidate_findings"
+      }
+    ],
+    "outcome": "delivered",
+    "resources": {},
+    "run_id": null,
+    "task_id": "uv-control"
+  }
+]

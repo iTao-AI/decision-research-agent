@@ -1,0 +1,33 @@
+{
+  "fixture_id": "go-challenge",
+  "frozen_search_result": {
+    "results": [
+      {
+        "content": "per-iteration scope instead of per-loop scope [excerpt gap] only apply in packages contained in modules that declare `go 1.22` or later in their `go.mod` files",
+        "url": "https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md"
+      }
+    ]
+  },
+  "provenance": {
+    "checked_on": "2026-11-19",
+    "kind": "public_documentation_synthetic_history",
+    "locator": "Fixing For Loops in Go 1.22, The Fix. Two exact spans from pinned Markdown with wrapping normalized and an explicit gap.",
+    "source_url": "https://github.com/golang/website/blob/af871f5d42e869aac0512d7fa773bc3cd7913f4d/_content/blog/loopvar-preview.md"
+  },
+  "query": "I build a Go module with the Go 1.22.0 toolchain. The target file has a range loop declaring v with :=. There are no experiments, build constraints, or other language-version overrides. The module's go directive is unobserved. What loop-variable scope changed with Go 1.22, and which module directive enables the new behavior here? Is v in this exact build per-loop or per-iteration on the supplied facts?",
+  "research_task": "Retrieve the pinned source passage needed to answer the research question.",
+  "schema_version": "dra.findings-quality-native-fixture.v1",
+  "scope": {
+    "questions": [
+      {
+        "question_id": "q1",
+        "text": "What loop-variable scope changed with Go 1.22, and which module directive enables the new behavior here?"
+      },
+      {
+        "question_id": "q2",
+        "text": "Is v in this exact build per-loop or per-iteration on the supplied facts?"
+      }
+    ]
+  },
+  "search_query": "Go 1.22 loop-variable change; official design note pinned at af871f5d42e869aac0512d7fa773bc3cd7913f4d rules for the stated question"
+}

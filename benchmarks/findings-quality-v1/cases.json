@@ -1,0 +1,616 @@
+[
+  {
+    "case_id": "binding-support-limit",
+    "family": "delivery-authority",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "Does a bound source reference prove truth and entailment?"
+    },
+    "statement": "A bound citation alone cannot establish source truth, entailment, answer accuracy, or human value.",
+    "references": [
+      {
+        "source_url": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+        "source_identity": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+        "source_version": "8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1",
+        "snippet": "Source binding proves where candidate material came from. It does not verify source truth, entailment, answer accuracy or human value. Reported contradictions remain model-reported. Human verification and approval retain their existing authority: approval permits delivery and does not verify Evidence. Diagnostics expose fixed issue codes and counts, never raw model text, exceptions or private paths.",
+        "excerpt": "It does not verify source truth, entailment, answer accuracy or human value.",
+        "excerpt_start": 58,
+        "excerpt_end": 134
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_source",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/cases.json"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "control-entailment-flip",
+    "family": "delivery-authority",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "Does a bound source reference prove truth and entailment?"
+    },
+    "statement": "A bound source reference verifies source truth, entailment, answer accuracy and human value.",
+    "references": [
+      {
+        "source_url": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+        "source_identity": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+        "source_version": "8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1",
+        "snippet": "Source binding proves where candidate material came from. It does not verify source truth, entailment, answer accuracy or human value. Reported contradictions remain model-reported. Human verification and approval retain their existing authority: approval permits delivery and does not verify Evidence. Diagnostics expose fixed issue codes and counts, never raw model text, exceptions or private paths.",
+        "excerpt": "It does not verify source truth, entailment, answer accuracy or human value.",
+        "excerpt_start": 58,
+        "excerpt_end": 134
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_scripted_candidate",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/scripted-candidates.json"
+    },
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": "generation",
+      "basis": "Deliberate fixture construction. The scripted assertion reverses an explicit denial in the cited passage.",
+      "locator": "cases.json#control-entailment-flip"
+    }
+  },
+  {
+    "case_id": "control-human-value",
+    "family": "benchmark-value",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "Has the benchmark producer recorded a passed human value gate?"
+    },
+    "statement": "The benchmark producer has recorded a passed human value gate.",
+    "references": [
+      {
+        "source_url": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/AGENTS.md",
+        "source_identity": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/AGENTS.md",
+        "source_version": "8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1",
+        "snippet": "- The benchmark producer keeps `value_gate.passed=false`; the repository does not record a passed human value gate.",
+        "excerpt": "the repository does not record a passed human value gate.",
+        "excerpt_start": 58,
+        "excerpt_end": 115
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_scripted_candidate",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/scripted-candidates.json"
+    },
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": "generation",
+      "basis": "Deliberate fixture construction. The scripted assertion reverses an explicit denial in the cited passage.",
+      "locator": "cases.json#control-human-value"
+    }
+  },
+  {
+    "case_id": "delivery-owner-broken-reference",
+    "family": "delivery-authority",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "Which component owns research delivery authority?"
+    },
+    "statement": "Authority over the research run, evidence ledger, artifact metadata, and delivery status rests with the application database.",
+    "references": [
+      {
+        "source_url": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+        "source_identity": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+        "source_version": "8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1",
+        "snippet": "The application database remains authoritative for ResearchRun, EvidenceLedger, artifact metadata and delivery state. Native DeepAgents planning, researchers, virtual file tools and stream capture produce candidate material. Virtual files, model output, LangGraph checkpoints, LangSmith traces and the browser do not assign business authority.",
+        "excerpt": "The application database remains authoritative for ResearchRun, EvidenceLedger, artifact metadata and delivery state.",
+        "excerpt_start": 0,
+        "excerpt_end": 116
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_source",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/cases.json"
+    },
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": "application_binding",
+      "basis": "Deliberate fixture construction. The retained end offset omits the final character of the cited excerpt.",
+      "locator": "cases.json#delivery-owner-broken-reference"
+    }
+  },
+  {
+    "case_id": "delivery-owner-supported",
+    "family": "delivery-authority",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "Which component owns research delivery authority?"
+    },
+    "statement": "Authority over the research run, evidence ledger, artifact metadata, and delivery status rests with the application database.",
+    "references": [
+      {
+        "source_url": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+        "source_identity": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/docs/decisions/research-findings-delivery-authority.md",
+        "source_version": "8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1",
+        "snippet": "The application database remains authoritative for ResearchRun, EvidenceLedger, artifact metadata and delivery state. Native DeepAgents planning, researchers, virtual file tools and stream capture produce candidate material. Virtual files, model output, LangGraph checkpoints, LangSmith traces and the browser do not assign business authority.",
+        "excerpt": "The application database remains authoritative for ResearchRun, EvidenceLedger, artifact metadata and delivery state.",
+        "excerpt_start": 0,
+        "excerpt_end": 117
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_source",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/cases.json"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "human-value-supported",
+    "family": "benchmark-value",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "Has the benchmark producer recorded a passed human value gate?"
+    },
+    "statement": "The benchmark's human value gate remains unpassed.",
+    "references": [
+      {
+        "source_url": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/AGENTS.md",
+        "source_identity": "https://github.com/iTao-AI/decision-research-agent/blob/8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1/AGENTS.md",
+        "source_version": "8b884a2f2e4cebbe43decc35d1e7ac1b4e9caca1",
+        "snippet": "- The benchmark producer keeps `value_gate.passed=false`; the repository does not record a passed human value gate.",
+        "excerpt": "the repository does not record a passed human value gate.",
+        "excerpt_start": 58,
+        "excerpt_end": 115
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_source",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/cases.json"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "memo-conflict-described",
+    "family": "policy-conflict",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "What region, if any, do the two procurement memos establish for the pilot?"
+    },
+    "statement": "Memo A names Region East and memo B names Region West; the supplied policies disagree.",
+    "references": [
+      {
+        "source_url": "https://example.com/dra-evaluation/policy-a",
+        "source_identity": "https://example.com/dra-evaluation/policy-a",
+        "source_version": "aada77bc95809d9c240f206a062b9b3ee978cc3a",
+        "snippet": "Synthetic procurement memo A: the pilot must use Region East. No authority ranking or effective date is supplied.",
+        "excerpt": "the pilot must use Region East.",
+        "excerpt_start": 30,
+        "excerpt_end": 61
+      },
+      {
+        "source_url": "https://example.com/dra-evaluation/policy-b",
+        "source_identity": "https://example.com/dra-evaluation/policy-b",
+        "source_version": "aada77bc95809d9c240f206a062b9b3ee978cc3a",
+        "snippet": "Synthetic procurement memo B: the same pilot must use Region West. No authority ranking or effective date is supplied.",
+        "excerpt": "the same pilot must use Region West.",
+        "excerpt_start": 30,
+        "excerpt_end": 66
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_scripted_candidate",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/scripted-candidates.json"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "memo-east-required",
+    "family": "policy-conflict",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "What region, if any, do the two procurement memos establish for the pilot?"
+    },
+    "statement": "The pilot must be run in Region East.",
+    "references": [
+      {
+        "source_url": "https://example.com/dra-evaluation/policy-a",
+        "source_identity": "https://example.com/dra-evaluation/policy-a",
+        "source_version": "aada77bc95809d9c240f206a062b9b3ee978cc3a",
+        "snippet": "Synthetic procurement memo A: the pilot must use Region East. No authority ranking or effective date is supplied.",
+        "excerpt": "the pilot must use Region East.",
+        "excerpt_start": 30,
+        "excerpt_end": 61
+      },
+      {
+        "source_url": "https://example.com/dra-evaluation/policy-b",
+        "source_identity": "https://example.com/dra-evaluation/policy-b",
+        "source_version": "aada77bc95809d9c240f206a062b9b3ee978cc3a",
+        "snippet": "Synthetic procurement memo B: the same pilot must use Region West. No authority ranking or effective date is supplied.",
+        "excerpt": "the same pilot must use Region West.",
+        "excerpt_start": 30,
+        "excerpt_end": 66
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_source",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/cases.json"
+    },
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": "generation",
+      "basis": "Deliberate fixture construction. Memo A directly supports East and the equally scoped memo B directly requires West.",
+      "locator": "cases.json#memo-east-required"
+    }
+  },
+  {
+    "case_id": "memo-effective-date-invented",
+    "family": "policy-conflict",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "When did the region requirement in the two procurement memos take effect?"
+    },
+    "statement": "The region requirement took effect on 1 April 2026.",
+    "references": [
+      {
+        "source_url": "https://example.com/dra-evaluation/policy-a",
+        "source_identity": "https://example.com/dra-evaluation/policy-a",
+        "source_version": "aada77bc95809d9c240f206a062b9b3ee978cc3a",
+        "snippet": "Synthetic procurement memo A: the pilot must use Region East. No authority ranking or effective date is supplied.",
+        "excerpt": "No authority ranking or effective date is supplied.",
+        "excerpt_start": 62,
+        "excerpt_end": 113
+      },
+      {
+        "source_url": "https://example.com/dra-evaluation/policy-b",
+        "source_identity": "https://example.com/dra-evaluation/policy-b",
+        "source_version": "aada77bc95809d9c240f206a062b9b3ee978cc3a",
+        "snippet": "Synthetic procurement memo B: the same pilot must use Region West. No authority ranking or effective date is supplied.",
+        "excerpt": "No authority ranking or effective date is supplied.",
+        "excerpt_start": 67,
+        "excerpt_end": 118
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_source",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/cases.json"
+    },
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": "generation",
+      "basis": "Deliberate fixture construction. The citations omit an effective date and give no other information from which to infer April 1.",
+      "locator": "cases.json#memo-effective-date-invented"
+    }
+  },
+  {
+    "case_id": "memo-effective-date-unestablished",
+    "family": "policy-conflict",
+    "split": "development",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "When did the region requirement in the two procurement memos take effect?"
+    },
+    "statement": "Neither of the supplied memos establishes when the region requirement took effect.",
+    "references": [
+      {
+        "source_url": "https://example.com/dra-evaluation/policy-a",
+        "source_identity": "https://example.com/dra-evaluation/policy-a",
+        "source_version": "aada77bc95809d9c240f206a062b9b3ee978cc3a",
+        "snippet": "Synthetic procurement memo A: the pilot must use Region East. No authority ranking or effective date is supplied.",
+        "excerpt": "No authority ranking or effective date is supplied.",
+        "excerpt_start": 62,
+        "excerpt_end": 113
+      },
+      {
+        "source_url": "https://example.com/dra-evaluation/policy-b",
+        "source_identity": "https://example.com/dra-evaluation/policy-b",
+        "source_version": "aada77bc95809d9c240f206a062b9b3ee978cc3a",
+        "snippet": "Synthetic procurement memo B: the same pilot must use Region West. No authority ranking or effective date is supplied.",
+        "excerpt": "No authority ranking or effective date is supplied.",
+        "excerpt_start": 67,
+        "excerpt_end": 118
+      }
+    ],
+    "provenance": {
+      "kind": "pilot_source",
+      "locator": "aada77bc95809d9c240f206a062b9b3ee978cc3a:tests/fixtures/research-quality-pilot/cases.json",
+      "question_disposition": "unresolved"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "ruff-config-merged",
+    "family": "ruff-configuration",
+    "split": "holdout",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "Under Ruff 0.14.6 automatic discovery, how do a root ruff.toml and a nearer services/ruff.toml apply to services/app.py when neither declares extend?"
+    },
+    "statement": "Ruff merges the root settings into the services configuration automatically for services/app.py.",
+    "references": [
+      {
+        "source_url": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md",
+        "source_identity": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md",
+        "source_version": "59c6cb521d26380120f8522476fd09d296bf4f2e",
+        "snippet": "Ruff chooses the nearest configuration for each file. Parent configuration is ignored during automatic discovery. Use extend to inherit from an additional configuration deliberately.",
+        "excerpt": "Ruff chooses the nearest configuration for each file. Parent configuration is ignored during automatic discovery. Use extend to inherit from an additional configuration deliberately.",
+        "excerpt_start": 0,
+        "excerpt_end": 182
+      }
+    ],
+    "provenance": {
+      "kind": "public_fact_extract",
+      "locator": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md#L255-L282"
+    },
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": "generation",
+      "basis": "Deliberate fixture construction. The extract explicitly says discovery ignores parent config and requires extend for deliberate inheritance.",
+      "locator": "cases.json#ruff-config-merged"
+    }
+  },
+  {
+    "case_id": "ruff-config-precedence",
+    "family": "ruff-configuration",
+    "split": "holdout",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "Under Ruff 0.14.6 automatic discovery, how do a root ruff.toml and a nearer services/ruff.toml apply to services/app.py when neither declares extend?"
+    },
+    "statement": "Ruff applies services/ruff.toml to services/app.py and leaves the root settings out.",
+    "references": [
+      {
+        "source_url": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md",
+        "source_identity": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md",
+        "source_version": "59c6cb521d26380120f8522476fd09d296bf4f2e",
+        "snippet": "Ruff chooses the nearest configuration for each file. Parent configuration is ignored during automatic discovery. Use extend to inherit from an additional configuration deliberately.",
+        "excerpt": "Ruff chooses the nearest configuration for each file. Parent configuration is ignored during automatic discovery. Use extend to inherit from an additional configuration deliberately.",
+        "excerpt_start": 0,
+        "excerpt_end": 182
+      }
+    ],
+    "provenance": {
+      "kind": "public_fact_extract",
+      "locator": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md#L255-L282"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "ruff-config-speed-unestablished",
+    "family": "ruff-configuration",
+    "split": "holdout",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "How much time does an explicit shared configuration save compared with automatic discovery for this repository on Ruff 0.14.6?"
+    },
+    "statement": "The cited configuration behavior gives no timing measurements for this repository, so a speedup cannot be quantified.",
+    "references": [
+      {
+        "source_url": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md",
+        "source_identity": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md",
+        "source_version": "59c6cb521d26380120f8522476fd09d296bf4f2e",
+        "snippet": "An explicit configuration file supplied with --config applies across the analyzed files. Ruff interprets paths from that file relative to the command's working directory. Ruff chooses the nearest configuration for each file. Parent configuration is ignored during automatic discovery. Use extend to inherit from an additional configuration deliberately.",
+        "excerpt": "An explicit configuration file supplied with --config applies across the analyzed files. Ruff interprets paths from that file relative to the command's working directory. Ruff chooses the nearest configuration for each file. Parent configuration is ignored during automatic discovery. Use extend to inherit from an additional configuration deliberately.",
+        "excerpt_start": 0,
+        "excerpt_end": 353
+      }
+    ],
+    "provenance": {
+      "kind": "public_fact_extract",
+      "locator": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md#L255-L282",
+      "question_disposition": "unresolved"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "ruff-explicit-config-supported",
+    "family": "ruff-configuration",
+    "split": "holdout",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "In Ruff 0.14.6, how does explicitly passing a shared config from the repository root affect which files and relative exclusions it governs?"
+    },
+    "statement": "The supplied config applies to every analyzed file, and relative exclusions are interpreted from the repository root when the command starts there.",
+    "references": [
+      {
+        "source_url": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md",
+        "source_identity": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md",
+        "source_version": "59c6cb521d26380120f8522476fd09d296bf4f2e",
+        "snippet": "An explicit configuration file supplied with --config applies across the analyzed files. Ruff interprets paths from that file relative to the command's working directory.",
+        "excerpt": "An explicit configuration file supplied with --config applies across the analyzed files. Ruff interprets paths from that file relative to the command's working directory.",
+        "excerpt_start": 0,
+        "excerpt_end": 170
+      }
+    ],
+    "provenance": {
+      "kind": "public_fact_extract",
+      "locator": "https://github.com/astral-sh/ruff/blob/59c6cb521d26380120f8522476fd09d296bf4f2e/docs/configuration.md#L267-L269"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "uv-lock-check-flipped",
+    "family": "uv-lock-and-sync",
+    "split": "holdout",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "In uv 0.9.9, what does uv lock --check do when an added project dependency makes an existing lockfile stale?"
+    },
+    "statement": "The command silently updates the stale lockfile so it passes the check.",
+    "references": [
+      {
+        "source_url": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md",
+        "source_identity": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md",
+        "source_version": "4fac4cb7ed8679debac7e495824367bf9abfeea8",
+        "snippet": "Use uv lock --check to test whether the lockfile matches the project's current metadata. The equivalent --locked flag on other commands rejects a stale lockfile without changing it.",
+        "excerpt": "Use uv lock --check to test whether the lockfile matches the project's current metadata. The equivalent --locked flag on other commands rejects a stale lockfile without changing it.",
+        "excerpt_start": 0,
+        "excerpt_end": 181
+      }
+    ],
+    "provenance": {
+      "kind": "public_fact_extract",
+      "locator": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md#L14-L50"
+    },
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": "generation",
+      "basis": "Deliberate fixture construction. The cited check is equivalent to rejecting stale input, with no lockfile update.",
+      "locator": "cases.json#uv-lock-check-flipped"
+    }
+  },
+  {
+    "case_id": "uv-lock-check-supported",
+    "family": "uv-lock-and-sync",
+    "split": "holdout",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "In uv 0.9.9, what does uv lock --check do when an added project dependency makes an existing lockfile stale?"
+    },
+    "statement": "The command checks freshness and reports the stale lockfile without updating it.",
+    "references": [
+      {
+        "source_url": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md",
+        "source_identity": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md",
+        "source_version": "4fac4cb7ed8679debac7e495824367bf9abfeea8",
+        "snippet": "Use uv lock --check to test whether the lockfile matches the project's current metadata. The equivalent --locked flag on other commands rejects a stale lockfile without changing it.",
+        "excerpt": "Use uv lock --check to test whether the lockfile matches the project's current metadata. The equivalent --locked flag on other commands rejects a stale lockfile without changing it.",
+        "excerpt_start": 0,
+        "excerpt_end": 181
+      }
+    ],
+    "provenance": {
+      "kind": "public_fact_extract",
+      "locator": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md#L14-L50"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "uv-sync-comparison",
+    "family": "uv-lock-and-sync",
+    "split": "holdout",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "How do default and inexact sync in uv 0.9.9 differ for a diagnostic package installed locally and absent from the project's lockfile?"
+    },
+    "statement": "Default sync removes that package, while uv sync --inexact retains it.",
+    "references": [
+      {
+        "source_url": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md",
+        "source_identity": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md",
+        "source_version": "4fac4cb7ed8679debac7e495824367bf9abfeea8",
+        "snippet": "A default sync removes installed packages absent from the lockfile. Select uv sync --inexact to keep those extra packages.",
+        "excerpt": "A default sync removes installed packages absent from the lockfile. Select uv sync --inexact to keep those extra packages.",
+        "excerpt_start": 0,
+        "excerpt_end": 122
+      }
+    ],
+    "provenance": {
+      "kind": "public_fact_extract",
+      "locator": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md#L92-L101"
+    },
+    "diagnosis": {
+      "status": "unobserved",
+      "earliest_stage": null,
+      "basis": "No workflow deviation asserted.",
+      "locator": null
+    }
+  },
+  {
+    "case_id": "uv-sync-version-overclaim",
+    "family": "uv-lock-and-sync",
+    "split": "holdout",
+    "origin": "synthetic_control",
+    "question": {
+      "question_id": "q1",
+      "text": "How do default and inexact sync in uv 0.9.9 differ for a diagnostic package installed locally and absent from the project's lockfile?"
+    },
+    "statement": "Default sync removes that package and uv sync --inexact retains it in 0.9.9 and in every later release.",
+    "references": [
+      {
+        "source_url": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md",
+        "source_identity": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md",
+        "source_version": "4fac4cb7ed8679debac7e495824367bf9abfeea8",
+        "snippet": "A default sync removes installed packages absent from the lockfile. Select uv sync --inexact to keep those extra packages.",
+        "excerpt": "A default sync removes installed packages absent from the lockfile. Select uv sync --inexact to keep those extra packages.",
+        "excerpt_start": 0,
+        "excerpt_end": 122
+      }
+    ],
+    "provenance": {
+      "kind": "public_fact_extract",
+      "locator": "https://github.com/astral-sh/uv/blob/4fac4cb7ed8679debac7e495824367bf9abfeea8/docs/concepts/projects/sync.md#L92-L101"
+    },
+    "diagnosis": {
+      "status": "confirmed",
+      "earliest_stage": "generation",
+      "basis": "Deliberate fixture construction. The pinned 0.9.9 extract supports the comparison for that release only.",
+      "locator": "cases.json#uv-sync-version-overclaim"
+    }
+  }
+]

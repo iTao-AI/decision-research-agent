@@ -1,0 +1,27 @@
+{
+  "task_id": "sqlite-foreign-keys",
+  "rubric": [
+    {
+      "question_id": "q1",
+      "text": "What does the guide say about default SQLite foreign key enforcement and the scope of enabling it?",
+      "required_points": [
+        {"point_id": "guide-default", "text": "The frozen guide describes enforcement as disabled by default for backward compatibility."},
+        {"point_id": "connection-scope", "text": "Enabling enforcement applies separately to each database connection."}
+      ],
+      "unresolved_expectation": null,
+      "forbidden_claims": [
+        "The frozen guide establishes enforcement is enabled by default.",
+        "Enabling enforcement changes every other connection."
+      ]
+    },
+    {
+      "question_id": "q2",
+      "text": "Does the guide establish whether foreign key enforcement is enabled on the particular connection my application is using now?",
+      "required_points": [],
+      "unresolved_expectation": "Explain that the application connection's live foreign-key setting is missing.",
+      "forbidden_claims": [
+        "The guide establishes whether the application's current connection enforces foreign keys."
+      ]
+    }
+  ]
+}

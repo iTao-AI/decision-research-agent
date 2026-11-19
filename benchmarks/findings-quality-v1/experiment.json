@@ -1,0 +1,147 @@
+{
+  "generation": {
+    "baseline": "fixture A",
+    "candidate": "fixture B",
+    "kind": "scripted_fixture"
+  },
+  "judge": {
+    "model": "findings-quality-scripted-judge@1",
+    "rubric_version": "citation-support-v1"
+  },
+  "schema_version": "dra.findings-quality.experiment.v1",
+  "tasks": [
+    {
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Claim that checking freshness rewrites the lockfile."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "answer1",
+              "text": "State that a stale lockfile fails the check without being rewritten."
+            }
+          ],
+          "text": "In uv 0.9.9, what does uv lock --check do when an added project dependency makes an existing lockfile stale?",
+          "unresolved_expectation": null
+        },
+        {
+          "forbidden_claims": [],
+          "question_id": "q2",
+          "required_points": [
+            {
+              "point_id": "answer1",
+              "text": "Distinguish default and inexact sync for the extra package."
+            }
+          ],
+          "text": "How do default and inexact sync in uv 0.9.9 differ for a diagnostic package installed locally and absent from the project's lockfile?",
+          "unresolved_expectation": null
+        }
+      ],
+      "task_id": "answerable-abstentions"
+    },
+    {
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Treat a bound source as verification of truth, entailment, accuracy or value."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "answer1",
+              "text": "Explain that binding establishes provenance alone."
+            }
+          ],
+          "text": "Does a bound source reference prove truth and entailment?",
+          "unresolved_expectation": null
+        }
+      ],
+      "task_id": "citation-binding"
+    },
+    {
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Choose one region without explaining the directly opposing policy."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "answer1",
+              "text": "Explain that the comparably scoped frozen versions name opposite regions."
+            }
+          ],
+          "text": "What region, if any, do the two procurement memos establish for the pilot?",
+          "unresolved_expectation": null
+        },
+        {
+          "forbidden_claims": [
+            "Assert an effective date without a dated policy."
+          ],
+          "question_id": "q2",
+          "required_points": [],
+          "text": "When did the region requirement in the two procurement memos take effect?",
+          "unresolved_expectation": "The date is unavailable in both supplied memos."
+        }
+      ],
+      "task_id": "memo-conflict"
+    },
+    {
+      "rubric": [
+        {
+          "forbidden_claims": [],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "answer1",
+              "text": "State that no passed human value gate is recorded."
+            }
+          ],
+          "text": "Has the benchmark producer recorded a passed human value gate?",
+          "unresolved_expectation": null
+        }
+      ],
+      "task_id": "missing-delivery"
+    },
+    {
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Assert the parent config is merged through automatic discovery."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "answer1",
+              "text": "Identify the nearest config and that parent settings are omitted."
+            }
+          ],
+          "text": "Under Ruff 0.14.6 automatic discovery, how do a root ruff.toml and a nearer services/ruff.toml apply to services/app.py when neither declares extend?",
+          "unresolved_expectation": null
+        }
+      ],
+      "task_id": "ruff-control"
+    },
+    {
+      "rubric": [
+        {
+          "forbidden_claims": [
+            "Claim that checking freshness rewrites the lockfile."
+          ],
+          "question_id": "q1",
+          "required_points": [
+            {
+              "point_id": "answer1",
+              "text": "State that a stale lockfile fails the check without being rewritten."
+            }
+          ],
+          "text": "In uv 0.9.9, what does uv lock --check do when an added project dependency makes an existing lockfile stale?",
+          "unresolved_expectation": null
+        }
+      ],
+      "task_id": "uv-control"
+    }
+  ]
+}

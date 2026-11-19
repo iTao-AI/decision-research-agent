@@ -1,0 +1,164 @@
+[
+  {
+    "case_id": "binding-support-limit",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "The citation expressly separates source binding from checks of truth, entailment, accuracy, and value.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "control-entailment-flip",
+    "verdict": "contradicted",
+    "authority": "synthetic_expectation",
+    "rationale": "The scripted assertion reverses an explicit denial in the cited passage.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": true
+  },
+  {
+    "case_id": "control-human-value",
+    "verdict": "contradicted",
+    "authority": "synthetic_expectation",
+    "rationale": "The scripted assertion reverses an explicit denial in the cited passage.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "delivery-owner-broken-reference",
+    "verdict": null,
+    "authority": "deterministic_structural",
+    "rationale": "The retained end offset omits the final character of the cited excerpt.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "delivery-owner-supported",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "The cited sentence assigns every listed responsibility to the application database.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": true
+  },
+  {
+    "case_id": "human-value-supported",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "The passage expressly says the repository records no successful human value gate.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "memo-conflict-described",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "The passages require opposite regions for the same pilot, exactly the disagreement the statement describes.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": true
+  },
+  {
+    "case_id": "memo-east-required",
+    "verdict": "conflicting_evidence",
+    "authority": "synthetic_expectation",
+    "rationale": "Memo A directly supports East and the equally scoped memo B directly requires West.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": true
+  },
+  {
+    "case_id": "memo-effective-date-invented",
+    "verdict": "insufficient_evidence",
+    "authority": "synthetic_expectation",
+    "rationale": "The citations omit an effective date and give no other information from which to infer April 1.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": true
+  },
+  {
+    "case_id": "memo-effective-date-unestablished",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "Both passages explicitly lack an effective date.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "ruff-config-merged",
+    "verdict": "contradicted",
+    "authority": "synthetic_expectation",
+    "rationale": "The extract explicitly says discovery ignores parent config and requires extend for deliberate inheritance.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": true
+  },
+  {
+    "case_id": "ruff-config-precedence",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "The extract specifies the nearest config and excludes parent inheritance during discovery.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "ruff-config-speed-unestablished",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "The extract addresses settings resolution and supplies no performance measurements.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "ruff-explicit-config-supported",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "The cited material specifies both global config scope and working-directory-relative paths.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "uv-lock-check-flipped",
+    "verdict": "contradicted",
+    "authority": "synthetic_expectation",
+    "rationale": "The cited check is equivalent to rejecting stale input, with no lockfile update.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "uv-lock-check-supported",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "The cited extract describes a check and identifies the equivalent non-updating freshness option.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": false
+  },
+  {
+    "case_id": "uv-sync-comparison",
+    "verdict": "supported",
+    "authority": "synthetic_expectation",
+    "rationale": "The extract explicitly distinguishes exact and inexact sync for this case.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": true
+  },
+  {
+    "case_id": "uv-sync-version-overclaim",
+    "verdict": "insufficient_evidence",
+    "authority": "synthetic_expectation",
+    "rationale": "The pinned 0.9.9 extract supports the comparison for that release only.",
+    "reviewer": null,
+    "review_date": null,
+    "blind_review": true
+  }
+]

@@ -1,0 +1,29 @@
+{
+  "fixture_id": "editorconfig0172-override",
+  "frozen_search_result": {
+    "results": [
+      {
+        "content": "If multiple EditorConfig files have matching sections, the rules from the closer EditorConfig file are read last, so pairs in closer files take precedence.",
+        "url": "https://github.com/editorconfig/specification/blob/329077a5649b013903c2aeaa5617afb70fcc9eaf/index.rst"
+      }
+    ]
+  },
+  "provenance": {
+    "checked_on": "2026-11-19",
+    "kind": "public_documentation_synthetic_history",
+    "locator": "Release v0.17.2, index.rst, File Processing, lines 205–207. One exact sentence with source line wrapping normalized to spaces.",
+    "source_url": "https://github.com/editorconfig/specification/blob/329077a5649b013903c2aeaa5617afb70fcc9eaf/index.rst"
+  },
+  "query": "The repository-root .editorconfig has root = true and a matching section with indent_style = space and end_of_line = lf. No configuration outside these two paths can apply. scripts/.editorconfig exists. Its entire contents are one matching section with indent_style = tab and no other settings. Under EditorConfig 0.17.2, what are the effective indent_style and end_of_line for scripts/check.py, and what, if anything, depends on an unobserved configuration?",
+  "research_task": "Retrieve the pinned source passage needed to answer the research question.",
+  "schema_version": "dra.findings-quality-native-fixture.v1",
+  "scope": {
+    "questions": [
+      {
+        "question_id": "q1",
+        "text": "Under EditorConfig 0.17.2, what are the effective indent_style and end_of_line for scripts/check.py, and what, if anything, depends on an unobserved configuration?"
+      }
+    ]
+  },
+  "search_query": "EditorConfig 0.17.2 File Processing precedence between matching property pairs"
+}

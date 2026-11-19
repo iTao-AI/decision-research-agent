@@ -179,3 +179,8 @@ python -m pytest -q tests/unit/test_research_findings_tool.py \
 The existing [generic downstream contract](downstream-consumer-contract.md)
 and its `scripts/downstream_consumer_contract.py` fixture remain separate and
 unchanged. This feature adds no MCP server or SDK.
+
+Use the [local findings quality loop](../../benchmarks/findings-quality-v1/README.md)
+to register a suspect finding from saved delivery JSON, inspect its cited
+passages and replay the frozen comparison. Its semantic judgments are local
+evaluation records.

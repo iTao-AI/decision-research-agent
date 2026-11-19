@@ -1,6 +1,7 @@
 """Compile the bounded synchronous researchers used by the generic harness."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from deepagents.middleware.subagents import CompiledSubAgent
@@ -36,13 +37,21 @@ _RESEARCHER_CONFIG = {
 def compile_generic_researchers(
     *,
     model: Any,
+    network_search_override: Callable[..., str] | None = None,
 ) -> dict[str, CompiledSubAgent]:
     """Compile three role-limited LangChain researchers."""
     compiled: dict[str, CompiledSubAgent] = {}
     for name, config in _RESEARCHER_CONFIG.items():
+        tools = config["tools"]
+        if name == "network_search" and network_search_override is not None:
+            # Keep the production tool name and model-facing schema when replaying
+            # fixed retrieval observations with no external search execution.
+            tools = [internet_search.model_copy(
+                update={"func": network_search_override, "coroutine": None},
+            )]
         runnable = create_agent(
             model=model,
-            tools=config["tools"],
+            tools=tools,
             system_prompt=sub_agents_config[config["prompt_key"]]["system_prompt"],
             middleware=build_profile_middleware("generic", role=name),
             context_schema=ResearchRuntimeContext,

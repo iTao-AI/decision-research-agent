@@ -196,16 +196,26 @@ python scripts/findings_quality.py replay --recorded-live output/findings-qualit
   --output-dir output/findings-quality-live-review
 ```
 
-The capture journals candidate bytes before the native write and binder, then
-stores validated delivery when available, allowlisted receipts and the
-archived proposal. Replay rebinds the captured candidate against the frozen
-same-run passage and compares the canonical artifact bytes. The native source
-locator records start and end offsets in the model-facing tool message.
-Decoding the JSON string fragment at that span recovers the exact passage,
-including quotes and backslashes. Replaying the capture
-makes zero requests and preserves stopped and unstarted rows. If native
-parity cannot be established, the report identifies a standalone prompt
-experiment. Inspect every regression and changed material assertion in the
+Capture stores the candidate-turn messages and tools in local
+`generation-input-{A,B}.json` files before transport. It journals candidate
+bytes before binding, then retains validated deliveries, transport receipts
+and the archived proposal. Keep the capture directory private. Replay rebinds
+the candidate against the frozen passage and compares canonical artifact bytes.
+
+For a matched A/B pair, replay recomputes both native and transport request
+digests, checks the exact candidate instruction and shared baseline, and
+verifies the fixture query, accepted scope, and source location. The source
+offsets refer to a JSON string span within the model-facing tool message.
+Decoding the span recovers the exact passage, including quotes and backslashes.
+Old captures with no request envelope remain readable as standalone evidence
+with missing parity proof. Incomplete or mismatched proofs cannot contribute
+a paired result. Per-arm deliveries and eligible scores remain visible.
+
+Replay makes zero requests. A transport cancellation is attributed to its
+matching start and retains its observed request count and elapsed time, even
+without a separate stop record. Missing token and cost measurements stay
+unknown. An incomplete task may still contribute supported coverage points.
+Points without a conclusive assessment are reported separately. Inspect every regression and changed material assertion in the
 comparison. Give every blind input in `generation-review-sheet.json` to
 the same Judge for task coverage, including required points, justified
 unresolved questions and overclaims. Import the assessments with

@@ -16,8 +16,8 @@ STAGES = ("source_retrieval", "capture", "coordinator_transfer", "generation", "
 RESOURCES = ("calls", "input_tokens", "output_tokens", "elapsed_seconds", "estimated_microusd")
 ID = re.compile(r"[a-zA-Z0-9_-]{1,100}\Z")
 HASH = re.compile(r"[0-9a-f]{64}\Z")
-JUDGE_OUTCOMES = ("completed", "timeout", "provider_failure", "invalid_response", "not_started", "budget_exhausted")
-GENERATION_OUTCOMES = ("delivered", "report_absent", "not_started", "structural_error", "timeout",
+JUDGE_OUTCOMES = ("completed", "timeout", "cancelled", "provider_failure", "invalid_response", "not_started", "budget_exhausted")
+GENERATION_OUTCOMES = ("delivered", "report_absent", "not_started", "structural_error", "timeout", "cancelled",
                        "provider_failure", "invalid_response", "budget_exhausted", "filtered", "declined", "local_experiment_failure")
 
 
@@ -237,6 +237,7 @@ def _grade_arm(row, task, by_case):
         _require(bool(required) is not expect_unresolved, "question must require answerable points or justified unresolved")
         forbidden = set(question["forbidden_claims"])
         covered, flagged, new, pending, unsupported = set(), set(), [], [], []
+        pending_points = set()
         for claim, case in findings:
             cid = case["case_id"]
             points, matches = set(claim["covered_points"]), set(claim["forbidden_matches"])
@@ -251,6 +252,11 @@ def _grade_arm(row, task, by_case):
                 unsupported.append(cid)
             else:
                 pending.append(cid)
+                pending_points.update(points)
+        if coverage_pending:
+            covered.clear()
+            pending_points = required
+        unassessed = pending_points - covered
         if unresolved:
             _require(_text(disposition.get("reason"), 2000) and disposition.get("justified") in {True, False, None},
                      "invalid unresolved assessment")
@@ -264,7 +270,8 @@ def _grade_arm(row, task, by_case):
             "question_id": qid, "text": question["text"], "rubric": question,
             "disposition": disposition, "claim_ids": [claim["case_id"] for claim, _ in findings],
             "required_points": sorted(required),
-            "supported_points": sorted(covered), "missing_points": [] if coverage_pending else sorted(required - covered),
+            "supported_points": sorted(covered), "missing_points": sorted(required - covered - unassessed),
+            "unassessed_points": sorted(unassessed),
             "coverage_review_pending": coverage_pending,
             "justified_unresolved": justified, "wrong_refusal": wrong_refusal, "unsupported_claims": unsupported,
             "new_material_claims": new, "forbidden_matches": sorted(flagged), "unscored_claims": pending, "passed": passed,
@@ -274,7 +281,7 @@ def _grade_arm(row, task, by_case):
     return result
 
 
-def _compare(tasks, records, by_case, generation_basis):
+def _compare(tasks, records, by_case, generation_basis, *, compare_generation=True):
     pairs, arms = [], []
     buckets = dict.fromkeys(("both_pass", "a_only", "b_only", "neither_pass"), 0)
     classifications = {(True, True): "both_pass", (True, False): "a_only",
@@ -287,17 +294,17 @@ def _compare(tasks, records, by_case, generation_basis):
         ]
         arms.extend(results)
         a, b = results
-        comparison = classifications.get((a["passed"], b["passed"]))
+        comparison = classifications.get((a["passed"], b["passed"])) if compare_generation else None
         if comparison:
             _require(a["basis"] == b["basis"], "cannot compare scripted and observed generation")
             buckets[comparison] += 1
         pairs.append({"task_id": identity, "A": a, "B": b, "comparison": comparison})
     questions = [question for arm in arms for question in arm["questions"]]
     scorable = sum(arm["passed"] is not None for arm in arms)
-    covered = sum(len(question["supported_points"]) for question in questions if question["passed"] is not None)
+    covered = sum(len(question["supported_points"]) for question in questions)
     observed_required = sum(len(question["required_points"]) for question in questions)
-    assessed_required = sum(len(question["required_points"]) for question in questions
-                            if question["passed"] is not None)
+    unassessed_required = sum(len(question["unassessed_points"]) for question in questions)
+    assessed_required = observed_required - unassessed_required
     planned_required = 2 * sum(len(question["required_points"])
                                for task in tasks.values() for question in task["rubric"])
     return {
@@ -311,14 +318,14 @@ def _compare(tasks, records, by_case, generation_basis):
         "wrong_refusals": sum(question["wrong_refusal"] for question in questions),
         "justified_unresolved": sum(question["justified_unresolved"] for question in questions),
         "supported_coverage": {"supported": covered, "planned": planned_required, "delivered": observed_required,
-                               "assessed": assessed_required,
+                               "assessed": assessed_required, "unassessed": unassessed_required,
                                "rate_assessed": covered / assessed_required if assessed_required else None},
         "resources": _resource_totals(arms),
     }
 
 
 def evaluate(cases, annotations, historical, experiment, generation, judge_records, *,
-             reviews, diagnostics=(), execution_mode="scripted"):
+             reviews, diagnostics=(), execution_mode="scripted", compare_generation=True):
     _require(execution_mode in {"scripted", "live"}, "invalid evaluation provenance")
     generation_basis = "scripted_fixture" if execution_mode == "scripted" else "live_generation"
     judge_basis = "scripted_fixture" if execution_mode == "scripted" else "live_judge"
@@ -382,7 +389,7 @@ def evaluate(cases, annotations, historical, experiment, generation, judge_recor
                 "diagnosis": {"status": "unobserved", "earliest_stage": None, "basis": None, "locator": None},
             })
         _attach_diagnostics(target, row)
-    generation_result = _compare(tasks, runs, by_case, generation_basis)
+    generation_result = _compare(tasks, runs, by_case, generation_basis, compare_generation=compare_generation)
     return {
         "schema_version": "dra.findings-quality.report.v1",
         "judge_config": judge,
@@ -416,7 +423,7 @@ def _triage(cases, execution_only, calibration, generation):
     for pair in generation["pairs"]:
         for arm in ("A", "B"):
             for question in pair[arm]["questions"]:
-                if question["missing_points"] and question["passed"] is not None:
+                if question["missing_points"]:
                     signals.append({"signal": "missed_answerable_point", "task_id": pair["task_id"],
                                     "arm": arm, "question_id": question["question_id"],
                                     "points": question["missing_points"], "basis": pair[arm]["basis"]})
@@ -481,7 +488,11 @@ def _render_report(report):
              "## Generation", ""]
     if "native_comparison" in report:
         native = report["native_comparison"]
-        lines += [f"Envelope evidence **{_cell(native['parity'])}**. Transport mode **{_cell(native['execution_mode'])}**.", ""]
+        lines += [f"Envelope evidence **{_cell(native['parity'])}**. Transport mode **{_cell(native['execution_mode'])}**."]
+        if native.get("arm_proofs"):
+            proofs = ", ".join(f"{_cell(arm)} {_cell(status)}" for arm, status in sorted(native["arm_proofs"].items()))
+            lines.append(f"Request proofs **{proofs}**.")
+        lines.append("")
     lines.extend(_table(("Planned arms", "Started", "Delivered", "Scorable", "Unscored", "Comparable pairs"),
                         [[str(gen["counts"][key]) for key in ("planned", "started", "delivered", "scorable",
                                                              "unscored", "comparable")]]))
@@ -489,6 +500,7 @@ def _render_report(report):
     lines += ["",
               f"Supported points **{coverage['supported']}** out of **{coverage['assessed']}** assessed, "
               f"**{coverage['delivered']}** delivered and **{coverage['planned']}** planned. "
+              f"Unassessed delivered points **{coverage['unassessed']}**. "
               f"Wrong refusals **{gen['wrong_refusals']}**. "
               f"Justified unresolved **{gen['justified_unresolved']}**.", ""]
     lines.extend(_table(("Both pass", "Only A passes", "Only B passes", "Neither passes"),
@@ -505,7 +517,9 @@ def _render_report(report):
                 if not links:
                     links = _cell(disposition.get("reason", disposition["status"]))
                 points = ("coverage pending" if question["coverage_review_pending"] else
-                          f"{len(question['supported_points'])}/{len(question['required_points'])} points")
+                          f"{len(question['supported_points'])}/{len(question['required_points'])} supported points")
+                if question["unassessed_points"]:
+                    points += f" ({len(question['unassessed_points'])} unassessed)"
                 changes = []
                 if question["new_material_claims"]:
                     changes.append("new " + ", ".join(_case_link(key) for key in question["new_material_claims"]))

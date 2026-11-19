@@ -3,6 +3,7 @@ import asyncio
 import json
 
 import httpx
+import pytest
 
 from scripts.findings_quality_live import capture_experiment, replay_capture
 from scripts.findings_quality_replay import write_report
@@ -78,22 +79,35 @@ def test_partial_capture_keeps_native_binding_diagnostics_after_provider_failure
     assert "provider_private_detail" not in json.dumps(report)
 
 
+def supported_reply(request):
+    payload = json.loads(request.content)
+    if payload.get("tools"):
+        return scripted_generation()
+    blind = json.loads(payload["messages"][1]["content"])
+    assert set(blind) == {"question", "statement", "citations"}
+    matched = [ref["reference_id"] for ref in blind["citations"]]
+    return response({"content": json.dumps({
+        "verdict": "supported", "matched_reference_ids": matched,
+        "rationale": "Scripted demonstration verdict.",
+        "parts": [{"assertion": "Reported assertion", "reference_ids": matched,
+                   "rationale": "Scripted citation lookup."}],
+    })}, "stop")
+
+
+def covered_generation(report):
+    sheet, = report["generation_review_sheet"]
+    assert "run_id" not in sheet and "arm" not in sheet
+    return {"review_id": sheet["review_id"], "reviewer": "Scripted reviewer", "review_date": "2026-11-19",
+            "blind": True, "claims": [{"finding_id": "f1", "covered_points": ["connection-scope", "guide-default"],
+                                      "new_material": False, "forbidden_matches": []}],
+            "unresolved": [{"question_id": "q2", "justified": True}]}
+
+
 def test_full_scripted_capture_replays_blind_and_counts_real_interface_calls(tmp_path):
     calls = []
     def reply(request):
-        payload = json.loads(request.content)
-        calls.append(payload)
-        if payload.get("tools"):
-            return scripted_generation()
-        blind = json.loads(payload["messages"][1]["content"])
-        assert set(blind) == {"question", "statement", "citations"}
-        matched = [ref["reference_id"] for ref in blind["citations"]]
-        return response({"content": json.dumps({
-            "verdict": "supported", "matched_reference_ids": matched,
-            "rationale": "Scripted demonstration verdict.",
-            "parts": [{"assertion": "Reported assertion", "reference_ids": matched,
-                       "rationale": "Scripted citation lookup."}],
-        })}, "stop")
+        calls.append(request)
+        return supported_reply(request)
 
     assert run_scripted(tmp_path, reply) == "completed"
     assert len(calls) == 11  # two generator calls, eight fixed calibration inputs, one deduplicated claim
@@ -106,23 +120,67 @@ def test_full_scripted_capture_replays_blind_and_counts_real_interface_calls(tmp
     assert report["evaluator_resources"]["calls"]["total"] == 9
     assert report["generation"]["resources"]["calls"]["total"] == 2
     assert report["decision"]["status"] == "insufficient_evidence"
-    sheet, = report["generation_review_sheet"]
-    assert "run_id" not in sheet and "arm" not in sheet
-    review = {"review_id": sheet["review_id"], "reviewer": "Scripted reviewer", "review_date": "2026-11-19",
-              "blind": True, "claims": [{"finding_id": "f1", "covered_points": ["connection-scope", "guide-default"],
-                                        "new_material": False, "forbidden_matches": []}],
-              "unresolved": [{"question_id": "q2", "justified": True}]}
-    assessed = replay_capture(tmp_path, generation_reviews=[review])
+    assessed = replay_capture(tmp_path, generation_reviews=[covered_generation(report)])
     assert assessed["generation"]["pair_counts"]["both_pass"] == 1
     assert assessed["decision"]["status"] == "insufficient_evidence"
     write_report(tmp_path / "report", assessed)
     assert (tmp_path / "report/generation-review-sheet.json").is_file()
 
 
+@pytest.mark.parametrize(("mutation", "proof_status"), [
+    ("instruction", "mismatch"),
+    ("source_offset", "mismatch"),
+    ("native_digest", "mismatch"),
+    ("transport_digest", "mismatch"),
+    ("swapped_input", "mismatch"),
+    ("missing_input", "missing"),
+])
+def test_capture_replay_requires_reconstructible_native_pair(tmp_path, mutation, proof_status):
+    assert run_scripted(tmp_path, supported_reply) == "completed"
+    original = replay_capture(tmp_path)
+    review = covered_generation(original)
+    assert original["native_comparison"]["parity"] == "matched_native_envelopes"
+
+    path = tmp_path / "generation-B.json"
+    captured = json.loads(path.read_text())
+    if mutation == "instruction":
+        captured["receipt"]["qualification_instruction_sha256"] = "0" * 64
+        path.write_text(json.dumps(captured))
+    elif mutation == "source_offset":
+        for arm in ("A", "B"):
+            location = tmp_path / f"generation-{arm}.json"
+            record = json.loads(location.read_text())
+            for key in ("start", "end"):
+                record["receipt"]["visible_source"][key] += 1
+            location.write_text(json.dumps(record))
+    elif mutation == "native_digest":
+        captured["receipt"]["request_sha256"] = "0" * 64
+        path.write_text(json.dumps(captured))
+    elif mutation == "transport_digest":
+        for suffix in ("started", "result"):
+            location = tmp_path / "receipts" / f"0002-{suffix}.json"
+            request = json.loads(location.read_text())
+            assert request["request_id"] == captured["receipt"]["model_request_id"]
+            request["request_sha256"] = "0" * 64
+            location.write_text(json.dumps(request))
+    elif mutation == "swapped_input":
+        (tmp_path / "generation-input-B.json").write_bytes((tmp_path / "generation-input-A.json").read_bytes())
+    else:
+        (tmp_path / "generation-input-B.json").unlink()
+
+    result = replay_capture(tmp_path, generation_reviews=[review])
+    assert result["native_comparison"]["parity"] == "standalone_prompt_experiment"
+    assert result["native_comparison"]["arm_proofs"]["B"] == proof_status
+    assert result["generation"]["counts"]["delivered"] == 2
+    assert result["generation"]["counts"]["scorable"] == 2
+    assert result["generation"]["counts"]["comparable"] == 0
+    assert result["generation"]["pairs"][0]["comparison"] is None
+    assert result["generation"]["regressions"] == result["generation"]["fixes"] == []
+
+
 def test_capture_replay_rejects_a_different_rehashed_report_for_the_same_run(tmp_path):
     import hashlib
 
-    import pytest
     from scripts.findings_quality_io import QualityError
     from scripts.research_findings_consumer import validate_delivery
 

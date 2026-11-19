@@ -67,7 +67,7 @@ model prediction. Track agreement with synthetic expectations separately.
 | --- | --- |
 | Delivery and scoring availability | Count planned, started, delivered and scorable arms. Show delivered/planned and scorable/planned when useful. Keep missing delivery, binding errors and unavailable scoring distinct. |
 | Semantic support | Count each of the four verdicts among scorable claims. If showing a support rate, divide supported claims by all scored claims. Track structural exclusions and score failures alongside it. |
-| Required-point coverage | Divide supported points by assessed required points. Show planned and delivered required points as well so missing results remain visible. |
+| Required-point coverage | Divide supported points by assessed required points. A supported point counts even if another finding times out. Mark a point unassessed when an unscored finding may cover it and no supported finding already does. Pending coverage review leaves all required points unassessed. Show planned, delivered and unassessed points separately from complete task outcomes. |
 | Wrongful abstention | Count unresolved questions that have required answerable points. For a rate, divide by delivered questions with required answerable points. Count justified unresolved dispositions separately. |
 | Paired change | Report both pass, A only, B only and neither pass among scorable pairs. List new regressions and fixes individually and disclose incomplete pairs. |
 | Resources | Report observed calls, tokens, elapsed time and cost for generation and judging separately when available. Keep unobserved values unknown. |

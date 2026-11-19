@@ -183,8 +183,80 @@ def test_replay_preserves_semantics_structure_and_execution_denominators():
     assert result["generation"]["pair_counts"] == {"both_pass": 0, "a_only": 1, "b_only": 0, "neither_pass": 1}
     assert result["generation"]["regressions"] == ["regression"]
     assert result["generation"]["wrong_refusals"] == 2
+    assert result["generation"]["supported_coverage"] == {
+        "supported": 3, "planned": 8, "delivered": 6, "assessed": 6, "unassessed": 0, "rate_assessed": 0.5,
+    }
     assert result["generation"]["resources"]["input_tokens"]["total"] is None
     assert result["decision"]["status"] == "insufficient_evidence"
+
+
+def test_replay_can_retain_arm_scores_without_comparing_generation():
+    from scripts.findings_quality_replay import evaluate
+
+    generation = evaluate(*eval_inputs(), reviews=[], compare_generation=False)["generation"]
+    pair = next(pair for pair in generation["pairs"] if pair["task_id"] == "regression")
+    assert pair["A"]["passed"] is True
+    assert pair["B"]["passed"] is False
+    assert all(pair["comparison"] is None for pair in generation["pairs"])
+    assert generation["counts"]["scorable"] == 4
+    assert generation["counts"]["comparable"] == 0
+    assert all(value == 0 for value in generation["pair_counts"].values())
+    assert generation["fixes"] == generation["regressions"] == []
+
+
+@pytest.mark.parametrize(
+    "judge_outcomes, coverage_pending, supported, unassessed, passed",
+    [
+        (("completed", "timeout"), False, ["release"], ["account"], None),
+        (("completed", "completed"), False, ["account", "release"], [], True),
+        (("timeout", "timeout"), False, [], ["account", "release"], None),
+        (("completed", "completed"), True, [], ["account", "release"], None),
+    ],
+    ids=["one-timeout", "full-success", "all-unknown", "coverage-pending"],
+)
+def test_replay_counts_assessed_points_independently_of_task_pass(
+    judge_outcomes, coverage_pending, supported, unassessed, passed,
+):
+    from scripts.findings_quality import digest
+    from scripts.findings_quality_replay import evaluate, judge_input
+
+    required = {"release": "Release 2 is required.", "account": "An active account is required."}
+    question = {"question_id": "q1", "text": "What are the release and account requirements?"}
+    judge = {"model": "recorded-test-judge", "rubric_version": "v1-test"}
+    cases, receipts = [], []
+    for (point, statement), judge_outcome in zip(required.items(), judge_outcomes, strict=True):
+        case = cited_case(point, statement)
+        case["question"] = question
+        case["references"][0].update(snippet=statement, excerpt=statement,
+                                      excerpt_start=0, excerpt_end=len(statement))
+        cases.append(case)
+        receipts.append({
+            **judge, "input_sha256": digest(judge_input(case)), "basis": "scripted_fixture",
+            "outcome": judge_outcome, "judgment": judgement("supported") if judge_outcome == "completed" else None,
+        })
+    rubric = {**question, "required_points": [{"point_id": point, "text": text} for point, text in required.items()],
+              "unresolved_expectation": None, "forbidden_claims": []}
+    experiment = {"schema_version": "dra.findings-quality.experiment.v1", "judge": judge,
+                  "tasks": [{"task_id": "requirements", "rubric": [rubric]}]}
+    claims = [(point, [] if coverage_pending else [point], False) for point in required]
+    row = outcome("requirements", "A", "delivered", claims=claims)
+    row["coverage_review_pending"] = coverage_pending
+
+    generation = evaluate(cases, [], [], experiment, [row], receipts, reviews=[])["generation"]
+    arm = generation["pairs"][0]["A"]
+    assert arm["passed"] is passed
+    assert generation["pairs"][0]["comparison"] is None
+    assert generation["counts"]["scorable"] == int(passed is not None)
+    assert arm["questions"][0]["supported_points"] == supported
+    assert generation["supported_coverage"] == {
+        "supported": len(supported), "planned": 4, "delivered": 2,
+        "assessed": len(supported), "unassessed": len(unassessed), "rate_assessed": 1.0 if supported else None,
+    }
+    assert arm["questions"][0]["missing_points"] == []
+    assert arm["questions"][0]["unassessed_points"] == unassessed
+    assert arm["questions"][0]["unscored_claims"] == sorted(
+        point for point, state in zip(required, judge_outcomes, strict=True) if state == "timeout"
+    )
 
 
 def test_judge_receipts_reject_invented_evidence_and_blind_payload_excludes_labels():

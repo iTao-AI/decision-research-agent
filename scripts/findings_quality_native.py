@@ -170,6 +170,61 @@ def _valid_candidate_reply(message: AIMessage) -> None:
         raise ValueError("native_candidate_tool_invalid")
 
 
+def _qualification_hash(arm: str) -> str | None:
+    return _hash(QUALIFICATION_INSTRUCTION.encode("utf-8")) if arm == "B" else None
+
+
+def native_request_evidence(
+    fixture: NativeFixture, arm: Literal["A", "B"], messages: list[dict[str, Any]], tools: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Derive native receipt fields from the exact candidate-turn envelope."""
+    system = messages[0]
+    if system["role"] != "system" or not isinstance(system["content"], str):
+        raise ValueError("native_system_format_changed")
+    suffix = "\n\n" + QUALIFICATION_INSTRUCTION
+    if system["content"].endswith(suffix) != (arm == "B"):
+        raise ValueError("native_qualification_instruction_mismatch")
+    baseline = ([{**system, "content": system["content"][:-len(suffix)]}, *messages[1:]]
+                if arm == "B" else messages)
+    sources = [(index, item["content"]) for index, item in enumerate(messages)
+               if item.get("tool_call_id") == _TASK_CALL_ID and item["role"] == "tool"]
+    encoded_passage = _canonical(fixture.passage)[1:-1]
+    if len(sources) != 1:
+        raise ValueError("native_frozen_source_not_visible")
+    source_index, source_text = sources[0]
+    if (not isinstance(source_text, str) or source_text.count(encoded_passage) != 1
+            or fixture.search_result not in source_text):
+        raise ValueError("native_frozen_source_not_visible")
+    source_start = source_text.index(encoded_passage)
+    return {
+        "qualification_instruction_sha256": _qualification_hash(arm),
+        "baseline_messages_sha256": _hash(_canonical(baseline).encode("utf-8")),
+        "request_sha256": _hash(_canonical({"messages": messages, "tools": tools}).encode("utf-8")),
+        "tools_sha256": _hash(_canonical(tools).encode("utf-8")),
+        "visible_source": {
+            "source_url": fixture.source_url, "passage": fixture.passage,
+            "passage_sha256": _hash(fixture.passage.encode("utf-8")), "message_index": source_index,
+            "start": source_start, "end": source_start + len(encoded_passage), "tool_call_id": _TASK_CALL_ID,
+        },
+    }
+
+
+def native_request_matches_fixture(fixture: NativeFixture, messages: list[dict[str, Any]]) -> bool:
+    """Verify the supplied query and accepted questions in the coordinator input."""
+    users = [item["content"] for item in messages if item["role"] == "user"]
+    if len(users) != 1:
+        return False
+    envelope = strict_json(users[0].split("\n", 2)[1])
+    calls = [call["function"] for item in messages if item["role"] == "assistant"
+             for call in item.get("tool_calls") or [] if call["id"] == _TASK_CALL_ID]
+    return (envelope["profile_id"] == RESEARCH_FINDINGS_PROFILE_ID and envelope["query"] == fixture.query
+            and _canonical(envelope["scope"]) == fixture.scope_json
+            and len(calls) == 1 and calls[0]["name"] == "task"
+            and strict_json(calls[0]["arguments"]) == {
+                "description": fixture.research_task, "subagent_type": "network_search",
+            })
+
+
 class _FrozenHistoryModel(BaseChatModel):
     fixture: NativeFixture
     arm: Literal["A", "B"]
@@ -212,44 +267,16 @@ class _FrozenHistoryModel(BaseChatModel):
             return _tool_result(AIMessage(content="Frozen generation turn complete."))
 
         wire = convert_to_openai_messages(messages)
-        baseline_hash = _hash(_canonical(wire).encode("utf-8"))
-        source_index = next(
-            index for index, item in enumerate(wire)
-            if item.get("tool_call_id") == _TASK_CALL_ID
-        )
-        source_text = wire[source_index]["content"]
-        # The frozen search result embeds the passage inside a JSON string.
-        encoded_passage = _canonical(self.fixture.passage)[1:-1]
-        if (
-            not isinstance(source_text, str)
-            or source_text.count(encoded_passage) != 1
-            or self.fixture.source_url not in source_text
-            or self.fixture.search_result not in source_text
-        ):
-            raise ValueError("native_frozen_source_not_visible")
-        source_start = source_text.index(encoded_passage)
         if self.arm == "B":
-            if wire[0]["role"] != "system" or type(wire[0]["content"]) is not str:
+            if wire[0]["role"] != "system" or not isinstance(wire[0]["content"], str):
                 raise ValueError("native_system_format_changed")
             wire[0]["content"] += "\n\n" + QUALIFICATION_INSTRUCTION
 
         request_id = f"generation.{self.arm}.{uuid4().hex}"
         tools = list(self.bound_tools)
         self.observations.update(
-            native_generation_calls=1,
-            model_request_id=request_id,
-            baseline_messages_sha256=baseline_hash,
-            request_sha256=_hash(_canonical({"messages": wire, "tools": tools}).encode("utf-8")),
-            tools_sha256=_hash(_canonical(tools).encode("utf-8")),
-            visible_source={
-                "source_url": self.fixture.source_url,
-                "passage": self.fixture.passage,
-                "passage_sha256": _hash(self.fixture.passage.encode("utf-8")),
-                "message_index": source_index,
-                "start": source_start,
-                "end": source_start + len(encoded_passage),
-                "tool_call_id": _TASK_CALL_ID,
-            },
+            native_generation_calls=1, model_request_id=request_id,
+            **native_request_evidence(self.fixture, self.arm, wire, tools),
         )
         candidate = await self.generate_candidate(NativeGenerationRequest(request_id, wire, tools))
         _valid_candidate_reply(candidate)
@@ -277,9 +304,7 @@ async def run_native_arm(
         "fixture_id": fixture.fixture_id,
         "fixture_sha256": fixture.sha256,
         "arm": arm,
-        "qualification_instruction_sha256": (
-            _hash(QUALIFICATION_INSTRUCTION.encode("utf-8")) if arm == "B" else None
-        ),
+        "qualification_instruction_sha256": _qualification_hash(arm),
         "versions": {name: version(name) for name in _RUN_PACKAGES},
         "source_origin": "frozen_public_tool_result",
         "source_tool_calls": 0,

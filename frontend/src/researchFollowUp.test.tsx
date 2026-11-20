@@ -57,16 +57,29 @@ function fixture({ lostNew = false, rejectNew = false, noUnresolved = false, inv
   return posts;
 }
 
+async function openKnownFollowUp(user: ReturnType<typeof userEvent.setup>, language: "zh" | "en" = "zh") {
+  const known = within(screen.getByRole("region", { name: language === "zh" ? "已有研究" : "Existing research" }));
+  await user.click(await known.findByRole("button", {
+    name: language === "zh" ? "跟进未解问题" : "Follow up on open questions"
+  }));
+}
+
+async function closeToHome(user: ReturnType<typeof userEvent.setup>) {
+  const nestedBack = screen.queryByRole("button", { name: "返回上一层" });
+  if (nestedBack) await user.click(nestedBack);
+  await user.click(screen.getByRole("button", { name: "返回首页" }));
+}
+
 async function openOriginal({ genericForm = false, english = false } = {}) {
   let identity = 0;
   const user = userEvent.setup();
   render(<StrictMode><App liveOptions={{ randomUUID: () => `new-${++identity}`, pollIntervalMs: 1 }} /></StrictMode>);
-  await screen.findByText("本地服务已连接");
+  await screen.findByRole("button", { name: "服务已连接，打开连接设置" });
   if (genericForm) await user.selectOptions(screen.getByRole("combobox", { name: "研究模式" }), "generic");
   await user.type(screen.getByRole("textbox", { name: "研究问题" }), "My existing ordinary draft");
-  await openExistingResearch(user, "run_original");
-  await screen.findByText("报告已就绪");
   if (english) await useEnglish(user);
+  await openExistingResearch(user, "run_original", english ? "en" : "zh");
+  await openKnownFollowUp(user, english ? "en" : "zh");
   return user;
 }
 
@@ -77,7 +90,7 @@ async function prepare(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("unresolved report to independent editable research draft", () => {
-  it("copies only selected question text, preserves ordinary edits/report/download and makes no preparation POST", async () => {
+  it("copies only selected question text, preserves the original report and home draft and makes no preparation POST", async () => {
     const posts = fixture();
     const user = await openOriginal();
     expect(screen.queryByRole("checkbox", { name: "选择未解决问题 1" })).not.toBeInTheDocument();
@@ -87,10 +100,13 @@ describe("unresolved report to independent editable research draft", () => {
     expect(draft.getByText("run_original")).toBeInTheDocument();
     expect(draft.getByText("More evidence needed")).toBeInTheDocument();
     expect(draft.getAllByRole("textbox")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "下载 Markdown" })).toBeEnabled();
     expect(posts).toHaveLength(0);
     expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveFocus();
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
+    await user.click(screen.getByRole("button", { name: "返回上一层" }));
+    await user.click(screen.getByRole("button", { name: "阅读这份报告" }));
+    expect(screen.getByRole("button", { name: "下载 Markdown" })).toBeEnabled();
+    expect(screen.getByRole("region", { name: "Answered question" })).toBeVisible();
+    await closeToHome(user);
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
   });
 
@@ -106,9 +122,17 @@ describe("unresolved report to independent editable research draft", () => {
     expect(JSON.parse(posts[0].body)).toEqual({ query: "More specific new question", thread_id: "demo-console-new-1",
       profile_id: "generic-evidence-report", scope: { questions: [{ question_id: "q1", text: "More specific new question" }] } });
     expect(posts[0].key).toBe("run-create-console-new-1");
-    await waitFor(() => expect(screen.getByRole("region", { name: "More specific new question" })).toBeInTheDocument());
-    expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
+    const readNew = await screen.findByRole("button", { name: "阅读报告" });
+    expect(screen.getByRole("status")).toHaveTextContent("报告已就绪");
+    expect(screen.getByText("这份续研草稿已提交。可从顶部任务栏查看它的进展。")).toBeVisible();
+    expect(draft.getByText("run_original")).toBeVisible();
+    expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toBeDisabled();
+    await closeToHome(user);
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
+    await user.click(readNew);
+    expect(screen.getByRole("region", { name: "More specific new question" })).toBeVisible();
+    await closeToHome(user);
+    await user.click(screen.getByRole("button", { name: "新建研究" }));
     expect(screen.getByRole("combobox", { name: "研究模式" })).toHaveValue("generic");
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
   });
@@ -132,7 +156,7 @@ describe("unresolved report to independent editable research draft", () => {
     await user.click(draft.getByRole("button", { name: "取消新研究草稿" }));
     expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "准备新研究草稿" })).toHaveFocus();
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
+    await closeToHome(user);
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
     expect(posts).toHaveLength(0);
   });
@@ -165,114 +189,96 @@ describe("unresolved report to independent editable research draft", () => {
       .toEqual(["q1", "q3", "q4", "q5", "q6"]);
   });
 
-  it.each(["another run", "a new endpoint", "the ordinary workspace"])(
-    "expires the prepared draft when leaving its report for %s",
-    async (destination) => {
-      const posts = fixture();
-      const user = await openOriginal();
-      await prepare(user);
+  it("clears selections and the draft when a different known report is opened", async () => {
+    const posts = fixture();
+    const user = await openOriginal();
+    await prepare(user);
 
-      if (destination === "another run") {
-        await openExistingResearch(user, "run_other");
-        await screen.findByText("报告已就绪");
-        expect(screen.getByRole("checkbox", { name: "选择未解决问题 2" })).not.toBeChecked();
-      } else if (destination === "a new endpoint") {
-        await user.click(screen.getByRole("button", { name: "设置" }));
-        const settings = within(screen.getByRole("dialog", { name: "设置" }));
-        const url = settings.getByRole("textbox", { name: "本地后端地址" });
-        await user.clear(url);
-        await user.type(url, "http://127.0.0.1:9000");
-        await user.click(settings.getByRole("button", { name: "保存连接" }));
-        await screen.findByText("本地服务已连接");
-      } else {
-        await user.click(screen.getByRole("button", { name: "返回工作台" }));
-        await user.selectOptions(screen.getByRole("combobox", { name: "研究模式" }), "generic");
-      }
+    await openExistingResearch(user, "run_other");
+    await openKnownFollowUp(user);
+    expect(screen.getByRole("checkbox", { name: "选择未解决问题 2" })).not.toBeChecked();
+    expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
+    expect(posts).toHaveLength(0);
+  });
 
-      expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
-      expect(posts).toHaveLength(0);
-    }
-  );
+  it("clears the known draft on a service change and preserves the home input", async () => {
+    const posts = fixture();
+    const user = await openOriginal();
+    await prepare(user);
 
-  it("retains only the new frozen intent when its response is lost and reconciled", async () => {
+    await user.click(screen.getByRole("button", { name: "服务已连接，打开连接设置" }));
+    const settings = within(screen.getByRole("dialog", { name: "连接设置" }));
+    const url = settings.getByRole("textbox", { name: "本地后端地址" });
+    await user.clear(url);
+    await user.type(url, "http://127.0.0.1:9000");
+    await user.click(settings.getByRole("button", { name: "保存连接" }));
+    await screen.findByRole("button", { name: "服务已连接，打开连接设置" });
+    expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
+    expect(posts).toHaveLength(0);
+  });
+
+  it("reconciles the frozen follow-up through the task bar after returning home", async () => {
     const posts = fixture({ lostNew: true });
     const user = await openOriginal();
     const draft = await prepare(user);
     fireEvent.change(draft.getByRole("textbox", { name: "新研究问题 1" }), { target: { value: "Frozen new scope" } });
     await user.click(draft.getByRole("button", { name: "确认并运行新研究" }));
-    const retry = await screen.findByRole("button", { name: "重试同一请求" });
-    expect(screen.queryByRole("button", { name: "准备新研究草稿" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "开始研究" })).not.toBeInTheDocument();
+    const checkReceipt = await screen.findByRole("button", { name: "核对同一请求" });
     expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveValue("Frozen new scope");
     expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toBeDisabled();
     expect(draft.getByRole("button", { name: "取消新研究草稿" })).toBeDisabled();
     expect(posts).toHaveLength(1);
-    await user.click(retry);
-    await screen.findByText("报告已就绪");
-    expect(posts).toHaveLength(2);
+    await closeToHome(user);
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
+    expect(screen.getByRole("button", { name: "已提交" })).toHaveAttribute("aria-disabled", "true");
+    await user.click(checkReceipt);
+    await user.click(within(screen.getByRole("region", { name: "提交回执待确认" }))
+      .getByRole("button", { name: "重试同一请求" }));
+    await screen.findByRole("button", { name: "阅读报告" });
     expect(posts[1]).toEqual(posts[0]);
+    expect(posts).toHaveLength(2);
     expect(JSON.parse(posts[0].body).scope.questions).toEqual([{ question_id: "q1", text: "Frozen new scope" }]);
   });
 
-  it("returns from the ordinary workspace to reconcile a continuation with a lost response", async () => {
-    const posts = fixture({ lostNew: true });
-    const user = await openOriginal();
-    const draft = await prepare(user);
-    await user.click(draft.getByRole("button", { name: "确认并运行新研究" }));
-    await screen.findByRole("button", { name: "重试同一请求" });
-    const fetch = vi.mocked(globalThis.fetch);
-    const requestCount = fetch.mock.calls.length;
-
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
-    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
-    expect(screen.getByRole("button", { name: "开始研究" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "继续查看已有研究" }));
-    const retry = await screen.findByRole("button", { name: "重试同一请求" });
-    expect(fetch).toHaveBeenCalledTimes(requestCount);
-
-    await user.click(retry);
-    await screen.findByText("报告已就绪");
-    expect(posts).toHaveLength(2);
-    expect(posts[1]).toEqual(posts[0]);
-  });
-
-  it("keeps a follow-up report reachable when the acknowledgement arrives after returning to the workspace", async () => {
+  it("delivers a follow-up through the task bar when acknowledgement arrives after returning home", async () => {
     let acknowledge: () => void = () => {};
     const beforeAcknowledgement = new Promise<void>((resolve) => { acknowledge = resolve; });
     const posts = fixture({ beforeAcknowledgement });
     const user = await openOriginal();
     const draft = await prepare(user);
     await user.click(draft.getByRole("button", { name: "确认并运行新研究" }));
-    await screen.findByText("正在提交");
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
+    expect(screen.getByRole("status")).toHaveTextContent("正在提交");
+    await closeToHome(user);
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
 
     await act(async () => { acknowledge(); });
-    await waitFor(() => expect(screen.getByRole("button", { name: "开始研究" })).toBeEnabled());
+    const readReport = await screen.findByRole("button", { name: "阅读报告" });
     const fetch = vi.mocked(globalThis.fetch);
     const requestCount = fetch.mock.calls.length;
-    await user.click(screen.getByRole("button", { name: "继续查看已有研究" }));
-    expect(screen.getByRole("status")).toHaveTextContent("报告已就绪");
-    expect(screen.getByRole("region", { name: "Unknown 中文😀" })).toBeInTheDocument();
+    await user.click(readReport);
+    expect(screen.getByRole("region", { name: "Unknown 中文😀" })).toBeVisible();
     expect(fetch).toHaveBeenCalledTimes(requestCount);
     expect(posts).toHaveLength(1);
   });
 
-  it("preserves the edited follow-up after a definite rejection while the ordinary workspace is visible", async () => {
-    let reject: () => void = () => {};
-    const beforeAcknowledgement = new Promise<void>((resolve) => { reject = resolve; });
+  it("returns from the task bar to the edited continuation after a rejection arrives with the pane closed", async () => {
+    let acknowledge: () => void = () => {};
+    const beforeAcknowledgement = new Promise<void>((resolve) => { acknowledge = resolve; });
     const posts = fixture({ rejectNew: true, beforeAcknowledgement });
     const user = await openOriginal();
     const draft = await prepare(user);
-    fireEvent.change(draft.getByRole("textbox", { name: "新研究问题 1" }), { target: { value: "Edited scope retained" } });
+    fireEvent.change(draft.getByRole("textbox", { name: "新研究问题 1" }), {
+      target: { value: "Keep my edited continuation" }
+    });
     await user.click(draft.getByRole("button", { name: "确认并运行新研究" }));
-    await screen.findByText("正在提交");
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
-    await act(async () => { reject(); });
-    await waitFor(() => expect(screen.getByRole("button", { name: "开始研究" })).toBeEnabled());
-    await user.click(screen.getByRole("button", { name: "继续查看已有研究" }));
-    expect(screen.getByRole("status")).toHaveTextContent("提交未成功");
-    expect(screen.getByRole("textbox", { name: "新研究问题 1" })).toHaveValue("Edited scope retained");
-    expect(screen.getByRole("button", { name: "确认并运行新研究" })).toBeEnabled();
+    await closeToHome(user);
+
+    await act(async () => { acknowledge(); });
+    await user.click(await screen.findByRole("button", { name: "编辑问题" }));
+    const recovered = within(screen.getByRole("region", { name: "新研究草稿" }));
+    expect(recovered.getByRole("textbox", { name: "新研究问题 1" })).toHaveValue("Keep my edited continuation");
+    expect(recovered.getByRole("button", { name: "确认并运行新研究" })).toBeEnabled();
     expect(posts).toHaveLength(1);
   });
 
@@ -291,11 +297,9 @@ describe("unresolved report to independent editable research draft", () => {
     expect(screen.queryByRole("heading", { name: "来源绑定的候选结论" })).not.toBeInTheDocument();
     expect(posts).toHaveLength(1);
 
-    await user.click(screen.getByText("运行详情", { selector: "summary" }));
-    expect(screen.getByText("service_unavailable")).toBeVisible();
     fireEvent.change(draft.getByRole("textbox", { name: "新研究问题 2" }), { target: { value: "Revised recovered second question" } });
     await user.click(draft.getByRole("button", { name: "确认并运行新研究" }));
-    await screen.findByText("报告已就绪");
+    await screen.findByRole("button", { name: "阅读报告" });
     expect(posts).toHaveLength(2);
     expect(posts[1].key).not.toBe(posts[0].key);
     expect(JSON.parse(posts[1].body)).toEqual({
@@ -305,9 +309,9 @@ describe("unresolved report to independent editable research draft", () => {
         { question_id: "q2", text: "Revised recovered second question" }
       ] }
     });
-    expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
-    expect(screen.getByRole("combobox", { name: "研究模式" })).toHaveValue("generic");
+    expect(draft.getByRole("button", { name: "确认并运行新研究" })).toBeDisabled();
+    await closeToHome(user);
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
   });
 
   it("returns keyboard focus to a source checkbox when cancelling with no questions selected", async () => {
@@ -322,19 +326,6 @@ describe("unresolved report to independent editable research draft", () => {
     expect(checkbox).toHaveFocus();
     expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
     expect(posts).toHaveLength(0);
-  });
-
-  it("returns cancellation focus to the lookup action after a definite rejection", async () => {
-    const posts = fixture({ rejectNew: true });
-    const user = await openOriginal();
-    const draft = await prepare(user);
-    await user.click(draft.getByRole("button", { name: "确认并运行新研究" }));
-    await screen.findByText("提交未成功");
-    draft.getByRole("button", { name: "取消新研究草稿" }).focus();
-    await user.keyboard("{Enter}");
-    expect(screen.getByRole("button", { name: "查看已有研究" })).toHaveFocus();
-    expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
-    expect(posts).toHaveLength(1);
   });
 
   it("clears the source draft when another known report cannot be read", async () => {
@@ -355,13 +346,13 @@ describe("unresolved report to independent editable research draft", () => {
     await screen.findByText("报告读取中断");
     await user.click(screen.getByText("运行详情", { selector: "summary" }));
     expect(screen.getByText("run_result_unavailable")).toBeVisible();
-    expect(screen.getByText("run_bad")).toBeVisible();
+    expect(within(screen.getByRole("region", { name: "已有研究" })).getAllByText("run_bad")[0]).toBeVisible();
     expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "下载 Markdown" })).not.toBeInTheDocument();
     expect(screen.queryByText("研究失败")).not.toBeInTheDocument();
     expect(posts).toHaveLength(0);
 
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
+    await closeToHome(user);
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
   });
 
@@ -386,7 +377,7 @@ describe("unresolved report to independent editable research draft", () => {
     await waitFor(() => expect(release).toBeTypeOf("function"));
     await openExistingResearch(user, "run_other");
     expect(signal?.aborted).toBe(true);
-    await screen.findByText("报告已就绪");
+    await openKnownFollowUp(user);
     const draft = await prepare(user);
     fireEvent.change(draft.getByRole("textbox", { name: "新研究问题 1" }), { target: { value: "Keep newer draft" } });
 
@@ -419,9 +410,16 @@ describe("unresolved report to independent editable research draft", () => {
     const posts = fixture({ [mode]: true });
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText("本地服务已连接");
+    await screen.findByRole("button", { name: "服务已连接，打开连接设置" });
     await openExistingResearch(user, "run_original");
-    await screen.findByText(status);
+    const known = within(screen.getByRole("region", { name: "已有研究" }));
+    await known.findByRole("heading", { name: status });
+    if (mode === "noUnresolved") {
+      await openKnownFollowUp(user);
+      expect(screen.getByText("这份报告没有可继续跟进的未解问题。")).toBeVisible();
+    } else {
+      expect(known.queryByRole("button", { name: "跟进未解问题" })).not.toBeInTheDocument();
+    }
     expect(screen.queryByRole("button", { name: "准备新研究草稿" })).not.toBeInTheDocument();
     expect(posts).toHaveLength(0);
   });

@@ -37,7 +37,7 @@ function captureCreates({ lostFirstResponse = false, generic = false } = {}) {
 async function structuredEditor() {
   const user = userEvent.setup();
   render(<StrictMode><App liveOptions={{ randomUUID: () => "fixed", pollIntervalMs: 1 }} /></StrictMode>);
-  await screen.findByText("本地服务已连接");
+  await screen.findByRole("button", { name: "服务已连接，打开连接设置" });
   return user;
 }
 
@@ -47,11 +47,11 @@ describe("multi-question creation editor", () => {
     const user = await structuredEditor();
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "  One😀\n  " } });
     for (const [index, text] of ["Two", "Three", "Four", "Five"].entries()) {
-      await user.click(screen.getByRole("button", { name: "新增问题" }));
-      expect(screen.getByRole("button", { name: "开始研究" })).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "＋ 添加子问题" }));
+      expect(screen.getByRole("button", { name: "开始研究" })).toHaveAttribute("aria-disabled", "true");
       fireEvent.change(screen.getByRole("textbox", { name: `研究问题 ${index + 2}` }), { target: { value: text } });
     }
-    expect(screen.getByRole("button", { name: "新增问题" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "＋ 添加子问题" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "开始研究" }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(JSON.parse(posts[0].body)).toEqual({
@@ -64,21 +64,28 @@ describe("multi-question creation editor", () => {
     });
   });
 
-  it("keeps surviving IDs after editing, middle/first removal and re-adding", async () => {
+  it("keeps surviving IDs across home and comparison editor, including removal and re-adding", async () => {
     const { posts } = captureCreates();
     const user = await structuredEditor();
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "One" } });
-    await user.click(screen.getByRole("button", { name: "新增问题" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Two" } });
-    await user.click(screen.getByRole("button", { name: "新增问题" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "研究问题 3" }), { target: { value: "Three" } });
-    await user.click(screen.getByRole("button", { name: "删除问题 2" }));
-    expect(screen.getByRole("textbox", { name: "研究问题 2" })).toHaveValue("Three");
-    fireEvent.change(screen.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Edited third" } });
-    await user.click(screen.getByRole("button", { name: "删除问题 1" }));
-    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("Edited third");
-    await user.click(screen.getByRole("button", { name: "新增问题" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Fourth" } });
+    const compare = screen.getByRole("button", { name: "多问题比较 编排问题" });
+    await user.click(compare);
+    const editor = within(screen.getByRole("region", { name: "多问题比较" }));
+    expect(editor.getByRole("textbox", { name: "研究问题" })).toHaveValue("One");
+    await user.click(editor.getByRole("button", { name: "＋ 添加子问题" }));
+    fireEvent.change(editor.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Two" } });
+    await user.click(editor.getByRole("button", { name: "＋ 添加子问题" }));
+    fireEvent.change(editor.getByRole("textbox", { name: "研究问题 3" }), { target: { value: "Three" } });
+    await user.click(editor.getByRole("button", { name: "删除问题 2" }));
+    expect(editor.getByRole("textbox", { name: "研究问题 2" })).toHaveValue("Three");
+    fireEvent.change(editor.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Edited third" } });
+    await user.click(editor.getByRole("button", { name: "删除问题 1" }));
+    expect(editor.getByRole("textbox", { name: "研究问题" })).toHaveValue("Edited third");
+    await user.click(editor.getByRole("button", { name: "＋ 添加子问题" }));
+    fireEvent.change(editor.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Fourth" } });
+    await user.click(editor.getByRole("button", { name: "返回首页" }));
+    expect(compare).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "研究问题 2" })).toHaveValue("Fourth");
     await user.click(screen.getByRole("button", { name: "开始研究" }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(JSON.parse(posts[0].body)).toMatchObject({ query: "Edited third", scope: { questions: [
@@ -90,15 +97,18 @@ describe("multi-question creation editor", () => {
     const { posts } = captureCreates({ lostFirstResponse: true });
     const user = await structuredEditor();
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "First" } });
-    await user.click(screen.getByRole("button", { name: "新增问题" }));
+    await user.click(screen.getByRole("button", { name: "＋ 添加子问题" }));
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Second" } });
     await user.click(screen.getByRole("button", { name: "开始研究" }));
-    const retry = await screen.findByRole("button", { name: "重试同一请求" });
-    expect(screen.queryByRole("textbox", { name: "研究问题" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "开始研究" })).not.toBeInTheDocument();
+    const check = await screen.findByRole("button", { name: "核对同一请求" });
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveAttribute("readonly");
+    expect(screen.getByRole("textbox", { name: "研究问题 2" })).toHaveValue("Second");
+    expect(screen.getByRole("button", { name: "已提交" })).toHaveAttribute("aria-disabled", "true");
+    await user.click(check);
+    const retry = within(screen.getByRole("region", { name: "提交回执待确认" })).getByRole("button", { name: "重试同一请求" });
     expect(posts).toHaveLength(1);
     await user.click(retry);
-    await screen.findByText("报告已就绪");
+    await screen.findByRole("button", { name: "阅读报告" });
     expect(posts).toHaveLength(2);
     expect(posts[1]).toEqual(posts[0]);
     expect(JSON.parse(posts[0].body).scope.questions).toEqual([
@@ -111,24 +121,27 @@ describe("multi-question creation editor", () => {
     const user = await structuredEditor();
     await useEnglish(user);
     expect(screen.queryByRole("button", { name: "Remove question 1" })).not.toBeInTheDocument();
-    screen.getByRole("button", { name: "Add question" }).focus();
+    screen.getByRole("button", { name: "＋ Add question" }).focus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("textbox", { name: "Research question 2" })).toHaveFocus();
     screen.getByRole("button", { name: "Remove question 2" }).focus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("textbox", { name: "Research question" })).toHaveFocus();
     expect(screen.queryByRole("button", { name: "Remove question 1" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Start research" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Start research" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("keeps general research available and reads its Markdown without requesting findings", async () => {
     const { posts, requests } = captureCreates({ generic: true });
     const user = await structuredEditor();
     await user.selectOptions(screen.getByRole("combobox", { name: "研究模式" }), "generic");
-    expect(screen.queryByRole("button", { name: "新增问题" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "＋ 添加子问题" })).not.toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "研究问题" }), "General question");
     await user.click(screen.getByRole("button", { name: "开始研究" }));
-    await screen.findByRole("heading", { name: "Canonical report" });
+    const readReport = await screen.findByRole("button", { name: "阅读报告" });
+    expect(screen.queryByRole("heading", { name: "Canonical report" })).not.toBeInTheDocument();
+    await user.click(readReport);
+    expect(await screen.findByRole("heading", { name: "Canonical report" })).toBeVisible();
 
     expect(posts).toHaveLength(1);
     expect(JSON.parse(posts[0].body)).toEqual({
@@ -145,11 +158,12 @@ describe("structured reports in the research workspace", () => {
     expect(screen.getByRole("combobox", { name: "研究模式" })).toHaveValue("generic-evidence-report");
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "  原始问题\n😀  " } });
     await user.click(screen.getByRole("button", { name: "开始研究" }));
-    await screen.findByText("报告已就绪");
+    await screen.findByRole("button", { name: "阅读报告" });
     expect(JSON.parse(posts[0].body)).toMatchObject({
       profile_id: "generic-evidence-report", query: "  原始问题\n😀  ",
       scope: { questions: [{ question_id: "q1", text: "  原始问题\n😀  " }] }
     });
+    await user.click(screen.getByRole("button", { name: "阅读报告" }));
     const accepted = screen.getByRole("region", { name: "研究问题" });
     expect(within(accepted).getByText("来源绑定的候选结论")).toBeVisible();
     expect(screen.getByText("两个来源的更新时间存在矛盾")).toBeVisible();
@@ -186,6 +200,7 @@ describe("structured reports in the research workspace", () => {
     }));
     const user = await structuredEditor();
     await openExistingResearch(user, "run_first");
+    await user.click(await screen.findByRole("button", { name: "阅读这份报告" }));
     await screen.findByRole("region", { name: "run_first accepted question" });
     await user.click(screen.getByText("问题目录", { selector: "summary" }));
     await user.click(within(screen.getByRole("navigation", { name: "问题目录" }))
@@ -203,6 +218,7 @@ describe("structured reports in the research workspace", () => {
     expect(screen.getByRole("complementary", { name: "绑定来源 1" })).toBeVisible();
 
     await openExistingResearch(user, "run_next");
+    await user.click(await screen.findByRole("button", { name: "阅读这份报告" }));
     await screen.findByRole("region", { name: "run_next accepted question" });
     expect(screen.queryByRole("region", { name: "run_first accepted question" })).not.toBeInTheDocument();
     expect(screen.queryByText("run_first observed candidate")).not.toBeInTheDocument();
@@ -211,7 +227,8 @@ describe("structured reports in the research workspace", () => {
     expect(within(screen.getByRole("navigation", { name: "问题目录" }))
       .getByRole("button", { name: /run_next accepted question/ })).not.toHaveAttribute("aria-current");
 
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
+    await user.click(screen.getByRole("button", { name: "返回上一层" }));
+    await user.click(screen.getByRole("button", { name: "返回首页" }));
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("");
     expect(screen.queryByRole("navigation", { name: "问题目录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "下载 Markdown" })).not.toBeInTheDocument();

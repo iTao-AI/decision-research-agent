@@ -324,5 +324,5 @@ def test_frontend_presentation_families_have_direct_owners():
     for required in ("readShowcaseRoute", "buildStaticConsoleProjection"):
         assert required in app
     workspace = _read(WORKSPACE)
-    for required in ("useLiveRun", "WorkspaceDraft", "WorkspaceReport", "WorkspaceRunDetails"):
+    for required in ("useLiveRun", "WorkspaceDraft", "WorkspaceReport", "WorkspaceTaskDetails"):
         assert required in workspace

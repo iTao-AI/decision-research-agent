@@ -63,7 +63,11 @@ const TERMINAL_STATUSES = new Set<RunProjection["execution_status"]>([
   "failed"
 ]);
 
-export function useLiveRun(options: LiveRunOptions = {}, initialMode: DemoMode = "static") {
+export function useLiveRun(
+  options: LiveRunOptions = {},
+  initialMode: DemoMode = "static",
+  initialBaseUrl = DEFAULT_BACKEND_BASE_URL
+) {
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const randomUUID = options.randomUUID ?? DEFAULT_RANDOM_UUID;
   const waitTimeoutMs = options.waitTimeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
@@ -72,7 +76,7 @@ export function useLiveRun(options: LiveRunOptions = {}, initialMode: DemoMode =
   const createIntent = useRef<RunCreateIntent | null>(null);
   const activeRunId = useRef<string | null>(null);
   const [state, setState] = useState<LiveRunState>({
-    baseUrl: DEFAULT_BACKEND_BASE_URL,
+    baseUrl: initialBaseUrl,
     mode: initialMode,
     status: initialMode === "live" ? "idle" : "static"
   });

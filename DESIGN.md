@@ -11,24 +11,27 @@ through the existing [API contract](docs/reference/api-contract.md). The
 
 | Entry | Surface |
 | --- | --- |
-| `/` | Blank research draft, with Evidence research selected. The workspace checks local service identity on entry. Drafting works while the service is offline. |
-| Find existing research | A separate, health-gated run ID dialog opens a GET-only reading context. Returning to the workspace restores the draft or current run view. |
-| Settings | Select Simplified Chinese (the initial language) or English and edit the loopback endpoint. Saving a different endpoint clears the previous run views and rechecks the service. The address is locked during creation, reconciliation, and polling. |
-| Example report | Opens `/?showcase=overview` in a separate tab. `/?showcase=evidence` and `/?showcase=blocked` are additional offline fixture entry points. |
+| `/` | Blank research draft, with Evidence research selected. The introduction explains source-linked reports. Three modules support question comparison, source inspection, and follow-up. Drafting works while the local service is offline. |
+| Find research | A separate, health-gated run ID dialog opens a GET-only reading context. The lookup tracks its own run status and leaves the current task in the top bar. |
+| Service connection | Shows connection state and opens the loopback endpoint and language settings. Simplified Chinese is the default. An offline check exposes the configured address, change, and reconnect controls. Saving a new address clears the run contexts, preserves the ordinary draft, and checks the new service. Editing the address is locked during creation, reconciliation, and polling. |
+| `/?showcase=overview`, `/?showcase=evidence`, `/?showcase=blocked` | Direct routes to bundled offline examples, separate from the ordinary home. |
 
-A sticky header and status strip keep the current phase and the relevant action
-in reach. Run events come from the create receipt and status responses. Run
-details retain the copyable identifier, observed execution and delivery fields,
-and bounded diagnostics. Architecture and CLI instructions are secondary.
+The sticky task bar uses text and a distinct icon to show the current phase,
+the question, and one action. When the service reports delivery and the required
+result reads pass, the action becomes **Read report**. Progress, report, cause,
+and delivery details open on explicit request. Run details retain the copyable
+identifier, observed execution and delivery fields, and bounded diagnostics.
+Architecture and CLI instructions are secondary.
 
-The workspace uses a quiet document layout with a gray-green canvas
-(`#F5F6F2`), ink (`#1E302C`), and pine-green action color (`#18584A`).
-System sans fonts support UI and body text, with a system serif stack for
-headings. The layout puts the question and start action in the first desktop
-and mobile viewports. On wide screens an opened source can sit beside the
-report. On narrow screens it stays in the report flow. Dialogs support
-keyboard use, Escape, and focus restoration. The status strip announces phase
-changes, and report, question, and source navigation moves focus to the target.
+The home uses warm paper (`#F6F6F1`), a deep blue-green introduction
+(`#173641`), and serif headings. On desktop the introduction sits beside the
+form, above three tool cards. On phones it reduces to the title and explanation,
+with the question and primary action above the single-column tool list.
+Details use a side panel on desktop and a single-column panel under the task
+bar on phones. The report can place an open source beside its finding when
+space permits. Dialogs and detail panels support keyboard use, Escape, and
+focus restoration. The task bar announces phase changes and respects reduced
+motion preferences.
 
 ## Draft and run lifecycle
 
@@ -41,8 +44,11 @@ changes, and report, question, and source navigation moves focus to the target.
   existing contracts.
 - The browser sends exact input. It does not trim, normalize, translate,
   case-fold, or rewrite it. The structured single-question scope is
-  `{questions: [{question_id: "q1", text: query}]}`. The example fill is an
-  explicit draft action. Submission is an explicit create action.
+  `{questions: [{question_id: "q1", text: query}]}`. The introduction,
+  composer, and three tools stay mounted from draft through result. Submission
+  freezes the entered questions in place and preserves focus and scroll
+  position. **New research** explicitly starts a fresh draft after a terminal
+  outcome.
 - Idempotency-Key is header-only and browser-session scoped. A create stores
   one temporary frozen intent. With ambiguous acknowledgement, retry uses the
   same key and byte-equivalent request, including the exact submitted question,
@@ -57,8 +63,9 @@ changes, and report, question, and source navigation moves focus to the target.
   observed run outcome, not a connection failure. Rechecking the delivery
   disposition is a read.
 - When execution is completed (including fallback), delivery is ready, and
-  the required reads succeed, the report appears inline. Attached runs select
-  the reader from the observed profile. General research uses safe Markdown.
+  the required reads succeed, **Read report** opens the report panel.
+  Attached runs use their own **Read this report** action and select the reader
+  from the observed profile. General research uses safe Markdown.
   Evidence research uses the canonical findings projection in accepted
   question order, with candidate findings, unresolved reasons, and global
   limitations and model-reported contradictions. A failed findings read
@@ -98,5 +105,5 @@ covers local research and offline examples. Public hosting, multi-tenancy,
 account management and PDF export are outside this scope.
 Review, publication, delivery and verification decisions remain with the
 service. Approval can permit delivery. Verification is a separate evidence
-state. See the [approved workspace design and acceptance criteria](docs/superpowers/specs/2026-11-20-research-workspace.md)
+state. See the [modular home design and acceptance criteria](docs/superpowers/specs/2026-11-20-modular-research-home.md)
 and the [historical showcase captures](docs/demo-console.md#showcase-frames).

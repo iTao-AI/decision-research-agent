@@ -45,7 +45,7 @@ function fixture({
 
 async function openWorkspace() {
   render(<StrictMode><App liveOptions={options} /></StrictMode>);
-  await screen.findByText("本地服务已连接");
+  await screen.findByText("服务已连接");
 }
 
 async function submit(user: ReturnType<typeof userEvent.setup>) {
@@ -59,7 +59,7 @@ describe("question-first research workspace", () => {
     await openWorkspace();
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("");
     expect(screen.getByRole("combobox", { name: "研究模式" })).toHaveValue("generic-evidence-report");
-    expect(screen.getByRole("button", { name: "开始研究" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "开始研究" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByText("报告暂不可用")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "运行编号" })).not.toBeInTheDocument();
     expect(requests.map(({ method, path }) => [method, path])).toEqual([["GET", "/health"]]);
@@ -73,12 +73,12 @@ describe("question-first research workspace", () => {
     vi.stubGlobal("fetch", fetch);
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText("本地服务未连接");
+    await screen.findByText("服务未连接");
     const question = screen.getByRole("textbox", { name: "研究问题" });
     await user.type(question, "Draft while disconnected");
-    expect(screen.getByRole("button", { name: "开始研究" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "开始研究" })).toHaveAttribute("aria-disabled", "true");
 
-    await user.click(screen.getByRole("button", { name: "设置" }));
+    await user.click(screen.getByRole("button", { name: "修改连接" }));
     const address = screen.getByRole("textbox", { name: "本地后端地址" });
     const save = screen.getByRole("button", { name: "保存连接" });
     fireEvent.change(address, { target: { value: "https://external.example" } });
@@ -87,9 +87,9 @@ describe("question-first research workspace", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     fireEvent.change(address, { target: { value: "http://127.0.0.1:8087/" } });
     await user.click(save);
-    await screen.findByText("本地服务已连接");
+    await screen.findByText("服务已连接");
     expect(question).toHaveValue("Draft while disconnected");
-    expect(screen.getByRole("button", { name: "开始研究" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "开始研究" })).toHaveAttribute("aria-disabled", "false");
     expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
       "http://127.0.0.1:8000/health", "http://127.0.0.1:8087/health"
     ]);
@@ -101,9 +101,9 @@ describe("question-first research workspace", () => {
     await openWorkspace();
     const question = screen.getByRole("textbox", { name: "研究问题" });
     await user.type(question, "My draft");
-    const lookup = screen.getByRole("button", { name: "查看已有研究" });
+    const lookup = screen.getByRole("button", { name: "查找研究" });
     await user.click(lookup);
-    const dialog = screen.getByRole("dialog", { name: "查看已有研究" });
+    const dialog = screen.getByRole("dialog", { name: "查找研究" });
     const input = within(dialog).getByRole("textbox", { name: "运行编号" });
     await user.type(input, "../invalid");
     expect(input).toBeInvalid();
@@ -111,7 +111,7 @@ describe("question-first research workspace", () => {
     await user.keyboard("{Escape}");
     expect(lookup).toHaveFocus();
     expect(question).toHaveValue("My draft");
-    expect(screen.getByRole("button", { name: "开始研究" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "开始研究" })).toHaveAttribute("aria-disabled", "false");
     expect(requests).toHaveLength(1);
   });
 
@@ -120,7 +120,7 @@ describe("question-first research workspace", () => {
     const user = userEvent.setup();
     await openWorkspace();
     await submit(user);
-    await screen.findByText("报告已就绪");
+    await user.click(await screen.findByRole("button", { name: "阅读报告" }));
     expect(screen.getByRole("heading", { name: "来源绑定的候选结论" })).toBeInTheDocument();
     const post = requests.filter((request) => request.method === "POST");
     expect(post).toHaveLength(1);
@@ -163,15 +163,15 @@ describe("question-first research workspace", () => {
       run_id: "run_structured", segment_id: "segment", status: "started",
       thread_id: "demo-console-test", idempotent_replay: false
     }));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("研究运行中"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("运行中"));
 
-    await user.click(screen.getByRole("button", { name: "查看已有研究" }));
+    await user.click(screen.getByRole("button", { name: "查找研究" }));
     await user.type(screen.getByRole("textbox", { name: "运行编号" }), "run_other");
     await user.click(screen.getByRole("button", { name: "打开研究" }));
-    await screen.findByText("报告已就绪");
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
-    expect(screen.getByRole("status")).toHaveTextContent("研究运行中");
-    expect(screen.getByRole("heading", { name: "Keep observing this question" })).toBeInTheDocument();
+    await screen.findByRole("button", { name: "阅读这份报告" });
+    await user.click(screen.getByRole("button", { name: "返回首页" }));
+    expect(screen.getByRole("status")).toHaveTextContent("运行中");
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("Keep observing this question");
     expect(writes).toHaveLength(1);
   });
 
@@ -180,12 +180,13 @@ describe("question-first research workspace", () => {
     const user = userEvent.setup();
     await openWorkspace();
     await submit(user);
-    const retry = await screen.findByRole("button", { name: "重试同一请求" });
+    await user.click(await screen.findByRole("button", { name: "核对同一请求" }));
+    const retry = screen.getByRole("button", { name: "重试同一请求" });
     const posts = () => requests.filter((request) => request.method === "POST");
     expect(posts()).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "开始研究" })).not.toBeInTheDocument();
     await user.click(retry);
-    await screen.findByText("报告已就绪");
+    await screen.findByRole("button", { name: "阅读报告" });
     expect(posts()).toHaveLength(2);
     expect(posts()[1]).toEqual(posts()[0]);
   });
@@ -197,7 +198,7 @@ describe("question-first research workspace", () => {
     await submit(user);
     await screen.findByText("报告读取中断");
     expect(screen.queryByText("研究失败")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "恢复查看" }));
+    await user.click(screen.getByRole("button", { name: "重读报告" }));
     await screen.findByText("报告已就绪");
     expect(requests.filter((request) => request.method === "POST")).toHaveLength(1);
     expect(requests.filter((request) => request.path.endsWith("/result"))).toHaveLength(2);
@@ -220,11 +221,11 @@ describe("question-first research workspace", () => {
     const user = userEvent.setup();
     await openWorkspace();
     await user.type(screen.getByRole("textbox", { name: "研究问题" }), "Draft kept");
-    await user.click(screen.getByRole("button", { name: "查看已有研究" }));
+    await user.click(screen.getByRole("button", { name: "查找研究" }));
     await user.type(screen.getByRole("textbox", { name: "运行编号" }), "run_structured");
     await user.click(screen.getByRole("button", { name: "打开研究" }));
-    await screen.findByText("报告已就绪");
-    await user.click(screen.getByRole("button", { name: "返回工作台" }));
+    await screen.findByRole("button", { name: "阅读这份报告" });
+    await user.click(screen.getByRole("button", { name: "返回首页" }));
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("Draft kept");
     expect(requests.every((request) => request.method === "GET")).toBe(true);
   });
@@ -234,7 +235,7 @@ describe("question-first research workspace", () => {
     const user = userEvent.setup();
     await openWorkspace();
     await submit(user);
-    await screen.findByText("研究失败");
+    await user.click(await screen.findByRole("button", { name: "查看原因" }));
     expect(screen.getByText("研究在执行阶段超时")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "编辑问题，另开研究" }));
     await waitFor(() => expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveFocus());

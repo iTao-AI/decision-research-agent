@@ -1,344 +1,406 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { localBackendOrigin, validateLiveRunId } from "./apiClient";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { DEFAULT_BACKEND_BASE_URL, localBackendOrigin, validateLiveRunId } from "./apiClient";
 import { copy, type Language } from "./i18n";
 import { ResearchFollowUp, type FollowUpMemory } from "./presentation/researchFollowUp";
 import { WorkspaceDialog } from "./presentation/workspaceDialog";
 import { WorkspaceDraft } from "./presentation/workspaceDraft";
+import { WorkspaceDrawer } from "./presentation/workspaceDrawer";
+import { WorkspaceHome } from "./presentation/workspaceHome";
 import { WorkspaceReport } from "./presentation/workspaceReport";
-import { failureDescription, WorkspaceRetainedEvidence, WorkspaceRunDetails } from "./presentation/workspaceRunDetails";
-import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchQuestion } from "./researchFindings";
+import { shortFailureDescription } from "./presentation/workspaceRunDetails";
+import { WorkspaceTaskDetails } from "./presentation/workspaceTaskDetails";
+import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchFindingsResponse, type ResearchQuestion } from "./researchFindings";
 import { RESEARCH_QUESTIONS_MAX } from "./researchScope";
-import { useLiveRun, type LiveRunOptions } from "./useLiveRun";
+import type { RunResultResponse } from "./runProjection";
+import { useLiveRun, type LiveRunOptions, type LiveRunState } from "./useLiveRun";
+import { useWorkspaceConnection } from "./useWorkspaceConnection";
 import { workspaceCopy } from "./workspaceCopy";
-import { statusTone, workspaceStatus, type WorkspaceStatus } from "./workspaceStatus";
+import { trackTone, workspaceStatus, type WorkspaceStatus } from "./workspaceStatus";
 
-type View = "home" | "known";
+type Context = "current" | "known";
+type Panel = "compare" | "source" | "follow" | "progress" | "report" | "failure" | "delivery" | "reconcile" | "known";
 type Dialog = "lookup" | "settings";
-type Submitted = { questions: readonly ResearchQuestion[]; profile: LiveResearchProfile };
+type Draft = { questions: readonly ResearchQuestion[]; profile: LiveResearchProfile };
+type FollowUpSource = {
+  panelId: number;
+  context: Context;
+  report: Delivered;
+  memory: RefObject<FollowUpMemory | undefined>;
+};
+type Submission = Draft & { followUp?: FollowUpSource };
+type Delivered = { result: RunResultResponse; findings?: ResearchFindingsResponse };
+type FocusReturn = { trigger: HTMLElement; scroll: number; drawer?: HTMLElement; drawerScroll?: number };
+type OpenPanel = {
+  id: number;
+  view: Panel;
+  context: Context;
+  report?: Delivered;
+  followMemory?: RefObject<FollowUpMemory | undefined>;
+  origin: FocusReturn;
+};
 const EMPTY_QUESTIONS: readonly ResearchQuestion[] = [{ question_id: "q1", text: "" }];
-const DRAFT_STATUSES: readonly WorkspaceStatus[] = ["connecting", "ready", "offline", "rejected"];
-const AUTOPOLL_STATUSES: readonly WorkspaceStatus[] = ["received", "lookup", "queued", "running", "reading"];
-const SERVICE_OUTCOME_STATUSES: readonly WorkspaceStatus[] = ["failed", "review", "blocked", "pendingDelivery"];
+const TERMINAL_PHASES: readonly WorkspaceStatus[] = ["delivered", "failed", "review", "blocked", "pendingDelivery"];
+const ACTIVE_PHASES: readonly WorkspaceStatus[] = ["submitting", "received", "queued", "running", "reading"];
 
-function focusSection(element: HTMLElement | null) {
-  element?.focus({ preventScroll: true });
-  element?.scrollIntoView?.({ block: "start" });
+function capturePosition(trigger: HTMLElement): FocusReturn {
+  const drawer = trigger.closest<HTMLElement>(".dw-drawer") ?? undefined;
+  return { trigger, scroll: window.scrollY, drawer, drawerScroll: drawer?.scrollTop };
+}
+
+function deliveredReport(state: LiveRunState): Delivered | undefined {
+  if (state.status !== "result" || !state.result) return undefined;
+  return { result: state.result, findings: state.findings };
 }
 
 export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOptions }) {
-  const home = useLiveRun(liveOptions, "live");
-  const known = useLiveRun(liveOptions, "live");
-  const [view, setView] = useState<View>("home");
-  const live = view === "home" ? home : known;
-  const { state } = live;
+  const configuredOrigin = localBackendOrigin(import.meta.env.VITE_DRA_LOCAL_BACKEND_URL ?? "") ?? DEFAULT_BACKEND_BASE_URL;
+  const current = useLiveRun(liveOptions, "live", configuredOrigin);
+  const known = useLiveRun(liveOptions, "live", configuredOrigin);
+  const connection = useWorkspaceConnection(current.state.baseUrl);
+  const healthy = connection.status === "connected";
   const [language, setLanguage] = useState<Language>("zh");
   const t = workspaceCopy[language];
   const [questions, setQuestions] = useState(EMPTY_QUESTIONS);
   const [profile, setProfile] = useState<LiveResearchProfile>(STRUCTURED_RESEARCH_PROFILE);
-  const [submitted, setSubmitted] = useState<Partial<Record<View, Submitted>>>({});
-  const submittedHere = submitted[view];
+  const [submitted, setSubmitted] = useState<Submission>();
+  const phase = submitted ? workspaceStatus(current.state, undefined, true) : "idle";
+  const currentReport = deliveredReport(current.state);
+  const currentFinal = phase !== "idle" && TERMINAL_PHASES.includes(phase);
+  const composing = phase === "idle" || phase === "rejected";
+  const endpointLocked = [current.state.status, known.state.status].some((status) =>
+    status === "creating" || status === "reconciliation_required" || status === "polling");
+
+  const [panels, setPanels] = useState<readonly OpenPanel[]>([]);
   const [knownId, setKnownId] = useState<string>();
-  const observedId = view === "known" ? knownId : undefined;
-  const runId = state.run?.run_id ?? state.created?.run_id ?? observedId;
-  const phase = workspaceStatus(state, observedId);
   const [dialog, setDialog] = useState<Dialog>();
   const [idDraft, setIdDraft] = useState("");
   const [endpointDraft, setEndpointDraft] = useState("");
   const nextQuestion = useRef(2);
-  const questionRef = useRef<HTMLTextAreaElement>(null);
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  const reportRef = useRef<HTMLElement>(null);
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const dialogTrigger = useRef<HTMLElement>(null);
-  const restoreDialogFocus = useRef(false);
-  const writeInProgress = useRef(false);
+  const nextPanel = useRef(1);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const lookupButton = useRef<HTMLButtonElement>(null);
+  const dialogOrigin = useRef<FocusReturn | null>(null);
+  const returnAfterPaint = useRef<FocusReturn | "question" | null>(null);
+  const writePending = useRef(false);
   const homeFollowUp = useRef<FollowUpMemory | undefined>(undefined);
   const knownFollowUp = useRef<FollowUpMemory | undefined>(undefined);
-  const focusOnDraft = useRef(false);
-  const focusOnRun = useRef(false);
-  const focusOnReturn = useRef(false);
-  const lookupButton = useRef<HTMLButtonElement>(null);
 
-  const checkHealth = home.checkHealth;
-  useEffect(() => {
-    const timer = window.setTimeout(() => { void checkHealth(); }, 0);
-    return () => window.clearTimeout(timer);
-  }, [checkHealth]);
   useEffect(() => {
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+    document.title = language === "zh" ? "DRA 决策研究助手" : "DRA Decision Research Agent";
   }, [language]);
-  useEffect(() => {
-    if (focusOnDraft.current && questionRef.current) {
-      focusOnDraft.current = false;
-      focusSection(questionRef.current);
-    }
-    if (focusOnRun.current && headingRef.current) {
-      focusOnRun.current = false;
-      focusSection(headingRef.current);
-    }
-    if (focusOnReturn.current && view === "home") {
-      focusOnReturn.current = false;
-      lookupButton.current?.focus();
-    }
-  }, [view, phase]);
 
   useLayoutEffect(() => {
-    if (!dialog && restoreDialogFocus.current) {
-      restoreDialogFocus.current = false;
-      dialogTrigger.current?.focus();
+    const focus = returnAfterPaint.current;
+    returnAfterPaint.current = null;
+    if (focus === "question") {
+      input.current?.focus({ preventScroll: true });
+      input.current?.scrollIntoView?.({ block: "nearest" });
+    } else if (focus) {
+      const target = focus.trigger.isConnected ? focus.trigger : lookupButton.current;
+      target?.focus({ preventScroll: true });
+      if (focus.drawer?.isConnected) focus.drawer.scrollTop = focus.drawerScroll ?? 0;
+      if (window.scrollY !== focus.scroll) window.scrollTo({ top: focus.scroll, behavior: "instant" });
     }
-  }, [dialog]);
+  }, [dialog, panels, questions]);
 
-  const healthy = Boolean(home.state.health);
-  const showDraft = view === "home" && DRAFT_STATUSES.includes(phase) && !state.findings;
-  const endpointLocked = [home.state, known.state].some(({ status }) =>
-    status === "creating" || status === "reconciliation_required" || status === "polling");
-  const knownWriteActive = known.state.status === "creating" || known.state.status === "reconciliation_required"
-    || (known.state.status === "polling" && Boolean(known.state.created));
-  const returnToKnown = view === "home" && Boolean(submitted.known);
-  const lookupLocked = view === "known" && knownWriteActive;
-  const terminal = SERVICE_OUTCOME_STATUSES.includes(phase);
-  const canStartFresh = view === "home" || !endpointLocked;
-  const acceptedQuestions = state.status === "result" ? state.findings?.report.questions : undefined;
-  const title = acceptedQuestions?.[0].text ?? submittedHere?.questions[0].text ?? (view === "home" ? t.current : t.existing);
-  const draftOrigin = submittedHere ?? (acceptedQuestions
-    ? { questions: acceptedQuestions, profile: STRUCTURED_RESEARCH_PROFILE } : undefined);
-
-  const editQuestion = (id: string, text: string) => setQuestions((current) =>
-    current.map((question) => question.question_id === id ? { ...question, text } : question));
-  const addQuestion = () => {
+  const edit = (id: string, text: string) => setQuestions((rows) =>
+    rows.map((question) => question.question_id === id ? { ...question, text } : question));
+  const add = () => {
     const question_id = `q${nextQuestion.current++}`;
-    setQuestions((current) => current.length >= RESEARCH_QUESTIONS_MAX
-      ? current : [...current, { question_id, text: "" }]);
+    setQuestions((rows) => rows.length >= RESEARCH_QUESTIONS_MAX ? rows : [...rows, { question_id, text: "" }]);
   };
-  const removeQuestion = (id: string) => setQuestions((current) =>
-    current.length < 2 ? current : current.filter((question) => question.question_id !== id));
+  const remove = (id: string) => setQuestions((rows) =>
+    rows.length < 2 ? rows : rows.filter((question) => question.question_id !== id));
 
-  async function performWrite(operation: () => Promise<void>) {
-    if (writeInProgress.current) return;
-    writeInProgress.current = true;
-    try { await operation(); }
-    finally { writeInProgress.current = false; }
+  function openPanel(view: Panel, trigger: HTMLElement, context: Context = "current", report?: Delivered,
+    followMemory?: OpenPanel["followMemory"]) {
+    const entry: OpenPanel = { id: nextPanel.current++, view, context, report, followMemory, origin: capturePosition(trigger) };
+    const fromPanel = Boolean(trigger.closest(".dw-drawer"));
+    setPanels((previous) => fromPanel ? [...previous, entry] : [entry]);
   }
 
-  function launch(draft: Submitted) {
+  function closePanel() {
+    const entry = panels[panels.length - 1];
+    if (!entry) return;
+    returnAfterPaint.current = entry.origin;
+    setPanels((previous) => previous.slice(0, -1));
+  }
+
+  function openDialog(next: Dialog, trigger: HTMLElement) {
+    dialogOrigin.current = capturePosition(trigger);
+    if (next === "lookup") setIdDraft("");
+    else setEndpointDraft(current.state.baseUrl);
+    setDialog(next);
+  }
+
+  function closeDialog(restore = true) {
+    if (restore) returnAfterPaint.current = dialogOrigin.current;
+    setDialog(undefined);
+  }
+
+  async function performWrite(operation: () => Promise<void>) {
+    if (writePending.current) return;
+    writePending.current = true;
+    try { await operation(); }
+    finally { writePending.current = false; }
+  }
+
+  function launch(draft: Submission) {
     return performWrite(async () => {
-      setSubmitted((current) => ({ ...current, [view]: draft }));
-      setKnownId((current) => view === "known" ? undefined : current);
-      focusOnRun.current = true;
-      await live.startNewRun(draft.questions[0].text,
+      setSubmitted(draft);
+      await current.startNewRun(draft.questions[0].text,
         draft.profile === STRUCTURED_RESEARCH_PROFILE ? draft.questions : undefined, draft.profile);
     });
   }
 
-  const closeDialog = (restoreFocus = true) => {
-    restoreDialogFocus.current = restoreFocus;
-    setDialog(undefined);
-  };
-
-  const openLookup = (trigger: HTMLElement) => {
-    dialogTrigger.current = trigger;
-    setIdDraft("");
-    setDialog("lookup");
-  };
-
-  const startFresh = (draft?: Submitted) => {
-    const rows = draft?.questions ?? EMPTY_QUESTIONS;
+  function startFresh(draft?: Draft) {
+    const rows = draft?.questions ?? (submitted?.followUp !== undefined ? questions : EMPTY_QUESTIONS);
     setQuestions(rows);
-    setProfile(draft?.profile ?? STRUCTURED_RESEARCH_PROFILE);
+    setProfile(draft?.profile ?? (submitted?.followUp !== undefined ? profile : STRUCTURED_RESEARCH_PROFILE));
     nextQuestion.current = Math.max(1, ...rows.map(({ question_id }) => Number(/^q(\d+)$/.exec(question_id)?.[1]) || 0)) + 1;
-    setSubmitted((current) => view === "known" ? {} : { ...current, home: undefined });
-    homeFollowUp.current = undefined;
-    focusOnDraft.current = true;
-    if (view === "known") {
-      knownFollowUp.current = undefined;
-      known.discardPendingIntent();
-      setKnownId(undefined);
-      setView("home");
-    }
-    home.discardPendingIntent();
-    if (!healthy && home.state.status !== "checking") void checkHealth();
-  };
-
-  const backToWorkspace = () => {
-    focusOnReturn.current = true;
-    setView("home");
-  };
-
-  function openDetails() {
-    if (detailsRef.current) {
-      detailsRef.current.open = true;
-      focusSection(detailsRef.current.querySelector("summary"));
-    }
+    current.discardPendingIntent();
+    setSubmitted(undefined);
+    setPanels([]);
+    returnAfterPaint.current = "question";
   }
 
-  let actions: ReactNode;
-  switch (phase) {
-    case "offline":
-      actions = <button className="dw-link" type="button" onClick={checkHealth}>{t.reconnect}</button>;
-      break;
-    case "ambiguous":
-      actions = <>
-        <button className="dw-link" type="button" onClick={() => performWrite(live.retryCreate)}>{t.retryCreate}</button>
-        <button className="dw-link" type="button" onClick={() => {
-          live.discardPendingIntent();
-          if (view === "known") {
-            setSubmitted((current) => ({ ...current, known: undefined }));
-            knownFollowUp.current = undefined;
-            backToWorkspace();
-          } else {
-            homeFollowUp.current = undefined;
-          }
-        }}>{t.discard}</button>
+  function discard() {
+    current.discardPendingIntent();
+    setSubmitted(undefined);
+    closePanel();
+  }
+
+  const draftProps = {
+    language, profile, questions, connected: healthy, locked: !composing, canStartFresh: currentFinal,
+    followUpRunning: submitted?.followUp !== undefined, onProfile: setProfile, onEdit: edit, onAdd: add, onRemove: remove,
+    onSubmit: () => launch({ questions: profile === STRUCTURED_RESEARCH_PROFILE ? questions : questions.slice(0, 1), profile }),
+    onStartFresh: () => startFresh()
+  };
+
+  const panelNames = {
+    compare: t.compare, source: t.sources, follow: t.follow, progress: t.progress, report: t.reportTitle,
+    failure: t.viewFailure, delivery: t.viewDelivery, reconcile: t.statuses.ambiguous, known: t.existing
+  };
+
+  function renderPanel(entry: OpenPanel) {
+    const { view, context, report } = entry;
+    const observation = context === "current" ? current : known;
+    const observedPhase = context === "current" ? (phase === "idle" ? "ready" : phase) : workspaceStatus(known.state, knownId);
+    const observedId = observation.state.run?.run_id ?? observation.state.created?.run_id ?? (context === "known" ? knownId : undefined);
+    const latestReport = context === "current" ? currentReport : deliveredReport(known.state);
+
+    if (view === "compare") {
+      return <><p>{t.compareBlurb}</p><WorkspaceDraft {...draftProps} inDrawer /></>;
+    }
+    if (view === "report" || (view === "source" && report)) {
+      const selected = report ?? latestReport;
+      if (!selected) return null;
+      return <>
+        {view === "source" && !selected.findings && <p>{t.sourceGeneric}</p>}
+        <WorkspaceReport language={language} result={selected.result} findings={selected.findings} />
+        {selected.findings && <button className="dw-outline" type="button"
+          onClick={(event) => openPanel("follow", event.currentTarget, context, selected)}>{t.follow}</button>}
       </>;
-      break;
-    case "readInterrupted":
-    case "observeInterrupted":
-      actions = <button className="dw-link" type="button" onClick={live.resumeObservation}>{t.resume}</button>;
-      break;
-    case "review":
-    case "blocked":
-    case "pendingDelivery":
-      actions = <button className="dw-link" type="button" onClick={live.resumeObservation}>{t.checkRun}</button>;
-      break;
-    case "delivered":
-      actions = <button className="dw-link" type="button" onClick={() => focusSection(reportRef.current)}>{t.readReport}</button>;
-      break;
-    default:
-      if (runId) actions = <button className="dw-link" type="button" onClick={openDetails}>{t.details}</button>;
+    }
+    if (view === "follow" && report) {
+      const findings = report.findings;
+      const waiting = submitted?.followUp?.panelId === entry.id;
+      const memory = entry.followMemory ?? (context === "known" ? knownFollowUp : homeFollowUp);
+      if (!findings) return <><p>{t.followGeneric}</p><button className="dw-outline" type="button"
+        onClick={(event) => openDialog("lookup", event.currentTarget)}>{t.lookupExisting}</button></>;
+      const unresolved = findings.report.dispositions.filter(({ status }) => status === "unresolved");
+      if (!unresolved.length) return <><p>{t.noUnresolved}</p><button className="dw-outline" type="button"
+        onClick={(event) => openDialog("lookup", event.currentTarget)}>{t.lookupExisting}</button></>;
+      const submittedHere = waiting && phase !== "rejected";
+      return <>
+        {submittedHere && <p>{t.followSubmitted}</p>}
+        <ResearchFollowUp key={findings.run_id} language={language} findings={findings}
+          disabled={!healthy || (!composing && !currentFinal) || submittedHere}
+          memory={memory}
+          sourceReportVisible onCancelWithoutSource={() => lookupButton.current?.focus()}
+          onStart={(scope) => launch({ questions: scope, profile: STRUCTURED_RESEARCH_PROFILE,
+            followUp: { panelId: entry.id, context, report, memory: { current: memory.current } } })}
+          renderReport={(controls) => controls && <article className="dw-unresolved">
+            <ol>{findings.report.questions.map((question, index) => {
+              const disposition = unresolved.find(({ question_id }) => question_id === question.question_id);
+              if (!disposition) return null;
+              return <li key={question.question_id}>
+                <label><input type="checkbox" aria-label={copy[language].research.followUp.selectQuestion(index + 1)}
+                  checked={controls.selectedQuestionIds.includes(question.question_id)} disabled={controls.disabled}
+                  onChange={() => controls.onToggleQuestion(question.question_id)} /> <strong>{question.text}</strong></label>
+                <p>{disposition.reason}</p>
+              </li>;
+            })}</ol>
+            <button className="dw-outline" type="button" ref={controls.prepareButtonRef}
+              disabled={controls.disabled || !controls.selectedQuestionIds.length}
+              onClick={controls.onPrepare}>{copy[language].research.followUp.prepare}</button>
+          </article>} />
+      </>;
+    }
+    if (view === "source" || view === "follow") {
+      return <>
+        <p>{view === "source" ? t.sourceBlurb : t.followBlurb}</p>
+        <div className="dw-actions">
+          <button className="dw-outline" type="button" onClick={(event) => openDialog("lookup", event.currentTarget)}>
+            {t.lookupExisting}
+          </button>
+          {latestReport && <button className="dw-outline" type="button"
+            onClick={(event) => openPanel(view, event.currentTarget, context, latestReport)}>
+            {view === "source" ? t.currentSources : t.currentUnresolved}
+          </button>}
+        </div>
+      </>;
+    }
+    if (view === "reconcile") {
+      return <>
+        <p>{t.statusNotes.ambiguous}</p>
+        {phase === "ambiguous" ? <div className="dw-actions">
+          <button className="dw-outline" type="button" onClick={() => performWrite(current.retryCreate)}>{t.retryCreate}</button>
+          <button className="dw-outline" type="button" onClick={discard}>{t.discard}</button>
+        </div> : <p>{phase === "idle" ? t.currentIdle : t.statuses[phase]}</p>}
+      </>;
+    }
+    const knownTitle = latestReport?.findings?.report.questions[0]?.text;
+    return <>
+      {view === "known" && (knownTitle
+        ? <h3 className="dw-known-title">{knownTitle}</h3>
+        : observedId && <p><code>{observedId}</code></p>)}
+      <WorkspaceTaskDetails language={language} state={observation.state} phase={observedPhase} runId={observedId}
+        questions={context === "current" ? submitted?.questions : latestReport?.findings?.report.questions}
+        onOpenDraft={context === "current" ? () => startFresh(submitted) : undefined}
+        onCheckStatus={observation.resumeObservation} />
+      {view === "known" && latestReport && <div className="dw-actions">
+        <button className="dw-outline" type="button"
+          onClick={(event) => openPanel("report", event.currentTarget, "known", latestReport)}>{t.readKnown}</button>
+        <button className="dw-outline" type="button"
+          onClick={(event) => openPanel("follow", event.currentTarget, "known", latestReport)}>{t.follow}</button>
+      </div>}
+    </>;
   }
-  const statusNote = t.statusNotes[phase as keyof typeof t.statusNotes]
-    ?? (AUTOPOLL_STATUSES.includes(phase) ? t.automatic : undefined);
-  const lookupValidation = validateLiveRunId(idDraft);
-  const savedOrigin = localBackendOrigin(endpointDraft);
-  const report = state.status === "result" ? state.result : undefined;
-  const followUpAllowed = healthy && (phase === "delivered" || phase === "rejected")
-    && (view !== "known" || !["ambiguous", "submitting", ...AUTOPOLL_STATUSES].includes(workspaceStatus(home.state)));
 
-  return <div className="dra-workspace">
+  const tone = trackTone(phase);
+  const motion = phase === "running";
+  const preparing = phase === "submitting" || phase === "received" || phase === "queued";
+  const icon = motion ? "" : tone === "green" ? "✓" : tone === "red" ? "×"
+    : tone === "idle" ? "–" : preparing ? "◷" : tone === "blue" ? "◌" : "!";
+  const reason = phase === "failed" ? shortFailureDescription(language, current.state.run?.failureCause) : undefined;
+  const trackTitle = phase === "idle" ? t.idleTitle : [reason, submitted?.questions[0].text].filter(Boolean).join(" · ");
+  const trackAction = phase === "delivered" ? t.readReport : phase === "failed" ? t.viewFailure
+    : phase === "observeInterrupted" ? t.resume : phase === "readInterrupted" ? t.rereadReport
+    : phase === "ambiguous" ? t.confirmRequest : phase === "rejected" ? t.editDraft
+    : (phase === "review" || phase === "blocked" || phase === "pendingDelivery") ? t.viewDelivery
+    : phase !== "idle" && ACTIVE_PHASES.includes(phase) ? t.viewProgress : undefined;
+  const connectionLabel = healthy ? t.serviceConnected : connection.status === "checking" ? t.serviceChecking : t.serviceOffline;
+  const lookupValid = validateLiveRunId(idDraft).ok;
+  const endpointOrigin = localBackendOrigin(endpointDraft);
+
+  return <div className="dra-workspace dw-modular">
     <header className="dw-header">
       <div className="dw-chrome">
-        <a className="dw-brand" href="/" onClick={(event) => {
+        <a className="dw-brand" href="/" aria-label={`DRA ${t.brand}`} onClick={(event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
-          if (view === "known") backToWorkspace();
-          else window.scrollTo({ top: 0 });
+          if (panels.length) {
+            returnAfterPaint.current = panels[0].origin;
+            setPanels([]);
+          } else window.scrollTo({ top: 0 });
         }}>
           <span aria-hidden="true" className="dw-mark" />
           <span className="dw-wordmark">DRA</span><span className="dw-brand-label">{t.brand}</span>
         </a>
         <nav aria-label={t.navigation}>
-          <button className="dw-link" ref={lookupButton} type="button" disabled={lookupLocked}
-            onClick={(event) => {
-              if (returnToKnown) {
-                focusOnRun.current = true;
-                setView("known");
-              } else openLookup(event.currentTarget);
-            }}>{returnToKnown ? t.returnToKnown : t.lookup}</button>
-          <a className="dw-link" href="/?showcase=overview" target="_blank" rel="noopener">
-            {t.showcase} <span aria-hidden="true">↗</span>
-          </a>
-          <button className="dw-outline" type="button" onClick={(event) => {
-            dialogTrigger.current = event.currentTarget;
-            setEndpointDraft(home.state.baseUrl);
-            setDialog("settings");
-          }}>{t.settings}</button>
+          <button className="dw-link" ref={lookupButton} type="button" onClick={(event) => openDialog("lookup", event.currentTarget)}>
+            {t.lookup}
+          </button>
+          <button className="dw-connection" type="button" data-connected={healthy} title={current.state.baseUrl}
+            aria-label={`${connectionLabel}，${healthy ? t.openConnection : t.changeConnection}`}
+            onClick={(event) => openDialog("settings", event.currentTarget)}>{connectionLabel}</button>
         </nav>
       </div>
-      <div className="dw-status" data-tone={statusTone(phase)}>
-        <div className="dw-chrome">
-          <div className="dw-status-text" role="status" aria-atomic="true">
-            <span className="dw-dot" aria-hidden="true" />
-            <strong>{t.statuses[phase]}</strong>
-            {statusNote && <span className="dw-status-note">{statusNote}</span>}
-          </div>
-          <div className="dw-actions">{actions}</div>
-        </div>
-      </div>
     </header>
-    <main className="dw-main">
-      <div className={`dw-page${report ? "" : " dw-editor"}`}>
-        {showDraft ? <WorkspaceDraft language={language} connected={healthy} busy={knownWriteActive}
-          profile={profile} onProfile={setProfile} questions={questions}
-          onEdit={editQuestion} onAdd={addQuestion} onRemove={removeQuestion} firstInputRef={questionRef}
-          onSubmit={() => launch({ profile, questions: profile === STRUCTURED_RESEARCH_PROFILE ? questions : questions.slice(0, 1) })} />
-        : <>
-          {view === "known" && <button className="dw-link dw-back" type="button" onClick={backToWorkspace}>{t.back}</button>}
-          <h1 ref={headingRef} tabIndex={-1}>{title}</h1>
-          {submittedHere && !report && submittedHere.questions.length > 1 && <ul className="dw-question-list">
-            {submittedHere.questions.slice(1).map((question) => <li key={question.question_id}>{question.text}</li>)}
-          </ul>}
-          {AUTOPOLL_STATUSES.includes(phase) && (state.created || state.run) && <section className="dw-events" aria-label={t.progress}>
-            <h2>{t.progress}</h2>
-            <ol>
-              {state.created && <li>{t.requested}</li>}
-              {state.run && <li>{t.statuses[phase]}</li>}
-            </ol>
-          </section>}
-          {terminal && state.run && <section className="dw-notice" data-tone={statusTone(phase)}>
-            {phase === "failed" ? <>
-              <h2>{failureDescription(language, state.run.failureCause)}</h2>
-              <p>{t.resultUnavailable}</p>
-            </> : <p>{phase === "review" ? t.reviewPending : phase === "blocked" ? t.deliveryBlocked : t.deliveryPending}</p>}
-            <WorkspaceRetainedEvidence language={language} run={state.run} />
-            {canStartFresh && phase === "failed" && <button className="dw-outline" type="button"
-              onClick={() => startFresh(draftOrigin)}>{draftOrigin ? t.editAgain : t.newResearch}</button>}
-          </section>}
-          {state.findings ? <ResearchFollowUp key={`${view}/${state.findings.run_id}/${state.findings.artifact.content_hash}`}
-            language={language} findings={state.findings} disabled={!followUpAllowed}
-            memory={view === "home" ? homeFollowUp : knownFollowUp}
-            sourceReportVisible={Boolean(report)} onCancelWithoutSource={() => lookupButton.current?.focus()}
-            onStart={(scope) => launch({ questions: scope, profile: STRUCTURED_RESEARCH_PROFILE })}
-            renderReport={(controls) => report && <WorkspaceReport language={language} result={report}
-              findings={state.findings} followUp={controls} reportRef={reportRef} />} />
-            : report && <WorkspaceReport language={language} result={report} reportRef={reportRef} />}
-          {view === "home" && ["delivered", "blocked", "review", "pendingDelivery"].includes(phase)
-            && <button className="dw-outline dw-new" type="button" onClick={() => startFresh()}>{t.newResearch}</button>}
-        </>}
-        {(runId || state.error) && <WorkspaceRunDetails key={`${view}/${runId ?? "none"}`} language={language}
-          state={state} runId={runId} detailsRef={detailsRef} />}
+    <div className="dw-status" data-tone={tone}>
+      <div className="dw-chrome">
+        <span className="dw-stage">
+          <span className="dw-stage-icon" aria-hidden="true">{icon}</span>
+          <span role="status" aria-atomic="true">{phase === "idle" ? t.currentIdle : t.statuses[phase]}</span>
+        </span>
+        <span className="dw-track-title" title={trackTitle}>{trackTitle}</span>
+        {trackAction && <button className="dw-track-action" type="button" onClick={(event) => {
+          const trigger = event.currentTarget;
+          if (phase === "delivered") openPanel("report", trigger, "current", currentReport);
+          else if (phase === "failed") openPanel("failure", trigger);
+          else if (phase === "observeInterrupted" || phase === "readInterrupted") void current.resumeObservation();
+          else if (phase === "ambiguous") openPanel("reconcile", trigger);
+          else if (phase === "rejected") {
+            const follow = submitted?.followUp;
+            if (follow) {
+              const openFollow = panels.find(({ id }) => id === follow.panelId);
+              if (openFollow) setPanels((previous) => previous.slice(0, previous.indexOf(openFollow) + 1));
+              else openPanel("follow", trigger, follow.context, follow.report, follow.memory);
+            } else {
+              setPanels([]);
+              returnAfterPaint.current = "question";
+            }
+          } else if (phase === "review" || phase === "blocked" || phase === "pendingDelivery") openPanel("delivery", trigger);
+          else openPanel("progress", trigger);
+        }}>{trackAction}</button>}
       </div>
-    </main>
+    </div>
+    {connection.status === "disconnected" && <div className="dw-connection-message dw-chrome">
+      <span>{t.backend} <code>{current.state.baseUrl}</code></span>
+      <button className="dw-link" type="button" onClick={(event) => openDialog("settings", event.currentTarget)}>{t.changeConnection}</button>
+      <button className="dw-link" type="button" onClick={connection.retry}>{t.reconnect}</button>
+    </div>}
+    <div inert={panels.length > 0}>
+      <WorkspaceHome language={language} onOpen={(view, trigger) => openPanel(view, trigger, "current", currentReport)}>
+        <WorkspaceDraft {...draftProps} firstInputRef={input} />
+      </WorkspaceHome>
+    </div>
+    {panels.map((entry, index) => <WorkspaceDrawer key={entry.id} title={panelNames[entry.view]}
+      active={index === panels.length - 1} closeLabel={index === 0 ? t.back : t.backDetail} onClose={closePanel}>
+      {renderPanel(entry)}
+    </WorkspaceDrawer>)}
     {dialog === "lookup" && <WorkspaceDialog title={t.lookup} onClose={() => closeDialog()} onSubmit={(event) => {
       event.preventDefault();
-      if (!lookupValidation.ok || !healthy || lookupLocked) return;
-      setSubmitted((current) => ({ ...current, known: undefined }));
+      const trigger = dialogOrigin.current?.trigger;
+      if (!trigger || !lookupValid || !healthy) return;
       knownFollowUp.current = undefined;
       setKnownId(idDraft);
-      setView("known");
-      focusOnRun.current = true;
       closeDialog(false);
+      if (panels.some(({ context }) => context === "known")) setPanels([]);
+      openPanel("known", trigger, "known");
       void known.attachKnownRun(idDraft);
     }}>
       <label htmlFor="dw-run-id">{t.runId}</label>
       <input id="dw-run-id" value={idDraft} onChange={(event) => setIdDraft(event.target.value)}
-        aria-invalid={Boolean(idDraft) && !lookupValidation.ok} aria-describedby="dw-run-id-hint" />
-      <p id="dw-run-id-hint">{idDraft && !lookupValidation.ok ? t.invalidRunId : t.runIdHint}</p>
+        aria-invalid={Boolean(idDraft) && !lookupValid} aria-describedby="dw-run-id-hint" />
+      <p id="dw-run-id-hint">{idDraft && !lookupValid ? t.invalidRunId : t.runIdHint}</p>
       {!healthy && <p>{t.connectToStart}</p>}
       <div className="dw-actions">
         <button className="dw-outline" type="button" onClick={() => closeDialog()}>{t.close}</button>
-        <button className="dw-primary" type="submit" disabled={!lookupValidation.ok || !healthy || lookupLocked}>{t.open}</button>
+        <button className="dw-primary" type="submit" disabled={!lookupValid || !healthy}>{t.open}</button>
       </div>
     </WorkspaceDialog>}
     {dialog === "settings" && <WorkspaceDialog title={t.settings} onClose={() => closeDialog()} onSubmit={(event) => {
       event.preventDefault();
-      if (!savedOrigin || endpointLocked) return;
-      if (savedOrigin === home.state.baseUrl) {
-        if (["offline", "connecting"].includes(workspaceStatus(home.state))) void checkHealth();
-      } else {
-        setView("home");
+      if (!endpointOrigin || endpointLocked) return;
+      if (endpointOrigin === current.state.baseUrl) connection.retry();
+      else {
+        setPanels([]);
         setKnownId(undefined);
-        setSubmitted({});
+        setSubmitted(undefined);
         homeFollowUp.current = undefined;
         knownFollowUp.current = undefined;
-        home.setBaseUrl(savedOrigin);
-        known.setBaseUrl(savedOrigin);
+        current.setBaseUrl(endpointOrigin);
+        known.setBaseUrl(endpointOrigin);
+        connection.retry();
       }
       closeDialog();
     }}>
       <label htmlFor="dw-backend">{t.backend}</label>
       <input id="dw-backend" value={endpointDraft} disabled={endpointLocked}
-        aria-describedby="dw-backend-hint" aria-invalid={!savedOrigin}
+        aria-describedby="dw-backend-hint" aria-invalid={!endpointOrigin}
         onChange={(event) => setEndpointDraft(event.target.value)} />
       <p id="dw-backend-hint">{t.backendHint}</p>
       <div className="dw-actions" role="group" aria-label={t.language}>
@@ -351,7 +413,8 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
       </div>
       <div className="dw-actions">
         <button className="dw-outline" type="button" onClick={() => closeDialog()}>{t.close}</button>
-        <button className="dw-primary" type="submit" disabled={!savedOrigin || endpointLocked}>{t.saveConnection}</button>
+        <button className="dw-outline" type="button" onClick={connection.retry}>{t.reconnect}</button>
+        <button className="dw-primary" type="submit" disabled={!endpointOrigin || endpointLocked}>{t.saveConnection}</button>
       </div>
     </WorkspaceDialog>}
   </div>;

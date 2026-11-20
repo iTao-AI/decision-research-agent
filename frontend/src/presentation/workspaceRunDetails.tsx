@@ -1,4 +1,4 @@
-import { useState, type Ref } from "react";
+import { useRef, useState, type Ref } from "react";
 import { buildLiveConsoleProjection } from "../consoleProjection";
 import { copy, type Language } from "../i18n";
 import type { RunProjection } from "../runProjection";
@@ -15,10 +15,11 @@ export function WorkspaceRunDetails({ language, state, runId, detailsRef }: {
   language: Language;
   state: LiveRunState;
   runId?: string;
-  detailsRef: Ref<HTMLDetailsElement>;
+  detailsRef?: Ref<HTMLDetailsElement>;
 }) {
   const t = workspaceCopy[language];
   const [copiedId, setCopiedId] = useState("");
+  const runCode = useRef<HTMLElement>(null);
   const run = state.run;
   const failure = run?.failureCause;
   const review = run?.review.workflow;
@@ -26,13 +27,13 @@ export function WorkspaceRunDetails({ language, state, runId, detailsRef }: {
   return <details className="dw-details" ref={detailsRef}>
     <summary>{t.details}</summary>
     <dl>
-      {runId && <div><dt>{t.runId}</dt><dd><code id="dw-current-run-id">{runId}</code>
+      {runId && <div><dt>{t.runId}</dt><dd><code ref={runCode}>{runId}</code>
         <button className="dw-link" type="button" onClick={async () => {
           try {
             await navigator.clipboard.writeText(runId);
             setCopiedId(runId);
           } catch {
-            const id = document.getElementById("dw-current-run-id");
+            const id = runCode.current;
             if (id) document.getSelection()?.selectAllChildren(id);
           }
         }}>{copiedId === runId ? t.copied : t.copyRun}</button>
@@ -72,16 +73,43 @@ export function WorkspaceRunDetails({ language, state, runId, detailsRef }: {
 export function WorkspaceRetainedEvidence({ language, run }: { language: Language; run: RunProjection }) {
   const t = workspaceCopy[language];
   if (!run.evidence.length) return <p>{t.noEvidence}</p>;
-  return <details className="dw-details dw-retained-sources">
+  const missingSnippet = language === "zh" ? "没有可显示的留存片段。" : "No retained snippet is available to display.";
+  return <details className="dw-details dw-retained-sources" open>
     <summary>{t.stateEvidence(run.evidence.length)}</summary>
     <ul>{run.evidence.map((evidence) => {
       const href = evidence.source_url ? safeHttpUrl(evidence.source_url) : undefined;
-      const name = evidence.source_identity || evidence.evidence_id;
+      const name = evidence.source_identity || href || evidence.evidence_id;
       return <li key={evidence.evidence_id}>
-        {href ? <a href={href} target="_blank" rel="noreferrer">{name}</a> : name}
+        {href ? <a href={href} target="_blank" rel="noreferrer">{name}</a> : <span>{name}</span>}
+        {evidence.snippet ? <blockquote>{evidence.snippet}</blockquote> : <p>{missingSnippet}</p>}
       </li>;
     })}</ul>
   </details>;
+}
+
+const SHORT_FAILURE_REASONS: Readonly<Record<string, readonly [zh: string, en: string]>> = {
+  run_dispatch_schedule_failed: ["调度失败", "Scheduling failed"],
+  run_dispatch_start_failed: ["启动失败", "Dispatch start failed"],
+  run_dispatch_start_timeout: ["启动超时", "Dispatch start timed out"],
+  run_dispatch_lease_expired: ["调度租约到期", "Dispatch lease expired"],
+  call_budget_exceeded: ["调用预算耗尽", "Call budget exceeded"],
+  recursion_limit_exceeded: ["达到递归上限", "Recursion limit reached"],
+  invalid_research_packet: ["研究包无效", "Invalid research packet"],
+  missing_research_packet: ["研究包缺失", "Research packet missing"],
+  cancelled: ["已取消", "Cancelled"],
+  execution_error: ["执行出错", "Execution error"],
+  run_finalization_failed: ["结果收尾失败", "Finalization failed"]
+};
+
+export function shortFailureDescription(language: Language, failure: RunProjection["failureCause"] | undefined) {
+  if (failure?.kind !== "observed") return undefined;
+  const index = language === "zh" ? 0 : 1;
+  if (failure.code === "run_timeout") {
+    const reasons = failure.phase === "finalization"
+      ? ["结果收尾超时", "Finalization timed out"] : ["执行超时", "Execution timed out"];
+    return reasons[index];
+  }
+  return SHORT_FAILURE_REASONS[failure.code]?.[index];
 }
 
 export function failureDescription(language: Language, failure: RunProjection["failureCause"] | undefined) {

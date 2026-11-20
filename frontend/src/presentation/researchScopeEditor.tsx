@@ -18,7 +18,9 @@ export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRe
   compact?: {
     placeholder: string;
     generic: boolean;
-    firstInputRef: Ref<HTMLTextAreaElement>;
+    firstInputRef?: Ref<HTMLTextAreaElement>;
+    readOnly?: boolean;
+    addLabel?: string;
     renderFooter: (addQuestion: ReactNode) => ReactNode;
   };
 }) {
@@ -31,9 +33,10 @@ export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRe
     if (next) fields.current.get(next === "last" ? questions[questions.length - 1].question_id : next)?.focus();
   }, [questions]);
 
+  const readOnly = compact?.readOnly ?? false;
   const addQuestion = !compact?.generic && <button className={compact ? "dw-link" : "research-scope-add"}
-    type="button" disabled={disabled || questions.length >= RESEARCH_QUESTIONS_MAX}
-    onClick={() => { focusNext.current = "last"; onAdd(); }}>{t.research.addQuestion}</button>;
+    type="button" disabled={disabled || readOnly || questions.length >= RESEARCH_QUESTIONS_MAX}
+    onClick={() => { focusNext.current = "last"; onAdd(); }}>{compact?.addLabel ?? t.research.addQuestion}</button>;
 
   return <fieldset className={`live-query-field research-scope-editor${compact ? " dw-scope-editor" : ""}`} disabled={disabled}>
     {!compact && <legend>{legend ?? t.research.scopeTitle}</legend>}
@@ -54,13 +57,13 @@ export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRe
       return <div className="research-scope-row" key={question.question_id}>
         <div className="research-scope-row-heading">
           <label htmlFor={id}>{questionLabel ? questionLabel(index + 1) : index === 0 ? t.live.question : t.research.questionNumber(index + 1)}</label>
-          {(!compact || questions.length > 1) && <button type="button" disabled={disabled || questions.length === 1}
+          {(!compact || questions.length > 1) && <button type="button" disabled={disabled || readOnly || questions.length === 1}
             aria-label={t.research.removeQuestion(index + 1)} onClick={() => {
               focusNext.current = (questions[index + 1] ?? questions[index - 1]).question_id;
               onRemove(question.question_id);
             }}>{t.research.remove}</button>}
         </div>
-        <textarea id={id} rows={2} disabled={disabled} value={question.text}
+        <textarea id={id} rows={2} disabled={disabled} readOnly={readOnly} value={question.text}
           placeholder={index === 0 ? compact?.placeholder : undefined}
           ref={(element) => {
             if (element) fields.current.set(question.question_id, element);
@@ -71,7 +74,7 @@ export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRe
             }
           }}
           aria-invalid={showFeedback} aria-describedby={describedBy}
-          onChange={(event) => onEdit(question.question_id, event.target.value)} />
+          onChange={(event) => { if (!readOnly) onEdit(question.question_id, event.target.value); }} />
         {!compact && <small id={`${id}-count`}>{index === 0 ? t.live.queryBytes(queryValidation!.utf8Bytes) : t.research.questionPoints(Array.from(question.text).length)}</small>}
         {showFeedback && <p className="live-query-feedback" id={`${id}-feedback`}>{feedback}</p>}
       </div>;

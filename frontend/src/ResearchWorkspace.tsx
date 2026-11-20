@@ -7,6 +7,7 @@ import { WorkspaceDraft } from "./presentation/workspaceDraft";
 import { WorkspaceDrawer } from "./presentation/workspaceDrawer";
 import { WorkspaceHome } from "./presentation/workspaceHome";
 import { WorkspaceReport } from "./presentation/workspaceReport";
+import { WorkspaceReportOutline } from "./presentation/workspaceReportOutline";
 import { shortFailureDescription } from "./presentation/workspaceRunDetails";
 import { WorkspaceTaskDetails } from "./presentation/workspaceTaskDetails";
 import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchFindingsResponse, type ResearchQuestion } from "./researchFindings";
@@ -18,7 +19,7 @@ import { workspaceCopy } from "./workspaceCopy";
 import { trackTone, workspaceStatus, type WorkspaceStatus } from "./workspaceStatus";
 
 type Context = "current" | "known";
-type Panel = "compare" | "source" | "follow" | "progress" | "report" | "failure" | "delivery" | "reconcile" | "known";
+type Panel = "compare" | "source" | "outline" | "follow" | "progress" | "report" | "failure" | "delivery" | "reconcile" | "known";
 type Dialog = "lookup" | "settings";
 type Draft = { questions: readonly ResearchQuestion[]; profile: LiveResearchProfile };
 type FollowUpSource = {
@@ -179,7 +180,7 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
   };
 
   const panelNames = {
-    compare: t.compare, source: t.sources, follow: t.follow, progress: t.progress, report: t.reportTitle,
+    compare: t.compare, source: t.sources, outline: t.reportOutline, follow: t.follow, progress: t.progress, report: t.reportTitle,
     failure: t.viewFailure, delivery: t.viewDelivery, reconcile: t.statuses.ambiguous, known: t.existing
   };
 
@@ -189,6 +190,8 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
     const observedPhase = context === "current" ? (phase === "idle" ? "ready" : phase) : workspaceStatus(known.state, knownId);
     const observedId = observation.state.run?.run_id ?? observation.state.created?.run_id ?? (context === "known" ? knownId : undefined);
     const latestReport = context === "current" ? currentReport : deliveredReport(known.state);
+
+    if (view === "outline") return <WorkspaceReportOutline language={language} />;
 
     if (view === "compare") {
       return <><p>{t.compareBlurb}</p><WorkspaceDraft {...draftProps} inDrawer /></>;
@@ -245,6 +248,8 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
           <button className="dw-outline" type="button" onClick={(event) => openDialog("lookup", event.currentTarget)}>
             {t.lookupExisting}
           </button>
+          {view === "source" && !latestReport && <button className="dw-outline" type="button"
+            onClick={(event) => openPanel("outline", event.currentTarget, context)}>{t.reportOutline}</button>}
           {latestReport && <button className="dw-outline" type="button"
             onClick={(event) => openPanel(view, event.currentTarget, context, latestReport)}>
             {view === "source" ? t.currentSources : t.currentUnresolved}
@@ -295,7 +300,7 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
   const lookupValid = validateLiveRunId(idDraft).ok;
   const endpointOrigin = localBackendOrigin(endpointDraft);
 
-  return <div className="dra-workspace dw-modular">
+  return <div className="dra-workspace dw-modular dw-paper">
     <header className="dw-header">
       <div className="dw-chrome">
         <a className="dw-brand" href="/" aria-label={`DRA ${t.brand}`} onClick={(event) => {
@@ -353,7 +358,8 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
       <button className="dw-link" type="button" onClick={connection.retry}>{t.reconnect}</button>
     </div>}
     <div inert={panels.length > 0}>
-      <WorkspaceHome language={language} onOpen={(view, trigger) => openPanel(view, trigger, "current", currentReport)}>
+      <WorkspaceHome language={language} onOpen={(view, trigger) =>
+        openPanel(view === "outline" && currentReport ? "source" : view, trigger, "current", currentReport)}>
         <WorkspaceDraft {...draftProps} firstInputRef={input} />
       </WorkspaceHome>
     </div>

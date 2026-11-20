@@ -2,7 +2,7 @@ export const workspaceCopy = {
   zh: {
     brand: "决策研究助手", navigation: "工作台入口", lookup: "查找研究",
     settings: "连接设置", back: "返回首页", backDetail: "返回上一层", lookupExisting: "查找已有研究",
-    compose: "发起研究", addQuestion: "＋ 添加子问题", submitted: "已提交", currentIdle: "当前无任务",
+    compose: "发起研究", addQuestion: "＋ 添加子问题", subquestions: "＋ 子问题", reportOutline: "报告怎样引用原文", submitted: "已提交", currentIdle: "当前无任务",
     idleTitle: "从下方发起一项研究", draftLocked: "本次提交的问题已保留。",
     otherWriteActive: "当前有一项续研，你的草稿仍保留。", validDraft: "问题已就绪，可以提交。",
     serviceConnected: "服务已连接", serviceOffline: "服务未连接", serviceChecking: "正在检查连接",
@@ -18,7 +18,7 @@ export const workspaceCopy = {
     followGeneric: "通用研究报告不提供可勾选的未解问题。",
     currentSources: "查看当前报告的依据", currentUnresolved: "选择当前报告的待查项",
     followSubmitted: "这份续研草稿已提交。可从顶部任务栏查看它的进展。",
-    question: "研究问题", questionPlaceholder: "写下你想比较的选项、需要核实的事实，或待做的决定。",
+    question: "研究问题", questionPlaceholder: "写下你想比较的选项，或需要核实的事实。",
     mode: "研究模式", evidenceMode: "证据研究", genericMode: "通用研究",
     start: "开始研究", blank: "输入研究问题后即可开始。", missingQuestion: "请填写每一道问题，或删除空白子问题。",
     invalidQuestion: "请缩短超出长度限制的问题。", connectToStart: "可先编辑草稿，连接服务后即可提交。",
@@ -57,7 +57,7 @@ export const workspaceCopy = {
   en: {
     brand: "Decision Research Agent", navigation: "Workspace navigation", lookup: "Find research",
     settings: "Connection settings", back: "Back to home", backDetail: "Back", lookupExisting: "Find existing research",
-    compose: "Start a research task", addQuestion: "＋ Add question", submitted: "Submitted", currentIdle: "No current task",
+    compose: "Start a research task", addQuestion: "＋ Add question", subquestions: "＋ Question", reportOutline: "How reports cite sources", submitted: "Submitted", currentIdle: "No current task",
     idleTitle: "Start a research task below", draftLocked: "Your submitted questions are preserved.",
     otherWriteActive: "A follow-up is active. Your draft is still here.", validDraft: "Your question is ready to submit.",
     serviceConnected: "Service connected", serviceOffline: "Service offline", serviceChecking: "Checking connection",

@@ -23,10 +23,18 @@ and delivery details open on explicit request. Run details retain the copyable
 identifier, observed execution and delivery fields, and bounded diagnostics.
 Architecture and CLI instructions are secondary.
 
-The home uses warm paper (`#F6F6F1`), a deep blue-green introduction
-(`#173641`), and serif headings. On desktop the introduction sits beside the
-form, above three tool cards. On phones it reduces to the title and explanation,
-with the question and primary action above the single-column tool list.
+The home uses warm paper (`#FAF9F6`), dark text and cobalt focus and action
+accents (`#263FB4`). A system sans-serif title leads into one framed editor for
+the question, subquestions, research mode and submit action. The desktop
+paper relief sits alongside the editor. On phones it appears as a small
+decorative crop beside the title. The three tools are a keyboard-operable
+directory with descriptions and dividing rules.
+
+**View report structure** opens an explicitly labeled diagram of a citation
+and its source passage before a report is available. The source directory entry
+also leads to this explanation on phones. After a canonical report is read,
+the structure control opens the actual source reader for that run.
+
 Details use a side panel on desktop and a single-column panel under the task
 bar on phones. The report can place an open source beside its finding when
 space permits. Dialogs and detail panels support keyboard use, Escape, and

@@ -58,7 +58,7 @@ async function start() {
 it("keeps the home, exact composer and focused action in place from submit to delivery", async () => {
   const api = service({ hold: true });
   const { user, question, submit } = await start();
-  const hero = screen.getByRole("heading", { name: /把公开资料整理成.*有出处的研究报告/ });
+  const hero = screen.getByRole("heading", { name: "你想研究什么？" });
   const initialUrl = window.location.href;
   expect(screen.getByRole("button", { name: /多问题比较/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /核对结论出处/ })).toBeInTheDocument();
@@ -74,7 +74,7 @@ it("keeps the home, exact composer and focused action in place from submit to de
   expect(api.writes()).toBe(1);
   api.finish();
   await screen.findByRole("button", { name: "阅读报告" });
-  expect(screen.getByRole("heading", { name: /把公开资料整理成.*有出处的研究报告/ })).toBe(hero);
+  expect(screen.getByRole("heading", { name: "你想研究什么？" })).toBe(hero);
   expect(screen.getByRole("textbox", { name: "研究问题" })).toBe(question);
   expect(submit).toHaveFocus();
   expect(window.location.href).toBe(initialUrl);
@@ -131,6 +131,56 @@ it("recovers an interrupted status with GET and preserves the submitted draft", 
   api.reconnect();
   await user.click(resume);
   await screen.findByRole("button", { name: "阅读报告" });
+  expect(question).toHaveValue("保留的原问题");
+  expect(api.writes()).toBe(1);
+});
+
+it("explains the report structure on request without presenting sample findings or creating a run", async () => {
+  const api = service();
+  const { user, question } = await start();
+  const outline = screen.getByRole("button", { name: "查看报告结构" });
+  expect(screen.queryByText("结构示意")).not.toBeInTheDocument();
+  await user.click(outline);
+  const panel = screen.getByRole("region", { name: "报告怎样引用原文" });
+  expect(within(panel).getByText("结构示意")).toBeVisible();
+  const reference = within(panel).getByRole("button", { name: "查看引文 1 的原文位置" });
+  await user.click(reference);
+  expect(within(panel).getByRole("heading", { name: "引用原文的位置" })).toHaveFocus();
+  expect(within(panel).queryByRole("link")).not.toBeInTheDocument();
+  await user.click(within(panel).getByRole("button", { name: "返回引文" }));
+  expect(reference).toHaveFocus();
+  await user.click(within(panel).getByRole("button", { name: "返回首页" }));
+  expect(outline).toHaveFocus();
+  expect(question).toHaveValue("保留的原问题");
+  expect(api.writes()).toBe(0);
+});
+
+it("offers the same explanation from the tools directory without a delivered report", async () => {
+  service();
+  const { user } = await start();
+  await user.click(screen.getByRole("button", { name: /核对结论出处/ }));
+  const sources = screen.getByRole("region", { name: "核对结论出处" });
+  const outline = within(sources).getByRole("button", { name: "报告怎样引用原文" });
+  await user.click(outline);
+  const panel = screen.getByRole("region", { name: "报告怎样引用原文" });
+  expect(within(panel).getByText("结构示意")).toBeVisible();
+  await user.click(within(panel).getByRole("button", { name: "返回上一层" }));
+  expect(outline).toHaveFocus();
+});
+
+it("opens the current canonical sources rather than the explanation when a report is delivered", async () => {
+  const api = service();
+  const { user, submit, question } = await start();
+  await user.click(submit);
+  await screen.findByRole("button", { name: "阅读报告" });
+  const outline = screen.getByRole("button", { name: "查看报告结构" });
+  await user.click(outline);
+  const sources = screen.getByRole("region", { name: "核对结论出处" });
+  expect(within(sources).queryByText("结构示意")).not.toBeInTheDocument();
+  await user.click(within(sources).getByRole("button", { name: "查看来源 1" }));
+  expect(within(sources).getByText("😀精确片段")).toBeVisible();
+  await user.click(within(sources).getByRole("button", { name: "返回首页" }));
+  expect(outline).toHaveFocus();
   expect(question).toHaveValue("保留的原问题");
   expect(api.writes()).toBe(1);
 });

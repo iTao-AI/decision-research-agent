@@ -5,6 +5,7 @@ import App from "./App";
 import "./styles.css";
 import "./workspace.css";
 import "./workspaceHome.css";
+import "./workspacePaper.css";
 
 const root = document.getElementById("root");
 

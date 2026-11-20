@@ -68,7 +68,7 @@ describe("multi-question creation editor", () => {
     const { posts } = captureCreates();
     const user = await structuredEditor();
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "One" } });
-    const compare = screen.getByRole("button", { name: "多问题比较 编排问题" });
+    const compare = screen.getByRole("button", { name: "多问题比较" });
     await user.click(compare);
     const editor = within(screen.getByRole("region", { name: "多问题比较" }));
     expect(editor.getByRole("textbox", { name: "研究问题" })).toHaveValue("One");

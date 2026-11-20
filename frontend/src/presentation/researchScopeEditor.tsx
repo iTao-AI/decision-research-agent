@@ -21,6 +21,7 @@ export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRe
     firstInputRef?: Ref<HTMLTextAreaElement>;
     readOnly?: boolean;
     addLabel?: string;
+    addText?: string;
     renderFooter: (addQuestion: ReactNode) => ReactNode;
   };
 }) {
@@ -36,7 +37,10 @@ export function ResearchScopeEditor({ questions, language, disabled, onAdd, onRe
   const readOnly = compact?.readOnly ?? false;
   const addQuestion = !compact?.generic && <button className={compact ? "dw-link" : "research-scope-add"}
     type="button" disabled={disabled || readOnly || questions.length >= RESEARCH_QUESTIONS_MAX}
-    onClick={() => { focusNext.current = "last"; onAdd(); }}>{compact?.addLabel ?? t.research.addQuestion}</button>;
+    aria-label={compact?.addText ? compact.addLabel : undefined}
+    onClick={() => { focusNext.current = "last"; onAdd(); }}>
+    {compact?.addText ?? compact?.addLabel ?? t.research.addQuestion}
+  </button>;
 
   return <fieldset className={`live-query-field research-scope-editor${compact ? " dw-scope-editor" : ""}`} disabled={disabled}>
     {!compact && <legend>{legend ?? t.research.scopeTitle}</legend>}

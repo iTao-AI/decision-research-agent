@@ -36,18 +36,26 @@ export function WorkspaceDraft({ language, profile, questions, connected, locked
     : !valid ? t.invalidQuestion : t.validDraft;
   const id = inDrawer ? "dw-compare-question" : "dw-question";
 
-  return <form className={inDrawer ? "dw-form dw-compare-form" : "dw-form dw-composer"} onSubmit={(event) => {
-    event.preventDefault();
-    if (!allowed) return;
-    if (canStartFresh) onStartFresh();
-    else onSubmit();
-  }}>
-    {!inDrawer && <h2 className="dw-composer-heading">{t.compose}</h2>}
+  const hintId = `${id}-submit-hint`;
+  const hintText = <p className="dw-hint" id={hintId}>{hint}</p>;
+  const submit = <button className="dw-primary" type="submit" aria-disabled={!allowed} aria-describedby={hintId}>
+    {canStartFresh ? t.newResearch : locked ? t.submitted : t.start}
+    {!locked && <span aria-hidden="true">↗</span>}
+  </button>;
+
+  return <form className={inDrawer ? "dw-form dw-compare-form" : "dw-form dw-composer"} aria-label={t.compose}
+    onSubmit={(event) => {
+      event.preventDefault();
+      if (!allowed) return;
+      if (canStartFresh) onStartFresh();
+      else onSubmit();
+    }}>
     <ResearchScopeEditor language={language} disabled={false} idPrefix={id}
       questions={structured ? questions : questions.slice(0, 1)}
       onEdit={onEdit} onAdd={onAdd} onRemove={onRemove}
       compact={{
         firstInputRef, generic: !structured, placeholder: t.questionPlaceholder, readOnly: locked, addLabel: t.addQuestion,
+        addText: inDrawer ? undefined : t.subquestions,
         renderFooter: (addQuestion) => <div className="dw-form-footer">
           <div className="dw-form-tools">
             {addQuestion}
@@ -56,16 +64,11 @@ export function WorkspaceDraft({ language, profile, questions, connected, locked
               <option value={STRUCTURED_RESEARCH_PROFILE}>{t.evidenceMode}</option>
               <option value="generic">{t.genericMode}</option>
             </select>
+            {!inDrawer && submit}
           </div>
-          <div className="dw-form-end">
-            <p className="dw-hint" id={`${id}-submit-hint`}>{hint}</p>
-            <button className="dw-primary" type="submit" aria-disabled={!allowed}
-              aria-describedby={`${id}-submit-hint`}>
-              {canStartFresh ? t.newResearch : locked ? t.submitted : t.start}
-              {!locked && <span aria-hidden="true">↗</span>}
-            </button>
-          </div>
+          {inDrawer && <div className="dw-form-end">{hintText}{submit}</div>}
         </div>
       }} />
+    {!inDrawer && hintText}
   </form>;
 }

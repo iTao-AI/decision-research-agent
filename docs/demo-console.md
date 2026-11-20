@@ -44,8 +44,12 @@ scope normalization. Editing a new draft does not change an observed report.
 
 Only an observed ready run of the structured profile triggers `/findings`.
 Use **阅读报告 / Read report** once the current task is ready, or open the
-current report through **核对结论出处 / Check sources**. That module also opens
-the run ID lookup.
+current report through **核对结论出处 / Check sources**. The desktop
+**查看报告结构 / View report structure** control also opens the current report's
+source reader. Before a report is ready, this control and the source module
+offer **报告怎样引用原文 / How reports cite sources**, a labeled explanation
+of the citation and source passage layout. The source module also opens the
+run ID lookup.
 Expand **问题目录 / Question directory** to see the accepted questions in report
 order with their original candidate/unresolved dispositions. Use Tab
 to reach an entry and Enter or Space to scroll to and focus that question's

@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DRA 决策研究助手 · 首页交互稿</title>
+<style>
+:root{color-scheme:light;--ink:#162d39;--muted:#566772;--rule:#cfd8d7;--paper:#f6f6f1;--white:#fff;--blue:#274c9b;--serif:"STIX Two Text","Songti SC","Noto Serif CJK SC","SimSun",serif;--sans:"Inter","PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 var(--sans)}
+button,input,textarea,select{font:inherit;color:inherit}
+button,summary,select{cursor:pointer}
+button{background:none;border:0}
+:focus-visible{outline:3px solid #3a6cab;outline-offset:3px}
+.wrap{width:min(1152px,calc(100% - 80px));margin-inline:auto}
+.mast{background:var(--paper);border-bottom:1px solid var(--rule)}
+.nav{min-height:64px;display:flex;align-items:center;gap:28px}
+.brand{display:flex;align-items:center;gap:9px;margin-right:auto;white-space:nowrap}
+.mark{width:31px;height:31px;background:#183641;border-radius:6px;display:grid;place-content:center;gap:3px;transform:rotate(-3deg)}
+.mark i{display:block;height:2px;background:#f7f6e8;transform:skew(-28deg);width:16px}
+.mark i:nth-child(2){width:12px}.mark i:nth-child(3){width:8px}
+.wordmark{font:700 25px/1 Georgia,serif;letter-spacing:-1.6px}
+.product{font-size:14px;font-weight:650;border-left:1px solid #aebbb9;padding-left:11px;margin-left:3px}
+.nav button{padding:5px 0;font-size:14px;color:#43565e}.nav button:hover{text-decoration:underline}
+.connection{display:flex;align-items:center;gap:6px}
+.connection::before{content:"";width:7px;height:7px;background:#427458;border-radius:100%}
+.track{position:sticky;top:0;z-index:5;color:var(--fg);background:var(--bg);border-block-end:1px solid var(--edge);box-shadow:inset 4px 0 var(--fg)}
+.track[data-tone=idle]{--fg:#4e6468;--bg:#eaf0ed;--edge:#cbd7d1}
+.track[data-tone=prepare]{--fg:#795109;--bg:#fff0c9;--edge:#d7b972}
+.track[data-tone=running]{--fg:#184d94;--bg:#e5efff;--edge:#a1bbe3}
+.track[data-tone=success]{--fg:#175e46;--bg:#dff2e9;--edge:#8abca7}
+.track[data-tone=warning]{--fg:#7a4b0c;--bg:#fff0d8;--edge:#d8b782}
+.track[data-tone=failed]{--fg:#9e332d;--bg:#fce4dc;--edge:#d5a095}
+.track-inner{height:49px;display:flex;align-items:center;gap:15px;min-width:0}
+.stage{display:inline-flex;align-items:center;gap:8px;flex:none;font-size:14px;font-weight:740}
+.stage i{width:19px;height:19px;display:grid;place-items:center;font:700 15px/1 var(--sans);border:1.5px solid currentColor;border-radius:50%}
+.track[data-tone=running] .stage i{border:2px dotted currentColor;animation:turn 3s linear infinite}
+@keyframes turn{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.track[data-tone=running] .stage i{animation:none}}
+.track-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;font-size:13px;padding-left:15px;border-left:1px solid var(--edge)}
+.track-action{padding:4px 10px;margin-left:auto;flex:none;font-weight:650;border:1px solid currentColor;border-radius:5px;color:inherit;font-size:13px}
+main{padding:28px 0 24px}
+.hero{display:grid;grid-template-columns:1.08fr 1fr;background:white;border:1px solid #c9d2d0;border-radius:15px;overflow:hidden;box-shadow:0 5px 16px #17353b08}
+.intro{position:relative;isolation:isolate;overflow:hidden;background:#173641;color:#fff;padding:30px 37px 28px;display:flex;flex-direction:column;justify-content:center}
+.intro::after{content:"";position:absolute;z-index:-1;inset:0;pointer-events:none;background:radial-gradient(ellipse at 89% 114%,#34675d 0,transparent 61%)}
+.intro h1{font:600 clamp(34px,3.65vw,52px)/1.17 var(--serif);letter-spacing:-.045em;margin:0}
+.intro h1 span{color:#cfe2ab}
+.intro p{color:#dbe7e4;font-size:15px;line-height:1.75;max-width:31em;margin:13px 0 0}
+.diagram{position:relative;display:flex;align-items:center;align-self:flex-start;gap:17px;margin-top:19px;height:65px}
+.folio{position:relative;display:flex;align-items:center;gap:9px;background:#e0ece7;color:#2c4a4c;padding:9px 14px;line-height:1;font-size:12px;font-weight:650;z-index:1;border:1px solid #b4c9c1;border-radius:3px}
+.folio:first-child{transform:rotate(-4deg);box-shadow:-3px 3px #73928a,-5px 5px #385e56}
+.folio:last-child{background:#e3e9b9;transform:rotate(3deg);box-shadow:3px 2px #6e8064}
+.lines{display:grid;gap:3px;width:19px}.lines b{height:2px;background:currentColor}.lines b:last-child{width:60%}
+.thread{width:38px;border-top:1px dashed #acc4b3;position:relative}.thread::after{content:"";width:6px;height:6px;position:absolute;right:0;top:-4px;transform:rotate(45deg);border-top:1px solid #cbdcd0;border-right:1px solid #cbdcd0}
+.composer{padding:25px 31px 23px;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.composer h2,.modules h2,.panel h2{margin:0;font:600 26px/1.25 var(--serif);letter-spacing:-.035em}
+.editor-label{display:block;font-size:13px;font-weight:650;margin:11px 0 5px}
+textarea,.panel input{display:block;width:100%;border:1px solid #acbdc0;background:#fafbf8;border-radius:6px;padding:10px 12px;line-height:1.5}
+textarea{min-height:78px;resize:vertical}textarea::placeholder{color:#65767c}textarea:focus{border-color:#5578a3}
+textarea[readonly]{background:#f2f4f1}
+.form-tools,.form-end{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.form-tools{margin:8px 0 12px;font-size:13px}.form-tools select{background:#fff;border:1px solid var(--rule);border-radius:4px;padding:3px 6px}
+.linklike{color:var(--blue);padding:3px 0;font-weight:600}
+.form-end{border-top:1px solid #e1e5e2;padding-top:11px}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.primary{background:#214b69;color:white;padding:9px 16px;border-radius:6px;font-weight:650;white-space:nowrap}
+.primary:enabled:hover{background:#153a56}.primary[aria-disabled=true]{color:#4d626e;background:#d9e3e7;cursor:default}
+button:disabled{color:#71817f;cursor:default}
+.extra textarea{min-height:50px;font-size:14px}.extra .editor-label{display:flex;align-items:center;justify-content:space-between}.remove{font-size:12px;text-decoration:underline}
+.modules{margin-top:27px}.section-head{display:flex;align-items:center;gap:18px;margin-bottom:13px}.section-head::after{content:"";height:1px;flex:1;background:var(--rule)}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.module{display:flex;flex-direction:column;align-items:flex-start;min-height:150px;border:1px solid #ccd6d2;border-top:3px solid var(--accent);border-radius:8px;padding:15px 18px 12px;background:var(--fill);text-align:left}
+.module:hover{border-color:var(--accent);box-shadow:0 3px 8px #2038400d}
+.compare{--accent:#43658a;--fill:#edf2f6}.source{--accent:#4b7368;--fill:#edf3eb}.follow{--accent:#9a6a4d;--fill:#f6efe6}
+.module-top{display:flex;align-items:center;gap:10px}.module-top strong{font-size:17px;margin:0;line-height:1.4}
+.glyph{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--accent);border-radius:7px;color:var(--accent);font:600 19px/1 Georgia,serif}
+.module-text{color:#405561;font-size:14px;margin:10px 0 13px;line-height:1.6}
+.module-cta{font-size:13px;font-weight:650;color:#263e46;margin-top:auto}.module-cta b{display:inline-block;margin-left:5px}
+.lab{font-size:12px;color:#566770;border-top:1px dashed var(--rule);margin:26px auto 0;padding:8px 0 0}
+.lab summary{width:fit-content}.lab p{margin:6px 0}.lab button{font-size:13px;background:white;border:1px solid var(--rule);border-radius:4px;padding:4px 8px;margin:2px}
+.panel{position:fixed;inset:122px 16px auto auto;border:1px solid #aabbb9;border-radius:12px;z-index:8;max-height:calc(100dvh - 135px);overflow:auto;width:min(450px,calc(100% - 32px));background:#fff;box-shadow:0 12px 55px #17374038;padding:24px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:15px}
+.panel-head button{background:#f1f3ee;border-radius:6px;padding:5px 9px;font-size:13px}
+.panel p{margin:10px 0;color:#42565e}.panel h3{font-size:16px;margin:17px 0 4px}
+.panel input{margin:6px 0 12px}.panel .linklike{text-decoration:underline}
+@media(max-width:850px){.wrap{width:calc(100% - 40px)}.intro,.composer{padding-inline:22px}.intro h1{font-size:35px}.grid{gap:9px}.module{padding-inline:13px}}
+@media(max-width:650px){.wrap{width:calc(100% - 28px)}.nav{min-height:50px;gap:14px}.brand{gap:5px}.mark{width:24px;height:25px}.wordmark{font-size:21px}.product{font-size:12px;margin-left:1px;padding-left:7px}.nav button{font-size:12px}.track-inner{height:48px;gap:7px}.stage{font-size:12px;gap:5px}.track-title{font-size:12px;padding-left:7px}.track-action{padding:4px 6px;font-size:12px}main{padding-top:14px}.hero{grid-template-columns:1fr;border-radius:10px}.intro{padding:19px 19px 18px}.intro h1{font-size:31px}.intro p{font-size:13px;margin-top:8px}.diagram{display:none}.composer{padding:16px 19px}.composer h2,.modules h2{font-size:22px}.editor-label{margin-top:8px}textarea{min-height:72px}.form-tools{margin-bottom:10px}.modules{margin-top:20px}.grid{grid-template-columns:1fr}.module{min-height:0;padding:11px 13px;display:grid;grid-template-columns:1fr auto;gap:3px 8px}.module-top{gap:8px}.module-top strong{font-size:16px}.glyph{width:26px;height:26px;font-size:16px}.module-text{margin:2px 0 0 34px;font-size:13px;grid-column:1/-1}.module-cta{grid-column:2;grid-row:1;align-self:center;margin:0;font-size:12px}.section-head{margin-bottom:9px}.panel{inset:auto 7px 7px;width:calc(100% - 14px);max-height:calc(100dvh - 110px);padding:18px}.lab{margin-top:18px}}
+@media(max-width:355px){.product{display:none}.form-end{gap:4px}.primary{padding:9px}.track-title{flex:1}}
+</style>
+</head>
+<body>
+<header class="mast"><nav class="wrap nav" aria-label="工作台入口">
+<div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><strong class="wordmark">DRA</strong><span class="product">决策研究助手</span></div>
+<button type="button" data-open="lookup">查找研究</button><button type="button" class="connection" data-open="settings" aria-label="服务已连接，打开连接设置"><span>服务已连接</span></button>
+</nav></header>
+<div class="track" data-tone="idle" role="region" aria-label="当前任务">
+<div class="wrap track-inner"><span class="stage"><i aria-hidden="true" id="symbol">–</i><span id="state-label" role="status" aria-live="polite">当前无任务</span></span><span class="track-title" id="track-title">从下方发起一项研究</span><button type="button" class="track-action" id="track-action" hidden></button></div>
+</div>
+<main class="wrap">
+<section class="hero" aria-label="了解并发起研究">
+<div class="intro"><h1>把公开资料整理成<br><span>有出处的研究报告。</span></h1><p>围绕你的问题检索资料，逐项给出结论。你可以回看引用原文，也可以继续追问证据不足的地方。</p>
+<div class="diagram" aria-hidden="true"><span class="folio"><span class="lines"><b></b><b></b><b></b></span>来源原文</span><i class="thread"></i><span class="folio"><span class="lines"><b></b><b></b></span>报告结论</span></div></div>
+<form class="composer" id="compose"><h2>发起研究</h2><label class="editor-label" for="question">研究问题</label>
+<textarea id="question" rows="2" placeholder="写下你想比较的选项，或需要核实的事实。"></textarea><div id="extras" class="extra"></div>
+<div class="form-tools"><button type="button" class="linklike" id="add">＋ 添加子问题</button><select id="mode" aria-label="研究模式"><option>证据研究</option><option>通用研究</option></select></div>
+<div class="form-end"><p class="hint" id="form-hint">输入研究问题后即可开始。</p><button class="primary" id="submit" aria-disabled="true" aria-describedby="form-hint">开始研究&nbsp; ↗</button></div></form>
+</section>
+<section class="modules" aria-labelledby="tools-title"><div class="section-head"><h2 id="tools-title">研究工具</h2></div>
+<div class="grid">
+<button type="button" class="module compare" data-open="compare"><span class="module-top"><span class="glyph" aria-hidden="true">≋</span><strong>多问题比较</strong></span><span class="module-text">把同一决策拆成几个问题，在一份报告里逐项对照。</span><span class="module-cta">编排问题 <b aria-hidden="true">↗</b></span></button>
+<button type="button" class="module source" data-open="source"><span class="module-top"><span class="glyph" aria-hidden="true">“</span><strong>核对结论出处</strong></span><span class="module-text">从报告的一条结论，找到支持它的原文和来源。</span><span class="module-cta">查看依据 <b aria-hidden="true">↗</b></span></button>
+<button type="button" class="module follow" data-open="follow"><span class="module-top"><span class="glyph" aria-hidden="true">↳</span><strong>跟进未解问题</strong></span><span class="module-text">从报告留下的疑问开始，决定下一次研究的范围。</span><span class="module-cta">选择待查项 <b aria-hidden="true">↗</b></span></button>
+</div></section>
+<details class="lab"><summary>交互稿 · 状态预演</summary><p>这里可以切换顶部任务栏。交互稿离线运行，所有状态均为设计预演。</p><div id="switches"></div></details>
+</main>
+<aside class="panel" id="panel" role="region" aria-labelledby="panel-title" tabindex="-1" hidden>
+<div class="panel-head"><h2 id="panel-title" tabindex="-1"></h2><button type="button" id="close">返回首页</button></div><div id="detail"></div>
+</aside>
+<script>
+const el = id => document.getElementById(id);
+const textNode = (tag, content) => { const node = document.createElement(tag); node.textContent = content; return node; };
+const stages = {
+  idle: { label:'当前无任务', tone:'idle', mark:'–' },
+  preparing: { label:'准备中', tone:'prepare', mark:'◷', action:'查看进展', target:'progress' },
+  running: { label:'运行中', tone:'running', mark:'', action:'查看进展', target:'progress' },
+  ready: { label:'报告已就绪', tone:'success', mark:'✓', action:'阅读报告', target:'report' },
+  failed: { label:'研究失败', tone:'failed', mark:'×', action:'查看原因', target:'failure' },
+  interrupted: { label:'状态读取中断', tone:'warning', mark:'!', action:'恢复查看', target:'recover' }
+};
+let stage = 'idle', nextQuestionId = 2, opener;
+const extraFields = () => Array.from(el('extras').querySelectorAll('textarea'));
+const isTerminal = () => stage === 'ready' || stage === 'failed';
+const locked = () => stage !== 'idle';
+function updateForm() {
+  const fields = [el('question'), ...extraFields()];
+  const valid = fields.every(field => field.value.trim().length);
+  fields.forEach(field => { field.readOnly = locked(); });
+  el('mode').disabled = locked() || fields.length > 1;
+  el('add').disabled = locked() || fields.length >= 5 || el('mode').selectedIndex === 1;
+  el('extras').querySelectorAll('button').forEach(button => { button.disabled = locked(); });
+  el('submit').setAttribute('aria-disabled', String((locked() && !isTerminal()) || (!locked() && !valid)));
+  el('submit').textContent = isTerminal() ? '新建研究' : locked() ? '已提交' : '开始研究 ↗';
+  el('form-hint').textContent = locked() ? '本次提交的问题已保留。' : valid ? '问题已就绪，可以提交。' : fields.length > 1 ? '请填完子问题或移除空项。' : '输入研究问题后即可开始。';
+}
+function setStage(key) {
+  stage = key;
+  const current = stages[key];
+  document.querySelector('.track').dataset.tone = current.tone;
+  el('state-label').textContent = current.label;
+  el('symbol').textContent = current.mark;
+  const question = el('question').value.trim() || '研究任务预演';
+  el('track-title').textContent = key === 'idle' ? '从下方发起一项研究' : key === 'failed' ? '执行超时 · ' + question : question;
+  el('track-title').title = el('track-title').textContent;
+  el('track-action').hidden = !current.action;
+  el('track-action').textContent = current.action || '';
+  updateForm();
+}
+function addQuestion() {
+  if (el('add').disabled) return;
+  const section = document.createElement('div');
+  const id = 'q-' + nextQuestionId++;
+  const controls = document.createElement('div'); controls.className = 'editor-label';
+  const label = textNode('label','子问题');
+  label.htmlFor = id;
+  const field = document.createElement('textarea'); field.rows = 1; field.id = id;
+  const remove = textNode('button','移除'); remove.type = 'button'; remove.className = 'remove';
+  remove.addEventListener('click', () => { section.remove(); updateForm(); el('add').focus(); });
+  controls.append(label,remove); section.append(controls, field); el('extras').append(section);
+  updateForm(); field.focus();
+}
+el('compose').addEventListener('input', updateForm);
+el('mode').addEventListener('change', updateForm);
+el('add').addEventListener('click', addQuestion);
+el('compose').addEventListener('submit', event => {
+  event.preventDefault();
+  if (el('submit').getAttribute('aria-disabled') === 'true') return;
+  if (isTerminal()) { el('question').value = ''; el('extras').replaceChildren(); setStage('idle'); el('question').focus(); return; }
+  setStage('preparing');
+});
+function closePanel() { el('panel').hidden = true; if (opener && opener.isConnected) opener.focus({preventScroll:true}); }
+function openPanel(kind, trigger) {
+  if (el('panel').hidden) opener = trigger;
+  const detail = el('detail'); detail.replaceChildren();
+  const paragraph = value => detail.append(textNode('p',value));
+  const action = (label, callback) => {
+    const button = textNode('button', label); button.type = 'button'; button.className = 'linklike';
+    button.addEventListener('click', () => callback(button)); detail.append(button);
+  };
+  const lookup = () => action('按运行编号查找研究', button => openPanel('lookup',button));
+  const titles = {lookup:'查找已有研究',settings:'连接设置',compare:'编排研究问题',source:'核对结论出处',follow:'跟进未解问题',progress:'研究进展',report:'研究报告',failure:'停止原因',recover:'恢复查看'};
+  el('panel-title').textContent = titles[kind]; el('panel').hidden = false;
+  if (kind === 'compare') {
+    paragraph('证据研究可以同时提交 1–5 个问题。报告会按提交的问题逐项整理。');
+    if (locked()) paragraph('首页保留了这次提交的问题。');
+    else if (el('mode').selectedIndex === 1) paragraph('在首页将研究模式切换为「证据研究」即可编排子问题。');
+    else if (extraFields().length < 4) action('回到草稿并添加子问题', () => { closePanel(); addQuestion(); });
+    else paragraph('草稿已有五个问题，可在提问区编辑。');
+  } else if (kind === 'source' || kind === 'follow') {
+    paragraph(kind === 'source' ? '在证据研究报告中，点结论旁的来源，可核对绑定的摘录和原始出处。' : '在证据研究报告中，选择实际保留的待查问题，编辑后可以发起一项独立研究。');
+    if (stage === 'ready') action('打开当前报告', button => openPanel('report',button));
+    else paragraph('当前还没有可读取的报告。');
+    lookup();
+  } else if (kind === 'lookup') {
+    const label = textNode('label','运行编号'); label.htmlFor = 'run-id'; const field = document.createElement('input'); field.id = 'run-id'; field.placeholder = '粘贴已有研究的运行编号'; detail.append(label,field);
+    paragraph('这是离线交互稿。实际应用将按编号读取已有研究。');
+  } else if (kind === 'settings') {
+    paragraph('交互稿演示已连接的界面。实际应用在这里显示当前服务地址，支持更改地址和重新检查连接。');
+  } else if (kind === 'progress') {
+    paragraph(el('question').value.trim() || '研究任务预演'); paragraph('此处显示已观察到的运行记录。交互稿中的状态可在页末预演。');
+  } else if (kind === 'report') {
+    detail.append(textNode('h3',el('question').value.trim() || '研究任务预演'));
+    paragraph('报告版式预览。实际报告会在这里展示本次运行返回的内容。');
+    ['逐项结论','引用依据','待查问题'].forEach(item => detail.append(textNode('h3',item)));
+  } else if (kind === 'failure') {
+    detail.append(textNode('h3','执行阶段超时')); paragraph('这是失败状态预演。实际原因和已保留资料来自该次运行。');
+  } else if (kind === 'recover') {
+    paragraph('状态读取中断。实际应用会重新读取同一运行；若仍无法获取，将继续保留上次观察。');
+  }
+  el('panel-title').focus({preventScroll:true});
+}
+document.querySelectorAll('[data-open]').forEach(button => button.addEventListener('click', () => openPanel(button.dataset.open, button)));
+el('track-action').addEventListener('click', event => openPanel(stages[stage].target, event.currentTarget));
+el('close').addEventListener('click',closePanel);
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !el('panel').hidden) closePanel(); });
+Object.entries(stages).forEach(([key,value]) => {
+  const button = textNode('button', value.label); button.type = 'button'; button.addEventListener('click', () => setStage(key)); el('switches').append(button);
+});
+updateForm();
+</script>
+</body></html>

@@ -8,6 +8,58 @@ import { ResearchFindingsReader } from "./researchFindingsReader";
 afterEach(() => vi.restoreAllMocks());
 
 describe("structured source inspection", () => {
+  it("opens one exact citation at a time and returns keyboard focus to its trigger", async () => {
+    const value = findingsResponse();
+    const firstFinding = value.report.findings[0];
+    firstFinding.references.push({
+      ...firstFinding.references[0], evidence_id: "e2", source_url: "javascript:alert(1)",
+      snippet: "second excerpt followed by retained text", excerpt: "second excerpt",
+      excerpt_start: 0, excerpt_end: 14
+    });
+    value.report.findings.push({
+      ...firstFinding, finding_id: "f2", statement: "Another bound candidate",
+      references: [firstFinding.references[0]]
+    });
+    value.artifact.content = JSON.stringify(value.report);
+    const user = userEvent.setup();
+    render(<ResearchFindingsReader language="en" findings={parseResearchFindings(value, "run_structured")} variant="workspace" />);
+
+    expect(screen.queryAllByText("😀精确片段")).toHaveLength(0);
+    const first = screen.getByRole("button", { name: "View source 1" });
+    first.focus();
+    await user.keyboard("{Enter}");
+    const firstPanel = screen.getByRole("complementary", { name: "Bound source 1" });
+    expect(firstPanel).toHaveFocus();
+    expect(first).toHaveAttribute("aria-expanded", "true");
+    expect(first).toHaveAttribute("aria-controls", firstPanel.id);
+    expect(within(firstPanel).getByText("😀精确片段")).toBeInTheDocument();
+    expect(within(firstPanel).getByRole("link")).toHaveAttribute("href", "https://example.com/source");
+    expect(within(firstPanel).queryByText("前😀精确片段后")).not.toBeInTheDocument();
+
+    const second = screen.getByRole("button", { name: "View source 2" });
+    await user.click(second);
+    const secondPanel = screen.getByRole("complementary", { name: "Bound source 2" });
+    expect(secondPanel).toHaveFocus();
+    expect(first).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("complementary", { name: "Bound source 1" })).not.toBeInTheDocument();
+    expect(within(secondPanel).getByText("second excerpt")).toBeInTheDocument();
+    expect(within(secondPanel).queryByRole("link")).not.toBeInTheDocument();
+    await user.click(within(secondPanel).getByRole("button", { name: "Inspect full persisted snippet" }));
+    expect(within(secondPanel).getByRole("region", { name: "Full persisted snippet" })).toHaveFocus();
+    expect(within(secondPanel).getByText("second excerpt followed by retained text")).toBeInTheDocument();
+    await user.click(within(secondPanel).getByRole("button", { name: "Return to citation" }));
+    expect(second).toHaveFocus();
+    expect(second).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+
+    const third = screen.getByRole("button", { name: "View source 3" });
+    await user.click(third);
+    await user.keyboard("{Escape}");
+    expect(third).toHaveFocus();
+    expect(third).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+  });
+
   it("shows observed dispositions for all five accepted questions with their sources and unresolved reasons", () => {
     const value = findingsResponse();
     value.report.questions = [

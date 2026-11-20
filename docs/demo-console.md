@@ -1,39 +1,19 @@
 # Agent Research Operations Console
 
-The React-based research run demonstration console explains Decision Research
-Agent as an operations system rather than a chatbot. Its primary surface is a
-research brief: a concrete synthetic question, a recommended decision, the
-comparison criteria, supporting findings, and the exact source material behind
-each claim. It can create a ResearchRun, observe its lifecycle, and retrieve
-the canonical result without owning business authority. It has two modes:
+Open the React console at `/` to draft a research question, start a run
+against a local service, and read the delivered report in the same workspace.
+The initial form is blank and selects **证据研究 / Evidence research**
+(`generic-evidence-report@1`). **通用研究 / General research** is available
+for a single question. **填入示例 / Use an example** fills the empty draft
+for editing. Only **开始研究 / Start research** submits it.
 
-- **Static Demo** renders a deterministic bundled snapshot and requires no
-  backend, provider, or credentials. The default case asks `客服团队应该先试点内部知识助手，还是直接让 Agent 自动处理退款？`, recommends an internal knowledge assistant, and exposes three local full-text sources with exact claim-to-excerpt links.
-- **Live Backend** keeps one bounded question for default generic research;
-  **结构化证据研究 / Structured evidence research** explicitly selects
-  `generic-evidence-report@1` with 1–5 questions in a compact scope editor.
-  Its default is one `q1`; add/remove/edit retains stable question IDs. The console
-  creates the selected ResearchRun against a local backend, polls bounded
-  status, and renders the canonical Markdown result returned by
-  `GET /api/runs/{run_id}/result`. It also allows a retained known `run_id` to
-  be re-entered after a page refresh for health-gated GET-only observation.
-  Ready runs whose observed profile is `generic-evidence-report` additionally
-  read `GET /api/runs/{run_id}/findings`; attached runs use their actual observed
-  profile, rather than the currently selected creation mode.
-
-Delivered results in either mode use the existing report reader. An observed
-result can be read as safe formatted Markdown, switched to an opt-in raw-text
-view, and downloaded with the exact UTF-8 content bytes. A blocked Static Demo
-run uses the same case and source boundary with policy access unconfirmed; it
-remains `review_required`/`not_delivered` and offers no report or download
-action.
-
-The console is a consumer of service-owned state. It does not write review or
-verification decisions, create database authority, or bypass result gates.
-The question draft and temporary create intent are browser-session-only; the
-service-owned status and result authority remain outside the browser. The
-bounded Live Backend research question input is included in the released
-`v0.1.9`; stable `v0.1.8` remains unchanged as a historical release.
+**查看已有研究 / Find existing research** opens a separate read-only view
+by run ID. **设置 / Settings** holds the local backend address and interface
+language. **示例报告 / Example report** opens a deterministic, offline Static
+Demo in a separate tab. The service owns the run lifecycle, Evidence, review,
+and delivery. The draft and temporary create intent live in browser memory.
+The bounded Live Backend question input first shipped in `v0.1.9`;
+stable `v0.1.8` remains unchanged as a historical release.
 
 For a provider-free native backend and four declared cases, follow the
 [research evidence delivery walkthrough](operations/research-evidence-delivery.md).
@@ -41,19 +21,16 @@ Its HTTP proof remains separate from actual browser observations and paid runs.
 
 ## Structured Live Reader
 
-Select **真实后端 / Live Backend**, check health, then explicitly choose
-**结构化证据研究 / Structured evidence research** in **研究模式 / Research mode**.
-Enter 1–5 explicit questions in **研究范围 / Research scope**, using **新增问题 /
-Add question** and each row's **删除 / Remove** control. The default remains
-one `q1`; edits and deletions do not renumber surviving IDs, and newly added
-rows receive new IDs. At least one question must remain. Every row must be
-nonblank and at most 4096 Unicode code points; the first current row supplies
-the exact query and retains the console's 4096 UTF-8 byte bound.
+With the local service connected, keep **证据研究 / Evidence research**
+selected. Enter 1–5 questions, using **新增问题 / Add question** to
+extend the scope. The draft starts with one `q1`. Edits and removals retain
+the IDs of surviving rows, and newly added rows receive new IDs. Every row
+must be nonblank and at most 4096 Unicode code points. The first row supplies
+the exact query and also has a 4096 UTF-8 byte limit.
 
-Select **运行并获取结果 / Run and fetch result** to submit the complete ordered
-scope once. The browser copies and deeply freezes every question ID and text
-before HTTP; pending creation/observation/reconciliation locks all scope
-controls. Add focuses the new question; removal focuses a surviving question.
+Select **开始研究 / Start research** to submit the complete ordered scope.
+The browser freezes every question ID and text before HTTP. The draft gives
+way to the run view during creation, observation, and reconciliation.
 The single-question request remains
 `{questions: [{question_id: "q1", text: query}]}`. The console does not invent
 questions for attached runs. Accepted question text and candidate/unresolved
@@ -61,8 +38,8 @@ dispositions shown in the report are service-owned and may reflect server
 scope normalization. Editing a new draft does not change an observed report.
 
 Only an observed ready run of the structured profile triggers `/findings`.
-The compact **问题目录 / Question directory** shows the accepted questions in
-report order with their original candidate/unresolved dispositions. Use Tab
+Expand **问题目录 / Question directory** to see the accepted questions in report
+order with their original candidate/unresolved dispositions. Use Tab
 to reach an entry and Enter or Space to scroll to and focus that question's
 reading region. Repeating a selection repeats the navigation. Every region
 stays visible and contains the full accepted question plus all of its existing
@@ -70,13 +47,13 @@ candidate findings and bound sources, or its existing unresolved reason.
 The directory's two-line text preview does not truncate the full question.
 It never reads the editable scope draft to fill report facts.
 
-Source-bound findings retain exact excerpts and **查看完整持久化片段 / Inspect
-full persisted snippet** controls.
-Opening inspection focuses the full snippet region; **返回引用片段 / Return to
-excerpt** restores focus. The region scrolls and wraps long Unicode text on
-narrow screens. These are persisted snippets, not complete webpages or new
-source fetches. All candidate/source/contradiction strings render as text;
-unsafe or credential-bearing URLs have no actionable link.
+Select a finding's citation to open its bound excerpt and source. Use
+**查看完整持久化片段 / Inspect full persisted snippet** to inspect the longer
+stored snippet. The source panel sits beside the report where space permits
+and in the reading flow on narrower screens. Return from the snippet to its
+excerpt, then from the source to the triggering citation. Snippets are
+service-persisted material. Candidate, source, and contradiction content
+renders as text, with actionable source links limited to safe HTTP(S) URLs.
 
 Unresolved reasons stay within their question regions. Limitations and
 model-reported contradictions remain globally visible after the questions;
@@ -100,17 +77,15 @@ question coverage, unresolved dispositions, and reference binding failures,
 not answer accuracy. In particular, an all-unresolved zero-findings run remains
 blocked as `empty_research_output`, with no reader or download; the console
 does not invent missing question reasons or deliver a substitute report.
-Missing diagnostics are not a readiness signal. Findings
-read failures clear both reader presentations and show a bounded client error.
-Switching profile, backend URL, or static/live mode clears the active run and
-invalidates stale responses. Ambiguous create retry preserves the original
-query, profile, scope, and key.
+A findings read failure withholds both reader presentations and shows a
+bounded client error. **恢复查看 / Resume viewing** retries observation of
+the same run. Changing the backend URL clears both run views and invalidates
+old responses. Ambiguous create retry preserves the original query, profile,
+scope, and key.
 
-The structured live surface is implemented in the current local change. The
-tracked Static Demo screenshots below remain synthetic fixtures and do not
-prove the structured live path, real-provider quality, or semantic accuracy.
-Desktop/narrow browser inspection is a separate integrated acceptance step;
-component keyboard/Unicode checks do not substitute for rendered observations.
+The tracked Static Demo screenshots below document the historical synthetic
+showcase. They provide no browser evidence for the current workspace, the
+structured live path, or live-provider research quality.
 
 ## Prepare A New Research From Unresolved Questions
 
@@ -140,8 +115,8 @@ selected. The draft clearly states its own structured mode. A lost response
 uses the existing exact-new-intent retry; known-run observation remains GET-only.
 The source report can still be read later by its retained run ID.
 
-Switching endpoint, mode, ordinary form profile, source run or accepted artifact
-clears the local draft and selection. Busy/recovery/error states lock editing
+Changing the endpoint, source run, or accepted artifact clears the local
+follow-up draft and selection. Busy/recovery/error states lock editing
 and confirmation; late responses cannot restore an expired draft. Invalid,
 blocked, generic and rejected all-unresolved reports gain no continuation action.
 With no unresolved questions, the action is absent.
@@ -153,7 +128,7 @@ until health succeeds; the user can edit and explicitly create a fresh intent.
 The input cache is not a new accepted report or Evidence. An ambiguous response
 still requires the original frozen intent's exact retry or explicit discard.
 Acknowledgement and context changes clear the old draft. If the source reader
-is absent, cancellation returns focus to the known-run input.
+is absent, cancellation returns focus to the existing-research control.
 
 The draft is browser-session-only. Deterministic service fixtures and browser
 observations demonstrate creation/persistence and interaction separately; they
@@ -181,9 +156,9 @@ PYTHON_DOTENV_DISABLED=1 python tests/integration/test_unresolved_research_draft
 
 Use a fresh, task-owned ignored directory for each session. In another terminal
 from `frontend/`, run `npm run dev -- --host 127.0.0.1 --port 5179 --strictPort`.
-Select Live Backend, set the base URL to `http://127.0.0.1:8019`,
-check health, and observe the source run ID printed by the fixture. Its accepted
-report has one candidate question and two unresolved questions.
+Open the workspace and save `http://127.0.0.1:8019` in Settings. Once connected,
+open the source run ID printed by the fixture using Find existing research.
+Its accepted report has one candidate question and two unresolved questions.
 
 Check selection/preparation/editing/replacement/cancellation before submitting;
 `requests.jsonl` must gain no create entry for those actions. Each explicit
@@ -231,10 +206,9 @@ evidence route begins with the second linked finding/source selected. The
 blocked route has no report shortcuts and never retries automatically. At
 desktop widths of 1100 px or more, the report and source panel use two columns;
 narrower layouts stack them in page order. The six operator screens remain in
-the collapsed technical console, and the five-stage rail remains a Live
-Backend control.
+the collapsed technical console.
 
-Open the corresponding deterministic routes in Static Demo:
+Open the corresponding deterministic routes:
 
 ```text
 /?showcase=overview
@@ -250,8 +224,7 @@ capture fingerprint canonicalizes only the release `version` fields in
 `package.json` and `package-lock.json`; dependency, build configuration, source,
 and public-asset changes still require a new capture fingerprint and provenance
 to establish current-render parity. The retained PNGs and manifest remain
-historical captures; this structured-reader change does not claim new current
-Static Demo rendering parity.
+historical captures from the manifest's declared capture inputs.
 
 ```bash
 git fetch --no-tags origin cdd7b07e427b30596f6434a82bfafc1624e3cba5
@@ -304,10 +277,9 @@ npm ci
 npm run dev -- --host 127.0.0.1
 ```
 
-Open `http://127.0.0.1:5173`. Static Demo is selected by default. It does not
-send a network request to the Decision Research Agent backend. Browse the
-overview, evidence, and blocked states at the deterministic routes above; no
-API key, backend, provider, or credentials are needed.
+Open `http://127.0.0.1:5173/?showcase=overview`, or use the evidence and
+blocked routes listed above. These explicit routes require only the bundled
+fixture. They send zero requests to the Decision Research Agent backend.
 
 ## Run Live Backend Locally
 
@@ -364,29 +336,27 @@ npm ci
 npm run dev -- --host 127.0.0.1
 ```
 
-Open `http://127.0.0.1:5173`, select **Live Backend**, keep Backend base URL as
-`http://127.0.0.1:8000`, and run these actions in order:
+Open `http://127.0.0.1:5173/`. The workspace checks
+`http://127.0.0.1:8000/health` on entry. Open **设置 / Settings** to change
+the port, or use **重新连接 / Reconnect** after starting the backend.
 
-1. Select **检查后端 / Check backend**.
-2. Confirm the service reports ready.
-3. Keep the default generic mode and enter one question, or select Structured
-   evidence research and edit 1–5 questions. The first question supplies the
-   query, accepts at most 4096 UTF-8 bytes and shows the current byte count;
-   other structured questions show the 4096 Unicode code-point bound.
-4. Select **运行并获取结果 / Run and fetch result**.
-5. Inspect the returned `run_id`, terminal state, and canonical artifact.
+1. Write a question. Keep **证据研究 / Evidence research** for citation
+   reading and up to five questions, or switch to **通用研究 / General
+   research** for a single question.
+2. Once connected, select **开始研究 / Start research**. Keep the run ID
+   from **运行详情 / Run details** if you want to reopen it later.
+3. When **报告已就绪 / Report ready** appears, use **阅读报告 / Read report**
+   to focus the inline report. Inspect linked sources when available, view
+   the raw artifact, or use **下载 Markdown / Download Markdown** for the
+   exact canonical UTF-8 bytes.
 
-The client waits for at most ten minutes. A client timeout stops browser
-polling but does not cancel the server-side ResearchRun. Switching back to
-Static Demo prevents stale in-flight responses from replacing the static view.
+The client waits for at most ten minutes per observation. A client timeout
+stops browser polling while the server-side ResearchRun keeps its own state.
 
 ## Run Data And Recovery Contract
 
-Static Demo and Live Backend run data are mutually exclusive. Switching modes
-clears the previous mode's run projection, and the inactive mode's run-specific
-data is never rendered. Live Backend shows explicit not-observed,
-not-applicable, unsupported, and observed-empty states instead of substituting
-Static Demo values.
+The workspace uses observed service responses for state and report content.
+Showcase fixtures are available only through their explicit routes.
 
 Idempotency-Key is header-only and browser-session scoped. Each new-run action
 keeps one temporary keyed request in memory. The question is sent exactly as
@@ -394,25 +364,32 @@ entered; the Console does not trim, normalize, translate, case-fold, or rewrite
 it. If the create acknowledgement is ambiguous, use **重试同一请求 / Retry
 same request** to resend the same key and byte-equivalent request, including
 the exact submitted query, selected profile, and complete nested scope with
-every stable question ID and text in order, or explicitly
-discard it. Do not start a
-replacement request while reconciliation is pending. A page refresh discards
+every stable question ID and text in order. **放弃待确认请求 / Discard pending
+request** clears the pending intent. A page refresh discards
 the in-memory reconciliation capability; the draft is browser-session-only and
 the console does not claim durable browser intent.
 
-Once `run_id` is known, the separate **已知 run_id / Known run_id** field can
-reattach the current page after refresh. The health-gated **观察已知运行 /
-Observe known run** action accepts the exact syntax
-`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (128 characters maximum), is
-browser-session-only, and uses GET only; it does not create a new run. A
-retained known `run_id` can be re-entered after a page refresh. Use **仅 GET
-恢复观察 / Resume observation (GET only)** after an interrupted status or
-result observation. The canonical Markdown artifact comes only from
-/api/runs/{run_id}/result; structured findings come from the separate canonical
-/api/runs/{run_id}/findings reader. A terminal non-ready state is an observed run
-outcome, not a connection failure, and the console does not request a result
-for that state. The console does not add run list/history or browser
-persistence and does not reconstruct an ambiguous POST after refresh.
+Use **查看已有研究 / Find existing research**, then **打开研究 / Open
+research**, to open a known ID. A retained known `run_id` can be re-entered
+after a page refresh for health-gated GET-only observation. The dialog accepts
+the exact syntax `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (128 characters maximum).
+Lookup validation and GET requests stay in their own reading context.
+**返回工作台 / Back to workspace** returns to the original draft or current
+research. After starting a follow-up from an existing report, use
+**继续查看已有研究 / Return to existing research** to return to the same
+follow-up, including after the receipt or report arrives. To recover after a status or report read interruption, use
+**恢复查看 / Resume viewing** for the same run. The console does not add run
+list/history or browser persistence and does not reconstruct an ambiguous POST
+after refresh.
+
+A delivered run provides canonical Markdown through `/api/runs/{run_id}/result`.
+A ready structured run provides its accepted findings through
+`/api/runs/{run_id}/findings`. The workspace waits for both required reads
+before exposing a structured report and download. Failed runs can expose
+the observed failure reason and retained evidence in run details. A known
+submitted question can seed a new editable draft after failure. Review,
+blocked, and pending-delivery states offer **查看状态 / Check status**, a
+read-only refresh. Explicit submission is required for every new run.
 
 Failure-cause availability is not inferred:
 
@@ -458,8 +435,7 @@ restart the backend, and retry the health check.
 
 ### `401 Unauthorized`
 
-The backend has `API_SECRET` configured. Return to Static Demo or use the Tool
-Client. Do not weaken authentication on a backend reachable outside loopback.
+The backend has `API_SECRET` configured. Open an explicit showcase route or use the Tool Client. Do not weaken authentication on a backend reachable outside loopback.
 
 ### Run or result failure
 

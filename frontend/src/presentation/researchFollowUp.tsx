@@ -1,16 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { validateLiveDemoQuery } from "../apiClient";
 import { copy, type Language } from "../i18n";
 import { STRUCTURED_RESEARCH_PROFILE, type ResearchFindingsResponse, type ResearchQuestion } from "../researchFindings";
 import { RESEARCH_QUESTIONS_MAX, validateResearchQuestions } from "../researchScope";
 import type { useLiveRun } from "../useLiveRun";
-import { ResearchFindingsReader } from "./researchFindingsReader";
+import { ResearchFindingsReader, type UnresolvedQuestionControls } from "./researchFindingsReader";
 import { ResearchScopeEditor } from "./researchScopeEditor";
 
 type PreparedDraft = {
   questions: readonly ResearchQuestion[];
   references: readonly { questionId: string; text: string; reason: string }[];
   revision: number;
+};
+
+export type FollowUpMemory = {
+  identity: string;
+  selected: readonly string[];
+  draft?: PreparedDraft;
+  replacePending: boolean;
+  revision: number;
+  nextQuestionId: number;
 };
 
 /** Stateless live adapter; the child key owns context expiry and draft recovery. */
@@ -37,20 +46,24 @@ export function LiveResearchFollowUp({ language, liveRun }: {
 }
 
 /** Browser-local input preparation. Accepted report and creation authority stay on the service. */
-export function ResearchFollowUp({ language, findings, disabled, sourceReportVisible, onCancelWithoutSource, onStart }: {
+export function ResearchFollowUp({ language, findings, disabled, sourceReportVisible, onCancelWithoutSource, onStart, renderReport, memory }: {
   language: Language;
   findings: ResearchFindingsResponse;
   disabled: boolean;
   sourceReportVisible: boolean;
   onCancelWithoutSource: () => void;
   onStart: (questions: readonly ResearchQuestion[]) => Promise<void>;
+  renderReport?: (controls?: UnresolvedQuestionControls) => ReactNode;
+  memory?: RefObject<FollowUpMemory | undefined>;
 }) {
   const t = copy[language].research;
-  const [selected, setSelected] = useState<readonly string[]>([]);
-  const [draft, setDraft] = useState<PreparedDraft>();
-  const [replacePending, setReplacePending] = useState(false);
-  const nextQuestionId = useRef(1);
-  const revision = useRef(0);
+  const identity = `${findings.run_id}/${findings.artifact.content_hash}`;
+  const previous = memory?.current?.identity === identity ? memory?.current : undefined;
+  const [selected, setSelected] = useState<readonly string[]>(previous?.selected ?? []);
+  const [draft, setDraft] = useState<PreparedDraft | undefined>(previous?.draft);
+  const [replacePending, setReplacePending] = useState(previous?.replacePending ?? false);
+  const nextQuestionId = useRef(previous?.nextQuestionId ?? 1);
+  const revision = useRef(previous?.revision ?? 0);
   const submitting = useRef(false);
   const draftRegion = useRef<HTMLElement>(null);
   const prepareButton = useRef<HTMLButtonElement>(null);
@@ -63,6 +76,11 @@ export function ResearchFollowUp({ language, findings, disabled, sourceReportVis
   const selectedReferences = unresolved.filter((question) => selected.includes(question.questionId));
   const scopeValid = draft && validateResearchQuestions(draft.questions).ok
     && validateLiveDemoQuery(draft.questions[0].text).ok;
+
+  useLayoutEffect(() => {
+    if (memory) memory.current = { identity, selected, draft, replacePending,
+      revision: revision.current, nextQuestionId: nextQuestionId.current };
+  }, [memory, identity, selected, draft, replacePending]);
 
   useEffect(() => {
     if (draft?.revision) {
@@ -101,17 +119,21 @@ export function ResearchFollowUp({ language, findings, disabled, sourceReportVis
     setDraft((current) => current ? { ...current, questions: update(current.questions) } : current);
   };
 
+  const controls: UnresolvedQuestionControls | undefined = unresolved.length ? {
+    selectedQuestionIds: selected,
+    disabled,
+    onToggleQuestion: (questionId) => {
+      if (!disabled) setSelected((current) => current.includes(questionId)
+        ? current.filter((id) => id !== questionId) : [...current, questionId]);
+    },
+    onPrepare: prepare,
+    prepareButtonRef: prepareButton
+  } : undefined;
+
   return <>
-    {sourceReportVisible && <ResearchFindingsReader language={language} findings={findings} followUp={unresolved.length ? {
-      selectedQuestionIds: selected,
-      disabled,
-      onToggleQuestion: (questionId) => {
-        if (!disabled) setSelected((current) => current.includes(questionId)
-          ? current.filter((id) => id !== questionId) : [...current, questionId]);
-      },
-      onPrepare: prepare,
-      prepareButtonRef: prepareButton
-    } : undefined} />}
+    {sourceReportVisible && (renderReport
+      ? renderReport(controls)
+      : <ResearchFindingsReader language={language} findings={findings} followUp={controls} />)}
     {draft && <section className="research-follow-up" role="region" aria-label={t.followUp.title} ref={draftRegion}>
       <h2>{t.followUp.title}</h2>
       <p>{t.followUp.boundary}</p>

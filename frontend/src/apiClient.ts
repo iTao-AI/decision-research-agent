@@ -315,15 +315,21 @@ async function requestJson<T>(baseUrl: string, path: string, init?: RequestInit)
 }
 
 function buildUrl(baseUrl: string, path: string) {
+  const origin = localBackendOrigin(baseUrl);
+  if (!origin) throw new ClientRequestError(invalidBackendUrl());
+  return `${origin}${path}`;
+}
+
+export function localBackendOrigin(baseUrl: string): string | undefined {
   const trimmedBase = baseUrl.trim();
   if (!/^http:\/\/127\.0\.0\.1:\d{1,5}\/?$/.test(trimmedBase)) {
-    throw new ClientRequestError(invalidBackendUrl());
+    return undefined;
   }
   let parsed: URL;
   try {
     parsed = new URL(trimmedBase);
   } catch {
-    throw new ClientRequestError(invalidBackendUrl());
+    return undefined;
   }
   if (
     parsed.protocol !== "http:" ||
@@ -335,9 +341,9 @@ function buildUrl(baseUrl: string, path: string) {
     parsed.search !== "" ||
     parsed.hash !== ""
   ) {
-    throw new ClientRequestError(invalidBackendUrl());
+    return undefined;
   }
-  return `${parsed.origin}${path}`;
+  return parsed.origin;
 }
 
 async function readJson(response: Response): Promise<unknown> {

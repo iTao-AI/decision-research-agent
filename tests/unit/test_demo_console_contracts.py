@@ -11,6 +11,7 @@ DESIGN = ROOT / "DESIGN.md"
 OPERATIONS = ROOT / "docs" / "demo-console.md"
 APP = ROOT / "frontend" / "src" / "App.tsx"
 PRESENTATION_ROOT = ROOT / "frontend" / "src" / "presentation"
+WORKSPACE = ROOT / "frontend" / "src" / "ResearchWorkspace.tsx"
 API_CLIENT = ROOT / "frontend" / "src" / "apiClient.ts"
 LIVE_RUN = ROOT / "frontend" / "src" / "useLiveRun.ts"
 MODULE_SPECIFIER = re.compile(
@@ -67,12 +68,13 @@ def test_static_and_live_run_data_are_mutually_exclusive():
     app = _read(APP)
 
     assert "Static Demo and Live Backend run data are mutually exclusive" in contract
-    assert "inactive mode's run-specific data is never rendered" in contract
-    assert 'liveRun.state.mode === "static"' in app
-    assert "buildStaticConsoleProjection()" in app
-    assert "buildLiveConsoleProjection({" in app
-    assert "demoRun" not in app
-    assert "architectureNodes" not in app
+    assert "Showcase views load bundled fixtures without backend calls" in contract
+    assert "readShowcaseRoute" in app
+    assert "<ShowcaseConsole" in app
+    assert "<ResearchWorkspace" in app
+    assert "buildStaticConsoleProjection" in app
+    assert "useLiveRun(" not in app
+    assert "buildStaticConsoleProjection" not in _read(WORKSPACE)
 
 
 def test_create_intent_is_header_only_session_scoped_and_reconcilable():
@@ -93,8 +95,8 @@ def test_live_question_contract_is_bounded_exact_and_non_authoritative():
 
     for phrase in (
         "one bounded user-authored research question",
-        "Generic remains the default",
-        "explicit structured selection submits `generic-evidence-report`",
+        "Blank research draft, with Evidence research selected",
+        "Evidence research explicitly submits `generic-evidence-report`",
         '{questions: [{question_id: "q1", text: query}]}',
         "4096 UTF-8 bytes",
         "does not trim, normalize, translate, case-fold, or rewrite it",
@@ -106,12 +108,12 @@ def test_live_question_contract_is_bounded_exact_and_non_authoritative():
         assert phrase in contract
 
     assert "one bounded user-authored research question" in readme
-    assert "Generic is the default" in readme
-    assert "explicit structured research selects `generic-evidence-report@1`" in readme
+    assert "defaults to Evidence research (`generic-evidence-report@1`)" in readme
+    assert "General research remains available" in readme
     assert "4096 UTF-8 bytes" in readme
     assert "一个有界的用户自定义研究问题" in readme_cn
-    assert "Generic 保持默认" in readme_cn
-    assert "显式结构化模式选择 `generic-evidence-report@1`" in readme_cn
+    assert "默认选择证据研究（`generic-evidence-report@1`）" in readme_cn
+    assert "通用研究可选" in readme_cn
     assert "4096 UTF-8 bytes" in readme_cn
 
 
@@ -319,14 +321,8 @@ def test_frontend_presentation_families_have_direct_owners():
             assert not re.search(declaration, app), (module_name, declaration)
 
     assert "export type { ShowcaseState } from \"./presentation/showcaseWorkspace\";" in app
-    for required in (
-        "useLiveRun",
-        "useState",
-        "useEffect",
-        "useMemo",
-        "readShowcaseRoute",
-        "buildStaticConsoleProjection",
-        "buildLiveConsoleProjection",
-        "function LiveDemoPanel",
-    ):
+    for required in ("readShowcaseRoute", "buildStaticConsoleProjection"):
         assert required in app
+    workspace = _read(WORKSPACE)
+    for required in ("useLiveRun", "WorkspaceDraft", "WorkspaceReport", "WorkspaceRunDetails"):
+        assert required in workspace

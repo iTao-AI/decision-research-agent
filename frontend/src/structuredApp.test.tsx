@@ -4,45 +4,55 @@ import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { findingsResponse, markdownResult, structuredRun } from "./test/researchFindingsFixture";
+import { openExistingResearch, useEnglish } from "./test/researchWorkspaceInteractions";
 
 afterEach(() => vi.unstubAllGlobals());
 
-function captureCreates(lostFirstResponse = false) {
+function captureCreates({ lostFirstResponse = false, generic = false } = {}) {
   const posts: { body: string; key: string | null }[] = [];
+  const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
+    const path = new URL(String(input)).pathname;
+    requests.push(path);
     if (init?.method === "POST") {
       posts.push({ body: String(init.body), key: new Headers(init.headers).get("Idempotency-Key") });
       if (lostFirstResponse && posts.length === 1) throw new TypeError("lost response");
-      return new Response(JSON.stringify({ run_id: "run_structured", segment_id: "segment", status: "started", thread_id: "demo-console-fixed", idempotent_replay: posts.length > 1 }));
+      return Response.json({
+        run_id: "run_structured", segment_id: "segment", status: "started",
+        thread_id: "demo-console-fixed", idempotent_replay: posts.length > 1
+      });
     }
-    return new Response(JSON.stringify(url.endsWith("/health") ? { service: "decision-research-agent", status: "ok" } :
-      url.endsWith("/findings") ? findingsResponse() : url.endsWith("/result") ? markdownResult() : structuredRun()));
+    if (path === "/health") return Response.json({ service: "decision-research-agent", status: "ok" });
+    if (path.endsWith("/findings")) return Response.json(findingsResponse());
+    if (path.endsWith("/result")) {
+      const result = markdownResult();
+      if (generic) result.artifact.kind = "research_report_markdown";
+      return Response.json(result);
+    }
+    return Response.json({ ...structuredRun(), profile_id: generic ? "generic" : "generic-evidence-report" });
   }));
-  return posts;
+  return { posts, requests };
 }
 
 async function structuredEditor() {
   const user = userEvent.setup();
   render(<StrictMode><App liveOptions={{ randomUUID: () => "fixed", pollIntervalMs: 1 }} /></StrictMode>);
-  await user.click(screen.getByRole("button", { name: "真实后端" }));
-  await user.click(screen.getByRole("button", { name: "检查后端" }));
-  await user.selectOptions(screen.getByRole("combobox", { name: "研究模式" }), "generic-evidence-report");
+  await screen.findByText("本地服务已连接");
   return user;
 }
 
 describe("multi-question creation editor", () => {
   it("submits five explicit questions and blocks blank rows and a sixth addition", async () => {
-    const posts = captureCreates();
+    const { posts } = captureCreates();
     const user = await structuredEditor();
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "  One😀\n  " } });
     for (const [index, text] of ["Two", "Three", "Four", "Five"].entries()) {
       await user.click(screen.getByRole("button", { name: "新增问题" }));
-      expect(screen.getByRole("button", { name: "运行并获取结果" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "开始研究" })).toBeDisabled();
       fireEvent.change(screen.getByRole("textbox", { name: `研究问题 ${index + 2}` }), { target: { value: text } });
     }
     expect(screen.getByRole("button", { name: "新增问题" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await user.click(screen.getByRole("button", { name: "开始研究" }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(JSON.parse(posts[0].body)).toEqual({
       query: "  One😀\n  ", thread_id: "demo-console-fixed", profile_id: "generic-evidence-report",
@@ -55,7 +65,8 @@ describe("multi-question creation editor", () => {
   });
 
   it("keeps surviving IDs after editing, middle/first removal and re-adding", async () => {
-    const posts = captureCreates(); const user = await structuredEditor();
+    const { posts } = captureCreates();
+    const user = await structuredEditor();
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "One" } });
     await user.click(screen.getByRole("button", { name: "新增问题" }));
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Two" } });
@@ -68,152 +79,168 @@ describe("multi-question creation editor", () => {
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("Edited third");
     await user.click(screen.getByRole("button", { name: "新增问题" }));
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Fourth" } });
-    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
+    await user.click(screen.getByRole("button", { name: "开始研究" }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(JSON.parse(posts[0].body)).toMatchObject({ query: "Edited third", scope: { questions: [
       { question_id: "q3", text: "Edited third" }, { question_id: "q4", text: "Fourth" }
     ] } });
   });
 
-  it("locks the full editor until the exact complete lost-response request is reconciled", async () => {
-    const posts = captureCreates(true); const user = await structuredEditor();
+  it("replays all submitted questions and the same key after a lost response", async () => {
+    const { posts } = captureCreates({ lostFirstResponse: true });
+    const user = await structuredEditor();
+    fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "First" } });
     await user.click(screen.getByRole("button", { name: "新增问题" }));
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Second" } });
-    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "重试同一请求" })).toBeInTheDocument());
-    expect(screen.getByRole("textbox", { name: "研究问题" })).toBeDisabled();
-    expect(screen.getByRole("textbox", { name: "研究问题 2" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "新增问题" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "删除问题 1" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "删除问题 2" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "重试同一请求" }));
-    await waitFor(() => expect(posts).toHaveLength(2));
+    await user.click(screen.getByRole("button", { name: "开始研究" }));
+    const retry = await screen.findByRole("button", { name: "重试同一请求" });
+    expect(screen.queryByRole("textbox", { name: "研究问题" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "开始研究" })).not.toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    await user.click(retry);
+    await screen.findByText("报告已就绪");
+    expect(posts).toHaveLength(2);
     expect(posts[1]).toEqual(posts[0]);
-    expect(JSON.parse(posts[0].body).scope.questions).toHaveLength(2);
+    expect(JSON.parse(posts[0].body).scope.questions).toEqual([
+      { question_id: "q1", text: "First" }, { question_id: "q2", text: "Second" }
+    ]);
   });
 
   it("supports English keyboard addition/removal and prevents an empty scope", async () => {
-    captureCreates(); const user = await structuredEditor();
-    await user.click(screen.getByRole("button", { name: "English" }));
-    expect(screen.getByRole("button", { name: "Remove question 1" })).toBeDisabled();
+    captureCreates();
+    const user = await structuredEditor();
+    await useEnglish(user);
+    expect(screen.queryByRole("button", { name: "Remove question 1" })).not.toBeInTheDocument();
     screen.getByRole("button", { name: "Add question" }).focus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("textbox", { name: "Research question 2" })).toHaveFocus();
     screen.getByRole("button", { name: "Remove question 2" }).focus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("textbox", { name: "Research question" })).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "Remove question 1" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start research" })).toBeDisabled();
+  });
+
+  it("keeps general research available and reads its Markdown without requesting findings", async () => {
+    const { posts, requests } = captureCreates({ generic: true });
+    const user = await structuredEditor();
+    await user.selectOptions(screen.getByRole("combobox", { name: "研究模式" }), "generic");
+    expect(screen.queryByRole("button", { name: "新增问题" })).not.toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "研究问题" }), "General question");
+    await user.click(screen.getByRole("button", { name: "开始研究" }));
+    await screen.findByRole("heading", { name: "Canonical report" });
+
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(posts[0].body)).toEqual({
+      query: "General question", thread_id: "demo-console-fixed", profile_id: "generic", scope: {}
+    });
+    expect(requests.some((path) => path.endsWith("/findings"))).toBe(false);
   });
 });
 
-describe("explicit structured console", () => {
-  it("keeps generic default, selects opt-in structured profile and displays accepted questions and candidates", async () => {
-    const requests: { url: string; body?: string }[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input); requests.push({ url, body: init?.body ? String(init.body) : undefined });
-      const value = url.endsWith("/health") ? { service: "decision-research-agent", status: "ok" } :
-        init?.method === "POST" ? { run_id: "run_structured", segment_id: "segment", status: "started", thread_id: "demo-console-fixed", idempotent_replay: false } :
-        url.endsWith("/findings") ? findingsResponse() : url.endsWith("/result") ? markdownResult() : structuredRun();
-      return new Response(JSON.stringify(value));
-    }));
-    const user = userEvent.setup();
-    render(<App liveOptions={{ randomUUID: () => "fixed", pollIntervalMs: 1 }} />);
-    await user.click(screen.getByRole("button", { name: "真实后端" }));
-    expect(screen.getByRole("combobox", { name: "研究模式" })).toHaveValue("generic");
-    await user.click(screen.getByRole("button", { name: "检查后端" }));
-    await user.selectOptions(screen.getByRole("combobox", { name: "研究模式" }), "generic-evidence-report");
+describe("structured reports in the research workspace", () => {
+  it("reads only the service-accepted questions and keeps selection across language changes", async () => {
+    const { posts } = captureCreates();
+    const user = await structuredEditor();
+    expect(screen.getByRole("combobox", { name: "研究模式" })).toHaveValue("generic-evidence-report");
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "  原始问题\n😀  " } });
-    await user.click(screen.getByRole("button", { name: "运行并获取结果" }));
-    await waitFor(() => expect(screen.getByRole("heading", { name: "来源绑定的候选结论" })).toBeInTheDocument());
-    expect(JSON.parse(requests.find((request) => request.body)?.body ?? "null")).toMatchObject({
-      profile_id: "generic-evidence-report", query: "  原始问题\n😀  ", scope: { questions: [{ question_id: "q1", text: "  原始问题\n😀  " }] }
+    await user.click(screen.getByRole("button", { name: "开始研究" }));
+    await screen.findByText("报告已就绪");
+    expect(JSON.parse(posts[0].body)).toMatchObject({
+      profile_id: "generic-evidence-report", query: "  原始问题\n😀  ",
+      scope: { questions: [{ question_id: "q1", text: "  原始问题\n😀  " }] }
     });
-    expect(screen.getByText("证据不足")).toBeInTheDocument();
-    expect(screen.getByText("两个来源的更新时间存在矛盾")).toBeInTheDocument();
-    expect(screen.getByText("片段绑定不证明结论真实")).toBeInTheDocument();
-    const directory = screen.getByRole("navigation", { name: "问题目录" });
-    expect(within(directory).getAllByRole("button")).toHaveLength(2);
-    expect(directory).not.toHaveTextContent("原始问题");
-    fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "New editable draft" } });
-    expect(directory).not.toHaveTextContent("New editable draft");
-    await user.click(within(directory).getByRole("button", { name: /未解决问题/ }));
-    expect(within(screen.getByRole("region", { name: "未解决问题" })).getByText("证据不足")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "下载报告" }).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole("button", { name: "English" }));
-    expect(screen.getByRole("heading", { name: "Source-bound candidate findings" })).toBeInTheDocument();
-    expect(screen.getByText("Binding locates the candidate in an observed source snippet. It does not prove source truth or claim entailment; Evidence verification remains service-owned.")).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "Question directory" })).getByRole("button", { name: /未解决问题/ })).toHaveAttribute("aria-current", "location");
-    await user.click(screen.getByRole("tab", { name: "Raw" }));
-    expect(screen.getByRole("tabpanel").textContent).toBe("# Canonical report");
+    const accepted = screen.getByRole("region", { name: "研究问题" });
+    expect(within(accepted).getByText("来源绑定的候选结论")).toBeVisible();
+    expect(screen.getByText("两个来源的更新时间存在矛盾")).toBeVisible();
+    expect(screen.getByText("片段绑定不证明结论真实")).toBeVisible();
+    await user.click(screen.getByText("问题目录", { selector: "summary" }));
+    const directory = within(screen.getByRole("navigation", { name: "问题目录" }));
+    expect(directory.getAllByRole("button")).toHaveLength(2);
+    expect(directory.queryByRole("button", { name: /原始问题/ })).not.toBeInTheDocument();
+    const unresolved = screen.getByRole("region", { name: "未解决问题" });
+    await user.click(directory.getByRole("button", { name: /未解决问题/ }));
+    expect(unresolved).toHaveFocus();
+    expect(within(unresolved).getByText("证据不足")).toBeVisible();
+    expect(screen.getByRole("button", { name: "下载 Markdown" })).toBeEnabled();
+
+    await useEnglish(user);
+    expect(screen.getByRole("heading", { name: "Source-bound candidate findings" })).toBeVisible();
+    expect(screen.getByText(/Binding locates the candidate in an observed source snippet/)).toBeVisible();
+    expect(within(screen.getByRole("navigation", { name: "Question directory" }))
+      .getByRole("button", { name: /未解决问题/ })).toHaveAttribute("aria-current", "location");
+    await user.click(screen.getByText("Raw", { selector: "summary" }));
+    expect(screen.getByText("# Canonical report")).toBeVisible();
   });
 
-  it("clears reader selection and opened source when attaching another run or switching profile", async () => {
+  it("clears question selection and an opened source when another run is opened", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith("/health")) return new Response(JSON.stringify({ service: "decision-research-agent", status: "ok" }));
+      if (url.endsWith("/health")) return Response.json({ service: "decision-research-agent", status: "ok" });
       const runId = url.includes("run_next") ? "run_next" : "run_first";
       const value = findingsResponse(runId);
       value.report.questions[0].text = `${runId} accepted question`;
       value.report.findings[0].statement = `${runId} observed candidate`;
       value.artifact.content = JSON.stringify(value.report);
-      return new Response(JSON.stringify(url.endsWith("/findings") ? value : url.endsWith("/result") ? markdownResult(runId) : structuredRun(runId)));
-    }));
-    const user = userEvent.setup(); render(<StrictMode><App /></StrictMode>);
-    await user.click(screen.getByRole("button", { name: "真实后端" }));
-    await user.click(screen.getByRole("button", { name: "检查后端" }));
-    const runField = screen.getByRole("textbox", { name: "已知 run_id" });
-    await user.type(runField, "run_first");
-    await user.click(screen.getByRole("button", { name: "观察已知运行" }));
-    await waitFor(() => expect(screen.getByRole("region", { name: "run_first accepted question" })).toBeInTheDocument());
-    await user.click(within(screen.getByRole("navigation", { name: "问题目录" })).getAllByRole("button")[0]);
-    await user.click(screen.getByRole("button", { name: "查看完整持久化片段" }));
-    expect(screen.getByRole("region", { name: "完整持久化片段" })).toBeInTheDocument();
-    await user.clear(runField); await user.type(runField, "run_next");
-    await user.click(screen.getByRole("button", { name: "观察已知运行" }));
-    await waitFor(() => expect(screen.getByRole("region", { name: "run_next accepted question" })).toBeInTheDocument());
-    expect(screen.queryByRole("region", { name: "run_first accepted question" })).not.toBeInTheDocument();
-    expect(screen.queryByText("run_first observed candidate")).not.toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "完整持久化片段" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "问题目录" })).getAllByRole("button").every((button) => !button.hasAttribute("aria-current"))).toBe(true);
-    await user.selectOptions(screen.getByRole("combobox", { name: "研究模式" }), "generic-evidence-report");
-    expect(screen.queryByRole("navigation", { name: "问题目录" })).not.toBeInTheDocument();
-    expect(screen.queryByText("run_next observed candidate")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "下载报告" })).not.toBeInTheDocument();
-  });
-
-  it("keeps an all-unresolved zero-findings run blocked without fabricating question regions from the draft", async () => {
-    const urls: string[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input); urls.push(url);
-      return new Response(JSON.stringify(url.endsWith("/health") ? { service: "decision-research-agent", status: "ok" } :
-        { ...structuredRun("all_unresolved", "blocked"), findings_issues: ["empty_research_output"],
-          findings_outcome: { requested_question_count: 5, covered_question_count: 0, unresolved_question_count: 5, reference_binding_failure_count: 0 } }));
+      return Response.json(url.endsWith("/findings") ? value : url.endsWith("/result") ? markdownResult(runId) : structuredRun(runId));
     }));
     const user = await structuredEditor();
-    fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "Unaccepted editable draft" } });
-    await user.type(screen.getByRole("textbox", { name: "已知 run_id" }), "all_unresolved");
-    await user.click(screen.getByRole("button", { name: "观察已知运行" }));
-    await waitFor(() => expect(screen.getByText("empty_research_output")).toBeInTheDocument());
+    await openExistingResearch(user, "run_first");
+    await screen.findByRole("region", { name: "run_first accepted question" });
+    await user.click(screen.getByText("问题目录", { selector: "summary" }));
+    await user.click(within(screen.getByRole("navigation", { name: "问题目录" }))
+      .getByRole("button", { name: /run_first accepted question/ }));
+    const citation = screen.getByRole("button", { name: "查看来源 1" });
+    await user.click(citation);
+    const source = screen.getByRole("complementary", { name: "绑定来源 1" });
+    expect(source).toHaveFocus();
+    expect(within(source).getByText("😀精确片段")).toBeVisible();
+    await user.click(within(source).getByRole("button", { name: "查看完整持久化片段" }));
+    expect(within(source).getByText("前😀精确片段后")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "返回引用处" }));
+    expect(citation).toHaveFocus();
+    await user.click(citation);
+    expect(screen.getByRole("complementary", { name: "绑定来源 1" })).toBeVisible();
+
+    await openExistingResearch(user, "run_next");
+    await screen.findByRole("region", { name: "run_next accepted question" });
+    expect(screen.queryByRole("region", { name: "run_first accepted question" })).not.toBeInTheDocument();
+    expect(screen.queryByText("run_first observed candidate")).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "绑定来源 1" })).not.toBeInTheDocument();
+    await user.click(screen.getByText("问题目录", { selector: "summary" }));
+    expect(within(screen.getByRole("navigation", { name: "问题目录" }))
+      .getByRole("button", { name: /run_next accepted question/ })).not.toHaveAttribute("aria-current");
+
+    await user.click(screen.getByRole("button", { name: "返回工作台" }));
+    expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("");
     expect(screen.queryByRole("navigation", { name: "问题目录" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Unaccepted editable draft" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "下载报告" })).not.toBeInTheDocument();
-    expect(urls.some((url) => /\/(result|findings)$/.test(url))).toBe(false);
+    expect(screen.queryByRole("button", { name: "下载 Markdown" })).not.toBeInTheDocument();
   });
 
-  it("shows service blocked reasons without findings or report download", async () => {
+  it.each([
+    ["all_unresolved", "empty_research_output", { requested_question_count: 5, covered_question_count: 0,
+      unresolved_question_count: 5, reference_binding_failure_count: 0 }],
+    ["blocked", "excerpt_not_found", { requested_question_count: 1, covered_question_count: 0,
+      unresolved_question_count: 1, reference_binding_failure_count: 1 }]
+  ])("shows blocked run %s only as status and service diagnostics", async (runId, issue, outcome) => {
     const urls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input); urls.push(url);
-      return new Response(JSON.stringify(url.endsWith("/health") ? { service: "decision-research-agent", status: "ok" } :
-        { ...structuredRun("blocked", "blocked"), findings_issues: ["excerpt_not_found"],
-          findings_outcome: { requested_question_count: 1, covered_question_count: 0, unresolved_question_count: 1, reference_binding_failure_count: 1 } }));
+      const url = String(input);
+      urls.push(url);
+      return Response.json(url.endsWith("/health") ? { service: "decision-research-agent", status: "ok" } : {
+        ...structuredRun(runId, "blocked"), findings_issues: [issue], findings_outcome: outcome
+      });
     }));
-    const user = userEvent.setup(); render(<App />);
-    await user.click(screen.getByRole("button", { name: "真实后端" }));
-    await user.click(screen.getByRole("button", { name: "检查后端" }));
-    await user.type(screen.getByRole("textbox", { name: "已知 run_id" }), "blocked");
-    await user.click(screen.getByRole("button", { name: "观察已知运行" }));
-    await waitFor(() => expect(screen.getByText("excerpt_not_found")).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: "下载报告" })).not.toBeInTheDocument();
+    const user = await structuredEditor();
+    await user.type(screen.getByRole("textbox", { name: "研究问题" }), "Unaccepted editable draft");
+    await openExistingResearch(user, runId);
+    await screen.findByText("交付受阻");
+    expect(screen.getByText(issue)).not.toBeVisible();
+    await user.click(screen.getByText("运行详情", { selector: "summary" }));
+    expect(screen.getByText(issue)).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: "问题目录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Unaccepted editable draft" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下载 Markdown" })).not.toBeInTheDocument();
     expect(urls.some((url) => /\/(result|findings)$/.test(url))).toBe(false);
   });
 });

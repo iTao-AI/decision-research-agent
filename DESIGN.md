@@ -12,14 +12,17 @@ through the existing [API contract](docs/reference/api-contract.md). The
 | Entry | Surface |
 | --- | --- |
 | `/` | Blank research draft, with Evidence research selected. The introduction explains source-linked reports. Three modules support question comparison, source inspection, and follow-up. Drafting works while the local service is offline. |
-| Find research | A separate, health-gated run ID dialog opens a GET-only reading context. The lookup tracks its own run status and leaves the current task in the top bar. |
-| Service connection | Shows connection state and opens the loopback endpoint and language settings. Simplified Chinese is the default. An offline check exposes the configured address, change, and reconnect controls. Saving a new address clears the run contexts, preserves the ordinary draft, and checks the new service. Editing the address is locked during creation, reconciliation, and polling. |
+| Open by ID | A separate, health-gated run ID dialog opens a GET-only reading context. The lookup tracks its own run status and leaves the current task in the top bar. |
+| `/?report=<run_id>` | Opens the same report after health and the required GETs succeed. Reading, copying the link, and reopening it never create work. The link resolves against the configured local service. |
+| Service connection | Shows connection state and opens the loopback endpoint and language settings. Simplified Chinese is the default. An offline check exposes the configured address, change, and reconnect controls. Saving a new address remembers the validated loopback origin in this browser, clears the run contexts, preserves the ordinary draft, and checks the new service. Editing the address is locked during creation, reconciliation, and polling. |
 | `/?showcase=overview`, `/?showcase=evidence`, `/?showcase=blocked` | Direct routes to bundled offline examples, separate from the ordinary home. |
 
 The sticky task bar uses text and a distinct icon to show the current phase,
-the question, and one action. When the service reports delivery and the required
-result reads pass, the action becomes **Read report**. Progress, report, cause,
-and delivery details open on explicit request. Run details retain the copyable
+the question, elapsed time since this browser submitted it, and the next
+available action. The progress line appears after acknowledgement and moves
+only while the current checkpoint is active. When the service reports delivery
+and the required result reads pass, **Read report** becomes the primary action.
+Progress, report, cause, and delivery details open on explicit request. Run details retain the copyable
 identifier, observed execution and delivery fields, and bounded diagnostics.
 Architecture and CLI instructions are secondary.
 
@@ -30,16 +33,18 @@ paper relief sits alongside the editor. On phones it appears as a small
 decorative crop beside the title. The three tools are a keyboard-operable
 directory with descriptions and dividing rules.
 
-**View report structure** opens an explicitly labeled diagram of a citation
-and its source passage before a report is available. The source directory entry
-also leads to this explanation on phones. After a canonical report is read,
-the structure control opens the actual source reader for that run.
+**How reports cite sources** opens a labeled diagram of a citation and its
+source passage. The source directory entry leads to the same explanation.
+After the structured report is read, **View citations for this run** opens its
+first bound quotation. The follow-up entry shows the number of open questions
+when the structured report supplies it.
 
 Details use a side panel on desktop and a single-column panel under the task
-bar on phones. The report can place an open source beside its finding when
-space permits. Dialogs and detail panels support keyboard use, Escape, and
-focus restoration. The task bar announces phase changes and respects reduced
-motion preferences.
+bar on phones. The warmer report canvas starts with findings, available
+conditions, and citations; an open source can sit beside its finding when
+space permits. Dialogs and panels support keyboard use, Escape, and focus
+restoration. The task bar announces phase changes and respects reduced motion
+preferences.
 
 ## Draft and run lifecycle
 
@@ -88,8 +93,8 @@ motion preferences.
   actionable. A binding identifies source material. Evidence verification
   remains service-owned, with truth and entailment outside this browser check.
 - An accepted report with unresolved questions can prepare a separately
-  editable draft. The original run and unresolved reasons remain local
-  references. Preparation and cancellation preserve the report and ordinary
+  editable draft with the original main question and the selected open
+  questions. The original run and unresolved reasons remain local references. Preparation and cancellation preserve the report and ordinary
   draft. Explicit submission creates a fresh intent and independent run with
   the edited questions.
 
@@ -107,8 +112,10 @@ The six technical showcase screens remain in the collapsible disclosure.
 The local workspace consumes `/health`, `POST /api/runs`,
 `GET /api/runs/{run_id}`, and ready result and findings endpoints. The
 console uses one explicit CORS origin and a loopback backend with
-`API_SECRET` unset. The Tool Client handles authenticated environments. Telemetry, token usage,
-and WebSocket endpoints are outside the workspace flow. The console scope
+`API_SECRET` unset. The Tool Client handles authenticated environments. During
+an observed active segment, the task bar can read closed run telemetry to show
+the last completed search. The activity is optional and uses only a matched
+run, thread, and segment. The console scope
 covers local research and offline examples. Public hosting, multi-tenancy,
 account management and PDF export are outside this scope.
 Review, publication, delivery and verification decisions remain with the

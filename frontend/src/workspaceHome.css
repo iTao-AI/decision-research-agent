@@ -6,8 +6,9 @@
   --dw-home-serif: "STIX Two Text", "Songti SC", "Noto Serif CJK SC", SimSun, serif;
   --dw-home-width: min(1152px, calc(100% - 80px));
   --dw-header-height: 64px;
+  --dw-header-offset: calc(var(--dw-header-height) + 1px);
   --dw-track-height: 50px;
-  --dw-scroll-offset: calc(var(--dw-header-height) + var(--dw-track-height) + 1rem);
+  --dw-scroll-offset: calc(var(--dw-header-offset) + var(--dw-track-height) + 1rem);
   background: var(--dw-home-paper);
   color: var(--dw-home-ink);
   font-size: 15px;
@@ -569,15 +570,15 @@
 }
 
 .dra-workspace.dw-modular:has(.dw-drawer:not([hidden])) .dw-status {
-  top: calc(var(--dw-header-height) + 1px);
+  top: var(--dw-header-offset);
 }
 
 .dra-workspace.dw-modular .dw-drawer {
   position: fixed;
   z-index: 6;
-  inset: calc(var(--dw-header-height) + var(--dw-track-height) + 8px) 16px auto auto;
+  inset: calc(var(--dw-header-offset) + var(--dw-track-height) + 7px) 16px auto auto;
   width: min(450px, calc(100% - 32px));
-  max-height: calc(100dvh - var(--dw-header-height) - var(--dw-track-height) - 21px);
+  max-height: calc(100dvh - var(--dw-header-offset) - var(--dw-track-height) - 20px);
   overflow: auto;
   border: 1px solid #aabbb9;
   border-radius: 12px;
@@ -813,7 +814,7 @@
 
   .dra-workspace.dw-modular .dw-drawer,
   .dra-workspace.dw-modular .dw-drawer:has(.dw-report) {
-    inset: calc(var(--dw-header-height) + var(--dw-track-height) + 1px) 0 0;
+    inset: calc(var(--dw-header-offset) + var(--dw-track-height)) 0 0;
     width: 100%;
     max-height: none;
     border: 0;

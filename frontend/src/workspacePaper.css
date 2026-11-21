@@ -54,6 +54,17 @@
   font-size: 13px;
 }
 
+.dra-workspace.dw-paper .dw-demo-label {
+  padding: 2px 6px;
+  border: 1px solid #c9c4a8;
+  border-radius: 4px;
+  background: #f8f4df;
+  color: #59522b;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 .dra-workspace.dw-paper .dw-header nav > button:hover {
   color: var(--dw-paper-blue);
 }
@@ -354,7 +365,7 @@
   display: grid;
   width: 100%;
   min-height: 0;
-  grid-template-columns: minmax(132px, .82fr) minmax(140px, 1fr) 24px;
+  grid-template-columns: minmax(132px, 11rem) minmax(0, 1fr) 24px;
   align-items: center;
   gap: 10px;
   padding: 12px 1px;
@@ -432,7 +443,15 @@
   }
 
   .dra-workspace.dw-paper .dw-header nav {
-    gap: 0 12px;
+    gap: 0 8px;
+  }
+
+  .dra-workspace.dw-paper .dw-header nav > button {
+    white-space: nowrap;
+  }
+
+  .dra-workspace.dw-paper:has(.dw-demo-label) .dw-brand-label {
+    display: none;
   }
 
   .dra-workspace.dw-paper .dw-header nav > button {
@@ -578,5 +597,75 @@
 
   .dra-workspace.dw-paper .dw-paper-art {
     display: none;
+  }
+}
+
+.dra-workspace.dw-paper .dw-drawer.dw-reading-drawer {
+  inset-inline: 0;
+  width: min(1120px, calc(100% - 48px));
+  margin-inline: auto;
+  border-radius: 8px;
+  background: var(--dw-home-paper);
+}
+
+.dra-workspace.dw-paper .dw-reading-drawer .dw-drawer-heading {
+  gap: 10px;
+  padding: 8px clamp(18px, 3vw, 36px);
+  background: var(--dw-home-paper);
+}
+
+.dra-workspace.dw-paper .dw-reading-drawer .dw-drawer-heading h2 {
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: normal;
+}
+
+.dra-workspace.dw-paper .dw-drawer-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.dra-workspace.dw-paper .dw-drawer-actions .dw-outline {
+  min-height: 34px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.dra-workspace.dw-paper .dw-share-link {
+  position: relative;
+}
+
+.dra-workspace.dw-paper .dw-share-feedback:not(:empty),
+.dra-workspace.dw-paper .dw-share-link input {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 6px);
+  right: 0;
+  width: max-content;
+  max-width: min(65vw, 280px);
+  padding: 6px 9px;
+  border: 1px solid var(--dw-home-rule);
+  border-radius: 4px;
+  background: var(--dw-home-paper);
+  color: var(--dw-home-ink);
+  font-size: 12px;
+}
+
+.dra-workspace.dw-paper .dw-reading-drawer .dw-drawer-body {
+  padding: 0 clamp(18px, 3vw, 36px) 24px;
+}
+
+@media (min-width: 360px) and (max-width: 700px) {
+  .dra-workspace.dw-paper .dw-header nav {
+    flex-wrap: nowrap;
+  }
+}
+
+@media (max-width: 700px) {
+  .dra-workspace.dw-paper .dw-drawer.dw-reading-drawer {
+    width: 100%;
+    border-radius: 0;
   }
 }

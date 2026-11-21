@@ -144,8 +144,8 @@ def test_known_run_reattach_after_refresh_is_exact_health_gated_and_get_only():
         "A retained known `run_id` can be re-entered after a page refresh",
         "exact syntax `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`",
         "health-gated GET-only observation",
-        "does not add run list/history or browser persistence",
-        "does not reconstruct an ambiguous POST after refresh",
+        "Only the loopback connection preference persists in browser storage",
+        "A page refresh discards the pending create intent",
     ):
         assert phrase in contract
         assert phrase in readme
@@ -154,8 +154,8 @@ def test_known_run_reattach_after_refresh_is_exact_health_gated_and_get_only():
         "保留的已知 `run_id` 可以在页面刷新后重新输入",
         "精确格式 `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`",
         "经过 health 检查后才允许 GET-only observation",
-        "不新增 run list/history 或 browser persistence",
-        "页面刷新后不重建 ambiguous POST",
+        "浏览器只保存本地回环服务地址",
+        "刷新页面会清除待确认的 create intent",
     ):
         assert phrase in readme_cn
 

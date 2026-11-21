@@ -101,7 +101,7 @@ describe("question-first research workspace", () => {
     await openWorkspace();
     const question = screen.getByRole("textbox", { name: "研究问题" });
     await user.type(question, "My draft");
-    const lookup = screen.getByRole("button", { name: "查找研究" });
+    const lookup = screen.getByRole("button", { name: "按编号打开研究" });
     await user.click(lookup);
     const dialog = screen.getByRole("dialog", { name: "查找研究" });
     const input = within(dialog).getByRole("textbox", { name: "运行编号" });
@@ -121,7 +121,7 @@ describe("question-first research workspace", () => {
     await openWorkspace();
     await submit(user);
     await user.click(await screen.findByRole("button", { name: "阅读报告" }));
-    expect(screen.getByRole("heading", { name: "来源绑定的候选结论" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "研究结论" })).toBeInTheDocument();
     const post = requests.filter((request) => request.method === "POST");
     expect(post).toHaveLength(1);
     expect(JSON.parse(post[0].body)).toMatchObject({
@@ -165,7 +165,7 @@ describe("question-first research workspace", () => {
     }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("运行中"));
 
-    await user.click(screen.getByRole("button", { name: "查找研究" }));
+    await user.click(screen.getByRole("button", { name: "按编号打开研究" }));
     await user.type(screen.getByRole("textbox", { name: "运行编号" }), "run_other");
     await user.click(screen.getByRole("button", { name: "打开研究" }));
     await screen.findByRole("button", { name: "阅读这份报告" });
@@ -180,7 +180,7 @@ describe("question-first research workspace", () => {
     const user = userEvent.setup();
     await openWorkspace();
     await submit(user);
-    await user.click(await screen.findByRole("button", { name: "核对同一请求" }));
+    await user.click(await screen.findByRole("button", { name: "检查提交结果" }));
     const retry = screen.getByRole("button", { name: "重试同一请求" });
     const posts = () => requests.filter((request) => request.method === "POST");
     expect(posts()).toHaveLength(1);
@@ -221,7 +221,7 @@ describe("question-first research workspace", () => {
     const user = userEvent.setup();
     await openWorkspace();
     await user.type(screen.getByRole("textbox", { name: "研究问题" }), "Draft kept");
-    await user.click(screen.getByRole("button", { name: "查找研究" }));
+    await user.click(screen.getByRole("button", { name: "按编号打开研究" }));
     await user.type(screen.getByRole("textbox", { name: "运行编号" }), "run_structured");
     await user.click(screen.getByRole("button", { name: "打开研究" }));
     await screen.findByRole("button", { name: "阅读这份报告" });

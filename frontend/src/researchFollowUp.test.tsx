@@ -8,7 +8,7 @@ import { openExistingResearch, useEnglish } from "./test/researchWorkspaceIntera
 
 afterEach(() => vi.unstubAllGlobals());
 const originalQuestions = [
-  { question_id: "old_answered", text: "Answered question" },
+  { question_id: "old_answered", text: "Does Ruff support Python 3.13?" },
   { question_id: "old_unknown", text: "Unknown 中文😀" },
   { question_id: "old_other", text: "Other unresolved question" }
 ];
@@ -90,22 +90,23 @@ async function prepare(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("unresolved report to independent editable research draft", () => {
-  it("copies only selected question text, preserves the original report and home draft and makes no preparation POST", async () => {
+  it("copies the original main question and selected questions, preserves the original report and home draft and makes no preparation POST", async () => {
     const posts = fixture();
     const user = await openOriginal();
     expect(screen.queryByRole("checkbox", { name: "选择未解决问题 1" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "准备新研究草稿" })).toBeDisabled();
     const draft = await prepare(user);
-    expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveValue("Unknown 中文😀");
+    expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveValue("Does Ruff support Python 3.13?");
+    expect(draft.getByRole("textbox", { name: "新研究问题 2" })).toHaveValue("Unknown 中文😀");
     expect(draft.getByText("run_original")).toBeInTheDocument();
     expect(draft.getByText("More evidence needed")).toBeInTheDocument();
-    expect(draft.getAllByRole("textbox")).toHaveLength(1);
+    expect(draft.getAllByRole("textbox")).toHaveLength(2);
     expect(posts).toHaveLength(0);
     expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "返回上一层" }));
     await user.click(screen.getByRole("button", { name: "阅读这份报告" }));
-    expect(screen.getByRole("button", { name: "下载 Markdown" })).toBeEnabled();
-    expect(screen.getByRole("region", { name: "Answered question" })).toBeVisible();
+    expect(screen.getByText("查看报告原稿", { selector: "summary" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Does Ruff support Python 3.13?" })).toBeVisible();
     await closeToHome(user);
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("My existing ordinary draft");
   });
@@ -120,7 +121,7 @@ describe("unresolved report to independent editable research draft", () => {
     fireEvent.click(confirm); fireEvent.click(confirm);
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(JSON.parse(posts[0].body)).toEqual({ query: "More specific new question", thread_id: "demo-console-new-1",
-      profile_id: "generic-evidence-report", scope: { questions: [{ question_id: "q1", text: "More specific new question" }] } });
+      profile_id: "generic-evidence-report", scope: { questions: [{ question_id: "q1", text: "More specific new question" }, { question_id: "q2", text: "Unknown 中文😀" }] } });
     expect(posts[0].key).toBe("run-create-console-new-1");
     const readNew = await screen.findByRole("button", { name: "阅读报告" });
     expect(screen.getByRole("status")).toHaveTextContent("报告已就绪");
@@ -151,8 +152,9 @@ describe("unresolved report to independent editable research draft", () => {
     expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "准备新研究草稿" }));
     await user.click(draft.getByRole("button", { name: "替换当前草稿" }));
-    expect(draft.getAllByRole("textbox")).toHaveLength(2);
-    expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveValue("Unknown 中文😀");
+    expect(draft.getAllByRole("textbox")).toHaveLength(3);
+    expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveValue("Does Ruff support Python 3.13?");
+    expect(draft.getByRole("textbox", { name: "新研究问题 2" })).toHaveValue("Unknown 中文😀");
     await user.click(draft.getByRole("button", { name: "取消新研究草稿" }));
     expect(screen.queryByRole("region", { name: "新研究草稿" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "准备新研究草稿" })).toHaveFocus();
@@ -172,7 +174,7 @@ describe("unresolved report to independent editable research draft", () => {
     expect(first).toHaveAttribute("aria-invalid", "true");
     expect(draft.getByRole("button", { name: "确认并运行新研究" })).toBeDisabled();
     fireEvent.change(first, { target: { value: "Valid first" } });
-    for (let index = 2; index <= 5; index++) {
+    for (let index = 3; index <= 5; index++) {
       await user.click(draft.getByRole("button", { name: "新增问题" }));
       expect(draft.getByRole("textbox", { name: `新研究问题 ${index}` })).toHaveFocus();
       fireEvent.change(draft.getByRole("textbox", { name: `新研究问题 ${index}` }), { target: { value: `New ${index}` } });
@@ -224,7 +226,7 @@ describe("unresolved report to independent editable research draft", () => {
     const draft = await prepare(user);
     fireEvent.change(draft.getByRole("textbox", { name: "新研究问题 1" }), { target: { value: "Frozen new scope" } });
     await user.click(draft.getByRole("button", { name: "确认并运行新研究" }));
-    const checkReceipt = await screen.findByRole("button", { name: "核对同一请求" });
+    const checkReceipt = await screen.findByRole("button", { name: "检查提交结果" });
     expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toHaveValue("Frozen new scope");
     expect(draft.getByRole("textbox", { name: "新研究问题 1" })).toBeDisabled();
     expect(draft.getByRole("button", { name: "取消新研究草稿" })).toBeDisabled();
@@ -238,7 +240,7 @@ describe("unresolved report to independent editable research draft", () => {
     await screen.findByRole("button", { name: "阅读报告" });
     expect(posts[1]).toEqual(posts[0]);
     expect(posts).toHaveLength(2);
-    expect(JSON.parse(posts[0].body).scope.questions).toEqual([{ question_id: "q1", text: "Frozen new scope" }]);
+    expect(JSON.parse(posts[0].body).scope.questions).toEqual([{ question_id: "q1", text: "Frozen new scope" }, { question_id: "q2", text: "Unknown 中文😀" }]);
   });
 
   it("delivers a follow-up through the task bar when acknowledgement arrives after returning home", async () => {
@@ -257,7 +259,7 @@ describe("unresolved report to independent editable research draft", () => {
     const fetch = vi.mocked(globalThis.fetch);
     const requestCount = fetch.mock.calls.length;
     await user.click(readReport);
-    expect(screen.getByRole("region", { name: "Unknown 中文😀" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Does Ruff support Python 3.13?" })).toBeVisible();
     expect(fetch).toHaveBeenCalledTimes(requestCount);
     expect(posts).toHaveLength(1);
   });
@@ -287,7 +289,6 @@ describe("unresolved report to independent editable research draft", () => {
     const user = await openOriginal({ genericForm: true });
     const draft = await prepare(user);
     fireEvent.change(draft.getByRole("textbox", { name: "新研究问题 1" }), { target: { value: "Recover edited question one" } });
-    await user.click(draft.getByRole("button", { name: "新增问题" }));
     fireEvent.change(draft.getByRole("textbox", { name: "新研究问题 2" }), { target: { value: "Recover edited question two" } });
     await user.click(draft.getByRole("button", { name: "确认并运行新研究" }));
     await screen.findByText("提交未成功");

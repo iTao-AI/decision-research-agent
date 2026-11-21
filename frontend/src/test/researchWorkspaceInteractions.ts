@@ -6,7 +6,7 @@ type User = ReturnType<typeof userEvent.setup>;
 export async function openExistingResearch(user: User, runId: string, language: "zh" | "en" = "zh") {
   const [lookup, id, open] = language === "zh"
     ? ["查找研究", "运行编号", "打开研究"] : ["Find research", "Run ID", "Open research"];
-  await user.click(screen.getByRole("button", { name: lookup }));
+  await user.click(screen.getByRole("button", { name: language === "zh" ? "按编号打开研究" : "Open by ID" }));
   const dialog = within(screen.getByRole("dialog", { name: lookup }));
   await user.type(dialog.getByRole("textbox", { name: id }), runId);
   await user.click(dialog.getByRole("button", { name: open }));

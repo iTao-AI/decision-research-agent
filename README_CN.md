@@ -325,10 +325,11 @@ canonical result contracts。输入框的 draft 和临时 create intent 只存�
 browser session；问题会按输入原样发送，不会被 trim、normalize、翻译或暗中改写。
 create response 不明确时，reconciliation 重用 same key 和 byte-equivalent request，
 并保留 exact submitted question。保留的已知 `run_id` 可以在页面刷新后重新输入，
-通过独立的「查看已有研究」入口观察；经过 health 检查后才允许 GET-only observation，
-精确格式 `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`。这不新增 run list/history 或
-browser persistence，页面刷新后不重建 ambiguous POST。获得 `run_id` 后，observation resume
-仅使用 GET，不能再次 create。Console 不拥有 review、verification、publication
+点击「按编号打开研究」可按编号查看。也可以复制报告链接，在新标签打开同一份报告。
+两种方式都经过 health 检查后才允许 GET-only observation，编号遵循
+精确格式 `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`。浏览器只保存本地回环服务地址，
+刷新页面会清除待确认的 create intent。获得运行编号后，observation resume 仅使用 GET。
+Console 不拥有 review、verification、publication
 或 delivery authority。
 
 ## Tool Client

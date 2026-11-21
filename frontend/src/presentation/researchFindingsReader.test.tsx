@@ -44,8 +44,8 @@ describe("structured source inspection", () => {
     expect(screen.queryByRole("complementary", { name: "Bound source 1" })).not.toBeInTheDocument();
     expect(within(secondPanel).getByText("second excerpt")).toBeInTheDocument();
     expect(within(secondPanel).queryByRole("link")).not.toBeInTheDocument();
-    await user.click(within(secondPanel).getByRole("button", { name: "Inspect full persisted snippet" }));
-    expect(within(secondPanel).getByRole("region", { name: "Full persisted snippet" })).toHaveFocus();
+    await user.click(within(secondPanel).getByRole("button", { name: "Expand saved excerpt" }));
+    expect(within(secondPanel).getByRole("region", { name: "Saved excerpt" })).toHaveFocus();
     expect(within(secondPanel).getByText("second excerpt followed by retained text")).toBeInTheDocument();
     await user.click(within(secondPanel).getByRole("button", { name: "Return to citation" }));
     expect(second).toHaveFocus();

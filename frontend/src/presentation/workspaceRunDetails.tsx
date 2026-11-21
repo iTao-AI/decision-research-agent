@@ -1,7 +1,7 @@
 import { useRef, useState, type Ref } from "react";
 import { buildLiveConsoleProjection } from "../consoleProjection";
 import { copy, type Language } from "../i18n";
-import type { RunProjection } from "../runProjection";
+import type { RunEvidenceProjection, RunProjection } from "../runProjection";
 import type { LiveRunState } from "../useLiveRun";
 import { workspaceCopy } from "../workspaceCopy";
 import { safeHttpUrl } from "./resultReader";
@@ -70,20 +70,50 @@ export function WorkspaceRunDetails({ language, state, runId, detailsRef }: {
   </details>;
 }
 
+const retainedCopy = {
+  zh: {
+    view: "查看已保留的资料", total: (count: number) => `已保留 ${count} 条资料`,
+    excerpts: (count: number) => `${count} 条`,
+    open: "打开来源网页", missing: "没有可显示的留存片段。"
+  },
+  en: {
+    view: "View retained material", total: (count: number) => count === 1 ? "1 retained excerpt" : `${count} retained excerpts`,
+    excerpts: (count: number) => count === 1 ? "1 excerpt" : `${count} excerpts`,
+    open: "Open source page", missing: "No retained snippet is available to display."
+  }
+};
+
 export function WorkspaceRetainedEvidence({ language, run }: { language: Language; run: RunProjection }) {
-  const t = workspaceCopy[language];
-  if (!run.evidence.length) return <p>{t.noEvidence}</p>;
-  const missingSnippet = language === "zh" ? "没有可显示的留存片段。" : "No retained snippet is available to display.";
-  return <details className="dw-details dw-retained-sources" open>
-    <summary>{t.stateEvidence(run.evidence.length)}</summary>
-    <ul>{run.evidence.map((evidence) => {
-      const href = evidence.source_url ? safeHttpUrl(evidence.source_url) : undefined;
-      const name = evidence.source_identity || href || evidence.evidence_id;
-      return <li key={evidence.evidence_id}>
-        {href ? <a href={href} target="_blank" rel="noreferrer">{name}</a> : <span>{name}</span>}
-        {evidence.snippet ? <blockquote>{evidence.snippet}</blockquote> : <p>{missingSnippet}</p>}
-      </li>;
-    })}</ul>
+  const labels = retainedCopy[language];
+  if (!run.evidence.length) return <p>{workspaceCopy[language].noEvidence}</p>;
+
+  const groups = new Map<string, { name: string; href?: string; excerpts: RunEvidenceProjection[] }>();
+  for (const evidence of run.evidence) {
+    const href = evidence.source_url ? safeHttpUrl(evidence.source_url) : undefined;
+    const name = evidence.source_identity || href || evidence.evidence_id;
+    const key = evidence.source_identity || href ? `source:${name}` : `evidence:${evidence.evidence_id}`;
+    const group = groups.get(key);
+    if (group) {
+      group.href ??= href;
+      group.excerpts.push(evidence);
+    } else groups.set(key, { name, href, excerpts: [evidence] });
+  }
+
+  return <details className="dw-details dw-retained-sources">
+    <summary><span>{labels.view}</span><span>{labels.total(run.evidence.length)}</span></summary>
+    <ul className="dw-retained-list">
+      {Array.from(groups, ([key, { name, href, excerpts }]) => <li key={key}>
+        <details className="dw-retained-group">
+          <summary><span>{name}</span><small>{labels.excerpts(excerpts.length)}</small></summary>
+          {href && <a className="dw-retained-link" href={href} target="_blank" rel="noreferrer">
+            {labels.open}<span aria-hidden="true"> ↗</span>
+          </a>}
+          <ul className="dw-retained-list">{excerpts.map((evidence) => <li key={evidence.evidence_id}>
+            {evidence.snippet ? <blockquote>{evidence.snippet}</blockquote> : <p>{labels.missing}</p>}
+          </li>)}</ul>
+        </details>
+      </li>)}
+    </ul>
   </details>;
 }
 

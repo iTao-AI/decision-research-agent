@@ -7,19 +7,20 @@ import { WorkspaceDraft } from "./presentation/workspaceDraft";
 import { WorkspaceDrawer } from "./presentation/workspaceDrawer";
 import { WorkspaceHome } from "./presentation/workspaceHome";
 import { WorkspaceReport } from "./presentation/workspaceReport";
+import { WorkspaceReportLink, reportAddress, requestedReportId } from "./presentation/workspaceReportLink";
 import { WorkspaceReportOutline } from "./presentation/workspaceReportOutline";
-import { shortFailureDescription } from "./presentation/workspaceRunDetails";
 import { WorkspaceTaskDetails } from "./presentation/workspaceTaskDetails";
+import { WorkspaceTaskTrack } from "./presentation/workspaceTaskTrack";
 import { STRUCTURED_RESEARCH_PROFILE, type LiveResearchProfile, type ResearchFindingsResponse, type ResearchQuestion } from "./researchFindings";
 import { RESEARCH_QUESTIONS_MAX } from "./researchScope";
-import type { RunResultResponse } from "./runProjection";
+import type { RunProjection, RunResultResponse } from "./runProjection";
 import { useLiveRun, type LiveRunOptions, type LiveRunState } from "./useLiveRun";
 import { useWorkspaceConnection } from "./useWorkspaceConnection";
 import { workspaceCopy } from "./workspaceCopy";
-import { trackTone, workspaceStatus, type WorkspaceStatus } from "./workspaceStatus";
+import { workspaceStatus, type WorkspaceStatus } from "./workspaceStatus";
 
 type Context = "current" | "known";
-type Panel = "compare" | "source" | "outline" | "follow" | "progress" | "report" | "failure" | "delivery" | "reconcile" | "known";
+type Panel = "compare" | "source" | "outline" | "follow" | "progress" | "report" | "reportLink" | "failure" | "delivery" | "reconcile" | "known";
 type Dialog = "lookup" | "settings";
 type Draft = { questions: readonly ResearchQuestion[]; profile: LiveResearchProfile };
 type FollowUpSource = {
@@ -28,8 +29,9 @@ type FollowUpSource = {
   report: Delivered;
   memory: RefObject<FollowUpMemory | undefined>;
 };
-type Submission = Draft & { followUp?: FollowUpSource };
-type Delivered = { result: RunResultResponse; findings?: ResearchFindingsResponse };
+type LaunchDraft = Draft & { followUp?: FollowUpSource };
+type Submission = LaunchDraft & { startedAt: number };
+type Delivered = { result: RunResultResponse; findings?: ResearchFindingsResponse; run?: RunProjection };
 type FocusReturn = { trigger: HTMLElement; scroll: number; drawer?: HTMLElement; drawerScroll?: number };
 type OpenPanel = {
   id: number;
@@ -37,11 +39,33 @@ type OpenPanel = {
   context: Context;
   report?: Delivered;
   followMemory?: RefObject<FollowUpMemory | undefined>;
-  origin: FocusReturn;
+  origin?: FocusReturn;
+  initialQuestionId?: string;
+  linkedId?: string;
 };
 const EMPTY_QUESTIONS: readonly ResearchQuestion[] = [{ question_id: "q1", text: "" }];
 const TERMINAL_PHASES: readonly WorkspaceStatus[] = ["delivered", "failed", "review", "blocked", "pendingDelivery"];
 const ACTIVE_PHASES: readonly WorkspaceStatus[] = ["submitting", "received", "queued", "running", "reading"];
+
+const BACKEND_PREFERENCE = "dra.workspace.backend";
+const DEMO_DATA = import.meta.env.VITE_DRA_DEMO_DATA === "true";
+
+function preferredBackend() {
+  const configured = localBackendOrigin(import.meta.env.VITE_DRA_LOCAL_BACKEND_URL ?? "") ?? DEFAULT_BACKEND_BASE_URL;
+  try {
+    return localBackendOrigin(window.localStorage.getItem(BACKEND_PREFERENCE) ?? "") ?? configured;
+  } catch {
+    return configured;
+  }
+}
+
+function saveBackend(origin: string) {
+  try {
+    window.localStorage.setItem(BACKEND_PREFERENCE, origin);
+  } catch {
+    // This session still uses the selected service if browser storage is unavailable.
+  }
+}
 
 function capturePosition(trigger: HTMLElement): FocusReturn {
   const drawer = trigger.closest<HTMLElement>(".dw-drawer") ?? undefined;
@@ -50,11 +74,11 @@ function capturePosition(trigger: HTMLElement): FocusReturn {
 
 function deliveredReport(state: LiveRunState): Delivered | undefined {
   if (state.status !== "result" || !state.result) return undefined;
-  return { result: state.result, findings: state.findings };
+  return { result: state.result, findings: state.findings, run: state.run };
 }
 
 export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOptions }) {
-  const configuredOrigin = localBackendOrigin(import.meta.env.VITE_DRA_LOCAL_BACKEND_URL ?? "") ?? DEFAULT_BACKEND_BASE_URL;
+  const [configuredOrigin] = useState(preferredBackend);
   const current = useLiveRun(liveOptions, "live", configuredOrigin);
   const known = useLiveRun(liveOptions, "live", configuredOrigin);
   const connection = useWorkspaceConnection(current.state.baseUrl);
@@ -64,6 +88,7 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
   const [questions, setQuestions] = useState(EMPTY_QUESTIONS);
   const [profile, setProfile] = useState<LiveResearchProfile>(STRUCTURED_RESEARCH_PROFILE);
   const [submitted, setSubmitted] = useState<Submission>();
+  const [endedAt, setEndedAt] = useState<number>();
   const phase = submitted ? workspaceStatus(current.state, undefined, true) : "idle";
   const currentReport = deliveredReport(current.state);
   const currentFinal = phase !== "idle" && TERMINAL_PHASES.includes(phase);
@@ -71,8 +96,10 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
   const endpointLocked = [current.state.status, known.state.status].some((status) =>
     status === "creating" || status === "reconciliation_required" || status === "polling");
 
-  const [panels, setPanels] = useState<readonly OpenPanel[]>([]);
-  const [knownId, setKnownId] = useState<string>();
+  const [initialReportId] = useState(requestedReportId);
+  const [panels, setPanels] = useState<readonly OpenPanel[]>(() => initialReportId
+    ? [{ id: 0, view: "reportLink", context: "known", linkedId: initialReportId }] : []);
+  const [knownId, setKnownId] = useState(initialReportId);
   const [dialog, setDialog] = useState<Dialog>();
   const [idDraft, setIdDraft] = useState("");
   const [endpointDraft, setEndpointDraft] = useState("");
@@ -81,10 +108,30 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
   const input = useRef<HTMLTextAreaElement>(null);
   const lookupButton = useRef<HTMLButtonElement>(null);
   const dialogOrigin = useRef<FocusReturn | null>(null);
-  const returnAfterPaint = useRef<FocusReturn | "question" | null>(null);
+  const returnAfterPaint = useRef<FocusReturn | "question" | "lookup" | null>(null);
   const writePending = useRef(false);
   const homeFollowUp = useRef<FollowUpMemory | undefined>(undefined);
   const knownFollowUp = useRef<FollowUpMemory | undefined>(undefined);
+  const autoLookupStarted = useRef(false);
+  const { attachKnownRun } = known;
+  const linkedReport = panels.some(({ view }) => view === "reportLink");
+  const urlReportId = [...panels].reverse().find(({ report, linkedId }) => report || linkedId);
+  const reportId = urlReportId?.report?.result.run_id ?? urlReportId?.linkedId;
+
+  useEffect(() => {
+    if (!healthy || !initialReportId || !linkedReport || autoLookupStarted.current) return;
+    autoLookupStarted.current = true;
+    void attachKnownRun(initialReportId);
+  }, [attachKnownRun, healthy, initialReportId, linkedReport]);
+
+  useEffect(() => {
+    const address = reportAddress(reportId);
+    if (address.href !== window.location.href) window.history.replaceState(window.history.state, "", address);
+  }, [reportId]);
+
+  useEffect(() => {
+    if (currentFinal) setEndedAt((previous) => previous ?? Date.now());
+  }, [currentFinal]);
 
   useEffect(() => {
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
@@ -97,6 +144,8 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
     if (focus === "question") {
       input.current?.focus({ preventScroll: true });
       input.current?.scrollIntoView?.({ block: "nearest" });
+    } else if (focus === "lookup") {
+      lookupButton.current?.focus({ preventScroll: true });
     } else if (focus) {
       const target = focus.trigger.isConnected ? focus.trigger : lookupButton.current;
       target?.focus({ preventScroll: true });
@@ -115,8 +164,9 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
     rows.length < 2 ? rows : rows.filter((question) => question.question_id !== id));
 
   function openPanel(view: Panel, trigger: HTMLElement, context: Context = "current", report?: Delivered,
-    followMemory?: OpenPanel["followMemory"]) {
-    const entry: OpenPanel = { id: nextPanel.current++, view, context, report, followMemory, origin: capturePosition(trigger) };
+    followMemory?: OpenPanel["followMemory"], initialQuestionId?: string) {
+    const entry: OpenPanel = { id: nextPanel.current++, view, context, report, followMemory, initialQuestionId,
+      origin: capturePosition(trigger) };
     const fromPanel = Boolean(trigger.closest(".dw-drawer"));
     setPanels((previous) => fromPanel ? [...previous, entry] : [entry]);
   }
@@ -124,7 +174,7 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
   function closePanel() {
     const entry = panels[panels.length - 1];
     if (!entry) return;
-    returnAfterPaint.current = entry.origin;
+    returnAfterPaint.current = entry.origin ?? "lookup";
     setPanels((previous) => previous.slice(0, -1));
   }
 
@@ -147,9 +197,10 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
     finally { writePending.current = false; }
   }
 
-  function launch(draft: Submission) {
+  function launch(draft: LaunchDraft) {
     return performWrite(async () => {
-      setSubmitted(draft);
+      setEndedAt(undefined);
+      setSubmitted({ ...draft, startedAt: Date.now() });
       await current.startNewRun(draft.questions[0].text,
         draft.profile === STRUCTURED_RESEARCH_PROFILE ? draft.questions : undefined, draft.profile);
     });
@@ -180,14 +231,16 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
   };
 
   const panelNames = {
-    compare: t.compare, source: t.sources, outline: t.reportOutline, follow: t.follow, progress: t.progress, report: t.reportTitle,
+    compare: t.compare, source: t.sources, outline: t.reportOutline, follow: t.follow, progress: t.progress, report: t.reportTitle, reportLink: t.reportTitle,
     failure: t.viewFailure, delivery: t.viewDelivery, reconcile: t.statuses.ambiguous, known: t.existing
   };
 
   function renderPanel(entry: OpenPanel) {
     const { view, context, report } = entry;
     const observation = context === "current" ? current : known;
-    const observedPhase = context === "current" ? (phase === "idle" ? "ready" : phase) : workspaceStatus(known.state, knownId);
+    const observedPhase = context === "current" ? (phase === "idle" ? "ready" : phase)
+      : view === "reportLink" && !observation.state.run && connection.status === "disconnected" ? "offline"
+      : workspaceStatus(known.state, knownId);
     const observedId = observation.state.run?.run_id ?? observation.state.created?.run_id ?? (context === "known" ? knownId : undefined);
     const latestReport = context === "current" ? currentReport : deliveredReport(known.state);
 
@@ -196,14 +249,15 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
     if (view === "compare") {
       return <><p>{t.compareBlurb}</p><WorkspaceDraft {...draftProps} inDrawer /></>;
     }
-    if (view === "report" || (view === "source" && report)) {
+    if (view === "report" || view === "reportLink" || (view === "source" && report)) {
       const selected = report ?? latestReport;
-      if (!selected) return null;
+      if (!selected) return <WorkspaceTaskDetails language={language} state={observation.state} phase={observedPhase}
+        runId={observedId} onCheckStatus={observation.resumeObservation} />;
       return <>
         {view === "source" && !selected.findings && <p>{t.sourceGeneric}</p>}
-        <WorkspaceReport language={language} result={selected.result} findings={selected.findings} />
-        {selected.findings && <button className="dw-outline" type="button"
-          onClick={(event) => openPanel("follow", event.currentTarget, context, selected)}>{t.follow}</button>}
+        <WorkspaceReport language={language} result={selected.result} findings={selected.findings} run={selected.run}
+          initialView={view === "source" ? "sources" : "report"}
+          onFollowQuestion={(questionId, trigger) => openPanel("follow", trigger, context, selected, undefined, questionId)} />
       </>;
     }
     if (view === "follow" && report) {
@@ -220,7 +274,7 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
         {submittedHere && <p>{t.followSubmitted}</p>}
         <ResearchFollowUp key={findings.run_id} language={language} findings={findings}
           disabled={!healthy || (!composing && !currentFinal) || submittedHere}
-          memory={memory}
+          memory={memory} initialQuestionId={entry.initialQuestionId}
           sourceReportVisible onCancelWithoutSource={() => lookupButton.current?.focus()}
           onStart={(scope) => launch({ questions: scope, profile: STRUCTURED_RESEARCH_PROFILE,
             followUp: { panelId: entry.id, context, report, memory: { current: memory.current } } })}
@@ -284,13 +338,7 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
     </>;
   }
 
-  const tone = trackTone(phase);
-  const motion = phase === "running";
-  const preparing = phase === "submitting" || phase === "received" || phase === "queued";
-  const icon = motion ? "" : tone === "green" ? "✓" : tone === "red" ? "×"
-    : tone === "idle" ? "–" : preparing ? "◷" : tone === "blue" ? "◌" : "!";
-  const reason = phase === "failed" ? shortFailureDescription(language, current.state.run?.failureCause) : undefined;
-  const trackTitle = phase === "idle" ? t.idleTitle : [reason, submitted?.questions[0].text].filter(Boolean).join(" · ");
+  const trackTitle = submitted?.questions[0].text ?? t.idleTitle;
   const trackAction = phase === "delivered" ? t.readReport : phase === "failed" ? t.viewFailure
     : phase === "observeInterrupted" ? t.resume : phase === "readInterrupted" ? t.rereadReport
     : phase === "ambiguous" ? t.confirmRequest : phase === "rejected" ? t.editDraft
@@ -299,6 +347,7 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
   const connectionLabel = healthy ? t.serviceConnected : connection.status === "checking" ? t.serviceChecking : t.serviceOffline;
   const lookupValid = validateLiveRunId(idDraft).ok;
   const endpointOrigin = localBackendOrigin(endpointDraft);
+  const unresolvedCount = currentReport?.findings?.report.dispositions.filter(({ status }) => status === "unresolved").length;
 
   return <div className="dra-workspace dw-modular dw-paper">
     <header className="dw-header">
@@ -307,7 +356,7 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
           if (panels.length) {
-            returnAfterPaint.current = panels[0].origin;
+            returnAfterPaint.current = panels[0].origin ?? "lookup";
             setPanels([]);
           } else window.scrollTo({ top: 0 });
         }}>
@@ -315,8 +364,9 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
           <span className="dw-wordmark">DRA</span><span className="dw-brand-label">{t.brand}</span>
         </a>
         <nav aria-label={t.navigation}>
+          {DEMO_DATA && <span className="dw-demo-label">{t.demoData}</span>}
           <button className="dw-link" ref={lookupButton} type="button" onClick={(event) => openDialog("lookup", event.currentTarget)}>
-            {t.lookup}
+            {t.lookupRun}
           </button>
           <button className="dw-connection" type="button" data-connected={healthy} title={current.state.baseUrl}
             aria-label={`${connectionLabel}，${healthy ? t.openConnection : t.changeConnection}`}
@@ -324,14 +374,10 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
         </nav>
       </div>
     </header>
-    <div className="dw-status" data-tone={tone}>
-      <div className="dw-chrome">
-        <span className="dw-stage">
-          <span className="dw-stage-icon" aria-hidden="true">{icon}</span>
-          <span role="status" aria-atomic="true">{phase === "idle" ? t.currentIdle : t.statuses[phase]}</span>
-        </span>
-        <span className="dw-track-title" title={trackTitle}>{trackTitle}</span>
-        {trackAction && <button className="dw-track-action" type="button" onClick={(event) => {
+    <WorkspaceTaskTrack language={language} phase={phase} title={trackTitle}
+      run={current.state.run} acknowledged={Boolean(current.state.created || current.state.run)}
+      startedAt={submitted?.startedAt} endedAt={endedAt} baseUrl={current.state.baseUrl}
+      action={trackAction && <button className="dw-track-action" type="button" onClick={(event) => {
           const trigger = event.currentTarget;
           if (phase === "delivered") openPanel("report", trigger, "current", currentReport);
           else if (phase === "failed") openPanel("failure", trigger);
@@ -349,24 +395,31 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
             }
           } else if (phase === "review" || phase === "blocked" || phase === "pendingDelivery") openPanel("delivery", trigger);
           else openPanel("progress", trigger);
-        }}>{trackAction}</button>}
-      </div>
-    </div>
+        }}>{trackAction}</button>} />
     {connection.status === "disconnected" && <div className="dw-connection-message dw-chrome">
       <span>{t.backend} <code>{current.state.baseUrl}</code></span>
       <button className="dw-link" type="button" onClick={(event) => openDialog("settings", event.currentTarget)}>{t.changeConnection}</button>
       <button className="dw-link" type="button" onClick={connection.retry}>{t.reconnect}</button>
     </div>}
     <div inert={panels.length > 0}>
-      <WorkspaceHome language={language} onOpen={(view, trigger) =>
-        openPanel(view === "outline" && currentReport ? "source" : view, trigger, "current", currentReport)}>
+      <WorkspaceHome language={language} hasReport={Boolean(currentReport)} unresolvedCount={unresolvedCount}
+        onOpen={(view, trigger) => {
+          const panel = view === "outline" && currentReport ? currentReport.findings ? "source" : "report" : view;
+          openPanel(panel, trigger, "current", view === "compare" ? undefined : currentReport);
+        }}>
         <WorkspaceDraft {...draftProps} firstInputRef={input} />
       </WorkspaceHome>
     </div>
-    {panels.map((entry, index) => <WorkspaceDrawer key={entry.id} title={panelNames[entry.view]}
-      active={index === panels.length - 1} closeLabel={index === 0 ? t.back : t.backDetail} onClose={closePanel}>
-      {renderPanel(entry)}
-    </WorkspaceDrawer>)}
+    {panels.map((entry, index) => {
+      const reading = entry.view === "report" || entry.view === "reportLink" || (entry.view === "source" && Boolean(entry.report));
+      const report = entry.report ?? (entry.view === "reportLink" ? deliveredReport(known.state) : undefined);
+      const closeLabel = entry.view === "follow" && entry.initialQuestionId ? t.backToReport : index === 0 ? t.back : t.backDetail;
+      return <WorkspaceDrawer key={entry.id} title={panelNames[entry.view]} reading={reading}
+        actions={reading && report && <WorkspaceReportLink language={language} runId={report.result.run_id} />}
+        active={index === panels.length - 1} closeLabel={closeLabel} onClose={closePanel}>
+        {renderPanel(entry)}
+      </WorkspaceDrawer>;
+    })}
     {dialog === "lookup" && <WorkspaceDialog title={t.lookup} onClose={() => closeDialog()} onSubmit={(event) => {
       event.preventDefault();
       const trigger = dialogOrigin.current?.trigger;
@@ -391,10 +444,13 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
     {dialog === "settings" && <WorkspaceDialog title={t.settings} onClose={() => closeDialog()} onSubmit={(event) => {
       event.preventDefault();
       if (!endpointOrigin || endpointLocked) return;
+      saveBackend(endpointOrigin);
       if (endpointOrigin === current.state.baseUrl) connection.retry();
       else {
-        setPanels([]);
-        setKnownId(undefined);
+        if (!linkedReport || autoLookupStarted.current) {
+          setPanels([]);
+          setKnownId(undefined);
+        }
         setSubmitted(undefined);
         homeFollowUp.current = undefined;
         knownFollowUp.current = undefined;

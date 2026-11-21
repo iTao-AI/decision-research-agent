@@ -390,13 +390,13 @@ key and byte-equivalent request, including the exact submitted question. The
 question is sent exactly as entered, without trim, normalization, translation,
 case-folding, or hidden rewrite. Its draft and temporary create intent are
 browser-session-only. A retained known `run_id` can be re-entered after a page
-refresh through the separate **Find existing research** entry. This is health-gated
-GET-only observation using the exact syntax
-`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`; it does not add run list/history or
-browser persistence. It does not reconstruct an ambiguous POST after refresh.
-After `run_id` is known, observation resume is GET-only and cannot issue another
-create. The console does not own review, verification, publication, or delivery
-authority.
+refresh through **Open by ID**. A copied report link can also reopen the same
+report through health-gated GET-only observation. Both accept the exact syntax
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` and resolve against the configured local
+service. Only the loopback connection preference persists in browser storage.
+A page refresh discards the pending create intent. Once the run ID is known,
+observation resume is GET-only. The console does not own review, verification,
+publication, or delivery authority.
 
 ## Tool Client
 

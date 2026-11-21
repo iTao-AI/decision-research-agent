@@ -33,14 +33,14 @@ export function WorkspaceDraft({ language, profile, questions, connected, locked
   const hint = locked ? (followUpRunning ? t.otherWriteActive : t.draftLocked)
     : !connected ? t.connectToStart : !query.ok && query.reason === "blank" ? t.blank
     : scope?.ok === false && scope.reason === "blank" ? t.missingQuestion
-    : !valid ? t.invalidQuestion : t.validDraft;
+    : !valid ? t.invalidQuestion : undefined;
   const id = inDrawer ? "dw-compare-question" : "dw-question";
 
   const hintId = `${id}-submit-hint`;
   const hintText = <p className="dw-hint" id={hintId}>{hint}</p>;
-  const submit = <button className="dw-primary" type="submit" aria-disabled={!allowed} aria-describedby={hintId}>
+  const submit = <button className="dw-primary" type="submit" aria-disabled={!allowed} aria-describedby={hint ? hintId : undefined}>
     {canStartFresh ? t.newResearch : locked ? t.submitted : t.start}
-    {!locked && <span aria-hidden="true">↗</span>}
+    {!locked && <span aria-hidden="true">→</span>}
   </button>;
 
   return <form className={inDrawer ? "dw-form dw-compare-form" : "dw-form dw-composer"} aria-label={t.compose}

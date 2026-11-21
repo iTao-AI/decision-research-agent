@@ -100,7 +100,7 @@ describe("multi-question creation editor", () => {
     await user.click(screen.getByRole("button", { name: "＋ 添加子问题" }));
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Second" } });
     await user.click(screen.getByRole("button", { name: "开始研究" }));
-    const check = await screen.findByRole("button", { name: "核对同一请求" });
+    const check = await screen.findByRole("button", { name: "检查提交结果" });
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveAttribute("readonly");
     expect(screen.getByRole("textbox", { name: "研究问题 2" })).toHaveValue("Second");
     expect(screen.getByRole("button", { name: "已提交" })).toHaveAttribute("aria-disabled", "true");
@@ -166,6 +166,7 @@ describe("structured reports in the research workspace", () => {
     await user.click(screen.getByRole("button", { name: "阅读报告" }));
     const accepted = screen.getByRole("region", { name: "研究问题" });
     expect(within(accepted).getByText("来源绑定的候选结论")).toBeVisible();
+    await user.click(screen.getByText("报告中的矛盾记录", { selector: "summary" }));
     expect(screen.getByText("两个来源的更新时间存在矛盾")).toBeVisible();
     expect(screen.getByText("片段绑定不证明结论真实")).toBeVisible();
     await user.click(screen.getByText("问题目录", { selector: "summary" }));
@@ -176,14 +177,14 @@ describe("structured reports in the research workspace", () => {
     await user.click(directory.getByRole("button", { name: /未解决问题/ }));
     expect(unresolved).toHaveFocus();
     expect(within(unresolved).getByText("证据不足")).toBeVisible();
-    expect(screen.getByRole("button", { name: "下载 Markdown" })).toBeEnabled();
+    expect(screen.getByText("查看报告原稿", { selector: "summary" })).toBeVisible();
 
     await useEnglish(user);
-    expect(screen.getByRole("heading", { name: "Source-bound candidate findings" })).toBeVisible();
-    expect(screen.getByText(/Binding locates the candidate in an observed source snippet/)).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Findings" })).toBeVisible();
+    expect(screen.getByText(/Citations point to passages saved during this run/)).toBeVisible();
     expect(within(screen.getByRole("navigation", { name: "Question directory" }))
       .getByRole("button", { name: /未解决问题/ })).toHaveAttribute("aria-current", "location");
-    await user.click(screen.getByText("Raw", { selector: "summary" }));
+    await user.click(screen.getByText("View original report", { selector: "summary" }));
     expect(screen.getByText("# Canonical report")).toBeVisible();
   });
 
@@ -210,7 +211,7 @@ describe("structured reports in the research workspace", () => {
     const source = screen.getByRole("complementary", { name: "绑定来源 1" });
     expect(source).toHaveFocus();
     expect(within(source).getByText("😀精确片段")).toBeVisible();
-    await user.click(within(source).getByRole("button", { name: "查看完整持久化片段" }));
+    await user.click(within(source).getByRole("button", { name: "展开已保存的摘录" }));
     expect(within(source).getByText("前😀精确片段后")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "返回引用处" }));
     expect(citation).toHaveFocus();

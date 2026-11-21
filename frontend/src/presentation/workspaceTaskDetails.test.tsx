@@ -54,7 +54,10 @@ describe("WorkspaceTaskDetails", () => {
     expect(screen.getByText("Research timed out during finalization")).toBeVisible();
     expect(shortFailureDescription("en", run.failureCause)).toBe("Finalization timed out");
     expect(screen.getByText("run_timeout")).toBeVisible();
-    const source = screen.getByRole("link", { name: "example.com/observed" });
+    expect(screen.getByText("1 retained excerpt")).toBeVisible();
+    fireEvent.click(screen.getByText("View retained material"));
+    fireEvent.click(screen.getByText("example.com/observed"));
+    const source = screen.getByRole("link", { name: "Open source page" });
     expect(source).toHaveAttribute("href", "https://example.com/observed");
     expect(screen.getByText("<img src=x> This was retained exactly.")).toBeVisible();
     expect(container.querySelector("img")).toBeNull();
@@ -93,14 +96,72 @@ describe("WorkspaceTaskDetails", () => {
     expect(onCheckStatus).toHaveBeenCalledOnce();
   });
 
+  it("explains the current blocked delivery and keeps saved excerpts collapsed by source", () => {
+    const longSnippet = "Long diagnostic fixture. ".repeat(40);
+    const run = parseRunProjection({
+      ...RUN, profile_id: "generic-evidence-report", execution_status: "completed", delivery_status: "blocked",
+      failure_cause: null,
+      findings_issues: ["excerpt_not_found", "ambiguous_reference"],
+      findings_outcome: {
+        requested_question_count: 2, covered_question_count: 2, unresolved_question_count: 0,
+        reference_binding_failure_count: 21
+      },
+      evidence: [{ ...SOURCE, snippet: longSnippet }, { ...SOURCE, evidence_id: "ev_2", snippet: "Second excerpt." }]
+    });
+    render(<WorkspaceTaskDetails language="en" phase="blocked" state={{ ...LIVE, status: "terminal", run }} />);
+
+    const status = within(screen.getByRole("region", { name: "Delivery blocked" }));
+    expect(status.getByText("Research finished. Some citations could not be matched to saved excerpts, so no report was generated.")).toBeVisible();
+    expect(status.getByText("21 citation matches failed.")).toBeVisible();
+    expect(status.getByText("2 retained excerpts")).toBeVisible();
+    expect(status.getByText(longSnippet.trim())).not.toBeVisible();
+
+    fireEvent.click(status.getByText("View retained material"));
+    const source = status.getByText("example.com/observed");
+    expect(source).toBeVisible();
+    expect(status.getByText("Second excerpt.")).not.toBeVisible();
+    fireEvent.click(source);
+    expect(status.getByText(longSnippet.trim())).toBeVisible();
+    expect(status.getByText("Second excerpt.")).toBeVisible();
+  });
+
+  it("describes a source binding failure without attributing it to a missing excerpt", () => {
+    const run = parseRunProjection({
+      ...RUN, profile_id: "generic-evidence-report", execution_status: "completed", delivery_status: "blocked",
+      failure_cause: null, findings_issues: ["source_url_not_publishable"],
+      findings_outcome: {
+        requested_question_count: 1, covered_question_count: 1, unresolved_question_count: 0,
+        reference_binding_failure_count: 1
+      }
+    });
+    render(<WorkspaceTaskDetails language="en" phase="blocked" state={{ ...LIVE, status: "terminal", run }} />);
+
+    expect(screen.getByText("Research finished. Some citations could not be bound to sources, so no report was generated.")).toBeVisible();
+    expect(screen.getByText("1 citation binding failed.")).toBeVisible();
+    expect(screen.queryByText(/could not be matched to saved excerpts/)).not.toBeInTheDocument();
+  });
+
+  it("reports a blocked outcome without attributing a cause absent from the service response", () => {
+    const run = parseRunProjection({
+      ...RUN, execution_status: "completed", delivery_status: "blocked", failure_cause: null
+    });
+    render(<WorkspaceTaskDetails language="en" phase="blocked" state={{ ...LIVE, status: "terminal", run }} />);
+
+    expect(screen.getByText("Research finished. The service reports that delivery is blocked. No report is available.")).toBeVisible();
+    expect(screen.queryByText(/citation matches failed/)).not.toBeInTheDocument();
+  });
+
   it("keeps a retained source recognizable when its projection has no displayable snippet or link", () => {
     const run = parseRunProjection({
       ...RUN, evidence: [{ ...SOURCE, source_url: "javascript:alert(1)" }]
     });
     render(<WorkspaceRetainedEvidence language="en" run={run} />);
 
-    expect(screen.getByText("example.com/observed")).toBeVisible();
+    fireEvent.click(screen.getByText("View retained material"));
+    const source = screen.getByText("example.com/observed");
+    expect(source).toBeVisible();
+    fireEvent.click(source);
     expect(screen.getByText("No retained snippet is available to display.")).toBeVisible();
-    expect(screen.queryByRole("link", { name: "example.com/observed" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open source page" })).not.toBeInTheDocument();
   });
 });

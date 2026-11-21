@@ -5,11 +5,13 @@ against a local service, and read the delivered report in the same workspace.
 The initial form is blank and selects **证据研究 / Evidence research**
 (`generic-evidence-report@1`). **通用研究 / General research** is available
 for a single question. **开始研究 / Start research** submits your question
-and leaves it in place. The task bar above the form shows the current phase
-and the action available in that phase. Open progress, report, or failure
-details from the bar and return to the same workspace.
+and leaves it in place. The sticky task bar shows the current phase, elapsed
+time, and whether an action is available. After acknowledgement it shows a
+progress line. While research is active, the latest completed search time
+appears when the service returns matching closed telemetry. Open progress,
+report, or failure details from the bar and return to the same workspace.
 
-**查找研究 / Find research** opens a separate read-only view by run ID. The
+**按编号打开研究 / Open by ID** opens a separate read-only view by run ID. The
 service connection in the header opens **连接设置 / Connection settings** for
 the local backend address, reconnection, and interface language. The ordinary
 home starts without example content. The deterministic offline examples are
@@ -44,12 +46,12 @@ scope normalization. Editing a new draft does not change an observed report.
 
 Only an observed ready run of the structured profile triggers `/findings`.
 Use **阅读报告 / Read report** once the current task is ready, or open the
-current report through **核对结论出处 / Check sources**. The desktop
-**查看报告结构 / View report structure** control also opens the current report's
-source reader. Before a report is ready, this control and the source module
-offer **报告怎样引用原文 / How reports cite sources**, a labeled explanation
-of the citation and source passage layout. The source module also opens the
-run ID lookup.
+current report through **核对结论出处 / Check sources**. Before a report is
+ready, **看看报告如何引用原文 / How reports cite sources** opens a labeled
+explanation. After reading a structured report, **查看本次引用 / View
+citations for this run** opens its first bound quotation. The follow-up entry
+shows whether the report still needs to be read, has zero open questions, or
+has questions available for follow-up.
 Expand **问题目录 / Question directory** to see the accepted questions in report
 order with their original candidate/unresolved dispositions. Use Tab
 to reach an entry and Enter or Space to scroll to and focus that question's
@@ -59,17 +61,18 @@ candidate findings and bound sources, or its existing unresolved reason.
 The directory's two-line text preview does not truncate the full question.
 It never reads the editable scope draft to fill report facts.
 
-Select a finding's citation to open its bound excerpt and source. Use
-**查看完整持久化片段 / Inspect full persisted snippet** to inspect the longer
-stored snippet. The source panel sits beside the report where space permits
+Select a finding's citation to see the source, version when available, and
+exact quotation. **打开来源网页 / Open source webpage** opens the original
+source URL. **展开已保存的摘录 / Expand saved excerpt** shows the longer stored
+snippet. The source panel sits beside the report where space permits
 and in the reading flow on narrower screens. Return from the snippet to its
 excerpt, then from the source to the triggering citation. Snippets are
 service-persisted material. Candidate, source, and contradiction content
 renders as text, with actionable source links limited to safe HTTP(S) URLs.
 
-Unresolved reasons stay within their question regions. Limitations and
-model-reported contradictions remain globally visible after the questions;
-the UI does not assign a report-level contradiction to a particular question.
+Unresolved reasons stay within their question regions. Report-wide limitations
+appear with the findings. The contradictions disclosure contains the
+model's report-wide observations.
 Source binding locates material in an observed source snippet;
 it does not prove truth or entailment, and model-reported contradictions have
 not been independently reviewed. The existing canonical Markdown reader, raw
@@ -83,8 +86,9 @@ canonical JSON is bounded to 1 MiB of UTF-8 bytes. An excerpt allows up to
 beyond the artifact limit. The backend remains the Evidence/hash/delivery
 authority; the browser does not perform independent Evidence verification.
 
-A completed but blocked run does not fetch findings or Markdown and exposes
-only optional bounded service diagnostic codes and counts. Counts represent
+A completed but blocked run shows any recorded diagnostic reason and retained
+excerpts grouped by source. Longer excerpts begin collapsed. The console skips
+the report reads while the service marks delivery as blocked. Counts represent
 question coverage, unresolved dispositions, and reference binding failures,
 not answer accuracy. In particular, an all-unresolved zero-findings run remains
 blocked as `empty_research_output`, with no reader or download; the console
@@ -102,13 +106,13 @@ structured live path, or live-provider research quality.
 
 ## Prepare A New Research From Unresolved Questions
 
-Use **跟进未解问题 / Follow up on open questions** in a delivered
-`generic-evidence-report@1`, or open the **Follow up** homepage card.
-Select the open questions to carry forward, then choose
-**准备新研究草稿 / Prepare new research draft**. The independent
-**新研究草稿 / New research draft** contains only the selected original question text. Edit it
-into a more specific question, or add/remove questions within the same 1–5 and
-length bounds. Preparation and editing do not send a create request or start
+Select **继续研究 / Continue research** beside an open question in a delivered
+`generic-evidence-report@1`. The **跟进未解问题 / Follow up** homepage tool
+also prepares a draft from multiple selected questions. The independent
+**新研究草稿 / New research draft** starts with the original main question
+followed by the selected open questions. This retains the research subject and
+version when the original question includes them. Edit, add, or remove questions
+within the same 1–5 and length bounds. Preparation and editing do not send a create request or start
 research. The ordinary editor's existing edits remain intact.
 
 The source run and original unresolved reasons remain in **来源报告参照 / Source
@@ -352,7 +356,9 @@ Open `http://127.0.0.1:5173/`. The workspace checks
 backend for the Vite app, set `VITE_DRA_LOCAL_BACKEND_URL` to an origin of the
 form `http://127.0.0.1:<port>` before starting Vite. The app validates it with
 the same rules as the editable address and falls back to port `8000` if the
-value is invalid.
+value is invalid. A manually saved valid loopback address takes precedence
+for this browser origin. For a local fixture-backed preview, set
+`VITE_DRA_DEMO_DATA=true` to display **演示数据 / Demo data** in the header.
 
 If the service is offline, the header shows the configured address.
 **修改连接 / Change connection** opens the address editor.
@@ -368,9 +374,10 @@ You can keep drafting while disconnected.
    to open the report panel. Inspect linked sources when available, view
    the raw artifact, or use **下载 Markdown / Download Markdown** for the
    exact canonical UTF-8 bytes.
-4. If the task bar shows **研究失败 / Research failed**, select
-   **查看原因 / View cause** for the observed stop phase and cause, retained
-   evidence, and available recovery actions.
+4. For a timed-out or failed run, select **查看原因 / View cause** to see the
+   observed stop phase, retained excerpts, and the action to edit the draft.
+   **查看交付说明 / View delivery details** explains a blocked delivery and shows
+   any retained excerpts.
 
 The client waits for at most ten minutes per observation. A client timeout
 stops browser polling while the server-side ResearchRun keeps its own state.
@@ -383,7 +390,7 @@ Showcase fixtures are available only through their explicit routes.
 Idempotency-Key is header-only and browser-session scoped. Each new-run action
 keeps one temporary keyed request in memory. The Console sends the question
 exactly as entered. If the create acknowledgement is ambiguous, choose
-**核对同一请求 / Check the same request** from the task bar, then
+**检查提交结果 / Check submission** from the task bar, then
 **重试同一请求 / Retry the same request** to resend the same key and
 byte-equivalent request, including the exact submitted query, selected profile,
 and complete nested scope with every stable question ID and text in order.
@@ -391,7 +398,7 @@ and complete nested scope with every stable question ID and text in order.
 A page refresh discards the in-memory reconciliation capability; the draft
 is browser-session-only and the console does not claim durable browser intent.
 
-Use **查找研究 / Find research**, then **打开研究 / Open
+Use **按编号打开研究 / Open by ID**, then **打开研究 / Open
 research**, to open a known ID. A retained known `run_id` can be re-entered
 after a page refresh for health-gated GET-only observation. The dialog accepts
 the exact syntax `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (128 characters maximum).
@@ -401,8 +408,13 @@ own run status and report action. The current task remains in the top bar.
 **返回首页 / Back to home** closes the top-level panel and restores its
 trigger and scroll position. After a read interruption,
 **恢复查看 / Resume viewing** or **重读报告 / Read report again** uses the
-same run ID. The console does not add run list/history or browser persistence
-and does not reconstruct an ambiguous POST after refresh.
+same run ID. **复制报告链接 / Copy report link** copies a link with that run ID.
+Reload the report page or open the link in a new tab with access to the same
+local service. Connection settings can correct an offline address before the
+first lookup while keeping the requested report open. Health, status, and
+canonical report reads use GET.
+Only the loopback connection preference persists in browser storage.
+A page refresh discards the pending create intent.
 
 A delivered run provides canonical Markdown through `/api/runs/{run_id}/result`.
 A ready structured run provides its accepted findings through

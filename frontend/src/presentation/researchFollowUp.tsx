@@ -13,6 +13,16 @@ type PreparedDraft = {
   revision: number;
 };
 
+function prepareDraft(references: PreparedDraft["references"], main: ResearchQuestion | undefined, revision: number): PreparedDraft {
+  const selected = references.filter(({ questionId }) => questionId !== main?.question_id);
+  const text = main ? [main.text, ...selected.map((question) => question.text)] : selected.map((question) => question.text);
+  return {
+    questions: text.map((question, index) => ({ question_id: `q${index + 1}`, text: question })),
+    references,
+    revision
+  };
+}
+
 export type FollowUpMemory = {
   identity: string;
   selected: readonly string[];
@@ -46,7 +56,7 @@ export function LiveResearchFollowUp({ language, liveRun }: {
 }
 
 /** Browser-local input preparation. Accepted report and creation authority stay on the service. */
-export function ResearchFollowUp({ language, findings, disabled, sourceReportVisible, onCancelWithoutSource, onStart, renderReport, memory }: {
+export function ResearchFollowUp({ language, findings, disabled, sourceReportVisible, onCancelWithoutSource, onStart, renderReport, memory, initialQuestionId }: {
   language: Language;
   findings: ResearchFindingsResponse;
   disabled: boolean;
@@ -55,24 +65,31 @@ export function ResearchFollowUp({ language, findings, disabled, sourceReportVis
   onStart: (questions: readonly ResearchQuestion[]) => Promise<void>;
   renderReport?: (controls?: UnresolvedQuestionControls) => ReactNode;
   memory?: RefObject<FollowUpMemory | undefined>;
+  initialQuestionId?: string;
 }) {
   const t = copy[language].research;
   const identity = `${findings.run_id}/${findings.artifact.content_hash}`;
   const previous = memory?.current?.identity === identity ? memory?.current : undefined;
-  const [selected, setSelected] = useState<readonly string[]>(previous?.selected ?? []);
-  const [draft, setDraft] = useState<PreparedDraft | undefined>(previous?.draft);
-  const [replacePending, setReplacePending] = useState(previous?.replacePending ?? false);
-  const nextQuestionId = useRef(previous?.nextQuestionId ?? 1);
-  const revision = useRef(previous?.revision ?? 0);
-  const submitting = useRef(false);
-  const draftRegion = useRef<HTMLElement>(null);
-  const prepareButton = useRef<HTMLButtonElement>(null);
-  const replaceButton = useRef<HTMLButtonElement>(null);
   const unresolved = findings.report.questions.flatMap((question) => {
     const disposition = findings.report.dispositions.find((entry) => entry.question_id === question.question_id);
     return disposition?.status === "unresolved"
       ? [{ questionId: question.question_id, text: question.text, reason: disposition.reason! }] : [];
   });
+  const main = findings.report.questions[0];
+  const direct = unresolved.find(({ questionId }) => questionId === initialQuestionId);
+  const directSelection = direct && !previous?.draft?.references.some(({ questionId }) => questionId === direct.questionId)
+    ? [direct] : undefined;
+  const [selected, setSelected] = useState<readonly string[]>(() =>
+    directSelection?.map(({ questionId }) => questionId) ?? previous?.selected ?? []);
+  const [draft, setDraft] = useState<PreparedDraft | undefined>(() =>
+    previous?.draft ?? (directSelection ? prepareDraft(directSelection, main, 1) : undefined));
+  const [replacePending, setReplacePending] = useState(Boolean(directSelection && previous?.draft) || previous?.replacePending === true);
+  const nextQuestionId = useRef(previous?.nextQuestionId ?? ((draft?.questions.length ?? 0) + 1));
+  const revision = useRef(previous?.revision ?? draft?.revision ?? 0);
+  const submitting = useRef(false);
+  const draftRegion = useRef<HTMLElement>(null);
+  const prepareButton = useRef<HTMLButtonElement>(null);
+  const replaceButton = useRef<HTMLButtonElement>(null);
   const selectedReferences = unresolved.filter((question) => selected.includes(question.questionId));
   const scopeValid = draft && validateResearchQuestions(draft.questions).ok
     && validateLiveDemoQuery(draft.questions[0].text).ok;
@@ -95,12 +112,9 @@ export function ResearchFollowUp({ language, findings, disabled, sourceReportVis
 
   const replaceDraft = () => {
     if (disabled || !selectedReferences.length) return;
-    nextQuestionId.current = selectedReferences.length + 1;
-    setDraft({
-      questions: selectedReferences.map((question, index) => ({ question_id: `q${index + 1}`, text: question.text })),
-      references: selectedReferences,
-      revision: ++revision.current
-    });
+    const prepared = prepareDraft(selectedReferences, main, ++revision.current);
+    nextQuestionId.current = prepared.questions.length + 1;
+    setDraft(prepared);
     setReplacePending(false);
   };
   const prepare = () => {

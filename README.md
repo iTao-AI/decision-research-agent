@@ -4,9 +4,10 @@
 
 Decision Research Agent turns open research questions into source-backed
 research reports. Callers can start a run through the CLI or API, observe
-progress, and retrieve a report the backend has confirmed deliverable.
+progress, and retrieve a report the backend has confirmed deliverable. The local
+research workspace at `/` offers the same flow from a blank question editor.
 
-The default showcase starts with a support team deciding whether to pilot an
+The offline example report starts with a support team deciding whether to pilot an
 internal knowledge assistant or let an Agent handle refunds. It presents the
 recommendation, compares both options, connects supporting materials to
 individual findings, and provides the full report.
@@ -33,8 +34,8 @@ focus the recommendation, **View supporting evidence** to reach the selected
 source details, and **Read the full report** to open the existing report
 reader. A finding links to its source and can return focus to the finding.
 Static Demo uses a report-and-source two-column layout on wider screens and
-stacks those sections on narrow screens. The five-stage rail remains in Live
-Backend; the six operator screens are inside the collapsed technical console.
+stacks those sections on narrow screens. Its six operator screens are inside
+the collapsed technical console.
 
 ![Research workspace overview](docs/assets/console-showcase/research-workspace-overview.png)
 
@@ -54,8 +55,8 @@ npm ci
 npm run dev -- --host 127.0.0.1
 ```
 
-Open `http://127.0.0.1:5173`, or add one of the showcase routes above. Static
-Demo uses bundled synthetic data and needs no API key, backend, provider, or
+Open `http://127.0.0.1:5173/?showcase=overview`, or choose another showcase
+route above. Static Demo uses bundled synthetic data and needs no API key, backend, provider, or
 credentials. It sends no request to the Decision Research Agent backend.
 
 ## Current Default Branch Status
@@ -127,10 +128,11 @@ troubleshooting, and authenticated local runtime boundaries.
 - The console consumes canonical API and result contracts. It does not add
   backend state, database tables, API paths, credentials, review controls,
   verification authority, public online execution, or a tenant model.
-- Generic Live Backend accepts one bounded user-authored research question of
-  at most 4096 UTF-8 bytes and consumes service-owned state through the existing
-  API contract. Generic is the default; explicit structured research selects
-  `generic-evidence-report@1` with 1–5 explicit questions, each at most 4096
+- The workspace defaults to Evidence research (`generic-evidence-report@1`).
+  General research remains available and accepts one bounded user-authored
+  research question of at most 4096 UTF-8 bytes. Both modes consume
+  service-owned state through the existing API contract. Evidence research accepts
+  1–5 explicit questions, each at most 4096
   Unicode code points, and reads source-bound candidates through
   `GET /api/runs/{run_id}/findings` alongside canonical Markdown. The first
   question supplies the exact query; add/remove/edit preserves question IDs,
@@ -147,8 +149,8 @@ troubleshooting, and authenticated local runtime boundaries.
 The opt-in `generic-evidence-report@1` profile delivers candidate findings bound
 to exact excerpts in same-run persisted Evidence, accepted questions and honest
 unresolved dispositions. The Live reader can inspect stored snippets and retain
-the canonical Markdown/raw/download path. Generic remains the default; Static
-Demo remains a separate synthetic snapshot. Source binding is not truth or
+the canonical Markdown/raw/download path. The service and CLI defaults are
+unchanged. Static Demo is a separate synthetic snapshot. Source binding is not truth or
 entailment verification; reported contradictions are model-reported.
 
 Run the provider-free native proof from the existing development environment:
@@ -388,13 +390,13 @@ key and byte-equivalent request, including the exact submitted question. The
 question is sent exactly as entered, without trim, normalization, translation,
 case-folding, or hidden rewrite. Its draft and temporary create intent are
 browser-session-only. A retained known `run_id` can be re-entered after a page
-refresh through the separate Known run_id control. This is health-gated
-GET-only observation using the exact syntax
-`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`; it does not add run list/history or
-browser persistence. It does not reconstruct an ambiguous POST after refresh.
-After `run_id` is known, observation resume is GET-only and cannot issue another
-create. The console does not own review, verification, publication, or delivery
-authority.
+refresh through **Open by ID**. A copied report link can also reopen the same
+report through health-gated GET-only observation. Both accept the exact syntax
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` and resolve against the configured local
+service. Only the loopback connection preference persists in browser storage.
+A page refresh discards the pending create intent. Once the run ID is known,
+observation resume is GET-only. The console does not own review, verification,
+publication, or delivery authority.
 
 ## Tool Client
 

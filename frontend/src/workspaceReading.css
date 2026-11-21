@@ -1,0 +1,277 @@
+.dra-workspace .dw-report {
+  width: 100%;
+  max-width: 70rem;
+  margin: 0 auto;
+}
+
+.dra-workspace .dw-findings-reader {
+  --dw-reading-measure: 44rem;
+  --dw-reading-source: #efeee7;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  line-height: 1.6;
+}
+
+.dra-workspace .dw-reading-header {
+  max-width: var(--dw-reading-measure);
+  padding-block: 22px 16px;
+  border-bottom: 1px solid var(--dw-line);
+}
+
+.dra-workspace .dw-reading-header h2 {
+  margin: 0;
+  font-family: var(--dw-serif);
+  font-size: clamp(30px, 4.1vw, 54px);
+  font-weight: 690;
+  line-height: 1.13;
+  text-wrap: balance;
+}
+
+.dra-workspace .dw-reading-index {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 18px;
+  margin-top: 9px;
+  color: var(--dw-muted);
+  font-size: 14px;
+}
+
+.dra-workspace .dw-reading-index button {
+  min-height: 35px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--dw-pine);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.dra-workspace .dw-reading-index button:is(:hover, [aria-expanded="true"]) {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.dra-workspace .dw-reading-section-title,
+.dra-workspace .dw-reading-context h3 {
+  margin: 17px 0 8px;
+  font-size: 15px;
+  font-weight: 720;
+  line-height: 1.4;
+}
+
+.dra-workspace .dw-reading-question {
+  margin: 0 0 19px;
+  padding: 0;
+  border: 0;
+}
+
+.dra-workspace .dw-reading-finding {
+  display: grid;
+  grid-template-columns: minmax(0, var(--dw-reading-measure));
+  align-items: start;
+  column-gap: clamp(22px, 3vw, 48px);
+}
+
+.dra-workspace .dw-finding-reading {
+  padding-block: 3px 14px;
+  border-bottom: 1px solid var(--dw-line);
+}
+
+.dra-workspace .dw-reading-finding + .dw-reading-finding {
+  padding-top: 13px;
+}
+
+.dra-workspace .dw-reading-finding .research-candidate-statement {
+  margin: 0 0 11px;
+  color: var(--dw-ink);
+  font-size: clamp(16px, 1.65vw, 21px);
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.dra-workspace .dw-citation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dra-workspace .dw-citation-list .dw-reference {
+  display: inline-flex;
+  justify-content: flex-start;
+  gap: 7px;
+  min-width: 0;
+  min-height: 34px;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 10px 4px 6px;
+  border-color: var(--dw-line);
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: start;
+}
+
+.dra-workspace .dw-citation-number {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  min-height: 20px;
+  border-radius: 2px;
+  background: var(--dw-tint);
+  font-variant-numeric: tabular-nums;
+}
+
+.dra-workspace .dw-full-question,
+.dra-workspace .dw-reading-unresolved,
+.dra-workspace .dw-reading-conditions,
+.dra-workspace .dw-reading-context,
+.dra-workspace .dw-question-directory,
+.dra-workspace .dw-report-actions {
+  max-width: 44rem;
+}
+
+.dra-workspace .dw-full-question p {
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
+.dra-workspace .dw-reading-unresolved {
+  padding-top: 0;
+  scroll-margin-top: calc(var(--dw-scroll-offset) + 12px);
+}
+
+.dra-workspace .dw-reading-unresolved > p,
+.dra-workspace .dw-reading-binding {
+  color: var(--dw-muted);
+  font-size: 14px;
+}
+
+.dra-workspace .dw-reading-unanswered {
+  margin: 0 0 14px;
+  padding-top: 10px;
+}
+
+.dra-workspace .dw-reading-unanswered h4 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  white-space: pre-wrap;
+}
+
+.dra-workspace .dw-reading-unanswered .research-question-reason {
+  margin: 8px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dw-muted);
+}
+
+.dra-workspace .dw-reading-context {
+  padding-top: 10px;
+  border-top: 1px solid var(--dw-line);
+}
+
+.dra-workspace .dw-reading-conditions ul {
+  margin-top: 0;
+  padding-inline-start: 22px;
+}
+
+.dra-workspace .dw-reading-finding .dw-source-panel {
+  margin: 3px 0 12px;
+  padding: 14px 16px;
+  border-inline-start: 2px solid var(--dw-pine);
+  border-radius: 0 4px 4px 0;
+  background: var(--dw-reading-source);
+  color: var(--dw-ink);
+  scroll-margin-top: calc(var(--dw-scroll-offset) + 12px);
+}
+
+.dra-workspace .dw-source-label {
+  margin-block: 0 4px;
+  color: var(--dw-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.dra-workspace .dw-reading-finding .dw-source-heading {
+  margin: 0 0 5px;
+  line-height: 1.35;
+}
+
+.dra-workspace :is(.dw-source-version, .dw-source-status) {
+  margin: 0 0 8px;
+  color: var(--dw-muted);
+  font-size: 12px;
+}
+
+.dra-workspace .dw-reading-finding .dw-source-panel blockquote {
+  margin-top: 3px;
+  padding: 8px 10px;
+  border-inline-start: 1px solid var(--dw-pine);
+  font-size: 16px;
+}
+
+.dra-workspace .dw-source-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.dra-workspace .dw-reading-finding .dw-source-panel :is(button, a) {
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.dra-workspace .dw-reading-finding .dw-source-panel button {
+  min-height: 34px;
+  border-color: var(--dw-line);
+}
+
+.dra-workspace .dw-report-raw {
+  width: 100%;
+}
+
+.dra-workspace .dw-report-raw pre {
+  max-height: 26rem;
+  padding: 12px;
+  border: 1px solid var(--dw-line);
+  background: var(--dw-surface);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+@media (min-width: 1100px) {
+  .dra-workspace .dw-reading-finding {
+    grid-template-columns: minmax(0, var(--dw-reading-measure)) minmax(15rem, 1fr);
+  }
+
+  .dra-workspace .dw-reading-drawer .dw-reading-finding .dw-source-panel {
+    --dw-reading-rail-top: calc(var(--dw-header-height) + var(--dw-track-height) + 72px);
+    position: fixed;
+    z-index: 1;
+    inset-block-start: var(--dw-reading-rail-top);
+    inset-inline-end: max(44px, (100% - 1064px) / 2);
+    width: clamp(15rem, 26vw, 20rem);
+    max-height: calc(100dvh - var(--dw-reading-rail-top) - 25px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+@media (max-width: 700px) {
+  .dra-workspace .dw-reading-header {
+    padding-block: 14px 12px;
+  }
+
+  .dra-workspace .dw-reading-index {
+    gap: 2px 14px;
+  }
+
+  .dra-workspace .dw-reading-finding .dw-source-panel {
+    margin-top: 11px;
+  }
+}

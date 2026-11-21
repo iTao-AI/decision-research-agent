@@ -1,0 +1,251 @@
+.dra-workspace.dw-modular .dw-task-track {
+  --dw-task-row-height: 38px;
+  --dw-task-rail: #c6c9d0;
+  box-shadow: none;
+}
+
+.dra-workspace.dw-modular .dw-task-track[data-tone="blue"] {
+  --dw-track-color: #2541a6;
+  --dw-track-background: #eef1fa;
+  --dw-track-border: #d3d9ef;
+}
+
+.dra-workspace.dw-modular .dw-task-track[data-tone="green"] {
+  --dw-track-color: #225f49;
+  --dw-track-background: #eef4ef;
+  --dw-track-border: #c9ddcf;
+}
+
+.dra-workspace.dw-modular .dw-task-track[data-tone="red"] {
+  --dw-track-color: #933e35;
+  --dw-track-background: #fbf1ed;
+  --dw-track-border: #e6cec5;
+}
+
+.dra-workspace.dw-modular .dw-task-track[data-tone="amber"] {
+  --dw-track-color: #70531f;
+  --dw-track-background: #f7f3e9;
+  --dw-track-border: #e7dcc0;
+}
+
+.dra-workspace.dw-modular .dw-task-track .dw-task-track-header {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content auto;
+  grid-template-areas: "stage title meta action";
+  min-height: var(--dw-task-row-height);
+  gap: 3px 14px;
+}
+
+.dra-workspace .dw-task-track .dw-stage { grid-area: stage; }
+.dra-workspace .dw-task-track .dw-track-title { grid-area: title; }
+.dra-workspace .dw-task-track .dw-track-action { grid-area: action; }
+
+.dra-workspace .dw-task-track .dw-task-meta {
+  display: flex;
+  grid-area: meta;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.dra-workspace .dw-task-track .dw-task-elapsed {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dra-workspace .dw-task-track .dw-task-elapsed + span {
+  padding-inline-start: 0.65rem;
+  border-inline-start: 1px solid var(--dw-track-border);
+}
+
+.dra-workspace.dw-modular .dw-task-track[data-tone="green"] .dw-track-action {
+  border-color: var(--dw-track-color);
+  background: var(--dw-track-color);
+  color: #fff;
+}
+
+.dra-workspace.dw-modular .dw-task-track[data-tone="green"] .dw-track-action:hover {
+  background: #184a37;
+}
+
+.dra-workspace .dw-task-journey,
+.dra-workspace .dw-task-activity {
+  width: var(--dw-home-width);
+  margin-inline: auto;
+}
+
+.dra-workspace .dw-task-journey {
+  position: relative;
+  padding-block: 10px 6px;
+}
+
+.dra-workspace .dw-task-rail {
+  position: absolute;
+  inset: 4px 10% auto;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--dw-task-rail);
+}
+
+.dra-workspace .dw-task-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--dw-task-position);
+  border-radius: inherit;
+  background: var(--dw-track-color);
+}
+
+.dra-workspace .dw-task-pin {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  width: 9px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--dw-track-background);
+  border-radius: 50%;
+  background: var(--dw-track-color);
+}
+
+.dra-workspace .dw-task-pin::before {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--dw-track-color);
+  border-radius: inherit;
+  content: "";
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dra-workspace .dw-task-journey[data-moving="true"] .dw-task-pin::before {
+    animation: dw-task-current 2.6s ease-out infinite;
+  }
+}
+
+@keyframes dw-task-current {
+  0%, 100% { transform: scale(1); opacity: 0; }
+  20% { opacity: 0.55; }
+  60%, 99% { transform: scale(2.15); opacity: 0; }
+}
+
+.dra-workspace .dw-task-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  color: #525a63;
+  font-size: 11px;
+  line-height: 1.2;
+  list-style: none;
+  text-align: center;
+}
+
+.dra-workspace .dw-task-steps [aria-current] {
+  color: var(--dw-track-color);
+  font-weight: 750;
+}
+
+.dra-workspace .dw-task-activity {
+  margin-block: 0;
+  padding-block: 0 6px;
+  color: #4c5363;
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: end;
+}
+
+.dra-workspace .dw-task-details .dw-delivery-reason {
+  margin-block: 8px 4px;
+  color: var(--dw-ink);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.dra-workspace .dw-retained-sources {
+  border-top: 1px solid var(--dw-line);
+  border-bottom: 1px solid var(--dw-line);
+}
+
+.dra-workspace .dw-retained-sources > summary,
+.dra-workspace .dw-retained-group > summary {
+  padding-block: 9px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.dra-workspace .dw-retained-sources > summary > span:first-of-type {
+  margin-inline-end: 0.65rem;
+}
+
+.dra-workspace .dw-retained-sources > summary > span:last-of-type,
+.dra-workspace .dw-retained-group > summary > small {
+  color: var(--dw-muted);
+  font-size: 12px;
+  font-weight: 450;
+}
+
+.dra-workspace .dw-retained-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dra-workspace .dw-retained-group {
+  border-top: 1px solid var(--dw-line);
+}
+
+.dra-workspace .dw-retained-group > summary > small {
+  padding-inline-start: 0.6rem;
+  white-space: nowrap;
+}
+
+.dra-workspace .dw-retained-link {
+  display: inline-block;
+  padding-block: 0 4px;
+}
+
+.dra-workspace .dw-retained-group blockquote {
+  margin: 6px 0 12px;
+  padding-inline-start: 11px;
+  border-inline-start: 2px solid var(--dw-line);
+  color: var(--dw-ink);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 700px) {
+  .dra-workspace.dw-modular .dw-task-track { --dw-task-row-height: 34px; }
+
+  .dra-workspace.dw-modular .dw-task-track .dw-task-track-header {
+    grid-template-columns: minmax(0, 1fr) minmax(auto, 44%);
+    grid-template-areas: "stage action" "title action" "meta action";
+    column-gap: 8px;
+  }
+
+  .dra-workspace.dw-modular .dw-task-track .dw-track-title {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
+
+  .dra-workspace.dw-modular .dw-task-track .dw-track-action {
+    max-width: 100%;
+    text-align: end;
+  }
+
+  .dra-workspace .dw-task-track .dw-task-meta {
+    flex-wrap: wrap;
+    gap: 2px 7px;
+    font-size: 11px;
+  }
+
+  .dra-workspace .dw-task-track .dw-task-elapsed + span {
+    padding-inline-start: 7px;
+  }
+}
+
+@media (pointer: coarse) {
+  .dra-workspace .dw-task-track .dw-track-action { min-height: 44px; }
+}

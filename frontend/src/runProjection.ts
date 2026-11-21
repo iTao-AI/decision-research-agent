@@ -30,6 +30,7 @@ export type RunEvidenceProjection = Readonly<{
   evidence_fingerprint: string;
   citation_status: string;
   verification_status: string;
+  snippet?: string;
 }>;
 
 export type ReviewWorkflowProjection = Readonly<{
@@ -159,6 +160,7 @@ const DELIVERABLE_EXECUTION_STATUSES = new Set<DeliverableExecutionStatus>([
 ]);
 
 const FAILURE_CAUSE_SCHEMA_VERSION = "dra.run-failure-cause.v1" as const;
+const RUN_EVIDENCE_SNIPPET_MAX_CODE_POINTS = 1024;
 const FAILURE_CAUSE_CODES = {
   dispatch: new Set([
     "run_dispatch_schedule_failed",
@@ -287,14 +289,25 @@ function parseRunSegment(value: unknown): RunSegmentProjection {
 
 function parseRunEvidence(value: unknown): RunEvidenceProjection {
   const record = expectRecord(value);
+  const snippet = parseRetainedSnippet(record.snippet);
   return Object.freeze({
     evidence_id: expectString(record.evidence_id),
     source_url: expectNullableString(record.source_url),
     source_identity: expectString(record.source_identity),
     evidence_fingerprint: expectString(record.evidence_fingerprint),
     citation_status: expectString(record.citation_status),
-    verification_status: expectString(record.verification_status)
+    verification_status: expectString(record.verification_status),
+    ...(snippet === undefined ? {} : { snippet })
   });
+}
+
+function parseRetainedSnippet(value: unknown): string | undefined {
+  // Keep the captured text and its truncation marker within a display bound.
+  if (typeof value !== "string" || value.length > RUN_EVIDENCE_SNIPPET_MAX_CODE_POINTS * 2 ||
+      [...value].length > RUN_EVIDENCE_SNIPPET_MAX_CODE_POINTS || !value.trim()) {
+    return undefined;
+  }
+  return value;
 }
 
 function parseReviewWorkflow(value: unknown): ReviewWorkflowProjection | null {

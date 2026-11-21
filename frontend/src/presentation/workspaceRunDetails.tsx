@@ -1,0 +1,153 @@
+import { useRef, useState, type Ref } from "react";
+import { buildLiveConsoleProjection } from "../consoleProjection";
+import { copy, type Language } from "../i18n";
+import type { RunEvidenceProjection, RunProjection } from "../runProjection";
+import type { LiveRunState } from "../useLiveRun";
+import { workspaceCopy } from "../workspaceCopy";
+import { safeHttpUrl } from "./resultReader";
+import { ArchitectureMode } from "./technicalScreens";
+
+const architectureReference = buildLiveConsoleProjection({
+  health: undefined, created: undefined, run: undefined, result: undefined, status: "idle"
+});
+
+export function WorkspaceRunDetails({ language, state, runId, detailsRef }: {
+  language: Language;
+  state: LiveRunState;
+  runId?: string;
+  detailsRef?: Ref<HTMLDetailsElement>;
+}) {
+  const t = workspaceCopy[language];
+  const [copiedId, setCopiedId] = useState("");
+  const runCode = useRef<HTMLElement>(null);
+  const run = state.run;
+  const failure = run?.failureCause;
+  const review = run?.review.workflow;
+  const publication = run?.currentPublication;
+  return <details className="dw-details" ref={detailsRef}>
+    <summary>{t.details}</summary>
+    <dl>
+      {runId && <div><dt>{t.runId}</dt><dd><code ref={runCode}>{runId}</code>
+        <button className="dw-link" type="button" onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(runId);
+            setCopiedId(runId);
+          } catch {
+            const id = runCode.current;
+            if (id) document.getSelection()?.selectAllChildren(id);
+          }
+        }}>{copiedId === runId ? t.copied : t.copyRun}</button>
+      </dd></div>}
+      {run && <>
+        <div><dt>{t.profile}</dt><dd><code>{run.profile_id}</code></dd></div>
+        <div><dt>{t.execution}</dt><dd><code>{run.execution_status}</code></dd></div>
+        <div><dt>{t.delivery}</dt><dd><code>{run.delivery_status}</code></dd></div>
+        <div><dt>{copy[language].labels.review}</dt><dd><code>{review?.status ?? run.review_status}</code></dd></div>
+      </>}
+      {failure?.kind === "observed" && <div><dt>{t.failureObserved}</dt><dd><code>{failure.phase} / {failure.code}</code></dd></div>}
+      {state.error && <div><dt>{t.errorCode}</dt><dd><code>{state.error.code}</code></dd></div>}
+      {publication && <div><dt>{t.publication}</dt><dd><code>{publication.status}</code></dd></div>}
+      {run?.currentArtifacts?.map((artifact) => <div key={artifact.artifact_id}>
+        <dt>{artifact.kind}</dt><dd><code>{artifact.artifact_id}</code> <small>{artifact.content_hash}</small></dd>
+      </div>)}
+    </dl>
+    {(run?.findingsIssues || run?.findingsOutcome) && <section aria-label={copy[language].research.diagnostics}>
+      <h3>{copy[language].research.diagnostics}</h3>
+      {run.findingsIssues && <ul>{run.findingsIssues.map((issue) => <li key={issue}><code>{issue}</code></li>)}</ul>}
+      {run.findingsOutcome && <>
+        <p>{copy[language].research.counts}</p>
+        <dl>{Object.entries(run.findingsOutcome).map(([key, count]) => <div key={key}>
+          <dt><code>{key}</code></dt><dd>{count}</dd>
+        </div>)}</dl>
+      </>}
+    </section>}
+    <details className="dw-details">
+      <summary>{t.architecture}</summary>
+      <ArchitectureMode language={language} projection={architectureReference} />
+      <h3>{copy[language].labels.cli}</h3>
+      <pre>{architectureReference.architecture.cliGoldenPath}</pre>
+    </details>
+  </details>;
+}
+
+const retainedCopy = {
+  zh: {
+    view: "查看已保留的资料", total: (count: number) => `已保留 ${count} 条资料`,
+    excerpts: (count: number) => `${count} 条`,
+    open: "打开来源网页", missing: "没有可显示的留存片段。"
+  },
+  en: {
+    view: "View retained material", total: (count: number) => count === 1 ? "1 retained excerpt" : `${count} retained excerpts`,
+    excerpts: (count: number) => count === 1 ? "1 excerpt" : `${count} excerpts`,
+    open: "Open source page", missing: "No retained snippet is available to display."
+  }
+};
+
+export function WorkspaceRetainedEvidence({ language, run }: { language: Language; run: RunProjection }) {
+  const labels = retainedCopy[language];
+  if (!run.evidence.length) return <p>{workspaceCopy[language].noEvidence}</p>;
+
+  const groups = new Map<string, { name: string; href?: string; excerpts: RunEvidenceProjection[] }>();
+  for (const evidence of run.evidence) {
+    const href = evidence.source_url ? safeHttpUrl(evidence.source_url) : undefined;
+    const name = evidence.source_identity || href || evidence.evidence_id;
+    const key = evidence.source_identity || href ? `source:${name}` : `evidence:${evidence.evidence_id}`;
+    const group = groups.get(key);
+    if (group) {
+      group.href ??= href;
+      group.excerpts.push(evidence);
+    } else groups.set(key, { name, href, excerpts: [evidence] });
+  }
+
+  return <details className="dw-details dw-retained-sources">
+    <summary><span>{labels.view}</span><span>{labels.total(run.evidence.length)}</span></summary>
+    <ul className="dw-retained-list">
+      {Array.from(groups, ([key, { name, href, excerpts }]) => <li key={key}>
+        <details className="dw-retained-group">
+          <summary><span>{name}</span><small>{labels.excerpts(excerpts.length)}</small></summary>
+          {href && <a className="dw-retained-link" href={href} target="_blank" rel="noreferrer">
+            {labels.open}<span aria-hidden="true"> ↗</span>
+          </a>}
+          <ul className="dw-retained-list">{excerpts.map((evidence) => <li key={evidence.evidence_id}>
+            {evidence.snippet ? <blockquote>{evidence.snippet}</blockquote> : <p>{labels.missing}</p>}
+          </li>)}</ul>
+        </details>
+      </li>)}
+    </ul>
+  </details>;
+}
+
+const SHORT_FAILURE_REASONS: Readonly<Record<string, readonly [zh: string, en: string]>> = {
+  run_dispatch_schedule_failed: ["调度失败", "Scheduling failed"],
+  run_dispatch_start_failed: ["启动失败", "Dispatch start failed"],
+  run_dispatch_start_timeout: ["启动超时", "Dispatch start timed out"],
+  run_dispatch_lease_expired: ["调度租约到期", "Dispatch lease expired"],
+  call_budget_exceeded: ["调用预算耗尽", "Call budget exceeded"],
+  recursion_limit_exceeded: ["达到递归上限", "Recursion limit reached"],
+  invalid_research_packet: ["研究包无效", "Invalid research packet"],
+  missing_research_packet: ["研究包缺失", "Research packet missing"],
+  cancelled: ["已取消", "Cancelled"],
+  execution_error: ["执行出错", "Execution error"],
+  run_finalization_failed: ["结果收尾失败", "Finalization failed"]
+};
+
+export function shortFailureDescription(language: Language, failure: RunProjection["failureCause"] | undefined) {
+  if (failure?.kind !== "observed") return undefined;
+  const index = language === "zh" ? 0 : 1;
+  if (failure.code === "run_timeout") {
+    const reasons = failure.phase === "finalization"
+      ? ["结果收尾超时", "Finalization timed out"] : ["执行超时", "Execution timed out"];
+    return reasons[index];
+  }
+  return SHORT_FAILURE_REASONS[failure.code]?.[index];
+}
+
+export function failureDescription(language: Language, failure: RunProjection["failureCause"] | undefined) {
+  const t = workspaceCopy[language];
+  if (failure?.kind !== "observed") return t.failureUnknown;
+  if (failure.code === "cancelled") return t.failureCancelled;
+  if (failure.code === "run_timeout") return failure.phase === "finalization" ? t.finalizeTimeout : t.failureTimeout;
+  if (failure.phase === "dispatch") return t.failureDispatch;
+  if (failure.phase === "finalization") return t.failureFinalize;
+  return t.failureExecution;
+}

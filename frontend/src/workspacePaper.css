@@ -69,17 +69,6 @@
   color: var(--dw-paper-blue);
 }
 
-.dra-workspace.dw-paper .dw-status[data-tone="idle"] {
-  --dw-track-color: #58605e;
-  --dw-track-background: #f0f1ed;
-  --dw-track-border: #ddddda;
-  box-shadow: none;
-}
-
-.dra-workspace.dw-paper .dw-status[data-tone="idle"] .dw-track-title {
-  display: none;
-}
-
 .dra-workspace.dw-paper :is(.dw-stage, .dw-track-title, .dw-track-action) {
   font-size: 12px;
 }

@@ -5,11 +5,12 @@ against a local service, and read the delivered report in the same workspace.
 The initial form is blank and selects **证据研究 / Evidence research**
 (`generic-evidence-report@1`). **通用研究 / General research** is available
 for a single question. **开始研究 / Start research** submits your question
-and leaves it in place. The sticky task bar shows the current phase, elapsed
-time, and whether an action is available. After acknowledgement it shows a
-progress line. While research is active, the latest completed search time
-appears when the service returns matching closed telemetry. Open progress,
-report, or failure details from the bar and return to the same workspace.
+and leaves it in place. A current submission adds a sticky task bar with its
+phase, elapsed time, and available action. Idle drafts and directly opened
+reports use only the header when there is no current submission. The progress
+line appears after acknowledgement. During research, the latest completed
+search time appears when the service returns matching closed telemetry. Open
+progress, report, or failure details from the bar and return to the workspace.
 
 **按编号打开研究 / Open by ID** opens a separate read-only view by run ID. The
 service connection in the header opens **连接设置 / Connection settings** for
@@ -358,7 +359,9 @@ form `http://127.0.0.1:<port>` before starting Vite. The app validates it with
 the same rules as the editable address and falls back to port `8000` if the
 value is invalid. A manually saved valid loopback address takes precedence
 for this browser origin. For a local fixture-backed preview, set
-`VITE_DRA_DEMO_DATA=true` to display **演示数据 / Demo data** in the header.
+`VITE_DRA_DEMO_DATA=true` and explicitly configure the replay origin in
+`VITE_DRA_LOCAL_BACKEND_URL`. The header shows **演示数据 / Demo data** while that
+origin is selected. Other connections display the connection status.
 
 If the service is offline, the header shows the configured address.
 **修改连接 / Change connection** opens the address editor.
@@ -421,9 +424,11 @@ A ready structured run provides its accepted findings through
 `/api/runs/{run_id}/findings`. The workspace waits for both required reads
 before exposing a structured report and download. Failed runs can expose
 the observed failure reason and retained evidence in the failure panel. The
-submitted questions can seed an editable draft after failure. Review,
-blocked, and pending-delivery states offer **查看状态 / Check status**, a
-read-only refresh. Explicit submission is required for every new run.
+submitted questions can seed an editable draft after failure. **查看状态 /
+Check status** refreshes pending review or delivery and blocked review
+outcomes that can still change. A final blocked run with
+`review_status=not_required` offers retained material and run details.
+Explicit submission is required for every new run.
 
 Failure-cause availability is not inferred:
 

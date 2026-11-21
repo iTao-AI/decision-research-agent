@@ -79,6 +79,7 @@ export function WorkspaceTaskDetails({
   };
   const delivery = phase === "review" || phase === "blocked" || phase === "pendingDelivery";
   const interrupted = phase === "readInterrupted" || phase === "observeInterrupted";
+  const finalBlocked = phase === "blocked" && run?.review_status === "not_required";
   const note = t.statusNotes[phase as keyof typeof t.statusNotes];
   const activeRead = phase === "received" || phase === "lookup" || phase === "queued" ||
     phase === "running" || phase === "reading";
@@ -113,7 +114,7 @@ export function WorkspaceTaskDetails({
       {(phase === "failed" || phase === "rejected") && onOpenDraft && <div className="dw-actions">
         <button className="dw-outline" type="button" onClick={onOpenDraft}>{draftLabel}</button>
       </div>}
-      {(delivery || interrupted) && observedRunId && onCheckStatus && <div className="dw-actions">
+      {((delivery && !finalBlocked) || interrupted) && observedRunId && onCheckStatus && <div className="dw-actions">
         <button className="dw-outline" type="button" onClick={onCheckStatus}>{checkLabel}</button>
       </div>}
     </section>

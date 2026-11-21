@@ -15,6 +15,10 @@
   line-height: 1.55;
 }
 
+.dra-workspace.dw-modular:not(:has(> .dw-task-track)) {
+  --dw-track-height: 0px;
+}
+
 .dra-workspace.dw-modular :is(a, button, summary, input, textarea, select, [tabindex]):focus-visible {
   outline-color: #3a6cab;
 }

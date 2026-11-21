@@ -219,7 +219,7 @@
 @media (max-width: 700px) {
   .dra-workspace.dw-modular .dw-task-track { --dw-task-row-height: 34px; }
 
-  .dra-workspace.dw-modular .dw-task-track:not([data-phase="idle"]) .dw-task-track-header {
+  .dra-workspace.dw-modular .dw-task-track .dw-task-track-header {
     grid-template-columns: minmax(0, 1fr) minmax(auto, 44%);
     grid-template-areas: "stage action" "title action" "meta action";
     column-gap: 8px;

@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe("WorkspaceTaskTrack", () => {
   it("reveals the progress line only once a request has been accepted", () => {
-    const { rerender } = render(<WorkspaceTaskTrack {...TRACK} phase="idle" acknowledged={false} />);
+    const { rerender } = render(<WorkspaceTaskTrack {...TRACK} phase="submitting" acknowledged={false} />);
     expect(screen.queryByRole("list", { name: "Research progress" })).not.toBeInTheDocument();
 
     rerender(<WorkspaceTaskTrack {...TRACK} phase="ambiguous" acknowledged={false}

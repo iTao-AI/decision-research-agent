@@ -120,11 +120,14 @@ it("preserves the current run while opening another by number", async () => {
   const known = screen.getByRole("region", { name: "已有研究" });
   await within(known).findByRole("button", { name: "阅读这份报告" });
   expect(within(known).getByRole("heading", { name: "另一个被查阅的问题" })).toBeInTheDocument();
+  await user.click(within(known).getByRole("button", { name: "阅读这份报告" }));
+  const openedReport = screen.getByRole("region", { name: "研究报告" });
+  expect(within(openedReport).getByText("另一个被查阅的问题", { selector: "h2" })).toBeVisible();
   expect(screen.getByRole("status")).toHaveTextContent("运行中");
   expect(api.writes()).toBe(1);
   act(() => api.finish());
   await screen.findByRole("button", { name: "阅读报告" });
-  expect(known).toBeInTheDocument();
+  expect(openedReport).toBeVisible();
 });
 
 it("recovers an interrupted status with GET and preserves the submitted draft", async () => {
@@ -196,6 +199,7 @@ it("reopens a shared report through read-only requests and drafts a follow-up wi
   const user = userEvent.setup();
   const report = screen.getByRole("region", { name: "研究报告" });
   await user.click(await within(report).findByRole("button", { name: "待查 1 项" }));
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
   const follow = within(report).getByRole("button", { name: "继续研究" });
   expect(api.reads).toContain("/api/runs/run_home/findings");
   expect(api.writes()).toBe(0);
@@ -238,4 +242,33 @@ it("retains an unopened report link while correcting an offline local connection
   expect(await within(report).findByText("来源绑定的候选结论")).toBeVisible();
   expect(window.location.search).toBe("?report=run_home");
   expect(api.writes()).toBe(0);
+});
+
+it("keeps the measured header offset and clears task height when returning to an idle draft", async () => {
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    disconnect() {}
+  });
+  const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    if (this.classList.contains("dw-header")) return new DOMRect(0, 0, 390, 73);
+    if (this.classList.contains("dw-task-track")) return new DOMRect(0, 73, 390, 64);
+    return new DOMRect();
+  });
+  try {
+    service();
+    const { user, submit } = await start();
+    const workspace = submit.closest<HTMLElement>(".dra-workspace")!;
+    expect(workspace.style.getPropertyValue("--dw-header-offset")).toBe("73px");
+    expect(workspace.style.getPropertyValue("--dw-track-height")).toBe("0px");
+
+    await user.click(submit);
+    await screen.findByRole("button", { name: "阅读报告" });
+    expect(workspace.style.getPropertyValue("--dw-track-height")).toBe("64px");
+    await user.click(screen.getByRole("button", { name: "新建研究" }));
+    expect(workspace.style.getPropertyValue("--dw-header-offset")).toBe("73px");
+    expect(workspace.style.getPropertyValue("--dw-track-height")).toBe("0px");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  } finally {
+    rect.mockRestore();
+  }
 });

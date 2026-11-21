@@ -17,10 +17,11 @@ through the existing [API contract](docs/reference/api-contract.md). The
 | Service connection | Shows connection state and opens the loopback endpoint and language settings. Simplified Chinese is the default. An offline check exposes the configured address, change, and reconnect controls. Saving a new address remembers the validated loopback origin in this browser, clears the run contexts, preserves the ordinary draft, and checks the new service. Editing the address is locked during creation, reconciliation, and polling. |
 | `/?showcase=overview`, `/?showcase=evidence`, `/?showcase=blocked` | Direct routes to bundled offline examples, separate from the ordinary home. |
 
-The sticky task bar uses text and a distinct icon to show the current phase,
-the question, elapsed time since this browser submitted it, and the next
-available action. The progress line appears after acknowledgement and moves
-only while the current checkpoint is active. When the service reports delivery
+When this workspace has a current submission, the sticky task bar shows its
+phase, question, elapsed time, and available action. Idle drafting and direct
+links to past reports open beneath the header. The progress line appears
+after acknowledgement and moves while the current checkpoint is active.
+When the service reports delivery
 and the required result reads pass, **Read report** becomes the primary action.
 Progress, report, cause, and delivery details open on explicit request. Run details retain the copyable
 identifier, observed execution and delivery fields, and bounded diagnostics.
@@ -39,10 +40,10 @@ After the structured report is read, **View citations for this run** opens its
 first bound quotation. The follow-up entry shows the number of open questions
 when the structured report supplies it.
 
-Details use a side panel on desktop and a single-column panel under the task
-bar on phones. The warmer report canvas starts with findings, available
-conditions, and citations; an open source can sit beside its finding when
-space permits. Dialogs and panels support keyboard use, Escape, and focus
+Details use a side panel on desktop and a single-column panel below the
+header and any current task bar on phones. The report canvas starts with
+findings, available conditions, and citations. On wider screens, an open
+source can sit beside its finding. Dialogs and panels support keyboard use, Escape, and focus
 restoration. The task bar announces phase changes and respects reduced motion
 preferences.
 
@@ -73,8 +74,9 @@ preferences.
   maximum). Status and report read interruptions have distinct recovery
   messages. Terminal execution failure uses the observed service reason where
   available and can show retained evidence. A terminal non-ready state is an
-  observed run outcome, not a connection failure. Rechecking the delivery
-  disposition is a read.
+  observed run outcome, not a connection failure. Final blocked delivery
+  without a review gate offers retained material and run details. Delivery
+  states that may change offer a read-only refresh.
 - When execution is completed (including fallback), delivery is ready, and
   the required reads succeed, **Read report** opens the report panel.
   Attached runs use their own **Read this report** action and select the reader

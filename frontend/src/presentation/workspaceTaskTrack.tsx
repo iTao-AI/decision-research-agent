@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { localBackendOrigin, validateLiveRunId } from "../apiClient";
 import type { Language } from "../i18n";
 import type { RunProjection } from "../runProjection";
@@ -8,7 +8,7 @@ import { shortFailureDescription } from "./workspaceRunDetails";
 
 type WorkspaceTaskTrackProps = {
   language: Language;
-  phase: WorkspaceStatus | "idle";
+  phase: WorkspaceStatus;
   title: string;
   run?: RunProjection;
   baseUrl?: string;
@@ -148,37 +148,13 @@ function ElapsedTime({ labels, startedAt, endedAt }: { labels: TrackCopy; starte
 export function WorkspaceTaskTrack({
   language, phase, title, run, baseUrl, acknowledged, startedAt, endedAt, action
 }: WorkspaceTaskTrackProps) {
-  const track = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const element = track.current;
-    const workspace = element?.closest<HTMLElement>(".dra-workspace");
-    if (!element || !workspace || typeof ResizeObserver === "undefined") return;
-    const header = workspace.querySelector(".dw-header");
-    const heights = [[element, "--dw-track-height"], [header, "--dw-header-offset"]] as const;
-    const update = () => {
-      for (const [target, property] of heights) {
-        const height = target?.getBoundingClientRect().height;
-        if (height) workspace.style.setProperty(property, `${height}px`);
-      }
-    };
-    const observer = new ResizeObserver(update);
-    for (const [target] of heights) {
-      if (target) observer.observe(target);
-    }
-    update();
-    return () => {
-      observer.disconnect();
-      for (const [, property] of heights) workspace.style.removeProperty(property);
-    };
-  }, []);
-
   const labels = trackCopy[language];
   const t = workspaceCopy[language];
   const tone = phase === "blocked" ? "red" : trackTone(phase);
   const glyph = tone === "green" ? "✓" : tone === "red" ? "×" : tone === "idle" ? "–"
     : tone === "amber" ? "!" : "·";
   const status = phase === "failed" ? shortFailureDescription(language, run?.failureCause) ?? t.statuses.failed
-    : phase === "idle" ? t.currentIdle : t.statuses[phase];
+    : t.statuses[phase];
   const waiting = WAITING.has(phase);
   const hint = waiting ? labels.waiting : phase === "ambiguous" ? labels.confirmation
     : phase === "observeInterrupted" || phase === "readInterrupted" ? labels.retry
@@ -187,9 +163,8 @@ export function WorkspaceTaskTrack({
   const step = currentStep(phase, run, labels);
   const position = { "--dw-task-position": `${step.index * 25}%` } as CSSProperties;
   const moving = phase === "received" || phase === "queued" || phase === "running" || phase === "reading";
-  const showProgress = acknowledged && phase !== "idle";
 
-  return <div className="dw-status dw-task-track" data-tone={tone} data-phase={phase} ref={track}>
+  return <div className="dw-status dw-task-track" data-tone={tone} data-phase={phase}>
     <div className="dw-chrome dw-task-track-header">
       <span className="dw-stage">
         <span className="dw-stage-icon" aria-hidden="true">{glyph}</span>
@@ -202,7 +177,7 @@ export function WorkspaceTaskTrack({
       </div>}
       {action}
     </div>
-    {showProgress && <div className="dw-task-journey" style={position} data-moving={moving}>
+    {acknowledged && <div className="dw-task-journey" style={position} data-moving={moving}>
       <div className="dw-task-rail" aria-hidden="true">
         <span className="dw-task-fill"><span className="dw-task-pin" /></span>
       </div>

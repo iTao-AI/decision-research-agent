@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { findingsResponse, markdownResult, structuredRun } from "./test/researchFindingsFixture";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 const health = { service: "decision-research-agent", status: "ok" };
 const options = { pollIntervalMs: 1, randomUUID: () => "test" };
@@ -58,6 +61,7 @@ describe("question-first research workspace", () => {
     const requests = fixture();
     await openWorkspace();
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveValue("");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "研究模式" })).toHaveValue("generic-evidence-report");
     expect(screen.getByRole("button", { name: "开始研究" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByText("报告暂不可用")).not.toBeInTheDocument();
@@ -93,6 +97,51 @@ describe("question-first research workspace", () => {
     expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
       "http://127.0.0.1:8000/health", "http://127.0.0.1:8087/health"
     ]);
+  });
+
+  it("labels only the configured replay origin across connection changes and reloads", async () => {
+    const replay = "http://127.0.0.1:8123";
+    const other = "http://127.0.0.1:8124";
+    vi.stubEnv("VITE_DRA_DEMO_DATA", "true");
+    vi.stubEnv("VITE_DRA_LOCAL_BACKEND_URL", `${replay}/`);
+    const transport = vi.fn(async (_url: RequestInfo | URL) => json(health));
+    vi.stubGlobal("fetch", transport);
+    const user = userEvent.setup();
+
+    async function connectTo(origin: string) {
+      await user.click(screen.getByRole("button", { name: "服务已连接，打开连接设置" }));
+      const settings = within(screen.getByRole("dialog", { name: "连接设置" }));
+      fireEvent.change(settings.getByRole("textbox", { name: "本地后端地址" }), { target: { value: origin } });
+      await user.click(settings.getByRole("button", { name: "保存连接" }));
+      await screen.findByRole("button", { name: "服务已连接，打开连接设置" });
+    }
+
+    const first = render(<App />);
+    await screen.findByText("服务已连接");
+    expect(screen.getByText("演示数据")).toBeVisible();
+    await connectTo(other);
+    expect(screen.queryByText("演示数据")).not.toBeInTheDocument();
+    first.unmount();
+
+    const switched = render(<App />);
+    await screen.findByText("服务已连接");
+    expect(screen.queryByText("演示数据")).not.toBeInTheDocument();
+    await connectTo(replay);
+    expect(screen.getByText("演示数据")).toBeVisible();
+    switched.unmount();
+    await openWorkspace();
+    expect(screen.getByText("演示数据")).toBeVisible();
+    expect(transport.mock.calls.map(([url]) => String(url))).toEqual([
+      `${replay}/health`, `${other}/health`, `${other}/health`, `${replay}/health`, `${replay}/health`
+    ]);
+  });
+
+  it.each(["", "https://example.invalid"])("shows neutral connection status without a valid configured replay origin (%s)", async (address) => {
+    vi.stubEnv("VITE_DRA_DEMO_DATA", "true");
+    vi.stubEnv("VITE_DRA_LOCAL_BACKEND_URL", address);
+    fixture();
+    await openWorkspace();
+    expect(screen.queryByText("演示数据")).not.toBeInTheDocument();
   });
 
   it("preserves the draft and focus when cancelling an invalid independent lookup", async () => {

@@ -58,9 +58,8 @@ export function statusTone(status: WorkspaceStatus) {
   }
 }
 
-export function trackTone(status: WorkspaceStatus | "idle") {
+export function trackTone(status: WorkspaceStatus) {
   switch (status) {
-    case "idle":
     case "connecting":
     case "ready":
     case "offline":

@@ -108,9 +108,12 @@ describe("WorkspaceTaskDetails", () => {
       },
       evidence: [{ ...SOURCE, snippet: longSnippet }, { ...SOURCE, evidence_id: "ev_2", snippet: "Second excerpt." }]
     });
-    render(<WorkspaceTaskDetails language="en" phase="blocked" state={{ ...LIVE, status: "terminal", run }} />);
+    render(<WorkspaceTaskDetails language="en" phase="blocked" state={{ ...LIVE, status: "terminal", run }}
+      onCheckStatus={vi.fn()} />);
 
     const status = within(screen.getByRole("region", { name: "Delivery blocked" }));
+    expect(status.queryByRole("button", { name: "Check status" })).not.toBeInTheDocument();
+    expect(screen.getByText("Run details")).toBeVisible();
     expect(status.getByText("Research finished. Some citations could not be matched to saved excerpts, so no report was generated.")).toBeVisible();
     expect(status.getByText("21 citation matches failed.")).toBeVisible();
     expect(status.getByText("2 retained excerpts")).toBeVisible();
@@ -123,6 +126,17 @@ describe("WorkspaceTaskDetails", () => {
     fireEvent.click(source);
     expect(status.getByText(longSnippet.trim())).toBeVisible();
     expect(status.getByText("Second excerpt.")).toBeVisible();
+  });
+
+  it.each([
+    { phase: "pendingDelivery", delivery_status: "pending", review_status: "not_required" },
+    { phase: "blocked", delivery_status: "blocked", review_status: "resolved" }
+  ] as const)("can check $phase when delivery could still change", ({ phase, ...disposition }) => {
+    const run = parseRunProjection({ ...RUN, ...disposition, execution_status: "completed", failure_cause: null });
+    const onCheckStatus = vi.fn();
+    render(<WorkspaceTaskDetails language="en" phase={phase} state={{ ...LIVE, status: "terminal", run }} onCheckStatus={onCheckStatus} />);
+    fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+    expect(onCheckStatus).toHaveBeenCalledOnce();
   });
 
   it("describes a source binding failure without attributing it to a missing excerpt", () => {

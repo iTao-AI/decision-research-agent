@@ -56,7 +56,7 @@ describe("multi-question creation editor", () => {
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(JSON.parse(posts[0].body)).toEqual({
       query: "  One😀\n  ", thread_id: "demo-console-fixed", profile_id: "generic-evidence-report",
-      scope: { questions: [
+      scope: { report_language: "zh-CN", questions: [
         { question_id: "q1", text: "  One😀\n  " }, { question_id: "q2", text: "Two" },
         { question_id: "q3", text: "Three" }, { question_id: "q4", text: "Four" },
         { question_id: "q5", text: "Five" }
@@ -93,27 +93,29 @@ describe("multi-question creation editor", () => {
     ] } });
   });
 
-  it("replays all submitted questions and the same key after a lost response", async () => {
+  it("replays the exact questions, report language and key after a lost response and a UI language change", async () => {
     const { posts } = captureCreates({ lostFirstResponse: true });
     const user = await structuredEditor();
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题" }), { target: { value: "First" } });
     await user.click(screen.getByRole("button", { name: "＋ 添加子问题" }));
     fireEvent.change(screen.getByRole("textbox", { name: "研究问题 2" }), { target: { value: "Second" } });
     await user.click(screen.getByRole("button", { name: "开始研究" }));
-    const check = await screen.findByRole("button", { name: "检查提交结果" });
+    await screen.findByRole("button", { name: "检查提交结果" });
     expect(screen.getByRole("textbox", { name: "研究问题" })).toHaveAttribute("readonly");
     expect(screen.getByRole("textbox", { name: "研究问题 2" })).toHaveValue("Second");
     expect(screen.getByRole("button", { name: "已提交" })).toHaveAttribute("aria-disabled", "true");
-    await user.click(check);
-    const retry = within(screen.getByRole("region", { name: "提交回执待确认" })).getByRole("button", { name: "重试同一请求" });
+    await useEnglish(user);
+    await user.click(screen.getByRole("button", { name: "Check submission" }));
+    const retry = within(screen.getByRole("region", { name: "Awaiting create confirmation" })).getByRole("button", { name: "Retry the same request" });
     expect(posts).toHaveLength(1);
     await user.click(retry);
-    await screen.findByRole("button", { name: "阅读报告" });
+    await screen.findByRole("button", { name: "Read report" });
     expect(posts).toHaveLength(2);
     expect(posts[1]).toEqual(posts[0]);
-    expect(JSON.parse(posts[0].body).scope.questions).toEqual([
-      { question_id: "q1", text: "First" }, { question_id: "q2", text: "Second" }
-    ]);
+    expect(JSON.parse(posts[0].body).scope).toEqual({
+      report_language: "zh-CN",
+      questions: [{ question_id: "q1", text: "First" }, { question_id: "q2", text: "Second" }]
+    });
   });
 
   it("supports English keyboard addition/removal and prevents an empty scope", async () => {
@@ -131,21 +133,25 @@ describe("multi-question creation editor", () => {
     expect(screen.getByRole("button", { name: "Start research" })).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("keeps general research available and reads its Markdown without requesting findings", async () => {
+  it.each([
+    { locale: "zh-CN", mode: "研究模式", add: "＋ 添加子问题", question: "研究问题", start: "开始研究", read: "阅读报告" },
+    { locale: "en", mode: "Research mode", add: "＋ Add question", question: "Research question", start: "Start research", read: "Read report" }
+  ])("creates a general report in $locale and reads its Markdown without requesting findings", async ({ locale, mode, add, question, start, read }) => {
     const { posts, requests } = captureCreates({ generic: true });
     const user = await structuredEditor();
-    await user.selectOptions(screen.getByRole("combobox", { name: "研究模式" }), "generic");
-    expect(screen.queryByRole("button", { name: "＋ 添加子问题" })).not.toBeInTheDocument();
-    await user.type(screen.getByRole("textbox", { name: "研究问题" }), "General question");
-    await user.click(screen.getByRole("button", { name: "开始研究" }));
-    const readReport = await screen.findByRole("button", { name: "阅读报告" });
+    if (locale === "en") await useEnglish(user);
+    await user.selectOptions(screen.getByRole("combobox", { name: mode }), "generic");
+    expect(screen.queryByRole("button", { name: add })).not.toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: question }), "General question");
+    await user.click(screen.getByRole("button", { name: start }));
+    const readReport = await screen.findByRole("button", { name: read });
     expect(screen.queryByRole("heading", { name: "Canonical report" })).not.toBeInTheDocument();
     await user.click(readReport);
     expect(await screen.findByRole("heading", { name: "Canonical report" })).toBeVisible();
 
     expect(posts).toHaveLength(1);
     expect(JSON.parse(posts[0].body)).toEqual({
-      query: "General question", thread_id: "demo-console-fixed", profile_id: "generic", scope: {}
+      query: "General question", thread_id: "demo-console-fixed", profile_id: "generic", scope: { report_language: locale }
     });
     expect(requests.some((path) => path.endsWith("/findings"))).toBe(false);
   });

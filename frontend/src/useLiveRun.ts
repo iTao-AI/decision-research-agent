@@ -14,6 +14,7 @@ import {
   validateLiveRunId,
   type ClientError,
   type HealthResponse,
+  type ReportLanguage,
   type RunCreateIntent,
   type RunCreationResponse,
   type RunProjection,
@@ -324,8 +325,13 @@ export function useLiveRun(
     }
   }, [isCurrent, nextRequest, observeRun, state.baseUrl, waitTimeoutMs]);
 
-  const startNewRun = useCallback(async (query: string, questions?: readonly ResearchQuestion[], profileId?: LiveResearchProfile) => {
-    const intent = createRunIntent(query, randomUUID, profileId ?? state.createProfileId ?? "generic", questions);
+  const startNewRun = useCallback(async (
+    query: string,
+    questions?: readonly ResearchQuestion[],
+    profileId?: LiveResearchProfile,
+    reportLanguage?: ReportLanguage
+  ) => {
+    const intent = createRunIntent(query, randomUUID, profileId ?? state.createProfileId ?? "generic", questions, reportLanguage);
     createIntent.current = intent;
     activeRunId.current = null;
     await createAndObserve(intent);

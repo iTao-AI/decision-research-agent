@@ -121,7 +121,7 @@ describe("unresolved report to independent editable research draft", () => {
     fireEvent.click(confirm); fireEvent.click(confirm);
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(JSON.parse(posts[0].body)).toEqual({ query: "More specific new question", thread_id: "demo-console-new-1",
-      profile_id: "generic-evidence-report", scope: { questions: [{ question_id: "q1", text: "More specific new question" }, { question_id: "q2", text: "Unknown 中文😀" }] } });
+      profile_id: "generic-evidence-report", scope: { report_language: "zh-CN", questions: [{ question_id: "q1", text: "More specific new question" }, { question_id: "q2", text: "Unknown 中文😀" }] } });
     expect(posts[0].key).toBe("run-create-console-new-1");
     const readNew = await screen.findByRole("button", { name: "阅读报告" });
     expect(screen.getByRole("status")).toHaveTextContent("报告已就绪");
@@ -305,7 +305,7 @@ describe("unresolved report to independent editable research draft", () => {
     expect(posts[1].key).not.toBe(posts[0].key);
     expect(JSON.parse(posts[1].body)).toEqual({
       query: "Recover edited question one", thread_id: "demo-console-new-2",
-      profile_id: "generic-evidence-report", scope: { questions: [
+      profile_id: "generic-evidence-report", scope: { report_language: "zh-CN", questions: [
         { question_id: "q1", text: "Recover edited question one" },
         { question_id: "q2", text: "Revised recovered second question" }
       ] }

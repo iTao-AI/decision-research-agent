@@ -148,9 +148,10 @@ def test_targeted_claim_only_claims_requested_run(tmp_path):
     assert get_run_dispatch(db_path=db_path, run_id=first["run_id"])["status"] == "pending"
 
 
-def test_same_worker_old_attempt_cannot_start_after_reclaim(tmp_path):
+@pytest.mark.parametrize("scope", [{}, {"report_language": "zh-CN"}, {"report_language": "en"}])
+def test_same_worker_old_attempt_cannot_start_after_reclaim(tmp_path, scope):
     db_path = str(tmp_path / "tasks.db")
-    created = create_run(db_path=db_path, thread_id="thread-1", query="research")
+    created = create_run(db_path=db_path, thread_id="thread-1", query="research", scope=scope)
     first = _claim(db_path, run_id=created["run_id"])
     connection = sqlite3.connect(db_path)
     try:
@@ -170,6 +171,7 @@ def test_same_worker_old_attempt_cannot_start_after_reclaim(tmp_path):
     )
 
     assert second.attempt_count == first.attempt_count + 1
+    assert first.scope == second.scope == scope
     assert start_run_dispatch(db_path=db_path, claim=first) is None
     assert start_run_dispatch(db_path=db_path, claim=second) is not None
 

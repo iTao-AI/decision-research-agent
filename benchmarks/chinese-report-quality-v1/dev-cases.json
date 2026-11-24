@@ -1,0 +1,283 @@
+{
+  "format_version": 1,
+  "cases": [
+    {
+      "id": "dev-zotero-sync",
+      "entry": "web-general-markdown",
+      "report_language": "zh-CN",
+      "prompt": [
+        "我们用 Zotero 办读书会。两台电脑都能看到笔记，为什么其中一台看不到 PDF？个人库和群组库分别应检查什么设置？"
+      ],
+      "material_conditions": {
+        "fixed": {
+          "source_ids": [
+            "zotero-sync",
+            "zotero-settings",
+            "zotero-diagnosis",
+            "zotero-group-settings"
+          ]
+        }
+      },
+      "coverage": [
+        {
+          "id": "data-file-separate",
+          "requirement": "明确 Zotero 条目和笔记走数据同步，PDF 文件另走附件同步。看到笔记只能说明数据可见。",
+          "evidence_ids": [
+            "zotero-sync"
+          ],
+          "required": true
+        },
+        {
+          "id": "personal-settings",
+          "requirement": "两端在 Settings → Sync 核对个人库附件同步和相同后端。个人库可用 Zotero Storage 或 WebDAV；链接文件另查。",
+          "evidence_ids": [
+            "zotero-sync",
+            "zotero-settings",
+            "zotero-diagnosis"
+          ],
+          "required": true
+        },
+        {
+          "id": "group-settings",
+          "requirement": "群组附件只用 Zotero Storage，检查群组文件同步设置，而且群组须允许 File Editing。",
+          "evidence_ids": [
+            "zotero-sync",
+            "zotero-settings",
+            "zotero-diagnosis"
+          ],
+          "required": true
+        },
+        {
+          "id": "group-owner-quota",
+          "requirement": "如怀疑容量，核对群组所有者的储存配额。",
+          "evidence_ids": [
+            "zotero-group-settings"
+          ],
+          "required": false
+        },
+        {
+          "id": "diagnostic-action",
+          "requirement": "先在有文件的一端确认是存储附件并核对上传；可举在网页库实际打开附件的端到端检查。对题设中的具体根因保留待核。",
+          "evidence_ids": [
+            "zotero-sync",
+            "zotero-diagnosis"
+          ],
+          "required": true
+        }
+      ],
+      "critical_errors": [
+        "用看到笔记推断 PDF 本体已经同步。",
+        "声称群组附件可通过 WebDAV 同步。",
+        "将某个具体设备、用户或配额直接判为已确定故障源。"
+      ]
+    },
+    {
+      "id": "dev-github-asset-downloads",
+      "entry": "web-evidence-research",
+      "report_language": "zh-CN",
+      "prompt": [
+        "一个开源项目的安装包显示下载了 50 次。这个数字统计什么？",
+        "能据此判断有 50 个人成功安装了吗？"
+      ],
+      "material_conditions": {
+        "fixed": {
+          "source_ids": [
+            "github-release-rest",
+            "github-release-graphql"
+          ]
+        }
+      },
+      "coverage": [
+        {
+          "id": "asset-count",
+          "requirement": "50 是题设给定值，表示这个 Release Asset 的下载次数。REST 名为 download_count，官方例值与题设分开。",
+          "evidence_ids": [
+            "github-release-rest",
+            "github-release-graphql"
+          ],
+          "required": true
+        },
+        {
+          "id": "unique-people-unknown",
+          "requirement": "单个附件的下载次数无法据此得出独立用户数；没有去重用户维度。",
+          "evidence_ids": [
+            "github-release-graphql"
+          ],
+          "required": true
+        },
+        {
+          "id": "install-success-unknown",
+          "requirement": "根据该计数无法推知成功安装次数或人数。安装成功需要独立记录。",
+          "evidence_ids": [
+            "github-release-graphql"
+          ],
+          "required": true
+        }
+      ],
+      "critical_errors": [
+        "把 50 当成官方示例或本次 API 查询结果。",
+        "把附件下载次数等同于唯一下载者、成功安装者或整个项目的用户数。",
+        "无文档依据断言 GitHub 如何统计重试、重复请求、缓存或未完成下载。"
+      ]
+    },
+    {
+      "id": "dev-approved-customer-notice",
+      "entry": "web-evidence-research",
+      "report_language": "zh-CN",
+      "prompt": [
+        "客户说“换过货，耳机左边还是没声音”。我们准备用 LangGraph 做一个客服 Agent，先起草一条客诉升级通知，等值班主管确认后再发到飞书售后群。等审批时服务重启了，主管下午回来点同意，Agent 怎样接着处理原来那条草稿？",
+        "主管已经同意。应用机器人第一次调用飞书「发送消息」接口时超时，没拿到消息编号。同一条通知在 10 分钟后重试，和 24 小时后再处理，分别该怎么做才能避免重复发群？请分别给出 LangGraph 和飞书的官方依据。"
+      ],
+      "material_conditions": {
+        "fixed": {
+          "source_ids": [
+            "langgraph-interrupts",
+            "langgraph-missing-ack",
+            "feishu-send-uuid"
+          ]
+        }
+      },
+      "coverage": [
+        {
+          "id": "durable-draft",
+          "requirement": "把同一草稿和待审批状态放进重启后仍能读回的检查点；重启后恢复同一已持久化执行。",
+          "evidence_ids": [
+            "langgraph-interrupts"
+          ],
+          "required": true
+        },
+        {
+          "id": "same-thread-and-resume",
+          "requirement": "在原 thread_id 上带审批决定调用 Command(resume=...)。",
+          "evidence_ids": [
+            "langgraph-interrupts"
+          ],
+          "required": true
+        },
+        {
+          "id": "restart-node-and-gate",
+          "requirement": "从中断节点开头重跑，避免在 interrupt() 之前留下重放副作用；经确认的路径才发送。",
+          "evidence_ids": [
+            "langgraph-interrupts"
+          ],
+          "required": true
+        },
+        {
+          "id": "unknown-ack",
+          "requirement": "超时未拿到消息编号时，发送结果仍未知。",
+          "evidence_ids": [
+            "langgraph-missing-ack"
+          ],
+          "required": true
+        },
+        {
+          "id": "retry-at-10m",
+          "requirement": "同一通知在首次发送前持久保存 uuid 且首次实际携带该值时，10 分钟后复用它重试；1 小时内至多一次成功。首次未带或无法确认原值时先核对。",
+          "evidence_ids": [
+            "feishu-send-uuid",
+            "langgraph-missing-ack"
+          ],
+          "required": true
+        },
+        {
+          "id": "after-24h",
+          "requirement": "24 小时已超出接口文档保证；先凭群消息或可核验的业务记录对账。确认已发就结束，仍未知则转人工核对，并避免盲重发。",
+          "evidence_ids": [
+            "feishu-send-uuid",
+            "langgraph-missing-ack"
+          ],
+          "required": true
+        }
+      ],
+      "critical_errors": [
+        "用内存检查点跨进程恢复，或另造 thread_id 恢复原草稿。",
+        "描述为从 interrupt() 的下一行继续执行。",
+        "将发送接口超时结论写成确认未发或确认已发。",
+        "首次没带 uuid 仍宣称 10 分钟内自动防重，或把至多一次成功写成必达。",
+        "宣称 24 小时后使用同一个 uuid 仍有飞书去重保证。"
+      ]
+    },
+    {
+      "id": "dev-skill-log-authority",
+      "entry": "controlled-materials",
+      "report_language": "zh-CN",
+      "prompt": [
+        "团队有一份故障排查手册和一个只读日志接口，想做个研发 Agent。哪些步骤写成 Skill，哪些操作交给工具？阿里案例里谁能批准重启生产实例？要判断我们自己的 Agent 能否重启，还缺哪份资料？"
+      ],
+      "material_conditions": {
+        "complete": {
+          "source_ids": [
+            "book-skills",
+            "book-tools",
+            "alibaba-skill-tool",
+            "alibaba-approval-example"
+          ],
+          "generation_instruction": "只根据所给材料和题设作答。"
+        },
+        "approval-example-withheld": {
+          "source_ids": [
+            "book-skills",
+            "book-tools",
+            "alibaba-skill-tool"
+          ],
+          "coverage_overrides": {
+            "example-approver": {
+              "requirement": "明确当前材料缺少该案例的审批人信息，需补具体案例页才能回答。",
+              "evidence_ids": []
+            }
+          },
+          "generation_instruction": "只根据所给材料和题设作答。",
+          "excluded_source_ids": [
+            "alibaba-approval-example"
+          ]
+        }
+      },
+      "coverage": [
+        {
+          "id": "skill-method",
+          "requirement": "把可复用的排障流程写进按需加载的 Skill，例如适用条件、选择日志范围与顺序、异常与升级判断、产出或复核要求。",
+          "evidence_ids": [
+            "book-skills",
+            "alibaba-skill-tool"
+          ],
+          "required": true
+        },
+        {
+          "id": "read-only-tool",
+          "requirement": "使用受限的只读日志接口实际取数，说明合理的结构化输入（如服务、时间窗口）与可复核结果；工具不获得写权限。",
+          "evidence_ids": [
+            "book-tools",
+            "alibaba-skill-tool"
+          ],
+          "required": true
+        },
+        {
+          "id": "example-approver",
+          "requirement": "明确在阿里手册示例里，重启生产实例须资源负责人或值班负责人审批，Agent 不自行确认。",
+          "evidence_ids": [
+            "alibaba-approval-example"
+          ],
+          "required": true
+        },
+        {
+          "id": "team-authorization",
+          "requirement": "指出要查本团队的正式授权或权限策略，例如生产重启操作的服务范围、执行身份、审批角色或委托记录。能否重启在两种材料条件下均待查。",
+          "evidence_ids": [],
+          "required": true
+        }
+      ],
+      "critical_errors": [
+        "拿阿里示例当成提问团队的生效授权。",
+        "认为 Skill、只读接口、用户口头请求或模型本身赋予生产重启权限。",
+        "缺审批示例仍由常识或记忆断言案例角色。"
+      ]
+    }
+  ],
+  "judge_rubric": {
+    "binding": "Record program observations per reference. Evidence research uses exact source identity, excerpt, SHA-256 and [start,end) Unicode offsets. Record Markdown source links as links and report formal binding as not_applicable when the entry has no structured binding contract.",
+    "source_support": "Mark each key factual assertion supported, contradicted, insufficient, or conflicting. Cite the exact material ID and matching phrase or explain the unsupported inference. An answer may make a reasonable operational recommendation while separately marking its assumptions.",
+    "coverage": "Per item award 1 for satisfied, 0 for absent/incorrect, null for unscorable. Apply material-condition overrides. Report required numerator and denominator; report optional checks and critical errors separately. No report means semantic dimensions are unscorable.",
+    "chinese_readability": "Score 2 when the answer naturally states the conclusion, branches and applicability in Simplified Chinese; 1 when understandable but the reader has to reconstruct an important branch or condition; 0 when unclear or mainly in another language. Preserve source language inside citations.",
+    "blind_inputs": "Send prompt, condition, output, receipts, and coverage rubric to the judge. Hide generation strategy and candidate labels; record judge model, prompt version, input fingerprint, per-item verdicts and reason."
+  }
+}

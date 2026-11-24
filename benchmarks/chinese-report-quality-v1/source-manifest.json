@@ -1,0 +1,309 @@
+{
+  "packet_sha256": "5fc6e0fa97778eb1132d93f18b5bf162fc7af1e5713f59b9522565ed2b1b67c5",
+  "sources": [
+    {
+      "id": "zotero-sync",
+      "title": "Zotero Documentation · Syncing",
+      "source_url": "https://www.zotero.org/support/sync",
+      "link": "https://www.zotero.org/support/sync",
+      "anchor": "Data Syncing; File Syncing › WebDAV",
+      "version": "HTML checked 2026-11-22",
+      "source_sha256": "a2052c7b743d1134c7115cc259229b9f7f8f84d6886b59db7f7046c0e3894219",
+      "source_representation": "Official HTML bytes. Extracted visible text with collapsed whitespace.",
+      "snippet_sha256": "fc867ab8bd1dcf3e8cebdb9d9625dc170d558e1ec6a57a51e5893c0ee441e653",
+      "excerpts": [
+        {
+          "anchor": "https://www.zotero.org/support/sync#data_syncing",
+          "excerpt_sha256": "6e695f7fbe5fa0e9e934c12fc0e3a010d2e31bbeeab43d7178a6390de55339e3",
+          "excerpt_start": 0,
+          "excerpt_end": 76
+        },
+        {
+          "anchor": "https://www.zotero.org/support/sync#webdav",
+          "excerpt_sha256": "73976974b87632406def7237fd5e2d1c90af45ab32c95d0651ae533deda09a00",
+          "excerpt_start": 77,
+          "excerpt_end": 168
+        }
+      ]
+    },
+    {
+      "id": "zotero-settings",
+      "title": "Zotero Documentation · Settings › Sync",
+      "source_url": "https://www.zotero.org/support/preferences/sync",
+      "link": "https://www.zotero.org/support/preferences/sync#file_syncing",
+      "anchor": "Settings › File Syncing",
+      "version": "HTML checked 2026-11-22",
+      "source_sha256": "fe5fa8bd5a8eb1481a2d40d5fd51cd6c5d68edd4747f078c171e944c11afdab1",
+      "source_representation": "Official HTML bytes. Extracted visible text with collapsed whitespace.",
+      "snippet_sha256": "8173a4a722a94393d0141af4b9bf1c61e44076fd7938091911a4a960299e240d",
+      "excerpts": [
+        {
+          "anchor": "My Library file syncing",
+          "excerpt_sha256": "c08ddcf179230cd9cea7670e8890667a2ec1ca1d6f337885b2ef8e0a4a886ed8",
+          "excerpt_start": 0,
+          "excerpt_end": 61
+        },
+        {
+          "anchor": "My Library › Zotero",
+          "excerpt_sha256": "ea2176d6fe6596d624ebdd972ade77084b78c911a92f71613df053ad04793f7b",
+          "excerpt_start": 62,
+          "excerpt_end": 110
+        },
+        {
+          "anchor": "Group libraries file syncing",
+          "excerpt_sha256": "f3556dbc483036ab23d5ddc15914a25f8a3fe952c3b2ceaba765e0843e918f05",
+          "excerpt_start": 111,
+          "excerpt_end": 169
+        }
+      ]
+    },
+    {
+      "id": "zotero-diagnosis",
+      "title": "Zotero Documentation · File syncing troubleshooting",
+      "source_url": "https://www.zotero.org/support/kb/files_not_syncing",
+      "link": "https://www.zotero.org/support/kb/files_not_syncing#long_answer",
+      "anchor": "Long Answer, steps 2–4",
+      "version": "HTML checked 2026-11-22",
+      "source_sha256": "1d83b5b63d8c25c131e869dc86c0a55c12f1f1fa5c77c37d651172b5cb5925c9",
+      "source_representation": "Official HTML bytes. Extracted visible text with collapsed whitespace.",
+      "snippet_sha256": "86014aad5beae5f63067c0e1b6aa40a313d302a53e492aca2e46a5f3d89e0316",
+      "excerpts": [
+        {
+          "anchor": "Long Answer, step 2",
+          "excerpt_sha256": "ebf4304291887b06ac33173904d2620292490f4ef34af9766cfeb90611759c9d",
+          "excerpt_start": 0,
+          "excerpt_end": 25
+        },
+        {
+          "anchor": "Long Answer, step 4",
+          "excerpt_sha256": "54affd51babf5e25c19976ba56c9115d9741d2f61e0ea29513ee80c9ed9c9d7c",
+          "excerpt_start": 26,
+          "excerpt_end": 78
+        },
+        {
+          "anchor": "Long Answer, step 4",
+          "excerpt_sha256": "0d3ef50130976432fc546c2d2e71ce7eb83f9a95ce6e73ba9fdddb4a101faa21",
+          "excerpt_start": 79,
+          "excerpt_end": 119
+        }
+      ]
+    },
+    {
+      "id": "zotero-group-settings",
+      "title": "Zotero Documentation · Zotero Groups",
+      "source_url": "https://www.zotero.org/support/groups",
+      "link": "https://www.zotero.org/support/groups#library_settings",
+      "anchor": "Group Settings › Library Settings",
+      "version": "HTML checked 2026-11-22",
+      "source_sha256": "0a15acd42a6b7f1f6c21a3acd956eaaf46e3b1a25ed0667dfde6411b28001e0a",
+      "source_representation": "Official HTML bytes. Extracted visible text with collapsed whitespace.",
+      "snippet_sha256": "cc6a7a4837e644c990d4cf46f8b69fb8f4b4876594a09ed764f61a2a3883adbb",
+      "excerpts": [
+        {
+          "anchor": "Library Settings",
+          "excerpt_sha256": "cc6a7a4837e644c990d4cf46f8b69fb8f4b4876594a09ed764f61a2a3883adbb",
+          "excerpt_start": 0,
+          "excerpt_end": 82
+        }
+      ]
+    },
+    {
+      "id": "github-release-rest",
+      "title": "GitHub REST API · Get a release asset",
+      "source_url": "https://docs.github.com/en/rest/releases/assets",
+      "link": "https://docs.github.com/en/rest/releases/assets#get-a-release-asset--code-samples",
+      "anchor": "Get a release asset › Code samples › Example response",
+      "version": "HTML checked 2026-11-22",
+      "source_sha256": "21780e16161dd1a57b67e1f482643c51eb33ee12d61db32d4f2e9f78d05797e1",
+      "source_representation": "Official HTML bytes. Extracted visible text with collapsed whitespace.",
+      "snippet_sha256": "87bc792f68e405bc960fa90f90927b9c4320a598a9a35c21675856db4e80b90c",
+      "excerpts": [
+        {
+          "anchor": "Example response, one specific release asset",
+          "excerpt_sha256": "87bc792f68e405bc960fa90f90927b9c4320a598a9a35c21675856db4e80b90c",
+          "excerpt_start": 0,
+          "excerpt_end": 20
+        }
+      ]
+    },
+    {
+      "id": "github-release-graphql",
+      "title": "GitHub GraphQL API · ReleaseAsset",
+      "source_url": "https://docs.github.com/en/graphql/reference/releases",
+      "link": "https://docs.github.com/en/graphql/reference/releases#object-releaseasset",
+      "anchor": "ReleaseAsset › Fields › downloadCount",
+      "version": "HTML checked 2026-11-22",
+      "source_sha256": "4a85fcd9487b13e0791a701d86c1d02b696ec68d1cbac708adab37dde3a8a0ca",
+      "source_representation": "Official HTML bytes. Extracted visible text with collapsed whitespace.",
+      "snippet_sha256": "dfd6d1a5524f825ade40e4d14ab38a79c1116c49f1c98210ec82a2b9ece521f7",
+      "excerpts": [
+        {
+          "anchor": "ReleaseAsset.downloadCount",
+          "excerpt_sha256": "dfd6d1a5524f825ade40e4d14ab38a79c1116c49f1c98210ec82a2b9ece521f7",
+          "excerpt_start": 0,
+          "excerpt_end": 46
+        }
+      ]
+    },
+    {
+      "id": "langgraph-interrupts",
+      "title": "LangGraph · Interrupts",
+      "source_url": "https://github.com/langchain-ai/docs/blob/aca2aa62a57cd9f8078086e1810ac6567ebe4278/src/oss/langgraph/interrupts.mdx",
+      "link": "https://github.com/langchain-ai/docs/blob/aca2aa62a57cd9f8078086e1810ac6567ebe4278/src/oss/langgraph/interrupts.mdx#L36-L102",
+      "anchor": "Pause using interrupt; Resuming interrupts",
+      "version": "aca2aa62a57cd9f8078086e1810ac6567ebe4278",
+      "source_sha256": "f7399fde7b1d43eabdfb8bb4ddd730a537154256bb2932beab173cdc99fc80d4",
+      "source_representation": "Official GitHub raw MDX bytes at immutable commit.",
+      "snippet_sha256": "5b08726b2a60140c79a6c0c8b09438961e3161600568ba950a1e5ea7e3e8f55c",
+      "excerpts": [
+        {
+          "anchor": "lines 36–44",
+          "excerpt_sha256": "d822bc052c06f21a2f57d1e71f9f612e4967f3244f01565cbed99cad0372406d",
+          "excerpt_start": 0,
+          "excerpt_end": 40
+        },
+        {
+          "anchor": "line 100",
+          "excerpt_sha256": "f56bab575fc79dfb31d30e0284c05aa72f3848cdaa9969db863123c7c6000cfa",
+          "excerpt_start": 41,
+          "excerpt_end": 73
+        },
+        {
+          "anchor": "line 101",
+          "excerpt_sha256": "ad1e6422a4586fd3f83437f42370397777100d4f64a62d0b61234512e7370984",
+          "excerpt_start": 74,
+          "excerpt_end": 120
+        },
+        {
+          "anchor": "line 102",
+          "excerpt_sha256": "467d6926bb8fcf32e634e1f6a4fbe1332cb9c46646c7cb3fc4477047681e0db2",
+          "excerpt_start": 121,
+          "excerpt_end": 157
+        }
+      ]
+    },
+    {
+      "id": "langgraph-missing-ack",
+      "title": "LangGraph · Fault tolerance",
+      "source_url": "https://github.com/langchain-ai/docs/blob/aca2aa62a57cd9f8078086e1810ac6567ebe4278/src/oss/langgraph/fault-tolerance.mdx",
+      "link": "https://github.com/langchain-ai/docs/blob/aca2aa62a57cd9f8078086e1810ac6567ebe4278/src/oss/langgraph/fault-tolerance.mdx#L336-L375",
+      "anchor": "Durable key before side effect; Treat a missing acknowledgement as unknown",
+      "version": "aca2aa62a57cd9f8078086e1810ac6567ebe4278",
+      "source_sha256": "551fc4c9462c41af18345234859d722d7ff95c78fe8377345a79dd0a9268d28c",
+      "source_representation": "Official GitHub raw MDX bytes at immutable commit.",
+      "snippet_sha256": "6b0c6ca69a3326b047759c1d3790072f0a5bc6d13f1eba8bda59eac9643a27eb",
+      "excerpts": [
+        {
+          "anchor": "line 336",
+          "excerpt_sha256": "7f6bbc566ac675a2daa7e1e67dc855b0955b0644bd26672d2c74600e878eac39",
+          "excerpt_start": 0,
+          "excerpt_end": 62
+        },
+        {
+          "anchor": "line 375",
+          "excerpt_sha256": "247f09d07978b69f3623a99eac0a0ca56e3e7757bb7b4a664e0c15f09ecb1c62",
+          "excerpt_start": 63,
+          "excerpt_end": 92
+        }
+      ]
+    },
+    {
+      "id": "feishu-send-uuid",
+      "title": "飞书开放平台 · 发送消息",
+      "source_url": "https://open.feishu.cn/document/server-docs/im-v1/message/create.md",
+      "link": "https://open.feishu.cn/document/server-docs/im-v1/message/create.md",
+      "anchor": "请求 › 请求体 › uuid；POST /open-apis/im/v1/messages",
+      "version": "中文 Markdown，核对于 2026-11-22",
+      "source_sha256": "23875d7fd3c9d25124f540a40f6b5976cc1314ac0512ea7332a71c0465fb4a08",
+      "source_representation": "Official Chinese Markdown bytes. Retrieved with Accept-Language: zh-CN,zh;q=0.9.",
+      "snippet_sha256": "c16c5446935409d0a88f1f7ec691d78bed4262ec995d33b2b61bcf5d1d113e9c",
+      "excerpts": [
+        {
+          "anchor": "请求体 uuid；第 47 行（本次快照）",
+          "excerpt_sha256": "c16c5446935409d0a88f1f7ec691d78bed4262ec995d33b2b61bcf5d1d113e9c",
+          "excerpt_start": 0,
+          "excerpt_end": 32
+        }
+      ]
+    },
+    {
+      "id": "book-skills",
+      "title": "《深入理解 AI Agent：设计原理与工程实践》",
+      "source_url": "https://github.com/bojieli/ai-agent-book/releases/tag/latest",
+      "link": "https://github.com/bojieli/ai-agent-book/releases/tag/latest",
+      "anchor": "2.5.1 Skills：领域能力的可组合单元 · EPUB/text/ch003.xhtml",
+      "version": "EPUB v2.0 · 2026-09-23T12:55:30Z",
+      "source_sha256": "7151f12ea2b2f6763ba937670d9905d8c063329d10b313d37302272752160807",
+      "source_representation": "Approved local EPUB whose full SHA-256 pins the original. Extracted XHTML text with collapsed whitespace. Public rolling release establishes publisher identity.",
+      "snippet_sha256": "6f91811816065dbcc423b570d754d4c26ce4a59f901b0c02d6dd9d31532f3dbf",
+      "excerpts": [
+        {
+          "anchor": "2.5.1 Skills：领域能力的可组合单元",
+          "excerpt_sha256": "6f91811816065dbcc423b570d754d4c26ce4a59f901b0c02d6dd9d31532f3dbf",
+          "excerpt_start": 0,
+          "excerpt_end": 13
+        }
+      ]
+    },
+    {
+      "id": "book-tools",
+      "title": "《深入理解 AI Agent：设计原理与工程实践》",
+      "source_url": "https://github.com/bojieli/ai-agent-book/releases/tag/latest",
+      "link": "https://github.com/bojieli/ai-agent-book/releases/tag/latest",
+      "anchor": "4.2.1 能力的表达形式：专用工具、通用执行器与 Skill · EPUB/text/ch005.xhtml",
+      "version": "EPUB v2.0 · 2026-09-23T12:55:30Z",
+      "source_sha256": "7151f12ea2b2f6763ba937670d9905d8c063329d10b313d37302272752160807",
+      "source_representation": "Approved local EPUB whose full SHA-256 pins the original. Extracted XHTML text with collapsed whitespace. Public rolling release establishes publisher identity.",
+      "snippet_sha256": "631bccb861d389a2ec0609c64cf3a42d5d4b927213d2d440579175c8a1a07a91",
+      "excerpts": [
+        {
+          "anchor": "4.2.1 能力的表达形式：专用工具、通用执行器与 Skill",
+          "excerpt_sha256": "631bccb861d389a2ec0609c64cf3a42d5d4b927213d2d440579175c8a1a07a91",
+          "excerpt_start": 0,
+          "excerpt_end": 31
+        }
+      ]
+    },
+    {
+      "id": "alibaba-skill-tool",
+      "title": "阿里《AI Native 研发范式实践手册》",
+      "source_url": "https://g.alistatic.com/s/v/ainativeinfra/ai-native-handbook/0.0.1/ai-native-handbook.pdf",
+      "link": "https://g.alistatic.com/s/v/ainativeinfra/ai-native-handbook/0.0.1/ai-native-handbook.pdf#page=46",
+      "anchor": "印刷页 41／PDF 第 46 页，§3.1.3",
+      "version": "Publisher PDF 0.0.1 · SHA-256 pinned",
+      "source_sha256": "6929f3e9e57fef9550129d457ba82ac40a4a9368e1c5926c6ac2206d8aaeced3",
+      "source_representation": "Approved publisher PDF. This image-only PDF quote was visually transcribed and checked against its local OCR with whitespace removed.",
+      "snippet_sha256": "03710e6a8c99320fe798d8249ec781564d5473831821270f33320472c3c1dbc0",
+      "publication_url": "https://g.alistatic.com/s/v/ainativeinfra/ai-native-handbook/0.0.1/ai-native-handbook.pdf",
+      "excerpts": [
+        {
+          "anchor": "印刷页 41／PDF 第 46 页，§3.1.3",
+          "excerpt_sha256": "03710e6a8c99320fe798d8249ec781564d5473831821270f33320472c3c1dbc0",
+          "excerpt_start": 0,
+          "excerpt_end": 36
+        }
+      ]
+    },
+    {
+      "id": "alibaba-approval-example",
+      "title": "阿里《AI Native 研发范式实践手册》",
+      "source_url": "https://g.alistatic.com/s/v/ainativeinfra/ai-native-handbook/0.0.1/ai-native-handbook.pdf",
+      "link": "https://g.alistatic.com/s/v/ainativeinfra/ai-native-handbook/0.0.1/ai-native-handbook.pdf#page=56",
+      "anchor": "印刷页 51／PDF 第 56 页，§3.3.1 案例表「重启生产实例」",
+      "version": "Publisher PDF 0.0.1 · SHA-256 pinned",
+      "source_sha256": "6929f3e9e57fef9550129d457ba82ac40a4a9368e1c5926c6ac2206d8aaeced3",
+      "source_representation": "Approved publisher PDF. This image-only PDF quote was visually transcribed and checked against its local OCR with whitespace removed.",
+      "snippet_sha256": "c191080e0594553095e8e6bdab97231af441108b77678b668a43509aabcf6fb0",
+      "publication_url": "https://g.alistatic.com/s/v/ainativeinfra/ai-native-handbook/0.0.1/ai-native-handbook.pdf",
+      "excerpts": [
+        {
+          "anchor": "印刷页 51／PDF 第 56 页，§3.3.1 案例表「重启生产实例」",
+          "excerpt_sha256": "c191080e0594553095e8e6bdab97231af441108b77678b668a43509aabcf6fb0",
+          "excerpt_start": 0,
+          "excerpt_end": 30
+        }
+      ]
+    }
+  ],
+  "case_file_sha256": "a49539e151923eb5ed68a97741e0010020b67bce5bd4cf1fd458d96e2658e948"
+}

@@ -20,6 +20,7 @@ from agent.profile_registry import (
     is_generic_family,
     is_strict_citation_profile,
 )
+from agent.report_language import ReportLanguage
 from agent.research import is_exact_source_url_cited
 from agent.source_url_policy import is_publishable_source_url
 from agent.talent_contracts import DecisionBrief
@@ -79,6 +80,7 @@ def build_generic_result_artifact(
     outcome: ExecutionOutcome,
     *,
     generated_at: datetime | None = None,
+    report_language: ReportLanguage | None = None,
 ) -> dict[str, str]:
     """Build the immutable generic result artifact for one completed run."""
     candidate = outcome.report_candidate
@@ -91,7 +93,7 @@ def build_generic_result_artifact(
         if not _is_non_empty_bounded_text(content):
             return _artifact(
                 kind="research_report_fallback_markdown",
-                content=_fallback_report(outcome, generated_at=generated_at),
+                content=_fallback_report(outcome, generated_at=generated_at, report_language=report_language),
             )
         return _artifact(
             kind="research_report_markdown",
@@ -100,7 +102,7 @@ def build_generic_result_artifact(
 
     return _artifact(
         kind="research_report_fallback_markdown",
-        content=_fallback_report(outcome, generated_at=generated_at),
+        content=_fallback_report(outcome, generated_at=generated_at, report_language=report_language),
     )
 
 
@@ -124,9 +126,25 @@ def _fallback_report(
     outcome: ExecutionOutcome,
     *,
     generated_at: datetime | None,
+    report_language: ReportLanguage | None = None,
 ) -> str:
     timestamp = (generated_at or datetime.now(timezone.utc)).isoformat()
     bounded_text = _safe_excerpt(outcome.last_agent_text)
+    if report_language == "zh-CN":
+        lines = [
+            "# 降级报告",
+            "",
+            "未能获取规范报告 `/workspace/research-report.md`。",
+            "",
+            f"- 运行编号：{outcome.run_id or '未知'}",
+            f"- 生成时间：{timestamp}",
+            "",
+            "## 最后一段 Agent 文本",
+            "",
+            bounded_text or "未生成规范报告。",
+            "",
+        ]
+        return "\n".join(lines)
     if not bounded_text:
         bounded_text = "No canonical report was produced by the agent."
     lines = [

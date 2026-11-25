@@ -28,6 +28,16 @@
   text-wrap: balance;
 }
 
+.dra-workspace .dw-reading-header .dw-reading-topic-long {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: clamp(25px, 3vw, 40px);
+  overflow-wrap: anywhere;
+  text-wrap: wrap;
+}
+
 .dra-workspace .dw-reading-index {
   display: flex;
   flex-wrap: wrap;

@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 from pydantic import ValidationError
 
+from agent.report_language import ReportLanguage
 from agent.research import EvidenceEntry, evidence_fingerprint_for, source_identity_for
 from agent.research_findings_contracts import (
     BoundFinding, BoundSourceReference, ResearchFindingsCandidate,
@@ -191,7 +192,7 @@ def build_research_findings_artifacts(
         )
         try:
             json_content = _canonical_json(report.model_dump(mode="json"))
-            markdown = render_research_findings_markdown(report)
+            markdown = render_research_findings_markdown(report, report_language=scope.report_language)
             if any(len(content.encode("utf-8")) > MAX_FINDINGS_ARTIFACT_BYTES for content in (json_content, markdown)):
                 issues.append("artifact_package_too_large")
             else:
@@ -228,34 +229,70 @@ def _text(value: str) -> str:
     return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", html.escape(value, quote=False))
 
 
-def render_research_findings_markdown(report: ResearchFindingsReport) -> str:
-    """Deterministic display of candidates and exact observed excerpts."""
-    lines = ["# Research findings", "",
-             "These are source-bound candidate findings. Sources remain unverified by this report; "
-             "binding does not establish truth or entailment. Human verification and approval remain separate.", ""]
+_FINDINGS_MARKDOWN_EN = {
+    "title": "# Research findings",
+    "boundary": (
+        "These are source-bound candidate findings. Sources remain unverified by this report; "
+        "binding does not establish truth or entailment. Human verification and approval remain separate."
+    ),
+    "question": "## Question {id}: {text}",
+    "unresolved": "Unresolved: {reason}",
+    "finding": "### {id} — source-bound candidate",
+    "source": "Source",
+    "evidence": "Evidence: {id}; excerpt code-point offsets [{start}, {end}).",
+    "excerpt": "Observed excerpt:",
+    "snippet": "Frozen observed snippet:",
+    "contradictions": "## Reported contradictions (model-reported)",
+    "limitations": "## Limitations",
+    "none": "None reported.",
+}
+
+_FINDINGS_MARKDOWN_ZH_CN = {
+    "title": "# 研究结论",
+    "boundary": "以下为已绑定来源的候选结论。引文定位、事实核实和人工审批分别记录。",
+    "question": "## 问题 {id}：{text}",
+    "unresolved": "待查原因：{reason}",
+    "finding": "### {id} — 已绑定来源的候选结论",
+    "source": "来源",
+    "evidence": "证据：{id}；引文字符偏移量 [{start}, {end})。",
+    "excerpt": "引用原句：",
+    "snippet": "留存摘录：",
+    "contradictions": "## 模型报告的矛盾",
+    "limitations": "## 适用条件与限制",
+    "none": "未报告。",
+}
+
+
+def render_research_findings_markdown(
+    report: ResearchFindingsReport, *, report_language: ReportLanguage | None = None,
+) -> str:
+    """Render v1 from accepted findings, leaving the source excerpts intact."""
+    labels = _FINDINGS_MARKDOWN_ZH_CN if report_language == "zh-CN" else _FINDINGS_MARKDOWN_EN
+    lines = [labels["title"], "", labels["boundary"], ""]
     for question in report.questions:
-        lines.extend([f"## Question {_text(question.question_id)}: {_text(question.text)}", ""])
+        lines.extend([labels["question"].format(id=_text(question.question_id), text=_text(question.text)), ""])
         disposition = next(d for d in report.dispositions if d.question_id == question.question_id)
         if disposition.status == "unresolved":
-            lines.extend([f"Unresolved: {_text(disposition.reason)}", ""])
+            lines.extend([labels["unresolved"].format(reason=_text(disposition.reason)), ""])
         else:
             for finding in report.findings:
                 if finding.question_id != question.question_id:
                     continue
-                lines.extend([f"### {_text(finding.finding_id)} — source-bound candidate", "", _text(finding.statement), ""])
+                lines.extend([labels["finding"].format(id=_text(finding.finding_id)), "", _text(finding.statement), ""])
                 for reference in finding.references:
-                    lines.extend([f"Source: <{quote(reference.source_url, safe=':/%')}>", "",
-                                  f"Evidence: {_text(reference.evidence_id)}; "
-                                  f"excerpt code-point offsets [{reference.excerpt_start}, {reference.excerpt_end}).", "",
-                                  "Observed excerpt:", ""])
+                    source = quote(reference.source_url, safe=":/%")
+                    offsets = labels["evidence"].format(
+                        id=_text(reference.evidence_id), start=reference.excerpt_start, end=reference.excerpt_end,
+                    )
+                    lines.extend([f"{labels['source']}: <{source}>", "", offsets, "", labels["excerpt"], ""])
                     lines.extend("> " + _text(line) for line in reference.excerpt.split("\n"))
-                    lines.extend(["", "Frozen observed snippet:", ""])
+                    lines.extend(["", labels["snippet"], ""])
                     lines.extend("> " + _text(line) for line in reference.snippet.split("\n"))
                     lines.append("")
-    lines.extend(["## Reported contradictions (model-reported)", ""])
-    lines.extend([f"- {_text(item)}" for item in report.reported_contradictions] or ["None reported."])
-    lines.extend(["", "## Limitations", ""])
-    lines.extend([f"- {_text(item)}" for item in report.limitations] or ["None reported."])
+    lines.extend([labels["contradictions"], ""])
+    lines.extend([f"- {_text(item)}" for item in report.reported_contradictions] or [labels["none"]])
+    lines.extend(["", labels["limitations"], ""])
+    lines.extend([f"- {_text(item)}" for item in report.limitations] or [labels["none"]])
     return "\n".join(lines) + "\n"
 
 
@@ -299,7 +336,10 @@ def validate_research_findings_report(
                 rebound, issue = _bind_reference(reference, entries, run_id)
                 if issue is not None or rebound != reference:
                     return False
-        contents = (_canonical_json(report.model_dump(mode="json")), render_research_findings_markdown(report))
+        contents = (
+            _canonical_json(report.model_dump(mode="json")),
+            render_research_findings_markdown(report, report_language=scope.report_language),
+        )
         return all(len(content.encode("utf-8")) <= MAX_FINDINGS_ARTIFACT_BYTES for content in contents)
     except (ValidationError, ValueError, TypeError, KeyError, AttributeError, RecursionError):
         return False

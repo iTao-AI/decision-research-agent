@@ -14,7 +14,10 @@ progress, report, or failure details from the bar and return to the workspace.
 
 **按编号打开研究 / Open by ID** opens a separate read-only view by run ID. The
 service connection in the header opens **连接设置 / Connection settings** for
-the local backend address, reconnection, and interface language. The ordinary
+the local backend address, reconnection, and interface language.
+New general and evidence reports use the current interface language at
+submission. Changing the interface later leaves the report and any pending
+submission unchanged. The ordinary
 home starts without example content. The deterministic offline examples are
 available on the [Static Demo routes](#run-static-demo). The service owns the
 run lifecycle, Evidence, review, and delivery. The draft and temporary create

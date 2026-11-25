@@ -158,3 +158,23 @@ describe("WorkspaceReport", () => {
     expect(screen.queryByText("证据不足")).not.toBeInTheDocument();
   });
 });
+
+it("keeps the saved report language when controls change languages", async () => {
+  const result = parseRunResult(markdownResult());
+  const run = parseRunProjection({ ...structuredRun(), scope: { report_language: "zh-CN" } });
+  const response = findingsResponse();
+  const findings = parseResearchFindings(response, result.run_id);
+  const user = userEvent.setup();
+  const { rerender } = render(<WorkspaceReport language="zh" result={result} findings={findings} run={run} />);
+  expect(screen.getByRole("heading", { name: "研究结论" })).toBeVisible();
+  rerender(<WorkspaceReport language="en" result={result} findings={findings} run={run} />);
+  expect(screen.getByRole("heading", { name: "研究结论" })).toHaveAttribute("lang", "zh-CN");
+  expect(screen.getByText(response.report.findings[0].statement)).toHaveAttribute("lang", "zh-CN");
+  expect(screen.getByText(response.report.limitations[0]).closest("ul")).toHaveAttribute("lang", "zh-CN");
+  expect(screen.getByText("证据不足")).toHaveAttribute("lang", "zh-CN");
+  expect(screen.getByRole("heading", { name: response.report.questions[0].text })).not.toHaveAttribute("lang");
+  await user.click(screen.getByRole("button", { name: "View source 1" }));
+  expect(screen.getByText(response.report.findings[0].references[0].excerpt, { selector: "blockquote" }))
+    .not.toHaveAttribute("lang");
+  expect(screen.getByText("View original report", { selector: "summary" })).toBeVisible();
+});

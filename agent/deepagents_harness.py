@@ -30,6 +30,7 @@ from agent.research_findings_contracts import ResearchFindingsCandidate
 from agent.profile_middleware import build_profile_middleware
 from agent.profile_registry import is_generic_family, profile_registry
 from agent.research_agents import compile_generic_researchers
+from agent.report_language import report_language_instruction, run_report_language
 from agent.runtime_context import ResearchRuntimeContext
 from agent.talent_runtime import talent_recursion_limit
 
@@ -140,6 +141,9 @@ class DeepAgentsHarness:
                 f"{json.dumps(dict(request.scope), ensure_ascii=False, sort_keys=True)}\n"
                 "只研究上述声明范围，并返回 schema-valid ResearchPacket。"
             )
+        language = run_report_language(request.profile_id, request.scope)
+        if language is not None:
+            content = f"{report_language_instruction(language)}\n\n{content}"
         config = {
             "configurable": {"thread_id": request.thread_id},
             "callbacks": list(observer.callbacks()),

@@ -69,8 +69,9 @@ const readerCopy = {
   }
 };
 
-export function ResearchFindingsReader({ language, findings, followUp, variant, initialView = "report", evidence, onFollowQuestion }: {
+export function ResearchFindingsReader({ language, documentLanguage, findings, followUp, variant, initialView = "report", evidence, onFollowQuestion }: {
   language: Language;
+  documentLanguage?: Language;
   findings: ResearchFindingsResponse;
   followUp?: UnresolvedQuestionControls;
   variant?: "workspace";
@@ -88,15 +89,16 @@ export function ResearchFindingsReader({ language, findings, followUp, variant, 
   </section>;
 
   if (variant) {
-    const labels = readerCopy[language];
+    const labels = readerCopy[documentLanguage ?? language];
+    const reportLang = documentLanguage === "zh" ? "zh-CN" : documentLanguage;
     return <article className="research-findings-reader dw-findings-reader" aria-label={t.title}>
-      <WorkspaceQuestionReport key={`${reportKey}/${initialView}`} language={language} report={report} followUp={followUp}
+      <WorkspaceQuestionReport key={`${reportKey}/${initialView}`} language={language} documentLanguage={documentLanguage} report={report} followUp={followUp}
         initialView={initialView} evidence={evidence} onFollowQuestion={onFollowQuestion} />
       {selection}
-      <div className="dw-reading-context">
+      <div className="dw-reading-context" lang={reportLang}>
         <details className="dw-details">
           <summary>{labels.contradictions}</summary>
-          {report.reported_contradictions.length > 0 && <p>{t.contradictionsBoundary}</p>}
+          {report.reported_contradictions.length > 0 && <p>{copy[documentLanguage ?? language].research.contradictionsBoundary}</p>}
           <TextEntries entries={report.reported_contradictions} empty={labels.noContradictions} />
         </details>
         <p className="dw-reading-binding">{labels.binding}</p>
@@ -238,8 +240,9 @@ function citationPosition(trigger: HTMLElement) {
   return { trigger, positions };
 }
 
-function WorkspaceQuestionReport({ language, report, followUp, initialView, evidence, onFollowQuestion }: {
+function WorkspaceQuestionReport({ language, documentLanguage, report, followUp, initialView, evidence, onFollowQuestion }: {
   language: Language;
+  documentLanguage?: Language;
   report: ResearchFindingsReport;
   followUp?: UnresolvedQuestionControls;
   initialView: WorkspaceReportView;
@@ -248,6 +251,8 @@ function WorkspaceQuestionReport({ language, report, followUp, initialView, evid
 }) {
   const t = copy[language].research;
   const labels = readerCopy[language];
+  const documentLabels = readerCopy[documentLanguage ?? language];
+  const reportLang = documentLanguage === "zh" ? "zh-CN" : documentLanguage;
   const id = useId();
   const questions = acceptedQuestions(report, id);
   const unanswered = questions.filter(({ disposition }) => disposition.status === "unresolved");
@@ -299,9 +304,11 @@ function WorkspaceQuestionReport({ language, report, followUp, initialView, evid
     previous?.positions.forEach((position, element) => { element.scrollTop = position; });
   }, [selectedCitation]);
 
+  const topic = reportTopic(questions[0].text);
+  const longTopic = Array.from(topic).length > 42;
   return <div className="dw-reading-body">
     <header className="dw-reading-header">
-      <h2>{reportTopic(questions[0].text)}</h2>
+      <h2 className={longTopic ? "dw-reading-topic-long" : undefined}>{topic}</h2>
       <div className="dw-reading-index">
         <button type="button" aria-expanded={selectedCitation === 1}
           onClick={(event) => selectCitation(1, event.currentTarget)}>{labels.citations(references.length, sourceCount)}</button>
@@ -311,11 +318,12 @@ function WorkspaceQuestionReport({ language, report, followUp, initialView, evid
       </div>
     </header>
     <section aria-labelledby={`${id}-findings`}>
-      <h3 id={`${id}-findings`} className="dw-reading-section-title">{labels.findings}</h3>
+      <h3 id={`${id}-findings`} className="dw-reading-section-title" lang={reportLang}>{documentLabels.findings}</h3>
       {questions.filter(({ findings }) => findings.length > 0).map((question) =>
         <section className="research-question-findings dw-reading-question" key={question.question_id} id={question.regionId}
           aria-label={question.text} tabIndex={-1} ref={(element) => registerRegion(question.question_id, element)}>
-          {question.findings.map((finding) => <WorkspaceFinding key={finding.finding_id} language={language} finding={finding}
+          {question.findings.map((finding) => <WorkspaceFinding key={finding.finding_id} language={language}
+            reportLang={reportLang} finding={finding}
             firstCitation={firstCitationNumbers.get(finding.finding_id)!} selectedCitation={selectedCitation}
             firstCitationTrigger={firstCitationTrigger} evidence={evidence}
             onSelect={selectCitation} onReturn={() => setSelectedCitation(undefined)} />)}
@@ -326,17 +334,17 @@ function WorkspaceQuestionReport({ language, report, followUp, initialView, evid
         </section>)}
     </section>
     {report.limitations.length > 0 && <section className="dw-reading-conditions" aria-labelledby={`${id}-conditions`}>
-      <h3 id={`${id}-conditions`} className="dw-reading-section-title">{labels.conditions}</h3>
-      <ul>{report.limitations.map((condition, index) => <li key={index}>{condition}</li>)}</ul>
+      <h3 id={`${id}-conditions`} className="dw-reading-section-title" lang={reportLang}>{documentLabels.conditions}</h3>
+      <ul lang={reportLang}>{report.limitations.map((condition, index) => <li key={index}>{condition}</li>)}</ul>
     </section>}
     <section className="dw-reading-unresolved" aria-labelledby={`${id}-unresolved-title`} id={`${id}-unresolved`} tabIndex={-1} ref={unresolved}>
-      <h3 id={`${id}-unresolved-title`} className="dw-reading-section-title">{labels.unresolved}</h3>
-      {unanswered.length === 0 && <p>{labels.noUnresolved}</p>}
+      <h3 id={`${id}-unresolved-title`} className="dw-reading-section-title" lang={reportLang}>{documentLabels.unresolved}</h3>
+      {unanswered.length === 0 && <p lang={reportLang}>{documentLabels.noUnresolved}</p>}
       {unanswered.map((question) => <section
         className="research-question-findings dw-reading-unanswered" key={question.question_id} id={question.regionId}
         aria-label={question.text} tabIndex={-1} ref={(element) => registerRegion(question.question_id, element)}>
         <h4>{question.text}</h4>
-        <p className="research-question-reason">{question.disposition.reason}</p>
+        <p className="research-question-reason" lang={reportLang}>{question.disposition.reason}</p>
         {followUp && <UnresolvedSelection language={language} question={question} followUp={followUp} />}
         {onFollowQuestion && <button className="dw-outline" type="button"
           onClick={(event) => onFollowQuestion(question.question_id, event.currentTarget)}>{labels.continueResearch}</button>}
@@ -363,8 +371,9 @@ function describeSource(url: string) {
   return { title: filename ? `${parsed.hostname} / ${filename}` : parsed.hostname };
 }
 
-function WorkspaceFinding({ language, finding, firstCitation, selectedCitation, firstCitationTrigger, evidence, onSelect, onReturn }: {
+function WorkspaceFinding({ language, reportLang, finding, firstCitation, selectedCitation, firstCitationTrigger, evidence, onSelect, onReturn }: {
   language: Language;
+  reportLang?: "zh-CN" | "en";
   finding: BoundFinding;
   firstCitation: number;
   selectedCitation?: number;
@@ -380,7 +389,7 @@ function WorkspaceFinding({ language, finding, firstCitation, selectedCitation, 
 
   return <article className="dw-reading-finding">
     <div className="dw-finding-reading">
-      <p className="research-candidate-statement">{finding.statement}</p>
+      <p className="research-candidate-statement" lang={reportLang}>{finding.statement}</p>
       <div className="dw-citation-list">
         {finding.references.map((reference, index) => {
           const number = firstCitation + index;

@@ -228,7 +228,9 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
       setEndedAt(undefined);
       setSubmitted({ ...draft, startedAt: Date.now() });
       await current.startNewRun(draft.questions[0].text,
-        draft.profile === STRUCTURED_RESEARCH_PROFILE ? draft.questions : undefined, draft.profile);
+        draft.profile === STRUCTURED_RESEARCH_PROFILE ? draft.questions : undefined,
+        draft.profile,
+        language === "zh" ? "zh-CN" : "en");
     });
   }
 
@@ -490,6 +492,7 @@ export function ResearchWorkspace({ liveOptions }: { liveOptions?: LiveRunOption
         aria-describedby="dw-backend-hint" aria-invalid={!endpointOrigin}
         onChange={(event) => setEndpointDraft(event.target.value)} />
       <p id="dw-backend-hint">{t.backendHint}</p>
+      <p>{t.reportLanguageHint}</p>
       <div className="dw-actions" role="group" aria-label={t.language}>
         <button className="dw-outline" type="button" aria-pressed={language === "zh"} onClick={() => setLanguage("zh")}>
           {copy[language].chinese}

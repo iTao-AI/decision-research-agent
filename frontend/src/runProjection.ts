@@ -106,6 +106,7 @@ export type RunProjection = Readonly<{
   run_id: string;
   thread_id: string;
   profile_id: string;
+  reportLanguage?: "zh-CN" | "en";
   execution_status: ExecutionStatus;
   review_status: ReviewStatus;
   delivery_status: DeliveryStatus;
@@ -198,6 +199,9 @@ export function parseRunProjection(value: unknown, expectedRunId?: string): RunP
   const findingsIssues = hasOwn(record, "findings_issues") ? parseFindingsIssues(record.findings_issues) : undefined;
   const findingsOutcome = hasOwn(record, "findings_outcome") ? parseFindingsOutcome(record.findings_outcome) : undefined;
   if ((findingsIssues || findingsOutcome) && record.profile_id !== "generic-evidence-report") invalidResponse();
+  const scope = record.profile_id === "generic" || record.profile_id === "generic-evidence-report" ? record.scope : undefined;
+  const reportLanguage = scope && typeof scope === "object" && "report_language" in scope
+    ? scope.report_language : undefined;
 
   return Object.freeze({
     run_id: runId,
@@ -214,6 +218,7 @@ export function parseRunProjection(value: unknown, expectedRunId?: string): RunP
       decision: parseReviewDecision(record.review_decision),
       resolution: parseReviewResolution(record.review_resolution)
     }),
+    ...(reportLanguage === "zh-CN" || reportLanguage === "en" ? { reportLanguage } : {}),
     ...(verification === undefined ? {} : { verification }),
     ...(currentPublication === undefined ? {} : { currentPublication }),
     ...(currentArtifacts === undefined ? {} : { currentArtifacts }),

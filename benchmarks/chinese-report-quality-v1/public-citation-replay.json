@@ -1,0 +1,121 @@
+{
+  "format_version": 1,
+  "claim_operation": {
+    "method": "POST",
+    "path": "/open-apis/im/v1/messages"
+  },
+  "conclusion": "飞书应用机器人主动发群消息时，携带相同 uuid 的请求在 1 小时内至多成功发送一条消息。",
+  "sources": [
+    {
+      "id": "feishu-send-uuid",
+      "title": "飞书开放平台 · 发送消息",
+      "source_url": "https://open.feishu.cn/document/server-docs/im-v1/message/create.md",
+      "version": "中文 Markdown，2026-11-22 冻结",
+      "anchor": "请求体 › uuid；快照第 47 行",
+      "operation": {
+        "method": "POST",
+        "path": "/open-apis/im/v1/messages"
+      },
+      "source_line": 47,
+      "source_body_sha256": "23875d7fd3c9d25124f540a40f6b5976cc1314ac0512ea7332a71c0465fb4a08",
+      "snippet": "持有相同 uuid 的请求，在 1 小时内至多成功发送一条消息。",
+      "snippet_sha256": "c16c5446935409d0a88f1f7ec691d78bed4262ec995d33b2b61bcf5d1d113e9c",
+      "excerpts": [
+        {
+          "excerpt": "持有相同 uuid 的请求，在 1 小时内至多成功发送一条消息。",
+          "excerpt_sha256": "c16c5446935409d0a88f1f7ec691d78bed4262ec995d33b2b61bcf5d1d113e9c",
+          "excerpt_start": 0,
+          "excerpt_end": 32
+        }
+      ]
+    },
+    {
+      "id": "feishu-reply-uuid",
+      "title": "飞书开放平台 · 回复消息",
+      "source_url": "https://open.feishu.cn/document/server-docs/im-v1/message/reply.md",
+      "version": "中文 Markdown，2026-11-22 冻结",
+      "anchor": "请求体 › uuid；快照第 43 行",
+      "operation": {
+        "method": "POST",
+        "path": "/open-apis/im/v1/messages/:message_id/reply"
+      },
+      "source_line": 43,
+      "source_body_sha256": "7c7e7210d6049616282ed891bbb0932cc090e98e0e43a78d34c8ed196d005944",
+      "snippet": "持有相同 uuid 的请求，在 1 小时内至多成功回复一条消息。",
+      "snippet_sha256": "6e434ec5eae24fd4f90fe9ef82d102b86a7d41966784e7bb6c3a4a5a6e609229",
+      "excerpts": [
+        {
+          "excerpt": "持有相同 uuid 的请求，在 1 小时内至多成功回复一条消息。",
+          "excerpt_sha256": "6e434ec5eae24fd4f90fe9ef82d102b86a7d41966784e7bb6c3a4a5a6e609229",
+          "excerpt_start": 0,
+          "excerpt_end": 32
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "public-feishu-proactive-send-uuid",
+      "entry": "controlled-materials",
+      "report_language": "zh-CN",
+      "prompt": [
+        "飞书应用机器人主动向群里发送消息时，携带相同 uuid 的请求在 1 小时内最多能成功发送几条消息？"
+      ],
+      "material_conditions": {
+        "send-document": {
+          "source_ids": [
+            "feishu-send-uuid"
+          ]
+        },
+        "reply-document": {
+          "source_ids": [
+            "feishu-reply-uuid"
+          ]
+        }
+      },
+      "coverage": [],
+      "critical_errors": []
+    }
+  ],
+  "judge_rubric": {},
+  "manual_labels": [
+    {
+      "id": "public-feishu-proactive-send-uuid",
+      "condition": "send-document",
+      "input_sha256": "1a76f024c0af913967bc975bb62077c9d4c92d6055df605aadd9d03232fcf4a1",
+      "judgment": {
+        "verdict": "supported",
+        "matched_reference_ids": [
+          "R1"
+        ],
+        "rationale": "引文来自主动发送接口，原句直接限定了相同 uuid 在 1 小时内的最大发送条数。",
+        "parts": [
+          {
+            "assertion": "飞书应用机器人主动发群消息时，携带相同 uuid 的请求在 1 小时内至多成功发送一条消息。",
+            "reference_ids": [
+              "R1"
+            ],
+            "rationale": "引文来自主动发送接口，原句直接限定了相同 uuid 在 1 小时内的最大发送条数。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "public-feishu-proactive-send-uuid",
+      "condition": "reply-document",
+      "input_sha256": "e9c35b5bab572a0cb508632f049e343c9d3bb12e39a559c303eea599a168760b",
+      "judgment": {
+        "verdict": "insufficient_evidence",
+        "matched_reference_ids": [],
+        "rationale": "原句的限制针对回复一条已有消息。主动发送是另一个接口，单凭这条回复引文无法支持发送结论。",
+        "parts": [
+          {
+            "assertion": "飞书应用机器人主动发群消息时，携带相同 uuid 的请求在 1 小时内至多成功发送一条消息。",
+            "reference_ids": [],
+            "rationale": "原句的限制针对回复一条已有消息。主动发送是另一个接口，单凭这条回复引文无法支持发送结论。"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -126,3 +126,17 @@ def test_offline_artifact_must_identify_current_confirmed_snapshot():
         validate_offline_html(markup, snapshot={**snapshot, "version": 1})
     with pytest.raises(ValueError):
         validate_offline_html(b"<!doctype html><html><body></body></html>", snapshot=snapshot)
+
+
+def test_model_input_distinguishes_prior_arrangements_and_incoming_change():
+    from fieldwork.analysis import model_input
+
+    prior = {"items": [{"evidence_ids": ["previous-run-only"], "state": "waiting"}]}
+    project = {"stage": "现场调查", "sample_prepared": False, "confirmed": prior}
+    data = model_input(project, [
+        {"id": "new", "text": "已作出书面确认。", "producer_run_id": "mke-1"},
+        {"id": "old", "text": "使用前等书面确认。", "producer_run_id": "seed"},
+    ])
+    assert [row["role"] for row in data["evidence"]] == ["incoming_change", "prior_project_record"]
+    assert data["confirmed_plan"]["items"] == [{"state": "waiting"}]
+    assert data["evidence"][0]["text"] == "已作出书面确认。"

@@ -147,7 +147,10 @@ def _checked_evidence(item, material, run_id):
         or sha256(raw).hexdigest() != item["sha256"]
     ):
         raise mismatch
-    return {key: item[key] for key in sorted(_EVIDENCE_FIELDS)}
+    return {
+        **{key: item[key] for key in sorted(_EVIDENCE_FIELDS)},
+        "material_version": material["material_version"],
+    }
 
 
 def _audit_output(output):
@@ -332,7 +335,7 @@ class FieldworkService:
         with self.store.connect(write=True) as db:
             if self.store.intake_pending(db):
                 raise _intake_pending()
-            row = db.execute("SELECT * FROM materials WHERE id = ?", (material_id,)).fetchone()
+            row = self.store.material(db, material_id)
             if row is None:
                 raise _missing("material")
             if row["state"] != "active":
@@ -501,11 +504,13 @@ class FieldworkService:
                 raise _missing("evidence")
             if frozen["producer_run_id"] == "seed":
                 return {"status": "unavailable", "frozen": frozen, "current": None, "reason": "seed_record"}
-            row = db.execute("SELECT * FROM materials WHERE id = ?", (frozen["material_id"],)).fetchone()
+            row = self.store.material(db, frozen["material_id"])
             material = material_view(row)
         try:
             run_id = frozen["consumer_run_id"]
             current = _checked_evidence(self.backend.reread(material, evidence_id, run_id), material, run_id)
+            if "material_version" not in frozen:
+                current.pop("material_version")
             if current != frozen:
                 raise FieldworkError("evidence_mismatch", "当前原句与当时的冻结版本不一致。", 502)
         except MkeError as cause:

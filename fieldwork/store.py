@@ -63,6 +63,21 @@ CREATE TABLE IF NOT EXISTS deliverables (
 );
 """
 
+# The display version counts the admitted replacement chain, independent of
+# the provider's Publication revision or the order of other intake requests.
+_MATERIALS_WITH_VERSION = """
+SELECT m.*, (
+    WITH RECURSIVE lineage(replaces) AS (
+        SELECT m.replaces
+        UNION ALL
+        SELECT predecessor.replaces FROM materials AS predecessor
+        JOIN lineage ON predecessor.id = lineage.replaces
+    )
+    SELECT COUNT(*) FROM lineage
+) AS material_version
+FROM materials AS m
+"""
+
 
 def json_text(value):
     return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
@@ -92,6 +107,7 @@ def seed_evidence(consumer_run_id="seed"):
                 "source_id": identity,
                 "publication_id": f"{identity}_v1",
                 "revision": 1,
+                "material_version": 1,
                 "producer_run_id": "seed",
                 "consumer_run_id": consumer_run_id,
                 "page_start": 1,
@@ -152,6 +168,7 @@ def material_view(row):
         "id": row["id"],
         "title": row["title"],
         "sha256": row["sha256"],
+        "material_version": row["material_version"],
         "active": row["state"] == "active",
         **json.loads(row["provenance"]),
     }
@@ -217,8 +234,8 @@ class FieldworkStore:
             "materials": [
                 material_view(row)
                 for row in db.execute(
-                    """SELECT * FROM materials WHERE state IN ('active', 'retired')
-                       ORDER BY (state = 'active') DESC, rowid DESC"""
+                    _MATERIALS_WITH_VERSION + """WHERE m.state IN ('active', 'retired')
+                       ORDER BY (m.state = 'active') DESC, m.rowid DESC"""
                 )
             ],
             "deliverables": [
@@ -231,6 +248,10 @@ class FieldworkStore:
     def snapshot(db, version):
         row = db.execute("SELECT snapshot FROM confirmed WHERE version = ?", (version,)).fetchone()
         return json.loads(row["snapshot"]) if row else None
+
+    @staticmethod
+    def material(db, identity):
+        return db.execute(_MATERIALS_WITH_VERSION + "WHERE m.id = ?", (identity,)).fetchone()
 
     @staticmethod
     def supersede(db):

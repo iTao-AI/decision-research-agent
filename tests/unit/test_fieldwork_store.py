@@ -343,11 +343,44 @@ def test_admitted_intake_retries_remain_idempotent_after_a_newer_replacement(wor
     assert len(backend.ingestions) == 3
 
 
+def test_material_versions_are_independent_of_mke_revisions_and_remain_frozen(workbench):
+    service, _ = workbench
+    first, old_proposal = make_pending(service)
+    service.review(old_proposal["id"], "accept", "")
+    replacement = service.submit_material("客户 IT 回函", PDF_B, replace=first["id"])
+    active, retired = replacement["materials"]
+    current = service.analyze(active["id"])["proposal"]
+    archive = service.export(2)
+    old_ref = archive["evidence"][0]
+    current_ref = current["evidence"][0]
+
+    assert (active["material_version"], retired["material_version"]) == (2, 1)
+    assert (active["revision"], retired["revision"]) == (1, 1)
+    assert (current_ref["source_id"], old_ref["source_id"]) == (active["source_id"], retired["source_id"])
+    assert (current_ref["material_version"], old_ref["material_version"]) == (2, 1)
+    assert (current_ref["revision"], old_ref["revision"]) == (1, 1)
+    reread = service.live_evidence(old_proposal["id"], old_ref["id"])
+    assert reread["status"] == "available"
+    assert reread["current"] == old_ref
+
+
+def test_frozen_reference_before_material_versions_remains_live_readable(workbench):
+    service, _ = workbench
+    _, proposal = make_pending(service)
+    legacy = [{key: value for key, value in item.items() if key != "material_version"} for item in proposal["evidence"]]
+    with service.store.connect(write=True) as db:
+        db.execute("UPDATE proposals SET evidence = ? WHERE id = ?", (json.dumps(legacy), proposal["id"]))
+
+    original = legacy[0]
+    reread = service.live_evidence(proposal["id"], original["id"])
+    assert reread == {"status": "available", "frozen": original, "current": original}
+
+
 def test_state_root_alias_resolves_to_same_archived_path_as_mke(tmp_path):
     from fieldwork.mke import MkeEvidence
 
     class PublishedEvidence(MkeEvidence):
-        def _published(self, digest):
+        def _published(self, digest, lock_fd):
             return {
                 "source_id": "source",
                 "publication_id": "publication",

@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from hashlib import sha256
 from html import escape
 from pathlib import Path
 
@@ -127,6 +128,9 @@ def render(snapshot, *, fictional=False):
         raise ValueError("duplicate evidence id")
     title = escape(snapshot["headline"])
     summary = escape(snapshot["summary"])
+    # Match the canonical JSON fingerprint checked by the Fieldwork registrar.
+    canonical = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    fingerprint = sha256(canonical.encode("utf-8")).hexdigest()
     cards = "\n".join(item_html(item, evidence) for item in snapshot["items"])
     identity = "决策简报 · 虚构案例" if fictional else "决策简报"
 
@@ -135,6 +139,7 @@ def render(snapshot, *, fictional=False):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="fieldwork-snapshot-sha256" content="{fingerprint}">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <title>{title} · 决策简报</title>
 <style>{STYLES}</style>

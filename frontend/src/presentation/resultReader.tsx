@@ -104,8 +104,8 @@ export function ResultReader({
   );
 }
 
-export function SafeMarkdownDocument({ content }: { content: string }) {
-  return <div className="safe-markdown">{parseSafeMarkdown(content)}</div>;
+export function SafeMarkdownDocument({ content, lang }: { content: string; lang?: string }) {
+  return <div className="safe-markdown" lang={lang}>{parseSafeMarkdown(content)}</div>;
 }
 
 export function sanitizeArtifactFilename(artifactId: string): string {

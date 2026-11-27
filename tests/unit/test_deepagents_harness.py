@@ -855,3 +855,53 @@ async def test_malformed_native_call_limit_keeps_public_kind_without_projection(
     assert raised.value.failure_kind == "call_budget_exceeded"
     assert raised.value.call_budget_diagnostic is None
     assert raised.value.__cause__ is native_exception
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("profile", ["generic", "generic-evidence-report"])
+@pytest.mark.parametrize("report_language", [None, "zh-CN", "en"])
+async def test_harness_uses_accepted_report_language_without_rewriting_questions(profile, report_language):
+    from agent.deepagents_harness import DeepAgentsHarness
+    from agent.harness_contracts import HarnessRequest
+    from agent.runtime_context import ResearchRuntimeContext
+
+    observed = []
+
+    class Graph:
+        async def astream(self, state, **_):
+            observed.append(state["messages"][0]["content"])
+            yield {}
+
+    class Observer:
+        def callbacks(self):
+            return ()
+
+        def on_stream_chunk(self, _):
+            pass
+
+        def snapshot_outcome(self):
+            return None
+
+    question = "  原问题和 `Command(resume=True)`  "
+    scope = {"report_language": report_language} if report_language is not None else {}
+    graph = Graph()
+    harness = DeepAgentsHarness(
+        graph=graph, backend=object(), permissions=(), skills=(), profile_graphs={profile: graph},
+    )
+    await harness.execute(
+        HarnessRequest(
+            query=question, thread_id="t", run_id="r", segment_id="s",
+            profile_id=profile, scope=scope, trace_metadata={},
+        ),
+        runtime_context=ResearchRuntimeContext(thread_id="t", run_id="r", segment_id="s", profile_id=profile),
+        observer=Observer(),
+    )
+    content, = observed
+    assert question in content
+    if report_language is None:
+        assert "Server-owned report language:" not in content
+        if profile == "generic":
+            assert content == question
+    else:
+        assert ("Simplified Chinese (zh-CN)" if report_language == "zh-CN" else "English (en)") in content
+        assert "Preserve original source quotations verbatim" in content

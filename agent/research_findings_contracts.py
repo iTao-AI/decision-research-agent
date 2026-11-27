@@ -8,8 +8,10 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from pydantic import (
-    AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator,
+    AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator,
 )
+
+from agent.report_language import ReportLanguage, validate_report_language
 
 
 def _nonblank(value: str) -> str:
@@ -52,6 +54,14 @@ class ResearchQuestion(FindingsContractModel):
 
 class ResearchFindingsScope(FindingsContractModel):
     questions: list[ResearchQuestion] = Field(min_length=1, max_length=5)
+    report_language: ReportLanguage | None = Field(
+        default=None, validate_default=False, exclude_if=lambda value: value is None
+    )
+
+    @field_validator("report_language")
+    @classmethod
+    def explicit_language_is_valid(cls, value: ReportLanguage | None) -> ReportLanguage:
+        return validate_report_language(value)
 
     @model_validator(mode="after")
     def unique_questions(self):

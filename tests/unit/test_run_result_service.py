@@ -254,3 +254,22 @@ def test_strict_result_rejects_missing_or_nonmatching_cited_url(monkeypatch):
 
     with pytest.raises(service.RunResultUnavailable):
         service.resolve_run_result(run_id="run_1")
+
+
+def test_generic_chinese_uses_localized_fallback_and_preserves_a_normal_candidate():
+    from api.run_result_service import build_generic_result_artifact
+
+    canonical = ReportCandidate(
+        path=PurePosixPath("/workspace/research-report.md"),
+        content="# 研究报告\n\n原文：`Command(resume=True)`",
+    )
+    normal = build_generic_result_artifact(_outcome(report_candidate=canonical), report_language="zh-CN")
+    assert normal["content"] == canonical.content
+    fallback = build_generic_result_artifact(
+        _outcome(),
+        generated_at=datetime(2026, 11, 22, tzinfo=timezone.utc),
+        report_language="zh-CN",
+    )
+    assert fallback["content"].startswith("# 降级报告\n")
+    assert "未生成规范报告" in fallback["content"]
+    assert fallback["content_hash"] == hashlib.sha256(fallback["content"].encode()).hexdigest()

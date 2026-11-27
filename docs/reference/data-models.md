@@ -396,6 +396,9 @@ recovery fields.
 Strict `ResearchFindingsScope` accepts 1–5 unique question IDs with text of
 1–4096 code points. Missing questions default to query/q1 before run creation,
 including keyed intent fingerprinting. Explicit empty scope questions fail.
+The accepted scope for the generic and evidence profiles can also contain
+`report_language` as `zh-CN` or `en`. The language key is serialized only
+when supplied and travels unchanged through dispatch.
 The native root VFS candidate uses `dra.research-findings-candidate.v1`, a
 256 KiB UTF-8 limit, 20 findings and 10 references per finding. Its dedicated
 `FindingsCandidate` never changes the Markdown-only `ReportCandidate` guard.
@@ -414,7 +417,8 @@ only. Run/segment/state version and owner fences commit delivery, frozen Evidenc
 and the artifacts atomically. The independent reader receives scope and
 same-run Evidence rows in one DB snapshot. It reparses strict canonical JSON,
 recomputes Evidence identities/fingerprints, uniquely rebinds exact contiguous
-excerpts, and compares Markdown with the deterministic renderer.
+excerpts, and compares Markdown with the deterministic renderer selected by
+the persisted profile version and scope language.
 
 `dra.research-findings.v1` contains accepted questions, candidate findings,
 per-question dispositions, limitations and model-reported contradictions.

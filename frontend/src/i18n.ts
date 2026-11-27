@@ -128,10 +128,10 @@ export const copy = {
     research: {
       mode: "研究模式", genericMode: "通用研究（默认）", structuredMode: "结构化证据研究",
       followUp: {
-        selectionTitle: "准备下一次研究", selectionHint: "勾选未解决问题，将原问题放入独立的新草稿。",
+        selectionTitle: "准备下一次研究", selectionHint: "勾选希望继续研究的问题，准备独立的新草稿。",
         selectQuestion: (n: number) => `选择未解决问题 ${n}`, prepare: "准备新研究草稿",
         title: "新研究草稿", question: (n: number) => `新研究问题 ${n}`,
-        boundary: "准备与编辑不会开始研究。确认后会创建独立研究；旧报告、来源依据和复核记录不会带入。",
+        boundary: "编辑草稿后，可确认发起一项新的研究。原报告仍可查看。",
         profile: "新研究模式", reference: "来源报告参照", sourceRun: "来源 run_id",
         replaceWarning: "已有一份新研究草稿。替换会丢弃其中的编辑。",
         replace: "替换当前草稿", keep: "保留当前草稿", cancel: "取消新研究草稿", confirm: "确认并运行新研究"
@@ -441,10 +441,10 @@ export const copy = {
     research: {
       mode: "Research mode", genericMode: "Generic research (default)", structuredMode: "Structured evidence research",
       followUp: {
-        selectionTitle: "Prepare the next research", selectionHint: "Select unresolved questions to put their original text in a separate new draft.",
+        selectionTitle: "Prepare the next research", selectionHint: "Choose open questions to prepare a separate draft.",
         selectQuestion: (n: number) => `Select unresolved question ${n}`, prepare: "Prepare new research draft",
         title: "New research draft", question: (n: number) => `New research question ${n}`,
-        boundary: "Preparation and editing do not start research. Confirmation creates independent research; the old report, evidence and review records are not carried over.",
+        boundary: "Edit this draft and confirm to start a separate run. The original report remains available.",
         profile: "New research mode", reference: "Source report reference", sourceRun: "Source run_id",
         replaceWarning: "A new research draft already exists. Replacing it discards its edits.",
         replace: "Replace current draft", keep: "Keep current draft", cancel: "Cancel new research draft", confirm: "Confirm and run new research"

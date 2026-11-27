@@ -63,13 +63,20 @@ export type HealthResponse = {
   status: string;
 };
 
+export type ReportLanguage = "zh-CN" | "en";
+
+type RunCreateScope = {
+  questions?: readonly ResearchQuestion[];
+  report_language?: ReportLanguage;
+};
+
 export type RunCreateIntent = Readonly<{
   idempotencyKey: string;
   payload: Readonly<{
     query: string;
     thread_id: string;
     profile_id: LiveResearchProfile;
-    scope: Readonly<{ questions?: readonly ResearchQuestion[] }>;
+    scope: Readonly<RunCreateScope>;
   }>;
 }>;
 
@@ -96,22 +103,24 @@ export function createRunIntent(
   query: string,
   randomUUID: () => string = () => crypto.randomUUID(),
   profileId: LiveResearchProfile = "generic",
-  questions?: readonly ResearchQuestion[]
+  questions?: readonly ResearchQuestion[],
+  reportLanguage?: ReportLanguage
 ): RunCreateIntent {
   const validation = validateLiveDemoQuery(query);
   if (!validation.ok) {
     throw new RangeError(`live_demo_query_${validation.reason}`);
   }
-  let scope: RunCreateIntent["payload"]["scope"] = Object.freeze({});
+  const scope: RunCreateScope = {};
+  if (reportLanguage !== undefined) {
+    scope.report_language = reportLanguage;
+  }
   if (profileId === STRUCTURED_RESEARCH_PROFILE) {
     const rows = questions ?? [{ question_id: "q1", text: query }];
     const scopeValidation = validateResearchQuestions(rows);
     if (!scopeValidation.ok) {
       throw new RangeError(`research_scope_${scopeValidation.reason}`);
     }
-    scope = Object.freeze({
-      questions: Object.freeze(rows.map(({ question_id, text }) => Object.freeze({ question_id, text })))
-    });
+    scope.questions = Object.freeze(rows.map(({ question_id, text }) => Object.freeze({ question_id, text })));
   }
   const uuid = randomUUID();
   return Object.freeze({
@@ -120,7 +129,7 @@ export function createRunIntent(
       query,
       thread_id: `demo-console-${uuid}`,
       profile_id: profileId,
-      scope
+      scope: Object.freeze(scope)
     })
   });
 }
@@ -315,15 +324,21 @@ async function requestJson<T>(baseUrl: string, path: string, init?: RequestInit)
 }
 
 function buildUrl(baseUrl: string, path: string) {
+  const origin = localBackendOrigin(baseUrl);
+  if (!origin) throw new ClientRequestError(invalidBackendUrl());
+  return `${origin}${path}`;
+}
+
+export function localBackendOrigin(baseUrl: string): string | undefined {
   const trimmedBase = baseUrl.trim();
   if (!/^http:\/\/127\.0\.0\.1:\d{1,5}\/?$/.test(trimmedBase)) {
-    throw new ClientRequestError(invalidBackendUrl());
+    return undefined;
   }
   let parsed: URL;
   try {
     parsed = new URL(trimmedBase);
   } catch {
-    throw new ClientRequestError(invalidBackendUrl());
+    return undefined;
   }
   if (
     parsed.protocol !== "http:" ||
@@ -335,9 +350,9 @@ function buildUrl(baseUrl: string, path: string) {
     parsed.search !== "" ||
     parsed.hash !== ""
   ) {
-    throw new ClientRequestError(invalidBackendUrl());
+    return undefined;
   }
-  return `${parsed.origin}${path}`;
+  return parsed.origin;
 }
 
 async function readJson(response: Response): Promise<unknown> {

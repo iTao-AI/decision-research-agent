@@ -82,7 +82,7 @@ def validate_findings_snapshot(run: dict[str, Any]):
         scope = ResearchFindingsScope.model_validate(run['scope'])
         if not validate_research_findings_report(report, run_id=run['run_id'], scope=scope, evidence_rows=run['evidence_rows']):
             raise ValueError('invalid Evidence binding')
-        if markdown['content'] != render_research_findings_markdown(report):
+        if markdown['content'] != render_research_findings_markdown(report, report_language=scope.report_language):
             raise ValueError('noncanonical Markdown')
         return report, _public_artifact(json_row), _public_artifact(markdown)
     except (ValueError, TypeError, KeyError, AttributeError, UnicodeError, RecursionError) as exc:

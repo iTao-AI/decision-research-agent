@@ -1,0 +1,728 @@
+.dra-workspace {
+  --dw-canvas: #f5f6f2;
+  --dw-surface: #fff;
+  --dw-ink: #1e302c;
+  --dw-muted: #51645d;
+  --dw-line: #d5ddd6;
+  --dw-pine: #18584a;
+  --dw-tint: #e6efe8;
+  --dw-error: #983b32;
+  --dw-serif: "Iowan Old Style", "Songti SC", STSong, "Noto Serif CJK SC", serif;
+  --dw-gutter: 40px;
+  --dw-scroll-offset: 9rem;
+  min-height: 100vh;
+  background: var(--dw-canvas);
+  color: var(--dw-ink);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.dra-workspace :is(button, input, textarea, select) {
+  font: inherit;
+  color: inherit;
+}
+
+.dra-workspace :is(button, summary, select) {
+  cursor: pointer;
+}
+
+.dra-workspace :disabled {
+  cursor: default;
+}
+
+.dra-workspace :is(a, button, summary, input, textarea, select, [tabindex]):focus-visible {
+  outline: 3px solid #287967;
+  outline-offset: 3px;
+}
+
+.dra-workspace :is([id], [tabindex="-1"]) {
+  scroll-margin-top: var(--dw-scroll-offset);
+}
+
+.dra-workspace .dw-header,
+.dra-workspace > .dw-status {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.dra-workspace .dw-header {
+  background: var(--dw-surface);
+}
+
+.dra-workspace .dw-chrome {
+  width: min(calc(100% - 2 * var(--dw-gutter)), 1160px);
+  min-height: 68px;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.dra-workspace .dw-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  white-space: nowrap;
+  color: var(--dw-ink);
+  text-decoration: none;
+}
+
+.dra-workspace .dw-mark {
+  position: relative;
+  flex: 0 0 29px;
+  width: 29px;
+  height: 29px;
+  border-radius: 6px;
+  background: var(--dw-pine);
+}
+
+.dra-workspace .dw-mark::before,
+.dra-workspace .dw-mark::after {
+  position: absolute;
+  top: 6px;
+  width: 6px;
+  height: 16px;
+  border: 1.5px solid #fff;
+  border-radius: 2px;
+  content: "";
+}
+
+.dra-workspace .dw-mark::before {
+  left: 6px;
+  transform: skewY(14deg);
+}
+
+.dra-workspace .dw-mark::after {
+  right: 6px;
+  transform: skewY(-14deg);
+}
+
+.dra-workspace .dw-wordmark {
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -.065em;
+}
+
+.dra-workspace .dw-brand-label {
+  border-left: 1px solid var(--dw-line);
+  padding-left: 12px;
+  color: var(--dw-muted);
+  font-size: 14px;
+}
+
+.dra-workspace :is(.dw-chrome nav, .dw-actions, .dw-form-tools) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.dra-workspace :is(.dw-link, .dw-outline, .dw-chrome nav > a, .dw-chrome nav > button) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 5px 1px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dw-pine);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dra-workspace :is(.dw-link, .dw-outline, .dw-chrome nav > a, .dw-chrome nav > button):hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+
+.dra-workspace :is(.dw-outline, .dw-chrome nav > .dw-outline) {
+  padding-inline: 13px;
+  border-color: #b9c9bc;
+  border-radius: 7px;
+  background: var(--dw-surface);
+}
+
+.dra-workspace .dw-status {
+  border-block: 1px solid #dbe5dc;
+  background: #ebf1eb;
+}
+
+.dra-workspace .dw-status[data-tone="error"] {
+  border-color: #eddbd4;
+  background: #faf1ed;
+}
+
+.dra-workspace .dw-status .dw-chrome {
+  min-height: 40px;
+  padding-block: 3px;
+  font-size: 13px;
+}
+
+.dra-workspace .dw-status-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 10px;
+  min-width: 0;
+}
+
+.dra-workspace .dw-status-note {
+  color: var(--dw-muted);
+}
+
+.dra-workspace .dw-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: #30715a;
+}
+
+.dra-workspace [data-tone="running"] .dw-dot {
+  background: #3c6982;
+}
+
+.dra-workspace [data-tone="error"] .dw-dot {
+  background: var(--dw-error);
+}
+
+.dra-workspace .dw-status .dw-actions {
+  justify-content: flex-end;
+  gap: 0 12px;
+}
+
+.dra-workspace .dw-status :is(.dw-link, .dw-outline) {
+  min-height: 32px;
+  font-size: 13px;
+}
+
+.dra-workspace .dw-main {
+  padding-block: clamp(28px, 7vh, 64px) 96px;
+}
+
+.dra-workspace .dw-page {
+  width: min(calc(100% - 2 * var(--dw-gutter)), 940px);
+  margin-inline: auto;
+}
+
+.dra-workspace .dw-editor {
+  max-width: 800px;
+}
+
+.dra-workspace .dw-page h1 {
+  margin: 0;
+  font-family: var(--dw-serif);
+  font-size: clamp(32px, 4.2vw, 54px);
+  font-weight: 650;
+  line-height: 1.24;
+  letter-spacing: -.035em;
+  text-wrap: balance;
+}
+
+.dra-workspace .dw-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 8px;
+  color: var(--dw-pine);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.dra-workspace .dw-kicker::before {
+  width: 22px;
+  height: 2px;
+  flex: none;
+  background: currentColor;
+  content: "";
+}
+
+.dra-workspace .dw-intro {
+  margin: 10px 0 0;
+  color: var(--dw-muted);
+}
+
+.dra-workspace .dw-form {
+  margin-top: 26px;
+  border: 1px solid #a6b8a9;
+  border-radius: 12px;
+  background: var(--dw-surface);
+}
+
+.dra-workspace .dw-form:focus-within {
+  border-color: var(--dw-pine);
+}
+
+.dra-workspace .dw-fields {
+  padding: 18px 21px 12px;
+}
+
+.dra-workspace .dw-fields :is(.dw-field, .live-query-field) {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.dra-workspace .dw-fields :is(label, small, legend) {
+  padding: 0;
+  color: var(--dw-muted);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.dra-workspace .dw-fields :is(.dw-field, .research-scope-row) + :is(.dw-field, .research-scope-row) {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dw-line);
+}
+
+.dra-workspace .dw-fields textarea {
+  display: block;
+  width: 100%;
+  min-height: 74px;
+  padding: 8px 0;
+  resize: vertical;
+  border: 0;
+  border-radius: 3px;
+  background: var(--dw-surface);
+  color: var(--dw-ink);
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.dra-workspace :is(input, textarea)::placeholder {
+  color: #62716b;
+}
+
+.dra-workspace .dw-fields .live-query-feedback {
+  color: var(--dw-error);
+  font-size: 13px;
+}
+
+.dra-workspace .dw-form-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px 14px;
+  padding: 12px 17px;
+  border-top: 1px solid var(--dw-line);
+}
+
+.dra-workspace .dw-form-tools select {
+  max-width: 100%;
+  min-height: 36px;
+  padding: 4px;
+  border: 1px solid var(--dw-line);
+  border-radius: 6px;
+  background: var(--dw-surface);
+  font-size: 14px;
+}
+
+.dra-workspace .dw-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 7px 19px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--dw-pine);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.dra-workspace .dw-primary:hover:enabled {
+  background: #103f35;
+}
+
+.dra-workspace .dw-primary:disabled {
+  background: #d9e3db;
+  color: #526357;
+}
+
+.dra-workspace :is(.dw-link, .dw-outline):disabled {
+  color: var(--dw-muted);
+  opacity: .75;
+}
+
+.dra-workspace .dw-hint {
+  min-height: 20px;
+  margin: 8px 0 0;
+  color: var(--dw-muted);
+  font-size: 13px;
+  text-align: right;
+}
+
+.dra-workspace .dw-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-top: 26px;
+  padding-top: 13px;
+  border-top: 1px solid var(--dw-line);
+  color: var(--dw-muted);
+  font-size: 13px;
+}
+
+.dra-workspace .dw-examples button {
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+
+.dra-workspace .dw-events {
+  margin-top: 26px;
+  padding-block: 17px;
+  border-block: 1px solid var(--dw-line);
+}
+
+.dra-workspace .dw-events h2 {
+  font-size: 19px;
+}
+
+.dra-workspace .dw-events ol {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dra-workspace .dw-events li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 6px;
+}
+
+.dra-workspace .dw-events li::before {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 3px solid #c0d4c4;
+  border-radius: 50%;
+  background: var(--dw-pine);
+  content: "";
+}
+
+.dra-workspace .dw-notice {
+  margin-top: 23px;
+  padding: 23px 26px;
+  border: 1px solid var(--dw-line);
+  border-inline-start: 4px solid #57846b;
+  border-radius: 10px;
+  background: var(--dw-surface);
+}
+
+.dra-workspace .dw-notice[data-tone="error"] {
+  border-inline-start-color: #ad685b;
+}
+
+.dra-workspace .dw-notice h2 {
+  margin-bottom: 7px;
+}
+
+.dra-workspace .dw-notice p {
+  margin-bottom: 7px;
+}
+
+.dra-workspace .dw-notice .dw-actions {
+  margin-top: 12px;
+}
+
+.dra-workspace .dw-details {
+  min-width: 0;
+  margin-top: 18px;
+  color: var(--dw-muted);
+  font-size: 14px;
+}
+
+.dra-workspace .dw-details > summary {
+  padding-block: 7px;
+  color: var(--dw-pine);
+  font-weight: 600;
+}
+
+.dra-workspace .dw-details :is(pre, code) {
+  font-family: "JetBrains Mono", SFMono-Regular, Consolas, monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.dra-workspace .dw-report {
+  min-width: 0;
+  margin-top: 24px;
+}
+
+.dra-workspace .dw-findings-reader {
+  margin: 0;
+  padding: clamp(15px, 3vw, 28px);
+  border-color: var(--dw-line);
+  background: var(--dw-surface);
+}
+
+.dra-workspace .dw-findings-reader > h2 {
+  font-family: var(--dw-serif);
+  font-size: 27px;
+}
+
+.dra-workspace .dw-findings-reader :is(.research-question-findings, .research-finding) {
+  border-color: var(--dw-line);
+}
+
+.dra-workspace .dw-findings-reader .research-binding-boundary {
+  border-left-color: #57846b;
+  background: var(--dw-tint);
+}
+
+.dra-workspace .dw-question-directory {
+  margin-block: 9px 12px;
+}
+
+.dra-workspace .dw-findings-reader .research-question-findings:first-child {
+  margin-top: 0;
+}
+
+.dra-workspace .dw-status-note {
+  text-wrap: pretty;
+}
+
+.dra-workspace .dw-findings-reader .research-question-list button {
+  border-color: var(--dw-line);
+  background: var(--dw-surface);
+}
+
+.dra-workspace .dw-findings-reader .research-question-list button:is(:hover, [aria-current="location"]) {
+  border-color: var(--dw-pine);
+  background: var(--dw-tint);
+}
+
+.dra-workspace .dw-findings-reader .research-question-findings {
+  scroll-margin-top: var(--dw-scroll-offset);
+}
+
+.dra-workspace .dw-findings-reader .research-disposition-candidate_findings {
+  color: var(--dw-pine);
+}
+
+.dra-workspace .dw-finding-reading {
+  min-width: 0;
+}
+
+.dra-workspace .dw-finding-has-source {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(240px, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.dra-workspace .dw-reference {
+  display: inline-grid;
+  place-items: center;
+  min-width: 25px;
+  min-height: 25px;
+  scroll-margin-top: var(--dw-scroll-offset);
+  margin-inline: 3px;
+  padding: 2px 4px;
+  border: 1px solid #adbdaf;
+  border-radius: 4px;
+  background: var(--dw-surface);
+  color: var(--dw-pine);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.dra-workspace .dw-reference:is(:hover, [aria-expanded="true"], [aria-pressed="true"]) {
+  border-color: var(--dw-pine);
+  background: var(--dw-tint);
+}
+
+.dra-workspace .dw-source-panel {
+  min-width: 0;
+  margin: 0;
+  padding: 17px 18px;
+  border: 0;
+  border-inline-start: 3px solid #57846b;
+  border-radius: 0 7px 7px 0;
+  background: var(--dw-tint);
+  font-size: 14px;
+}
+
+.dra-workspace .dw-source-heading {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.dra-workspace .dw-source-panel blockquote {
+  margin: 10px 0 16px;
+  padding: 12px;
+  border-inline-start: 2px solid #57846b;
+  background: var(--dw-surface);
+  font-family: var(--dw-serif);
+  font-size: 17px;
+  white-space: pre-wrap;
+}
+
+.dra-workspace .dw-source-panel :is(a, summary) {
+  color: var(--dw-pine);
+}
+
+.dra-workspace .dw-source-panel :is(button, .research-full-snippet) {
+  border-color: #a6b8a9;
+  background: var(--dw-surface);
+  color: var(--dw-pine);
+}
+
+.dra-workspace .dw-source-panel .dw-return-citation {
+  margin-top: 12px;
+}
+
+.dra-workspace .dw-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-block: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dw-line);
+}
+
+.dra-workspace .dw-report-raw {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dra-workspace .dw-report-raw pre {
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.dra-workspace .dw-dialog {
+  width: min(440px, calc(100% - 36px));
+  max-height: calc(100% - 36px);
+  padding: 25px;
+  border: 1px solid var(--dw-line);
+  border-radius: 12px;
+  background: var(--dw-surface);
+  color: var(--dw-ink);
+}
+
+.dra-workspace .dw-dialog::backdrop {
+  background: #1729215c;
+}
+
+.dra-workspace .dw-dialog > form {
+  display: grid;
+  gap: 12px;
+}
+
+.dra-workspace .dw-dialog h2 {
+  font-family: var(--dw-serif);
+  font-size: 28px;
+}
+
+.dra-workspace .dw-dialog :is(input, select) {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 5px;
+  padding: 8px 10px;
+  border: 1px solid #a6b8a9;
+  border-radius: 6px;
+  background: var(--dw-surface);
+}
+
+.dra-workspace .dw-dialog [aria-invalid="true"] {
+  border-color: var(--dw-error);
+}
+
+.dra-workspace .dw-dialog p {
+  margin: 0;
+}
+
+.dra-workspace .dw-dialog .dw-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 740px) {
+  .dra-workspace {
+    --dw-gutter: 18px;
+    --dw-scroll-offset: 12rem;
+  }
+
+  .dra-workspace .dw-chrome {
+    min-height: 56px;
+    gap: 8px;
+  }
+
+  .dra-workspace .dw-brand {
+    gap: 6px;
+  }
+
+  .dra-workspace .dw-brand-label {
+    display: none;
+  }
+
+  .dra-workspace .dw-chrome nav {
+    justify-content: flex-end;
+    gap: 0 8px;
+  }
+
+  .dra-workspace .dw-chrome nav > :is(a, button) {
+    font-size: 13px;
+  }
+
+  .dra-workspace .dw-status-text {
+    column-gap: 6px;
+  }
+
+  .dra-workspace .dw-main {
+    padding-top: 32px;
+  }
+
+  .dra-workspace .dw-fields {
+    padding-inline: 13px;
+  }
+
+  .dra-workspace .dw-form-footer {
+    padding: 10px 12px;
+  }
+
+  .dra-workspace .dw-form-tools {
+    gap: 6px;
+  }
+
+  .dra-workspace .dw-primary {
+    padding-inline: 12px;
+  }
+
+  .dra-workspace .dw-notice {
+    padding: 17px;
+  }
+
+  .dra-workspace .dw-finding-has-source {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 380px) {
+  .dra-workspace {
+    --dw-gutter: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dra-workspace,
+  .dra-workspace * {
+    scroll-behavior: auto;
+  }
+}

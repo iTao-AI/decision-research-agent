@@ -27,7 +27,8 @@ const STATUS = {
       evidence_fingerprint: "sha256:abc",
       citation_status: "cited",
       verification_status: "unverified",
-      snippet: "must not enter the selected projection"
+      snippet: "The source retained this exact passage.",
+      query_text: "must not enter the selected projection"
     }
   ],
   review_workflow: null,
@@ -109,7 +110,8 @@ describe("parseRunProjection", () => {
           source_identity: "https://example.com/source",
           evidence_fingerprint: "sha256:abc",
           citation_status: "cited",
-          verification_status: "unverified"
+          verification_status: "unverified",
+          snippet: "The source retained this exact passage."
         }
       ],
       review: {
@@ -121,7 +123,7 @@ describe("parseRunProjection", () => {
     });
     expect("query" in projection).toBe(false);
     expect("unknown_private_field" in projection).toBe(false);
-    expect("snippet" in projection.evidence[0]).toBe(false);
+    expect("query_text" in projection.evidence[0]).toBe(false);
     expect(Object.isFrozen(projection)).toBe(true);
     expect(Object.isFrozen(projection.segments)).toBe(true);
     expect(Object.isFrozen(projection.segments[0])).toBe(true);
@@ -131,6 +133,37 @@ describe("parseRunProjection", () => {
     expect("currentArtifacts" in projection).toBe(false);
     expect(Object.isFrozen(projection.failureCause)).toBe(true);
   });
+
+  it("preserves a nonempty snippet exactly, including at the Unicode limit", () => {
+    const value = structuredClone(STATUS);
+    value.evidence[0].snippet = ` ${"🧪".repeat(998)} `;
+
+    expect(parseRunProjection(value).evidence[0].snippet).toBe(` ${"🧪".repeat(998)} `);
+  });
+
+  it("keeps the producer's complete truncation marker on an observed snippet", () => {
+    const value = structuredClone(STATUS);
+    const retained = `${"🧪".repeat(976)}... (truncated, 1001 chars)`;
+    value.evidence[0].snippet = retained;
+
+    const { snippet } = parseRunProjection(value).evidence[0];
+    expect(snippet).toBeDefined();
+    expect(snippet).toBe(retained);
+  });
+
+  it.each([
+    ["absent", undefined], ["null", null], ["boolean", false], ["array", []],
+    ["blank", " \n "], ["over limit", "🧪".repeat(1025)]
+  ])(
+    "keeps the run and source usable without an admissible snippet (%s)",
+    (_label, snippet) => {
+      const value = structuredClone(STATUS);
+      record(value.evidence[0]).snippet = snippet;
+
+      expect(parseRunProjection(value).evidence[0]).toMatchObject({ evidence_id: "ev_001" });
+      expect(parseRunProjection(value).evidence[0]).not.toHaveProperty("snippet");
+    }
+  );
 
   it("distinguishes absent current artifacts from an observed empty list", () => {
     const absent = parseRunProjection(structuredClone(STATUS));

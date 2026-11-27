@@ -14,6 +14,7 @@ import {
   validateLiveRunId,
   type ClientError,
   type HealthResponse,
+  type ReportLanguage,
   type RunCreateIntent,
   type RunCreationResponse,
   type RunProjection,
@@ -63,7 +64,11 @@ const TERMINAL_STATUSES = new Set<RunProjection["execution_status"]>([
   "failed"
 ]);
 
-export function useLiveRun(options: LiveRunOptions = {}) {
+export function useLiveRun(
+  options: LiveRunOptions = {},
+  initialMode: DemoMode = "static",
+  initialBaseUrl = DEFAULT_BACKEND_BASE_URL
+) {
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const randomUUID = options.randomUUID ?? DEFAULT_RANDOM_UUID;
   const waitTimeoutMs = options.waitTimeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
@@ -72,9 +77,9 @@ export function useLiveRun(options: LiveRunOptions = {}) {
   const createIntent = useRef<RunCreateIntent | null>(null);
   const activeRunId = useRef<string | null>(null);
   const [state, setState] = useState<LiveRunState>({
-    baseUrl: DEFAULT_BACKEND_BASE_URL,
-    mode: "static",
-    status: "static"
+    baseUrl: initialBaseUrl,
+    mode: initialMode,
+    status: initialMode === "live" ? "idle" : "static"
   });
 
   const isCurrent = useCallback((version: number) => requestVersion.current === version, []);
@@ -144,7 +149,7 @@ export function useLiveRun(options: LiveRunOptions = {}) {
   const checkHealth = useCallback(async () => {
     const { controller, version } = nextRequest();
     const baseUrl = state.baseUrl;
-    setState((current) => ({ ...current, error: undefined, mode: "live", status: "checking" }));
+    setState((current) => ({ ...current, error: undefined, health: undefined, mode: "live", status: "checking" }));
     try {
       const health = await getHealth(baseUrl, controller.signal);
       if (!isCurrent(version)) {
@@ -200,7 +205,8 @@ export function useLiveRun(options: LiveRunOptions = {}) {
           status: "polling"
         }));
 
-        if (run.delivery_status === "ready") {
+        if (run.delivery_status === "ready" &&
+          (run.execution_status === "completed" || run.execution_status === "completed_with_fallback")) {
           const findings = run.profile_id === STRUCTURED_RESEARCH_PROFILE
             ? await getFindings(baseUrl, runId, signal) : undefined;
           if (!isCurrent(version)) {
@@ -319,8 +325,13 @@ export function useLiveRun(options: LiveRunOptions = {}) {
     }
   }, [isCurrent, nextRequest, observeRun, state.baseUrl, waitTimeoutMs]);
 
-  const startNewRun = useCallback(async (query: string, questions?: readonly ResearchQuestion[], profileId?: LiveResearchProfile) => {
-    const intent = createRunIntent(query, randomUUID, profileId ?? state.createProfileId ?? "generic", questions);
+  const startNewRun = useCallback(async (
+    query: string,
+    questions?: readonly ResearchQuestion[],
+    profileId?: LiveResearchProfile,
+    reportLanguage?: ReportLanguage
+  ) => {
+    const intent = createRunIntent(query, randomUUID, profileId ?? state.createProfileId ?? "generic", questions, reportLanguage);
     createIntent.current = intent;
     activeRunId.current = null;
     await createAndObserve(intent);

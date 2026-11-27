@@ -52,6 +52,15 @@ exactly-once execution.
 
 Start a canonical run-scoped research execution.
 
+For `generic` and `generic-evidence-report`, optional
+`scope.report_language` accepts `zh-CN` or `en`. The service stores the
+accepted language in the immutable run scope, includes it in keyed request
+identity, and uses it after worker recovery. Explicit invalid values and null
+return `422 invalid_research_scope`. Leaving the field out preserves legacy
+scope serialization and request hashes. A retry with a different language
+returns `409 run_idempotency_conflict`. Source excerpts stay in their
+original language.
+
 Request:
 
 ```json
@@ -155,7 +164,8 @@ is `{"questions":[{"question_id":"q1","text":"Research question"}]}`:
 1–5 unique question IDs and nonempty text up to 4096 code points per question.
 An omitted `questions` field defaults to the query as `q1`; an explicit empty
 list is invalid. IDs start with an ASCII letter followed by up to 63 letters,
-digits, underscores or hyphens. Extra scope fields are rejected. The server
+digits, underscores or hyphens. The only optional scope field besides
+`questions` is `report_language`. Extra scope fields are rejected. The server
 normalizes scope before unkeyed or idempotent creation and dispatch. Invalid
 scope returns `422 invalid_research_scope` without raw validator input.
 
@@ -228,7 +238,9 @@ artifacts and same-run Evidence rows. It rejects duplicate JSON keys, nonfinite
 numbers, malformed UTF-8, unknown fields, wrong profile/version, invalid own-byte
 hashes, noncanonical Markdown and changed or foreign Evidence references even
 when hashes are recomputed. Both JSON and Markdown independently fit 1 MiB
-UTF-8, inclusive. JSON and Markdown must belong to current artifact selection
+UTF-8, inclusive. The report JSON shape is unchanged. The Markdown template is
+selected by the persisted profile version and report language. An omitted
+language uses the original v1 renderer. JSON and Markdown must belong to current artifact selection
 where publication selection exists. No checkpoint, VFS, source refetch or model
 call occurs. Errors match `/result`: `run_not_found`, `run_not_terminal`,
 `run_failed`, `run_review_required`, `run_delivery_blocked` and

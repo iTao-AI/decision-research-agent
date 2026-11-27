@@ -14,11 +14,13 @@ class QualityError(ValueError):
     """An evaluation input or output failed a local contract."""
 
 
-def read_json(path: Path):
+def read_json(path: Path, *, expected_sha256: str | None = None):
     with path.open("rb") as source:
         raw = source.read(MAX_CHILD_BYTES + 1)
     if len(raw) > MAX_CHILD_BYTES:
         raise QualityError("evaluation input exceeds file limit")
+    if expected_sha256 is not None and hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise QualityError(f"manifest hash differs for {path.name}")
     return strict_json(raw.decode("utf-8"))
 
 

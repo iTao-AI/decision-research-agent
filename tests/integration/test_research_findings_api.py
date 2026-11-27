@@ -19,10 +19,10 @@ def candidate():
     return {'schema_version': 'dra.research-findings-candidate.v1', 'findings': [{'question_id': 'q1', 'statement': 'Candidate claim', 'references': [{'source_url': 'https://example.com/source', 'excerpt': 'observed'}]}], 'dispositions': [{'question_id': 'q1', 'status': 'candidate_findings'}]}
 
 
-def seed(tmp_path, monkeypatch, content=None):
+def seed(tmp_path, monkeypatch, content=None, *, scope_options=None):
     db = str(tmp_path / 'tasks.db')
     monkeypatch.setenv('DECISION_RESEARCH_AGENT_DB_PATH', db)
-    scope = validate_research_findings_scope({}, query='question')
+    scope = validate_research_findings_scope(scope_options or {}, query='question')
     created = create_run(thread_id='thread-findings', query='question', profile_id=PROFILE, profile_version='1', scope=scope.model_dump(mode='json'), db_path=db)
     entries = [EvidenceEntry(thread_id='thread-findings', query_text='question', subagent_name='network_search', tool_name='internet_search', source_url='https://example.com/source', snippet='The observed material.')]
     result = build_research_findings_artifacts(run_id=created['run_id'], scope=scope, candidate_content=json.dumps(candidate()) if content is None else content, evidence_entries=entries)
@@ -182,3 +182,57 @@ def test_current_publication_pointer_cannot_select_stale_artifacts(tmp_path, mon
     monkeypatch.setattr(service, 'get_run_delivery_snapshot', lambda **kwargs: snapshot)
     with pytest.raises(RunResultUnavailable):
         service.resolve_run_findings(run_id=created['run_id'])
+
+
+@pytest.mark.parametrize("profile", ["generic", PROFILE])
+@pytest.mark.parametrize("language", ["zh-CN", "en"])
+def test_report_language_persists_in_new_scope_and_keyed_replay(tmp_path, monkeypatch, profile, language):
+    from api.run_repository import get_run
+
+    monkeypatch.setenv("DECISION_RESEARCH_AGENT_DB_PATH", str(tmp_path / "language.db"))
+
+    class DeferredDispatch:
+        async def dispatch_run(self, run_id):
+            return False
+
+        def wake(self):
+            pass
+
+    monkeypatch.setattr(app.state, "run_dispatch_worker", DeferredDispatch(), raising=False)
+    client = TestClient(app)
+    headers = {**AUTH_HEADERS, "Idempotency-Key": "report-language-stable-01"}
+    request = {"query": "只核对这一个问题", "profile_id": profile, "scope": {"report_language": language}}
+    invalid = request | {"scope": {"report_language": None}}
+    assert client.post("/api/runs", json=invalid, headers=headers).status_code == 422
+    first = client.post("/api/runs", json=request, headers=headers)
+    assert first.status_code == 200
+    run_id = first.json()["run_id"]
+    scope = get_run(run_id=run_id)["scope"]
+    assert scope["report_language"] == language
+    if profile == PROFILE:
+        assert scope["questions"] == [{"question_id": "q1", "text": "只核对这一个问题"}]
+    again = client.post("/api/runs", json=request, headers=headers)
+    assert again.status_code == 200
+    assert again.json()["run_id"] == run_id and again.json()["idempotent_replay"]
+    changed = request | {"scope": {"report_language": "en" if language == "zh-CN" else "zh-CN"}}
+    assert client.post("/api/runs", json=changed, headers=headers).status_code == 409
+    malformed = request | {"scope": {"report_language": "zh"}}
+    assert client.post("/api/runs", json=malformed, headers=headers).status_code == 422
+
+
+def test_chinese_report_readback_keeps_exact_reference_and_existing_json_contract(tmp_path, monkeypatch):
+    data = candidate()
+    data["findings"][0]["statement"] = "留存的证据支持这项观察。"
+    _, created, built = seed(tmp_path, monkeypatch, json.dumps(data), scope_options={"report_language": "zh-CN"})
+    client = TestClient(app)
+    base = f"/api/runs/{created['run_id']}"
+    findings = client.get(base + "/findings", headers=AUTH_HEADERS)
+    markdown = client.get(base + "/result", headers=AUTH_HEADERS)
+    assert findings.status_code == markdown.status_code == 200
+    assert "report_language" not in findings.json()["report"]
+    assert findings.json()["report"]["findings"][0]["references"][0]["excerpt"] == "observed"
+    persisted = markdown.json()["artifact"]
+    assert persisted == built.artifacts[1]
+    assert persisted["content"].startswith("# 研究结论\n")
+    assert "> observed\n" in persisted["content"]
+    assert persisted["content_hash"] == hashlib.sha256(persisted["content"].encode()).hexdigest()

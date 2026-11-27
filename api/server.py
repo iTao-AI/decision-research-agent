@@ -102,6 +102,7 @@ from api.run_recovery_models import (
 from api.run_recovery_repository import create_or_replay_run_recovery
 from api.research_findings import build_research_findings_artifacts
 from agent.research_findings_contracts import validate_research_findings_scope
+from agent.report_language import run_report_language
 from api.research_findings_service import resolve_run_findings
 from api.run_result_service import (
     RunResultUnavailable,
@@ -628,7 +629,11 @@ async def _run_started_v2_with_persistence(
             delivery_status = findings.delivery_status
             completed_evidence_entries = findings.evidence_entries
         elif execution_status == "completed" and is_generic_family(profile_id):
-            artifact = build_generic_result_artifact(result)
+            report_language = run_report_language(profile_id, scope or {})
+            artifact = (
+                build_generic_result_artifact(result, report_language=report_language)
+                if report_language is not None else build_generic_result_artifact(result)
+            )
             artifacts = [artifact]
             if is_strict_citation_profile(profile_id):
                 strict_result = prepare_strict_citation(
@@ -1305,6 +1310,14 @@ async def create_research_run(
             },
         ) from exc
     validated_scope = request.scope
+    try:
+        run_report_language(request.profile_id, request.scope)
+    except ValueError:
+        raise HTTPException(status_code=422, detail={
+            "code": "invalid_research_scope",
+            "problem": "The requested report language is invalid.",
+            "fix": "Omit scope.report_language or use zh-CN or en.",
+        }) from None
     if request.profile_id == "generic-evidence-report":
         try:
             validated_scope = validate_research_findings_scope(request.scope, query=request.query).model_dump(mode="json")

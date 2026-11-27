@@ -66,11 +66,11 @@ before accepting. Use isolated state for replay and live exercise runs.
 
 Save the desired confirmed JSON version from **交付成果**. Review which
 material is approved for sharing, then follow the
-[decision-html skill](../../skills/decision-html/SKILL.md). For the fictional
+[decision-html skill](../../operator-skills/decision-html/SKILL.md). For the fictional
 demo, a local operator can use:
 
 ```sh
-python skills/decision-html/scripts/render_brief.py confirmed-v2.json fieldwork-v2.html --fictional
+python operator-skills/decision-html/scripts/render_brief.py confirmed-v2.json fieldwork-v2.html --fictional
 python -m fieldwork.web --root output/fieldwork-demo --register-html 2 fieldwork-v2.html
 ```
 

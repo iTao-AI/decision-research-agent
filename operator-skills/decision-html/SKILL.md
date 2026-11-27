@@ -12,7 +12,7 @@ description: Use when a confirmed, shareable decision snapshot needs an offline 
 以下命令在仓库根目录执行。已有准备好的导出快照时，直接指定快照与目标文件。
 
 ```shell
-python skills/decision-html/scripts/render_brief.py confirmed-v2.json brief-v2.html
+python operator-skills/decision-html/scripts/render_brief.py confirmed-v2.json brief-v2.html
 ```
 
 虚构样本加 `--fictional`。脚本只依赖 Python 标准库。输入为 UTF-8 JSON：

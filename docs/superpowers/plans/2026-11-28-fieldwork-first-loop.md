@@ -44,5 +44,5 @@ Wrong producer run or mixed Publication, malformed multibyte continuation, dupli
 
 - [ ] Add frontend tests for upload, judging/review, opening exact evidence and error/recovery states.
 - [ ] Implement `frontend/src/fieldwork/` and the `/fieldwork` entry. Keep the console available at `/`. Reuse the approved visuals. Browser actions use the documented API and focusable controls. Serve the build from the local Fieldwork service for same-origin operation.
-- [ ] Freeze the fictional PDFs and case assertions without embedding them in the real inference code. Provide the standalone `skills/decision-html/SKILL.md` and use it to generate offline HTML with its snapshot Markdown/JSON. Validate download and sandbox behavior.
+- [ ] Freeze the fictional PDFs and case assertions without embedding them in the real inference code. Provide the standalone `operator-skills/decision-html/SKILL.md` and use it to generate offline HTML with its snapshot Markdown/JSON. Validate download and sandbox behavior.
 - [ ] Verify the real and replay paths at desktop and narrow widths. Run deterministic cases, project regression and frontend build. Include a verified README screen and a three-minute walkthrough. Review the integrated branch and record the exact verification and remaining limits.

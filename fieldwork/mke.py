@@ -318,17 +318,18 @@ class MkeEvidence:
                     "--page-start", "1", "--page-end", str(total_pages), "--json", lock_fd=lock_fd,
                 )
                 browsed = {}
-                expected_count = len(candidates)
                 for page, rows in _collection(browse, "browse_source_evidence_response", "entries"):
                     source = _record(page.get("source"))
                     coverage = _record(source.get("coverage"))
                     _check(page.get("authority_snapshot") == authority and _has_lineage(source, lineage)
                            and _integer(source.get("evidence_count"))
+                           and source["evidence_count"] == total_pages
                            and coverage.get("kind") == "pdf" and coverage.get("report_status") == "observed"
                            and _integer(coverage.get("total_pages")) and coverage["total_pages"] == total_pages)
-                    expected_count = source["evidence_count"]
                     self._collect_descriptors(browsed, rows, lineage, total_pages)
-                _check(len(browsed) == expected_count
+                # MKE publishes one Evidence record per extracted PDF page.
+                locators = sorted((entry["locator"]["start"], entry["locator"]["end"]) for entry in browsed.values())
+                _check(locators == [(number, number) for number in range(1, total_pages + 1)]
                        and all(browsed.get(key) == value for key, value in candidates.items()))
                 sizes = [entry["original_utf8_bytes"] for entry in browsed.values()]
                 _check(len(sizes) <= MAX_SELECTED_ITEMS and sum(sizes) <= MAX_SELECTED_BYTES

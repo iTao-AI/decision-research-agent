@@ -192,6 +192,29 @@ def test_scoped_search_and_short_letter_browse_use_verified_readback(adapter, mo
     assert commands[1][:5] == ("source", "browse", SOURCE, "--publication-id", PUBLICATION)
 
 
+def test_short_letter_browse_rejects_distinct_evidence_for_the_same_page(adapter, monkeypatch):
+    duplicate_page = {**DESCRIPTOR, "evidence_id": "ev_" + "5" * 32}
+    rows = [{"evidence": DESCRIPTOR}, {"evidence": duplicate_page}]
+    source = {**SOURCE_ENTRY, "evidence_count": 2, "coverage": {
+        **SOURCE_ENTRY["coverage"], "total_pages": 2, "extracted_pages": 2,
+    }}
+
+    def run(*args, **_):
+        if args[0] == "search":
+            return [page("search_source_evidence_response", scope=LINEAGE, matches=[],
+                         selection=selection([]), authority_snapshot=AUTHORITY, query="样本")]
+        if args[:2] == ("source", "browse"):
+            return [page("browse_source_evidence_response", source=source, entries=rows,
+                         selection=selection(rows), authority_snapshot=AUTHORITY)]
+        descriptor = next(row["evidence"] for row in rows if row["evidence"]["evidence_id"] == args[2])
+        return [{**chunk, "evidence": descriptor} for chunk in read_pages()]
+
+    monkeypatch.setattr(adapter, "_run", run)
+    with pytest.raises(MkeError) as error:
+        adapter.select({**MATERIAL, "total_pages": 2}, "样本", "consumer-1")
+    assert error.value.code == "mke_invalid_evidence"
+
+
 def test_search_fails_closed_on_wrong_producer_run(adapter, monkeypatch):
     def run(*args, **_):
         assert args[0] == "search"

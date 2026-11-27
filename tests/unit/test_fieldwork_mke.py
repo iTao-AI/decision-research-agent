@@ -3,6 +3,9 @@ import fcntl
 from hashlib import sha256
 from pathlib import Path
 import shutil
+import subprocess
+import sys
+import time
 
 import pytest
 
@@ -16,7 +19,7 @@ EVIDENCE = "ev_" + "4" * 32
 TEXT = "客户确认，周三只展示脱敏样本。"
 PDF = b"%PDF-1.7\nsynthetic bytes for command-boundary tests"
 DIGEST = sha256(PDF).hexdigest()
-PAGE = {"kind": "page", "start": 2, "end": 2}
+PAGE = {"kind": "page", "start": 1, "end": 1}
 AUTHORITY = {
     "schema_version": "mke.active_authority_snapshot.v1",
     "active_set_fingerprint": "sha256:" + "a" * 64,
@@ -33,17 +36,17 @@ DESCRIPTOR = {
 }
 MATERIAL = {
     "id": "change-letter", "title": "客户函", "sha256": DIGEST, "source_id": SOURCE,
-    "publication_id": PUBLICATION, "revision": 1, "producer_run_id": RUN, "total_pages": 2,
+    "publication_id": PUBLICATION, "revision": 1, "producer_run_id": RUN, "total_pages": 1,
 }
 SOURCE_ENTRY = {
     **LINEAGE, "media_type": "application/pdf", "evidence_count": 1,
     "coverage": {
-        "kind": "pdf", "report_status": "observed", "total_pages": 2, "extracted_pages": 1,
+        "kind": "pdf", "report_status": "observed", "total_pages": 1, "extracted_pages": 1,
     },
 }
 PUBLISHED = {
     "ok": True, "run": {"run_id": RUN, "state": "published", "source_generation": 1},
-    "intake_report": {"total_pages": 2, "extracted_pages": 1},
+    "intake_report": {"total_pages": 1, "extracted_pages": 1},
 }
 
 
@@ -97,7 +100,7 @@ def test_ingest_reconciles_published_bytes_after_lost_response(adapter, original
     published = False
     ingests = 0
 
-    def run(*args):
+    def run(*args, **_):
         nonlocal published, ingests
         if args[:2] == ("sources", "list"):
             return [catalog([SOURCE_ENTRY] if published else [])]
@@ -117,7 +120,7 @@ def test_ingest_reconciles_published_bytes_after_lost_response(adapter, original
 
 
 def test_ingest_rejects_catalog_run_mismatch(adapter, original, monkeypatch):
-    def run(*args):
+    def run(*args, **_):
         if args[0] == "sources":
             return [catalog([SOURCE_ENTRY])]
         assert args[:3] == ("run", "get", RUN)
@@ -128,9 +131,30 @@ def test_ingest_rejects_catalog_run_mismatch(adapter, original, monkeypatch):
         adapter.ingest(original, DIGEST)
 
 
+@pytest.mark.parametrize("suspected_scanned_pages", [0, 1], ids=["blank-page", "scanned-page"])
+def test_ingest_refuses_incomplete_text_layer(adapter, original, monkeypatch, suspected_scanned_pages):
+    source = deepcopy(SOURCE_ENTRY)
+    source["coverage"].update(total_pages=2, empty_pages=1,
+                              suspected_scanned_pages=suspected_scanned_pages)
+    published = deepcopy(PUBLISHED)
+    published["intake_report"].update(total_pages=2, empty_pages=1, page_char_counts=[len(TEXT), 0],
+                                       suspected_scanned_pages=suspected_scanned_pages)
+
+    def run(*args, **_):
+        if args[:2] == ("sources", "list"):
+            return [catalog([source])]
+        assert args[:3] == ("run", "get", RUN)
+        return [published]
+
+    monkeypatch.setattr(adapter, "_run", run)
+    with pytest.raises(MkeError) as error:
+        adapter.ingest(original, DIGEST)
+    assert error.value.code == "mke_incomplete_coverage"
+
+
 def test_ingest_rejects_saved_bytes_with_wrong_digest_before_mke(adapter, original, monkeypatch):
     original.write_bytes(PDF + b"changed")
-    monkeypatch.setattr(adapter, "_run", lambda *_: pytest.fail("bad bytes must not reach MKE"))
+    monkeypatch.setattr(adapter, "_run", lambda *args, **_: pytest.fail("bad bytes must not reach MKE"))
     with pytest.raises(MkeError) as error:
         adapter.ingest(original, DIGEST)
     assert error.value.code == "mke_invalid_material"
@@ -139,7 +163,7 @@ def test_ingest_rejects_saved_bytes_with_wrong_digest_before_mke(adapter, origin
 def test_scoped_search_and_short_letter_browse_use_verified_readback(adapter, monkeypatch):
     commands = []
 
-    def run(*args):
+    def run(*args, **_):
         commands.append(args)
         descriptor = {"evidence": DESCRIPTOR, "excerpt": {"text": "untrusted preview"}}
         if args[0] == "search":
@@ -159,7 +183,7 @@ def test_scoped_search_and_short_letter_browse_use_verified_readback(adapter, mo
             "title", "source_id", "publication_id", "revision", "producer_run_id",
         )},
         "id": EVIDENCE, "material_id": MATERIAL["id"], "consumer_run_id": "consumer-1",
-        "page_start": 2, "page_end": 2, "text": TEXT,
+        "page_start": 1, "page_end": 1, "text": TEXT,
         "sha256": sha256(TEXT.encode()).hexdigest(), "byte_start": 0, "byte_end": len(TEXT.encode()),
     }
     assert commands[0][:7] == (
@@ -169,7 +193,7 @@ def test_scoped_search_and_short_letter_browse_use_verified_readback(adapter, mo
 
 
 def test_search_fails_closed_on_wrong_producer_run(adapter, monkeypatch):
-    def run(*args):
+    def run(*args, **_):
         assert args[0] == "search"
         return [page("search_source_evidence_response",
                      scope={**LINEAGE, "run_id": "run_" + "9" * 32}, matches=[],
@@ -207,14 +231,14 @@ def test_readback_requires_exact_complete_same_run_utf8(adapter, monkeypatch, ta
     elif tamper == "early_terminal":
         chunks[0].update(complete=True, next_cursor=None)
 
-    monkeypatch.setattr(adapter, "_run", lambda *_: chunks)
+    monkeypatch.setattr(adapter, "_run", lambda *args, **_: chunks)
     with pytest.raises(MkeError) as error:
         adapter.reread(MATERIAL, EVIDENCE, "consumer-1")
     assert error.value.code == "mke_invalid_evidence"
 
 
 def test_live_read_unavailable_does_not_substitute_another_evidence(adapter, monkeypatch):
-    def run(*args):
+    def run(*args, **_):
         assert args[:3] == ("evidence", "read", EVIDENCE)
         raise MkeError("mke_evidence_unavailable")
 
@@ -243,6 +267,60 @@ def executable_script(tmp_path, source):
     return script
 
 
+def _wait_for_file(path):
+    deadline = time.monotonic() + 5
+    while not path.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert path.exists(), f"MKE test process did not signal {path.name}"
+
+
+def test_mke_child_holds_library_lock_after_dra_process_dies(tmp_path, original, monkeypatch):
+    executable = executable_script(tmp_path, f"""
+import json, sys, time
+from pathlib import Path
+
+command = sys.argv[3]
+if command == "sources":
+    print(json.dumps({catalog([])!r}))
+elif command == "ingest":
+    Path("ingesting").touch()
+    try:
+        deadline = time.monotonic() + 10
+        while not Path("release").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        Path("finished").touch()
+elif command == "evidence":
+    for page in {read_pages()!r}:
+        print(json.dumps(page))
+""")
+    parent = subprocess.Popen([
+        sys.executable, "-c",
+        "import sys; from pathlib import Path; from fieldwork.mke import MkeEvidence; "
+        "MkeEvidence(sys.argv[1], Path(sys.argv[2])).ingest(Path(sys.argv[3]), sys.argv[4])",
+        str(executable), str(tmp_path), str(original), DIGEST,
+    ], cwd=Path(__file__).resolve().parents[2])
+    restarted = MkeEvidence(executable, tmp_path)
+    try:
+        _wait_for_file(tmp_path / "ingesting")
+        parent.kill()
+        parent.wait(timeout=5)
+        monkeypatch.setattr(mke, "LOCK_TIMEOUT_SECONDS", 0)
+        with pytest.raises(MkeError) as error:
+            restarted.reread(MATERIAL, EVIDENCE, "restart")
+        assert error.value.code == "mke_busy"
+    finally:
+        (tmp_path / "release").touch()
+        if parent.poll() is None:
+            parent.kill()
+            parent.wait(timeout=5)
+        if (tmp_path / "ingesting").exists():
+            _wait_for_file(tmp_path / "finished")
+
+    monkeypatch.setattr(mke, "LOCK_TIMEOUT_SECONDS", 5)
+    assert restarted.reread(MATERIAL, EVIDENCE, "restart")["text"] == TEXT
+
+
 def test_subprocess_receives_only_configured_paths_and_clean_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("DRA_MKE_TEST_SECRET", "should-not-be-inherited")
     executable = executable_script(
@@ -252,7 +330,9 @@ def test_subprocess_receives_only_configured_paths_and_clean_environment(tmp_pat
     )
     project = tmp_path / "project"
     adapter = MkeEvidence(executable, project)
-    assert adapter._run("sources", "list", "--json") == [{
+    with adapter._locked() as lock_fd:
+        results = adapter._run("sources", "list", "--json", lock_fd=lock_fd)
+    assert results == [{
         "ok": True, "db": str(adapter.db_path), "cwd": str(adapter.project_dir), "inherited": False,
     }]
 
@@ -265,8 +345,8 @@ def test_subprocess_output_and_time_are_bounded(tmp_path, monkeypatch, source, e
     monkeypatch.setattr(mke, "COMMAND_TIMEOUT_SECONDS", 0.5)
     monkeypatch.setattr(mke, "COMMAND_MAX_OUTPUT_BYTES", 4096)
     adapter = MkeEvidence(executable_script(tmp_path, source), tmp_path / "project")
-    with pytest.raises(MkeError) as error:
-        adapter._run("sources", "list", "--json")
+    with adapter._locked() as lock_fd, pytest.raises(MkeError) as error:
+        adapter._run("sources", "list", "--json", lock_fd=lock_fd)
     assert error.value.code == expected
 
 
@@ -274,7 +354,7 @@ def test_short_letter_does_not_silently_omit_an_oversized_condition(adapter, mon
     oversized = {**DESCRIPTOR, "original_utf8_bytes": mke.MAX_ITEM_BYTES + 1}
     row = {"evidence": oversized}
 
-    def run(*args):
+    def run(*args, **_):
         if args[0] == "search":
             return [page("search_source_evidence_response", scope=LINEAGE, matches=[],
                          selection=selection([]), authority_snapshot=AUTHORITY, query="样本")]
@@ -294,7 +374,7 @@ def test_readback_rejects_evidence_claimed_in_empty_authority(adapter, monkeypat
     for chunk in chunks:
         chunk["authority_snapshot"]["observation"]["state"] = "empty"
 
-    monkeypatch.setattr(adapter, "_run", lambda *_: chunks)
+    monkeypatch.setattr(adapter, "_run", lambda *args, **_: chunks)
     with pytest.raises(MkeError) as error:
         adapter.reread(MATERIAL, EVIDENCE, "consumer-1")
     assert error.value.code == "mke_invalid_evidence"

@@ -34,6 +34,7 @@ _MESSAGES = {
     "mke_output_limit": "The local MKE response exceeded the allowed size.",
     "mke_command_failed": "The local MKE command did not complete successfully.",
     "mke_ingest_failed": "MKE could not publish a text layer for this material.",
+    "mke_incomplete_coverage": "The PDF does not contain extractable text on every page.",
     "mke_invalid_material": "The saved PDF or its identity is invalid.",
     "mke_invalid_evidence": "MKE returned inconsistent evidence provenance or content.",
     "mke_evidence_unavailable": "This exact evidence is no longer available in MKE.",
@@ -144,7 +145,7 @@ class MkeEvidence:
         self.lock_path = self.project_dir / "mke.lock"
 
     @contextmanager
-    def _locked(self) -> Iterator[None]:
+    def _locked(self) -> Iterator[int]:
         deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
         try:
             handle = self.lock_path.open("ab")
@@ -162,15 +163,16 @@ class MkeEvidence:
                     time.sleep(min(remaining, 0.05))
                 except OSError:
                     raise MkeError("mke_unavailable") from None
-            yield
+            yield handle.fileno()
 
-    def _run(self, *args: str) -> list[dict]:
+    def _run(self, *args: str, lock_fd: int) -> list[dict]:
         try:
             process = subprocess.Popen(
                 [str(self.executable), "--db", str(self.db_path), *args],
                 cwd=self.project_dir, env={"PATH": os.defpath, "PYTHONUTF8": "1"},
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                start_new_session=True,
+                # Keep the producer lock through CLI exit even if DRA stops abruptly.
+                start_new_session=True, pass_fds=(lock_fd,),
             )
         except OSError:
             raise MkeError("mke_unavailable") from None
@@ -233,8 +235,8 @@ class MkeEvidence:
                and sha256(data).hexdigest() == digest, "mke_invalid_material")
         return expected
 
-    def _published(self, digest: str) -> dict | None:
-        pages = self._run("sources", "list", "--page-size", "20", "--json")
+    def _published(self, digest: str, lock_fd: int) -> dict | None:
+        pages = self._run("sources", "list", "--page-size", "20", "--json", lock_fd=lock_fd)
         sources = [_record(row) for _, rows in _collection(pages, "list_sources_response", "sources")
                    for row in rows]
         matches = [source for source in sources if source.get("content_fingerprint") == f"sha256:{digest}"]
@@ -257,7 +259,7 @@ class MkeEvidence:
                and _integer(coverage.get("extracted_pages"))
                and source["evidence_count"] == coverage["extracted_pages"] <= material["total_pages"])
         run_id = lineage["run_id"]
-        runs = self._run("run", "get", run_id, "--json")
+        runs = self._run("run", "get", run_id, "--json", lock_fd=lock_fd)
         _check(len(runs) == 1)
         run = _record(runs[0].get("run"))
         report = _record(runs[0].get("intake_report"))
@@ -265,20 +267,21 @@ class MkeEvidence:
                and _integer(report.get("total_pages")) and report["total_pages"] == material["total_pages"]
                and _integer(report.get("extracted_pages"))
                and report["extracted_pages"] == coverage["extracted_pages"])
+        _check(report["extracted_pages"] == material["total_pages"], "mke_incomplete_coverage")
         return material
 
     def ingest(self, path: Path, sha256: str) -> dict:
         """Reconcile any already-published bytes before invoking the producer."""
-        with self._locked():
+        with self._locked() as lock_fd:
             original = self._saved_pdf(Path(path), sha256)
-            previous = self._published(sha256)
+            previous = self._published(sha256, lock_fd)
             if previous is not None:
                 return previous
             try:
-                receipts = self._run("ingest", str(original), "--json")
+                receipts = self._run("ingest", str(original), "--json", lock_fd=lock_fd)
             except MkeError as exc:
                 # A lost response may still have committed the Publication.
-                recovered = self._published(sha256)
+                recovered = self._published(sha256, lock_fd)
                 if recovered is not None:
                     return recovered
                 if exc.code == "mke_command_failed":
@@ -286,7 +289,7 @@ class MkeEvidence:
                 raise
             _check(len(receipts) == 1)
             receipt = receipts[0]
-            published = self._published(sha256)
+            published = self._published(sha256, lock_fd)
             _check(published is not None and receipt.get("run_state") == "published"
                    and receipt.get("run_id") == published["producer_run_id"])
             return published
@@ -298,8 +301,9 @@ class MkeEvidence:
         _check(query and not query.startswith("-") and len(query.encode("utf-8")) <= 512,
                "mke_invalid_material")
         scope = ("--source-id", lineage["source_id"], "--publication-id", lineage["publication_id"])
-        with self._locked():
-            search = self._run("search", query, *scope, "--limit", str(MAX_SELECTED_ITEMS), "--json")
+        with self._locked() as lock_fd:
+            search = self._run("search", query, *scope, "--limit", str(MAX_SELECTED_ITEMS),
+                               "--json", lock_fd=lock_fd)
             candidates = {}
             authority = search[0].get("authority_snapshot")
             for page, rows in _collection(search, "search_source_evidence_response", "matches"):
@@ -311,7 +315,7 @@ class MkeEvidence:
                 # lexical search matched the permission sentence alone.
                 browse = self._run(
                     "source", "browse", lineage["source_id"], *scope[2:],
-                    "--page-start", "1", "--page-end", str(total_pages), "--json",
+                    "--page-start", "1", "--page-end", str(total_pages), "--json", lock_fd=lock_fd,
                 )
                 browsed = {}
                 expected_count = len(candidates)
@@ -337,7 +341,7 @@ class MkeEvidence:
                 size = descriptor["original_utf8_bytes"]
                 if size <= min(remaining, MAX_ITEM_BYTES):
                     items.append(self._read(material, lineage, evidence_id, consumer_run_id,
-                                            descriptor=descriptor, snapshot=authority))
+                                            lock_fd=lock_fd, descriptor=descriptor, snapshot=authority))
                     remaining -= size
                 if len(items) == MAX_SELECTED_ITEMS:
                     break
@@ -354,15 +358,15 @@ class MkeEvidence:
     def reread(self, material: dict, evidence_id: str, consumer_run_id: str) -> dict:
         """Read this exact historical identity or return a safe unavailable error."""
         lineage = _lineage(material)
-        with self._locked():
-            return self._read(material, lineage, evidence_id, consumer_run_id)
+        with self._locked() as lock_fd:
+            return self._read(material, lineage, evidence_id, consumer_run_id, lock_fd=lock_fd)
 
     def _read(
         self, material: dict, lineage: dict, evidence_id: str, consumer_run_id: str, *,
-        descriptor: dict | None = None, snapshot: dict | None = None,
+        lock_fd: int, descriptor: dict | None = None, snapshot: dict | None = None,
     ) -> dict:
         _check(_matching(evidence_id, r"ev_[0-9a-f]{32}"))
-        reads = self._run("evidence", "read", evidence_id, "--max-bytes", "8192", "--json")
+        reads = self._run("evidence", "read", evidence_id, "--max-bytes", "8192", "--json", lock_fd=lock_fd)
         data = bytearray()
         cursors = set()
         for index, page in enumerate(reads):

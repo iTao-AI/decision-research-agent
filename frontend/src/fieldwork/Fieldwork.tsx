@@ -32,7 +32,14 @@ const phases = [
 function affectedAreas(project: Project) {
   const retired = new Set(project.materials.filter((material) => !material.active).map((material) => material.id));
   const replacedEvidence = new Set(project.confirmed.evidence.filter((entry) => retired.has(entry.material_id)).map((entry) => entry.id));
-  return new Set(project.confirmed.items.filter((item) => item.evidence_ids.some((id) => replacedEvidence.has(id))).map((item) => item.area));
+  const interviewEvidence = project.confirmed.evidence.find((entry) =>
+    entry.material_id === "seed_interview" && entry.producer_run_id === "seed" && !retired.has(entry.material_id));
+  return new Set(project.confirmed.items.filter((item) => {
+    // The confirmed interview can proceed independently of a replaced approval letter.
+    const independentInterview = item.area === "interview" && item.state === "proceed" &&
+      interviewEvidence && item.evidence_ids.includes(interviewEvidence.id);
+    return !independentInterview && item.evidence_ids.some((id) => replacedEvidence.has(id));
+  }).map((item) => item.area));
 }
 
 type OpenEvidence = (evidence: Evidence, proposal: string | null, event: MouseEvent<HTMLButtonElement>) => void;

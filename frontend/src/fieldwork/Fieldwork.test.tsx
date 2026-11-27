@@ -130,15 +130,25 @@ test("reads a PDF change through analysis, evidence, stale review reconciliation
 });
 
 test("flags only confirmed actions that rely on replaced material and restores the interrupted upload selection", async () => {
-  const interviewEvidence = { ...source, id: "seed-1", material_id: "seed", producer_run_id: "seed" };
+  const interviewEvidence = {
+    ...source, id: "seed_interview", material_id: "seed_interview", source_id: "seed_interview",
+    producer_run_id: "seed", title: "值班主管访谈", text: "工单信息不全，要在值班访谈里补齐。",
+  };
+  const trialEvidence = {
+    ...source, id: "seed_trial", material_id: "seed_trial", source_id: "seed_trial",
+    producer_run_id: "seed", title: "周三演示约定", text: "脱敏导出样本是否可用于演示，须等 IT 书面确认。",
+  };
+  const demo = { ...proposal.items[0], evidence_ids: ["ev-1", "seed_trial"] };
+  const liveAccess = { ...demo, area: "live_access", action: "跟进实时接口授权", state: "waiting" };
   const interview = {
-    ...proposal.items[0], area: "interview", action: "继续访谈", evidence_ids: ["seed-1"],
+    ...demo, area: "interview", action: "继续访谈", reason: "工单交接的调查可单独推进。",
+    evidence_ids: ["ev-1", "seed_interview"],
   };
   const retired = { id: "mat-1", title: source.title, revision: 3, material_version: 2, active: false };
   const active = { ...retired, id: "mat-2", material_version: 3, active: true };
   const updated = {
     ...initial,
-    confirmed: { ...proposal, version: 2, proposal_id: proposal.id, items: [...proposal.items, interview], evidence: [source, interviewEvidence] },
+    confirmed: { ...proposal, version: 2, proposal_id: proposal.id, items: [demo, liveAccess, interview], evidence: [source, interviewEvidence, trialEvidence] },
     materials: [active, retired],
     intake: { title: "IT 补充回函", replace: "mat-2", sha256: "pending-digest", state: "pending", error_code: null },
   };
@@ -149,6 +159,8 @@ test("flags only confirmed actions that rely on replaced material and restores t
   const retiredAction = (await screen.findByText("准备脱敏样本")).closest("li")!;
   expect(within(retiredAction).getByText("依据已替代，待复核")).toBeInTheDocument();
   expect(within(retiredAction).queryByText("可继续")).toBeNull();
+  const liveAction = screen.getByText("跟进实时接口授权").closest("li")!;
+  expect(within(liveAction).getByText("依据已替代，待复核")).toBeInTheDocument();
   const continuingAction = screen.getByText("继续访谈").closest("li")!;
   expect(within(continuingAction).getByText("可继续")).toBeInTheDocument();
   await user.click(within(screen.getByRole("navigation", { name: "工作台导航" })).getByRole("button", { name: "阶段工作区" }));

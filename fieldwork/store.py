@@ -220,6 +220,10 @@ class FieldworkStore:
     @staticmethod
     def project(db, mode):
         state = db.execute("SELECT * FROM project WHERE singleton = 1").fetchone()
+        intake = db.execute(
+            """SELECT title, replaces AS replace, sha256, state, error_code FROM materials
+               ORDER BY (state = 'pending') DESC, rowid DESC LIMIT 1"""
+        ).fetchone()
         return {
             "id": PROJECT_ID,
             "title": PROJECT_TITLE,
@@ -227,6 +231,7 @@ class FieldworkStore:
             "revision": state["revision"],
             "sample_prepared": bool(state["sample_prepared"]),
             "mode": mode,
+            "intake": dict(intake) if intake and intake["state"] in ("pending", "failed") else None,
             "confirmed": FieldworkStore.snapshot(db, state["confirmed_version"]),
             "proposal": proposal_view(
                 db.execute("SELECT * FROM proposals ORDER BY rowid DESC LIMIT 1").fetchone()

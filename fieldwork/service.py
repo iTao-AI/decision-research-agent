@@ -365,7 +365,7 @@ class FieldworkService:
             phase = "evidence"
             try:
                 query = (
-                    f"{material['title']}。{project['stage']}：周三演示及样本用法、对外或内部授权，"
+                    f"{project['stage']}：周三演示及样本用法、对外或内部授权，"
                     "实时接口读取条件、现场访谈和需确认的安排。"
                 )
                 selected = self.backend.select(material, query, run_id)

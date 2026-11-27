@@ -160,6 +160,11 @@ def test_lost_intake_response_reconciles_catalog_and_advances_revision_once(tmp_
     restarted = FieldworkService(tmp_path, lambda _: backend, propose, "replay")
     assert restarted.project()["materials"] == [material]
     assert restarted.project()["revision"] == 2
+    assert restarted.project()["intake"] == {
+        "title": "客户 IT 回函", "replace": material["id"],
+        "state": "pending", "sha256": hashlib.sha256(PDF_B).hexdigest(),
+        "error_code": None,
+    }
     with pytest.raises(FieldworkError, match="资料") as blocked:
         restarted.review(proposal["id"], "accept", "")
     assert blocked.value.status == 409
@@ -169,6 +174,7 @@ def test_lost_intake_response_reconciles_catalog_and_advances_revision_once(tmp_
     adopted = restarted.submit_material("客户 IT 回函", PDF_B, replace=material["id"])
     retry = restarted.submit_material("客户 IT 回函", PDF_B, replace=material["id"])
     assert retry == adopted
+    assert adopted["intake"] is None
     assert sum(item["active"] for item in adopted["materials"]) == 1
     assert adopted["revision"] == 3
     assert len(backend.ingestions) == 2
@@ -466,3 +472,18 @@ def test_fenced_analysis_does_not_hide_earlier_pending_proposal_when_intake_fail
     assert tuple(run)[:2] == ("failed", "stale_proposal")
     assert "样本安排" in run["output_json"]
     assert service.review(previous_proposal["id"], "accept", "")["confirmed"]["version"] == 2
+
+
+def test_material_title_does_not_turn_into_cli_option_or_exceed_search_budget(workbench,
+                                                                            monkeypatch):
+    service, backend = workbench
+    select = backend.select
+
+    def check_query(material, query, consumer_run_id):
+        assert not query.startswith("-")
+        assert len(query.encode("utf-8")) <= 512
+        return select(material, query, consumer_run_id)
+
+    monkeypatch.setattr(backend, "select", check_query)
+    view = service.submit_material("-" + "试" * 119, PDF_A)
+    assert service.analyze(view["materials"][0]["id"])["proposal"]["status"] == "pending"

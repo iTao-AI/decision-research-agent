@@ -1,0 +1,13 @@
+{
+  "capture": "Chrome desktop, packaged local Fieldwork frontend",
+  "route": "/fieldwork",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "locale": "zh-CN",
+  "state": "Fictional Northstar Equipment pilot, confirmed V2, site investigation",
+  "evidence_boundary": "Browser capture after real local MKE read, one accepted model run, operator approval and process restart. It does not describe a live customer pilot.",
+  "image": "overview.jpg",
+  "sha256": "4d8b2f6886b174ece7d48fbc49b0e76cd2fcec925cdd11cdf3b3bf63c10fa619"
+}

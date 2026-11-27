@@ -442,6 +442,8 @@
 .fw-recovery-link { margin-bottom: 12px; }
 
 @media (max-width: 600px) {
+  .fw-breadcrumb > span { display: none; }
+  .fw-breadcrumb strong { white-space: nowrap; }
   .fw-top-end { gap: 4px; }
   .fw-top-end .fw-badge { font-size: 10px; }
   .fw-avatar { width: 26px; height: 26px; flex: 0 0 26px; }

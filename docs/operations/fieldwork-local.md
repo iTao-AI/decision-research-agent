@@ -3,7 +3,10 @@
 The Fieldwork workbench is a local single-operator workflow for the fictional
 Northstar Equipment pilot. It starts at site investigation. The existing
 research console remains at `/`. Run the normal DRA backend separately if
-you want to submit a new general research task from that console.
+you want to submit a new general research task from that console. Configure
+its `DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN=http://127.0.0.1:7195`
+when opening the console from Fieldwork's default address. Use the actual
+Fieldwork origin if you change the host or port.
 
 ## Start the credential-free replay
 
@@ -91,8 +94,8 @@ All routes below are relative to `/api/fieldwork/projects/northstar`.
 
 | Method and resource | Contract |
 | --- | --- |
-| `GET /` (project path with no suffix) | Project stage, current practice mode, confirmed plan, optional intake or proposal, material versions and registered HTML fingerprints |
-| `POST /materials?title=&replace=` | Raw `application/pdf`, up to 8 MiB. Omit `replace` to add a new document. Retry the same bytes and replacement target if a receipt was lost. |
+| `GET /` (project path with no suffix) | Project stage, current execution mode, confirmed plan, optional intake or proposal, material versions and registered HTML fingerprints |
+| `POST /materials?title=&replace=` | Raw `application/pdf`, up to 8 MiB. Omit `replace` to add a new document. Retry the same name, bytes and replacement target if a receipt was lost. |
 | `POST /analysis` | JSON `{material_id}`. Select the current material. The response contains the resulting proposal and its frozen evidence. |
 | `POST /review` | JSON `{proposal_id, decision, feedback}`, with `accept` or `return`. Return requires feedback. Stale proposals receive HTTP 409. |
 | `POST /progress` | JSON `{sample_prepared: true}`. Records the completed step and invalidates older, unconfirmed proposals. |
@@ -100,6 +103,8 @@ All routes below are relative to `/api/fieldwork/projects/northstar`.
 | `GET /proposals/{id}/evidence/{id}/live` | Compare that frozen reference against an exact current read. Explicitly reports unavailable evidence, while preserving the frozen quotation. |
 | `GET /exports/{version}.{format}` | Read a confirmed snapshot as JSON or Markdown, or serve the independently registered HTML. Add `?download=true` to download the HTML. |
 
+Material `material_version` is DRA's version within one logical document.
+Evidence records also include the MKE Publication `revision` and both run IDs.
 Fieldwork errors use `detail.code` and `detail.message`. The analysis audit
 lives in the local project database. Its inputs show the exact admitted passages,
 their source and publication identity, page and UTF-8 byte offsets. Live results

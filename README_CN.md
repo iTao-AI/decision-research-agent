@@ -8,6 +8,14 @@ Decision Research Agent 把开放研究问题整理成带来源依据的研究�
 
 确定性的 Static Demo 只使用内置合成资料，不需要 API key，也不代表真实客户试点或实际成效。真实研究任务可通过 CLI 或 API 发起。
 
+## Fieldwork 项目工作台
+
+用自编的北辰装备售后试点，演示本地业务变更从 PDF 取证、核对建议和原句，到人工确认和按版本交付的过程。实跑模式使用本地 MKE，离线回放随仓库提供三份 PDF，无需凭据。
+
+![Fieldwork 项目现场，虚构试点已确认 V2](docs/assets/fieldwork/overview.jpg)
+
+[启动工作台并跟随三分钟演示](docs/operations/fieldwork-local.md)
+
 ## 浏览 Static Demo
 
 三个确定性入口围绕同一个合成退款自动化案例：

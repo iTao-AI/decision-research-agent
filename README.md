@@ -16,6 +16,18 @@ The deterministic Static Demo uses bundled synthetic material, needs no API
 key, and does not represent results from a real customer. Callers can run real
 research tasks through the CLI or API.
 
+## Fieldwork workbench
+
+Fieldwork uses a fictional equipment-service pilot to demonstrate a local
+business change review. Upload a text-layer PDF, inspect the proposal and
+its source quotations, then confirm the decision and revisit the versioned
+deliverables. The workbench uses a local MKE library in live mode. The
+credential-free replay ships with three sample PDFs.
+
+![Fieldwork overview after confirming the fictional pilot's V2 plan](docs/assets/fieldwork/overview.jpg)
+
+[Start Fieldwork and follow the three-minute walkthrough](docs/operations/fieldwork-local.md)
+
 ## Browse the Static Demo
 
 The three deterministic routes use one synthetic refund-automation case:

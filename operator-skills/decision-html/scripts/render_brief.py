@@ -132,7 +132,7 @@ def render(snapshot, *, fictional=False):
     canonical = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     fingerprint = sha256(canonical.encode("utf-8")).hexdigest()
     cards = "\n".join(item_html(item, evidence) for item in snapshot["items"])
-    identity = "决策简报 · 虚构案例" if fictional else "决策简报"
+    identity = "决策简报 · 模拟客户案例" if fictional else "决策简报"
 
     return f"""<!doctype html>
 <html lang="zh-CN">

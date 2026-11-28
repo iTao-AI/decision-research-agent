@@ -6,8 +6,8 @@
     "height": 900
   },
   "locale": "zh-CN",
-  "state": "Fictional Northstar Equipment pilot, confirmed V2, site investigation",
-  "evidence_boundary": "Browser capture after real local MKE read, one accepted model run, operator approval and process restart. It does not describe a live customer pilot.",
+  "state": "Simulated Northstar Equipment pilot, C acknowledgement case, confirmed V2 at site investigation",
+  "evidence_boundary": "Chrome capture after local MKE read, actual model analysis and operator approval of the C case. The approval records follow-up. Customer IT authorization is still pending.",
   "image": "overview.jpg",
-  "sha256": "4d8b2f6886b174ece7d48fbc49b0e76cd2fcec925cdd11cdf3b3bf63c10fa619"
+  "sha256": "6eb021ad07d86368829e92c5c350467cc291b543885a82224c8239119e316846"
 }

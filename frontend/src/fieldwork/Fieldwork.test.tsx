@@ -23,7 +23,7 @@ const source = {
   byte_end: 80,
 };
 const before = {
-  version: 1, proposal_id: null, headline: "先推进现场访谈，同步核实演示权限",
+  version: 1, proposal_id: null as string | null, headline: "先推进现场访谈，同步核实演示权限",
   summary: "已有约定，待书面确认。", items: [], evidence: [],
 };
 const proposal = {
@@ -80,7 +80,7 @@ test("reads a PDF change through analysis, evidence, stale review reconciliation
     }
     if (url === api + "/history") {
       return Response.json({
-        confirmed: [{ version: 1, proposal_id: null, headline: before.headline }],
+        confirmed: [{ version: 1, proposal_id: null as string | null, headline: before.headline }],
         proposals: [{ id: "proposal-1", status: "superseded", headline: proposal.headline, material_id: "mat-1", feedback: "" }],
       });
     }
@@ -152,7 +152,9 @@ test("flags only confirmed actions that rely on replaced material and restores t
     materials: [active, retired],
     intake: { title: "IT 补充回函", replace: "mat-2", sha256: "pending-digest", state: "pending", error_code: null },
   };
-  vi.stubGlobal("fetch", async () => Response.json(updated));
+  vi.stubGlobal("fetch", async (url: string) => Response.json(url === api + "/history" ? {
+    confirmed: [{version: 2, proposal_id: proposal.id, headline: updated.confirmed.headline}], proposals: [],
+  } : updated));
 
   render(<Fieldwork />);
   const user = userEvent.setup();
@@ -172,4 +174,105 @@ test("flags only confirmed actions that rely on replaced material and restores t
   expect(screen.getByLabelText("资料名称")).toHaveValue("IT 补充回函");
   expect(screen.getByRole("button", { name: "分析材料" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "上传 PDF" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "交付成果" }));
+  expect(await screen.findByText("部分依据已替代，相关安排待复核。")).toBeInTheDocument();
+  expect(screen.queryByText("V2 当前确认")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "下载 JSON" })).toHaveAttribute("href", api + "/exports/2.json");
+});
+
+test("shows parallel work and keeps the confirmation result distinct from the candidate", async () => {
+  const waiting = {
+    ...proposal.items[0], state: "waiting", action: "向客户 IT 核实可用样本",
+    question: "允许向谁展示，能使用哪些数据？",
+  };
+  const candidate = {
+    ...proposal, mode: "live", headline: "许可待核实，访谈继续",
+    items: [waiting, {
+      ...waiting, area: "live_access", action: "单独核对实时告警权限",
+    }, {
+      ...proposal.items[0], area: "interview", action: "继续独立访谈",
+    }],
+  };
+  let project = { ...initial, mode: "live", proposal: candidate };
+  vi.stubGlobal("fetch", async (url: string) => {
+    if (url === api + "/review") {
+      project = {
+        ...project, confirmed: { ...before, version: 2, proposal_id: candidate.id, headline: candidate.headline },
+        proposal: { ...candidate, status: "accepted", feedback: "现场访谈继续，书面许可单独跟进。" },
+      };
+      return Response.json(project);
+    }
+    if (url === api + "/history") return Response.json({ confirmed: [], proposals: [] });
+    return Response.json(project);
+  });
+
+  render(<Fieldwork />);
+  const user = userEvent.setup();
+  expect(await screen.findByText("模拟客户案例")).toBeInTheDocument();
+  expect(screen.getByText("MKE 实读 · 模型分析")).toBeInTheDocument();
+  const impact = screen.getByRole("figure", { name: "候选影响范围" });
+  expect(within(impact).getAllByRole("listitem")).toHaveLength(3);
+  expect(within(impact).getByText("建议独立推进")).toBeInTheDocument();
+
+  const nav = screen.getByRole("navigation", { name: "工作台导航" });
+  await user.click(within(nav).getByRole("button", { name: "阶段评审" }));
+  expect(screen.getByText("采纳后将更新已确认安排，项目仍处于现场调查。待授权事项仍需外部确认。")).toBeInTheDocument();
+  expect(screen.getAllByText("跟进人").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("试点负责人").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("允许向谁展示，能使用哪些数据？")).toHaveLength(2);
+  await user.type(screen.getByLabelText("评审意见"), "现场访谈继续，书面许可单独跟进。");
+  await user.click(screen.getByRole("button", { name: "采纳整份建议" }));
+  expect(await screen.findByText("已采纳为 V2")).toBeInTheDocument();
+  expect(screen.getByText("评审意见：现场访谈继续，书面许可单独跟进。")).toBeInTheDocument();
+  expect(screen.getAllByRole("heading", { name: candidate.headline })).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "采纳整份建议" })).not.toBeInTheDocument();
+});
+
+test("marks only changed authorization work for review after a new document is analyzed", async () => {
+  const interview = {
+    ...proposal.items[0], area: "interview", action: "继续访谈",
+  };
+  const demo = {
+    ...proposal.items[0], action: "准备周三对外样本演示",
+  };
+  const waiting = {
+    ...demo, area: "live_access", state: "waiting", action: "跟进实时告警授权",
+  };
+  const newSource = { ...source, id: "ev-2", material_id: "mat-2", title: "补充回函" };
+  const newProposal = {
+    ...proposal, id: "proposal-2", material_id: "mat-2",
+    evidence: [newSource], items: [{
+      ...demo, action: "安排团队内部排练", evidence_ids: ["ev-2"],
+    }, {
+      ...waiting, evidence_ids: ["ev-2"],
+    }, {
+      ...interview, action: "访谈值班主管", evidence_ids: ["ev-2"],
+    }],
+  };
+  const current = {
+    ...initial,
+    confirmed: { ...before, version: 2, proposal_id: proposal.id, items: [demo, waiting, interview], evidence: [source] },
+    materials: [{ id: "mat-1", active: true }, { id: "mat-2", active: true }],
+    deliverables: [{ version: 2, sha256: "recorded-digest" }],
+  };
+  let data = { ...current, proposal: newProposal };
+  vi.stubGlobal("fetch", async (url: string) => Response.json(url === api + "/history" ? {
+    confirmed: [{ version: 2, proposal_id: proposal.id, headline: before.headline }], proposals: [],
+  } : data));
+
+  render(<Fieldwork />);
+  const user = userEvent.setup();
+  const demoRow = (await screen.findByText(demo.action)).closest("li")!;
+  expect(within(demoRow).getByText("新建议有变化，待复核")).toBeInTheDocument();
+  expect(within(screen.getByText(waiting.action).closest("li")!).getByText("待确认")).toBeInTheDocument();
+  expect(within(screen.getByText(interview.action).closest("li")!).getByText("可继续")).toBeInTheDocument();
+  expect(within(screen.getByRole("figure", { name: "候选影响范围" })).getByText("建议独立推进")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "交付成果" }));
+  expect(await screen.findByText("待评审建议涉及相关安排，适用性待复核。")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "打开 HTML" })).toHaveAttribute("href", api + "/exports/2.html");
+
+  data = { ...data, proposal: { ...newProposal, items: [demo, waiting, interview]
+    .map((item) => ({ ...item, evidence_ids: ["ev-2"] })) } };
+  await user.click(screen.getByRole("button", { name: "重新读取交付成果" }));
+  expect(await screen.findByText("V2 当前确认")).toBeInTheDocument();
 });

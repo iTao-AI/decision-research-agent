@@ -78,7 +78,7 @@ class RenderBriefTest(unittest.TestCase):
         for text in (
             '<html lang="zh-CN">',
             "版本 2",
-            "虚构案例",
+            "模拟客户案例",
             "可继续",
             "待确认",
             "可读取哪些字段？",

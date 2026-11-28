@@ -29,17 +29,40 @@ const phases = [
   { name: "受控试点", status: "待验证" },
   { name: "交付复盘", status: "待开发" },
 ];
+type ReviewReason = "replaced" | "proposal";
+
 function affectedAreas(project: Project) {
+  const result = new Map<Area, ReviewReason>();
   const retired = new Set(project.materials.filter((material) => !material.active).map((material) => material.id));
   const replacedEvidence = new Set(project.confirmed.evidence.filter((entry) => retired.has(entry.material_id)).map((entry) => entry.id));
   const interviewEvidence = project.confirmed.evidence.find((entry) =>
-    entry.material_id === "seed_interview" && entry.producer_run_id === "seed" && !retired.has(entry.material_id));
-  return new Set(project.confirmed.items.filter((item) => {
-    // The confirmed interview can proceed independently of a replaced approval letter.
-    const independentInterview = item.area === "interview" && item.state === "proceed" &&
-      interviewEvidence && item.evidence_ids.includes(interviewEvidence.id);
-    return !independentInterview && item.evidence_ids.some((id) => replacedEvidence.has(id));
-  }).map((item) => item.area));
+    entry.material_id === "seed_interview" && entry.producer_run_id === "seed");
+  const candidate = project.proposal;
+  const newEvidence = new Set(candidate?.status === "pending"
+    && project.materials.some((material) => material.active && material.id === candidate.material_id)
+    && !project.confirmed.evidence.some((entry) => entry.material_id === candidate.material_id)
+    ? candidate.evidence.filter((entry) => entry.material_id === candidate.material_id).map((entry) => entry.id)
+    : []);
+  const compare = (text: string) => text.normalize("NFKC").replace(/[\s。；，！？]+/gu, "");
+
+  for (const confirmed of project.confirmed.items) {
+    // An independently supported interview can continue after a letter is replaced.
+    const independentInterview = confirmed.area === "interview" && confirmed.state === "proceed" &&
+      interviewEvidence && confirmed.evidence_ids.includes(interviewEvidence.id);
+    if (!independentInterview && confirmed.evidence_ids.some((id) => replacedEvidence.has(id))) {
+      result.set(confirmed.area, "replaced");
+      continue;
+    }
+    if (confirmed.area === "interview" || newEvidence.size === 0) continue;
+    const proposed = candidate?.items.find((item) => item.area === confirmed.area);
+    // Only flag an observed change backed by the new material. Keep both decisions intact.
+    if (proposed?.evidence_ids.some((id) => newEvidence.has(id)) &&
+      (proposed.state !== confirmed.state || (confirmed.state === "proceed" &&
+        (compare(proposed.action) !== compare(confirmed.action) || compare(proposed.question) !== compare(confirmed.question))))) {
+      result.set(confirmed.area, "proposal");
+    }
+  }
+  return result;
 }
 
 type OpenEvidence = (evidence: Evidence, proposal: string | null, event: MouseEvent<HTMLButtonElement>) => void;
@@ -60,20 +83,22 @@ function Heading({ title, description, children }: { title: string; description?
 }
 
 function DecisionItems({ decision, proposal, openEvidence, affected }: {
-  decision: Decision; proposal: string | null; openEvidence: OpenEvidence; affected?: ReadonlySet<Area>;
+  decision: Decision; proposal: string | null; openEvidence: OpenEvidence; affected?: ReadonlyMap<Area, ReviewReason>;
 }) {
   const evidence = new Map(decision.evidence.map((entry) => [entry.id, entry]));
   return <ul className="fw-items">
     {decision.items.map((item) => {
-      const needsReview = affected?.has(item.area);
+      const reviewReason = affected?.get(item.area);
+      const needsReview = !!reviewReason;
       const canProceed = item.state === "proceed" && !needsReview;
       return <li key={item.area}>
         <span className="fw-item-icon" aria-hidden="true">{canProceed ? "✓" : "◷"}</span>
         <div className="fw-item-content">
           <strong>{item.action}</strong>
           <p>{item.reason}</p>
-          <small>{areas[item.area]} · {item.owner} · {item.priority === "high" ? "高优先级" : "常规优先级"}</small>
-          {item.question && <p className="fw-question">待确认：{item.question}</p>}
+          <small>{areas[item.area]} · {item.priority === "high" ? "高优先级" : "常规优先级"}</small>
+          <p className="fw-item-owner"><span className="fw-item-label">跟进人</span>{item.owner}</p>
+          {item.question && <p className="fw-question"><span className="fw-item-label">需确认</span>{item.question}</p>}
           <div className="fw-citations">
             {item.evidence_ids.map((id) => {
               const entry = evidence.get(id);
@@ -85,31 +110,32 @@ function DecisionItems({ decision, proposal, openEvidence, affected }: {
           </div>
         </div>
         <Badge tone={canProceed ? "green" : "amber"}>
-          {needsReview ? "依据已替代，待复核" : canProceed ? "可继续" : "待确认"}
+          {reviewReason === "replaced" ? "依据已替代，待复核" :
+            reviewReason === "proposal" ? "新建议有变化，待复核" : canProceed ? "可继续" : "待确认"}
         </Badge>
       </li>;
     })}
   </ul>;
 }
 
-function ImpactMap({ items, affected }: { items: Item[]; affected?: ReadonlySet<Area> }) {
-  const lead = items.find((item) => item.area === "demo");
-  const branches = items.filter((item) => item !== lead);
-  return <figure className="fw-impact" aria-label="当前影响范围">
-    <figcaption>当前影响范围 <span aria-hidden="true">IMPACT MAP</span></figcaption>
-    <div className="fw-impact-plot">
-      <div className="fw-impact-origin"><span aria-hidden="true">⚑</span>
-        <div><strong>{lead ? areas[lead.area] : "阶段安排"}</strong>
-          <small>{lead && affected?.has(lead.area) ? "待复核" : lead?.state === "proceed" ? "可继续" : lead ? "待确认" : "当前判断"}</small></div>
-      </div>
-      <div className="fw-impact-branches">
-        {branches.map((item) => <div key={item.area} className={`fw-impact-node fw-impact-${affected?.has(item.area) ? "waiting" : item.state}`}>
-          <span className="fw-node-dot" aria-hidden="true" /><div>
-            <strong>{areas[item.area]}</strong><small>{affected?.has(item.area) ? "待复核" : item.state === "proceed" ? "可独立推进" : `等待 ${item.owner}`}</small>
-          </div>
-        </div>)}
-      </div>
-    </div>
+function ImpactMap({ items, affected, pending }: {
+  items: Item[]; affected?: ReadonlyMap<Area, ReviewReason>; pending: boolean;
+}) {
+  const title = pending ? "候选影响范围" : "当前影响范围";
+  return <figure className="fw-impact" aria-label={title}>
+    <figcaption>{title}</figcaption>
+    <ul className="fw-impact-plot">
+      {items.map((item) => {
+        const needsReview = affected?.has(item.area);
+        return <li key={item.area} className={`fw-impact-node fw-impact-${needsReview ? "waiting" : item.state}`}>
+          <span className="fw-node-dot" aria-hidden="true" />
+          <div><strong>{areas[item.area]}</strong>
+            <small>{needsReview ? "依据待复核" : item.state === "waiting" ? "等待确认" :
+              item.area === "interview" ? (pending ? "建议独立推进" : "可独立推进") :
+                (pending ? "建议继续" : "可继续")}</small></div>
+        </li>;
+      })}
+    </ul>
   </figure>;
 }
 
@@ -287,8 +313,8 @@ function EvidenceDrawer({ selected, close, mode }: {
   </aside>;
 }
 
-function Delivery({ project, history, refresh, busy }: {
-  project: Project; history: History | null; refresh: () => void; busy: boolean;
+function Delivery({ project, history, refresh, busy, reviewNotice }: {
+  project: Project; history: History | null; refresh: () => void; busy: boolean; reviewNotice: string;
 }) {
   const versions = history?.confirmed ?? [project.confirmed];
   const html = new Map(project.deliverables.map((row) => [row.version, row.sha256]));
@@ -299,10 +325,13 @@ function Delivery({ project, history, refresh, busy }: {
     <div className="fw-delivery">
       {versions.map((row) => {
         const digest = html.get(row.version);
+        const current = row.version === project.confirmed.version;
+        const affected = current && Boolean(reviewNotice);
         return <article className="fw-card fw-padded" key={row.version}>
-          <div className="fw-card-title"><Badge tone={row.version === project.confirmed.version ? "green" : "neutral"}>
-            V{row.version} {row.version === project.confirmed.version ? "当前确认" : "历史版本"}</Badge></div>
+          <div className="fw-card-title"><Badge tone={affected ? "amber" : current ? "green" : "neutral"}>
+            V{row.version} {affected ? "最近确认" : current ? "当前确认" : "历史版本"}</Badge></div>
           <h2>{row.headline}</h2>
+          {affected && <p className="fw-question">{reviewNotice}</p>}
           <div className="fw-buttons">
             {digest && <a className="fw-primary" href={fieldworkApi.export(row.version, "html")}
               target="_blank" rel="noopener noreferrer">打开 HTML</a>}
@@ -433,10 +462,14 @@ export default function Fieldwork() {
   const pending = project?.proposal?.status === "pending" ? project.proposal : null;
   const shownDecision = pending ?? confirmed;
   const reviewed = historical ?? project?.proposal;
+  const justConfirmed = !historical && reviewed?.status === "accepted" && reviewed.id === confirmed?.proposal_id;
   const synced = busy.length === 0;
   const intakePending = project?.intake?.state === "pending";
   const affected = project ? affectedAreas(project) : undefined;
   const needsReview = (affected?.size ?? 0) !== 0;
+  const hasReplacement = affected && [...affected.values()].includes("replaced");
+  const reviewNotice = hasReplacement ? "部分依据已替代，相关安排待复核。" :
+    needsReview ? "待评审建议涉及相关安排，适用性待复核。" : "";
 
   function navLink(key: Page) {
     return <button key={key} type="button" data-page={key} onClick={() => go(key)}
@@ -470,8 +503,8 @@ export default function Fieldwork() {
           <span>工作区</span><span aria-hidden="true">/</span><strong>{pages[page]}</strong>
         </div>
         <div className="fw-top-end">
-          {project && <Badge tone="green"><span>自编项目</span> · <span>{modes[project.mode]}</span></Badge>}
-          <span className="fw-avatar" title="本机操作员" aria-label="本机操作员">我</span>
+          <span className="fw-case-label">模拟客户案例</span>
+          {project && <Badge tone="green">{modes[project.mode]}</Badge>}
         </div>
       </header>
       <main id="fw-content" ref={main} tabIndex={-1}>
@@ -504,7 +537,7 @@ export default function Fieldwork() {
                 <button className="fw-hero-link" type="button" onClick={() => go("evidence")}>判断依据</button>
               </div>
             </div>
-            <ImpactMap items={shownDecision.items} affected={pending ? undefined : affected} />
+            <ImpactMap items={shownDecision.items} affected={pending ? undefined : affected} pending={!!pending} />
           </section>
           <PhaseProgress stage={project.stage} select={() => go("stage")} />
           <div className="fw-grid">
@@ -564,14 +597,24 @@ export default function Fieldwork() {
               <DecisionItems decision={confirmed} proposal={confirmed.proposal_id} openEvidence={openEvidence} affected={affected} />
             </section>
             <section className="fw-card fw-padded fw-review-candidate">
-              {reviewed ? <>
+              {justConfirmed ? <>
+                <p className="fw-review-status" role="status">已采纳为 V{confirmed.version}</p>
+                <p className="fw-muted">已更新行动安排。仍处于{project.stage}，待授权事项继续跟进。</p>
+                {reviewed.feedback && <p className="fw-feedback">评审意见：{reviewed.feedback}</p>}
+                <button className="fw-text" type="button" onClick={() => go("delivery")}>查看交付成果 →</button>
+              </> : reviewed ? <>
                 <div className="fw-card-title"><Badge tone={reviewed.status === "pending" ? "amber" : "neutral"}>{proposalStatuses[reviewed.status]}</Badge>
                   <small>{modes[reviewed.mode]}</small></div>
                 <h2>{reviewed.headline}</h2><p className="fw-muted">{reviewed.summary}</p>
                 <DecisionItems decision={reviewed} proposal={reviewed.id} openEvidence={openEvidence} />
                 {historical ? <button className="fw-secondary" type="button" onClick={() => setHistorical(null)}>返回最近建议</button>
-                  : <ReviewControls key={reviewed.id} proposal={reviewed} busy={!synced || intakePending}
-                    onReview={(decision, feedback) => void mutate("正在保存评审结果", () => fieldworkApi.review(reviewed.id, decision, feedback))} />}
+                  : <>
+                    {reviewed.status === "pending" && <p className="fw-review-scope">
+                      采纳后将更新已确认安排，项目仍处于{project.stage}。待授权事项仍需外部确认。
+                    </p>}
+                    <ReviewControls key={reviewed.id} proposal={reviewed} busy={!synced || intakePending}
+                      onReview={(decision, feedback) => void mutate("正在保存评审结果", () => fieldworkApi.review(reviewed.id, decision, feedback))} />
+                  </>}
                 {reviewed.status === "accepted" && <button className="fw-text" type="button" onClick={() => go("delivery")}>查看交付成果 →</button>}
               </> : <><h2>暂无待评审建议</h2><button className="fw-secondary" type="button" onClick={() => go("inbox")}>前往变更收件箱</button></>}
             </section>
@@ -584,7 +627,7 @@ export default function Fieldwork() {
             </li>)}</ul>
           </section>}
         </>}
-        {project && page === "delivery" && <Delivery project={project} history={history} refresh={() => void refresh()} busy={!synced} />}
+        {project && page === "delivery" && <Delivery project={project} history={history} refresh={() => void refresh()} busy={!synced} reviewNotice={reviewNotice} />}
       </main>
       {selected && project && <EvidenceDrawer key={`${selected.proposal}/${selected.evidence.id}`}
         selected={selected} mode={project.mode} close={() => setSelected(null)} />}

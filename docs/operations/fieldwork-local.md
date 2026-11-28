@@ -1,7 +1,7 @@
 # Run Fieldwork locally
 
-The Fieldwork workbench is a local single-operator workflow for the fictional
-Northstar Equipment pilot. It starts at site investigation. The existing
+The Fieldwork workbench is a local single-operator workflow for the simulated
+Northstar Equipment customer case. It starts at site investigation. The existing
 research console remains at `/`. Run the normal DRA backend separately if
 you want to submit a new general research task from that console. Configure
 its `DECISION_RESEARCH_AGENT_CORS_ALLOWED_ORIGIN=http://127.0.0.1:7195`
@@ -41,6 +41,18 @@ local service and durable project database.
 
 Before starting another workflow, use a fresh state directory or build on the
 recorded history. Closing the page and restarting the service preserve state.
+
+The confirmed plan and pending proposal are displayed separately. The overview
+lists the demo, live access, and interviews as parallel items. In the review,
+use the follow-up owner and the unresolved question to see who needs to act
+and what needs confirmation. Accepting a review records the plan; it leaves
+external permissions pending and does not advance the stage.
+
+If a cited document is replaced, or a pending proposal cites new material and
+changes a recommendation that depends on authorization, the workbench flags
+the affected plan and the latest delivery for review. The previous confirmed
+snapshot and HTML remain available with their original content and fingerprints.
+The field investigation still shows independently supported work that can continue.
 
 ## Use a real MKE library
 

@@ -43,7 +43,7 @@ function affectedAreas(project: Project) {
     && !project.confirmed.evidence.some((entry) => entry.material_id === candidate.material_id)
     ? candidate.evidence.filter((entry) => entry.material_id === candidate.material_id).map((entry) => entry.id)
     : []);
-  const compare = (text: string) => text.normalize("NFKC").replace(/[\s\p{P}]+/gu, "");
+  const compare = (text: string) => text.normalize("NFKC").replace(/[\s。!?;]|(?<![0-9]),|,(?![0-9])/gu, "");
 
   for (const confirmed of project.confirmed.items) {
     // An independently supported interview can continue after a letter is replaced.

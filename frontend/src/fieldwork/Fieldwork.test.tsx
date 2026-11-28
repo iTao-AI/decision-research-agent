@@ -285,4 +285,14 @@ test("marks only changed authorization work for review after a new document is a
     .map((item) => ({ ...item, evidence_ids: ["ev-2"] })) } };
   await user.click(screen.getByRole("button", { name: "重新读取交付成果" }));
   expect(await screen.findByText("V2 当前确认")).toBeInTheDocument();
+
+  const limitedSample = { ...demo, reason: "最多可使用 1.5% 的脱敏样本。" };
+  const widerSample = { ...limitedSample, reason: "最多可使用 15% 的脱敏样本。", evidence_ids: ["ev-2"] };
+  data = {
+    ...data,
+    confirmed: { ...data.confirmed, items: [limitedSample, waiting, interview] },
+    proposal: { ...newProposal, items: [widerSample, waiting, interview] },
+  };
+  await user.click(screen.getByRole("button", { name: "重新读取交付成果" }));
+  expect(await screen.findByText("待评审建议涉及相关安排，适用性待复核。")).toBeInTheDocument();
 });

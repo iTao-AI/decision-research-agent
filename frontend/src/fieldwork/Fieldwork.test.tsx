@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -220,6 +220,7 @@ test("shows parallel work and keeps the confirmation result distinct from the ca
   expect(screen.getAllByText("跟进人").length).toBeGreaterThan(0);
   expect(screen.getAllByText("试点负责人").length).toBeGreaterThan(0);
   expect(screen.getAllByText("允许向谁展示，能使用哪些数据？")).toHaveLength(2);
+  expect(within(screen.getByText("继续独立访谈").closest("li")!).getByText("建议继续")).toBeInTheDocument();
   await user.type(screen.getByLabelText("评审意见"), "现场访谈继续，书面许可单独跟进。");
   await user.click(screen.getByRole("button", { name: "采纳整份建议" }));
   expect(await screen.findByText("已采纳为 V2")).toBeInTheDocument();
@@ -233,7 +234,7 @@ test("marks only changed authorization work for review after a new document is a
     ...proposal.items[0], area: "interview", action: "继续访谈",
   };
   const demo = {
-    ...proposal.items[0], action: "准备周三对外样本演示",
+    ...proposal.items[0], action: "准备脱敏样本", reason: "仅可在周三向客户展示。",
   };
   const waiting = {
     ...demo, area: "live_access", state: "waiting", action: "跟进实时告警授权",
@@ -271,7 +272,16 @@ test("marks only changed authorization work for review after a new document is a
   expect(await screen.findByText("待评审建议涉及相关安排，适用性待复核。")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "打开 HTML" })).toHaveAttribute("href", api + "/exports/2.html");
 
-  data = { ...data, proposal: { ...newProposal, items: [demo, waiting, interview]
+  const sameAction = { ...demo, reason: "仅可在团队内部展示。" };
+  data = { ...data, proposal: { ...newProposal, items: [sameAction, waiting, interview]
+    .map((item) => ({ ...item, evidence_ids: ["ev-2"] })) } };
+  await user.click(screen.getByRole("button", { name: "重新读取交付成果" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "重新读取交付成果" })).toBeEnabled());
+  expect(screen.getByText("待评审建议涉及相关安排，适用性待复核。")).toBeInTheDocument();
+  expect(screen.queryByText("V2 当前确认")).not.toBeInTheDocument();
+
+  const equivalent = { ...demo, action: "准备脱敏样本！", reason: "仅可在周三，向客户展示！" };
+  data = { ...data, proposal: { ...newProposal, items: [equivalent, waiting, interview]
     .map((item) => ({ ...item, evidence_ids: ["ev-2"] })) } };
   await user.click(screen.getByRole("button", { name: "重新读取交付成果" }));
   expect(await screen.findByText("V2 当前确认")).toBeInTheDocument();

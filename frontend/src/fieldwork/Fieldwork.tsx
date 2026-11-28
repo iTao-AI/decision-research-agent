@@ -43,7 +43,7 @@ function affectedAreas(project: Project) {
     && !project.confirmed.evidence.some((entry) => entry.material_id === candidate.material_id)
     ? candidate.evidence.filter((entry) => entry.material_id === candidate.material_id).map((entry) => entry.id)
     : []);
-  const compare = (text: string) => text.normalize("NFKC").replace(/[\s。；，！？]+/gu, "");
+  const compare = (text: string) => text.normalize("NFKC").replace(/[\s\p{P}]+/gu, "");
 
   for (const confirmed of project.confirmed.items) {
     // An independently supported interview can continue after a letter is replaced.
@@ -58,7 +58,8 @@ function affectedAreas(project: Project) {
     // Only flag an observed change backed by the new material. Keep both decisions intact.
     if (proposed?.evidence_ids.some((id) => newEvidence.has(id)) &&
       (proposed.state !== confirmed.state || (confirmed.state === "proceed" &&
-        (compare(proposed.action) !== compare(confirmed.action) || compare(proposed.question) !== compare(confirmed.question))))) {
+        (["action", "reason", "question"] as const).some((field) =>
+          compare(proposed[field]) !== compare(confirmed[field]))))) {
       result.set(confirmed.area, "proposal");
     }
   }
@@ -82,8 +83,9 @@ function Heading({ title, description, children }: { title: string; description?
   </div>;
 }
 
-function DecisionItems({ decision, proposal, openEvidence, affected }: {
+function DecisionItems({ decision, proposal, openEvidence, affected, pending = false }: {
   decision: Decision; proposal: string | null; openEvidence: OpenEvidence; affected?: ReadonlyMap<Area, ReviewReason>;
+  pending?: boolean;
 }) {
   const evidence = new Map(decision.evidence.map((entry) => [entry.id, entry]));
   return <ul className="fw-items">
@@ -109,9 +111,9 @@ function DecisionItems({ decision, proposal, openEvidence, affected }: {
             })}
           </div>
         </div>
-        <Badge tone={canProceed ? "green" : "amber"}>
+        <Badge tone={canProceed ? (pending ? "neutral" : "green") : "amber"}>
           {reviewReason === "replaced" ? "依据已替代，待复核" :
-            reviewReason === "proposal" ? "新建议有变化，待复核" : canProceed ? "可继续" : "待确认"}
+            reviewReason === "proposal" ? "新建议有变化，待复核" : canProceed ? (pending ? "建议继续" : "可继续") : "待确认"}
         </Badge>
       </li>;
     })}
@@ -606,7 +608,7 @@ export default function Fieldwork() {
                 <div className="fw-card-title"><Badge tone={reviewed.status === "pending" ? "amber" : "neutral"}>{proposalStatuses[reviewed.status]}</Badge>
                   <small>{modes[reviewed.mode]}</small></div>
                 <h2>{reviewed.headline}</h2><p className="fw-muted">{reviewed.summary}</p>
-                <DecisionItems decision={reviewed} proposal={reviewed.id} openEvidence={openEvidence} />
+                <DecisionItems decision={reviewed} proposal={reviewed.id} openEvidence={openEvidence} pending={reviewed.status === "pending"} />
                 {historical ? <button className="fw-secondary" type="button" onClick={() => setHistorical(null)}>返回最近建议</button>
                   : <>
                     {reviewed.status === "pending" && <p className="fw-review-scope">

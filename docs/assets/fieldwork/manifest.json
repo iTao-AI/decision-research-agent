@@ -1,0 +1,13 @@
+{
+  "capture": "Chrome desktop, packaged local Fieldwork frontend",
+  "route": "/fieldwork",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "locale": "zh-CN",
+  "state": "Simulated Northstar Equipment pilot, C acknowledgement case, confirmed V2 at site investigation",
+  "evidence_boundary": "Chrome capture after local MKE read, actual model analysis and operator approval of the C case. The approval records follow-up. Customer IT authorization is still pending.",
+  "image": "overview.jpg",
+  "sha256": "6eb021ad07d86368829e92c5c350467cc291b543885a82224c8239119e316846"
+}

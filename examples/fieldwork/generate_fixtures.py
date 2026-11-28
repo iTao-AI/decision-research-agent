@@ -7,6 +7,7 @@ import pymupdf
 
 ROOT = Path(__file__).resolve().parent
 TITLE = "试点安排确认函"
+FILENAME = "pilot-arrangement-letter.pdf"
 TEXT_BY_CASE = {
     "A": (
         "关于周三客户演示",
@@ -78,7 +79,7 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=ROOT)
     args = parser.parse_args()
     for case, statements in TEXT_BY_CASE.items():
-        path = args.output_dir / case / f"{TITLE}.pdf"
+        path = args.output_dir / case / FILENAME
         path.parent.mkdir(parents=True, exist_ok=True)
         make_letter(path, statements)
 

@@ -15,8 +15,8 @@ def client(root):
 
 
 def put_pdf(browser, case, replace=None):
-    file = FIXTURES / case / "试点安排确认函.pdf"
-    params = {"title": file.stem}
+    file = FIXTURES / case / "pilot-arrangement-letter.pdf"
+    params = {"title": "试点安排确认函"}
     if replace:
         params["replace"] = replace
     response = browser.post(PATH + "/materials", params=params, content=file.read_bytes(),

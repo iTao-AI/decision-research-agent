@@ -1,6 +1,7 @@
 # Fieldwork fictional test materials
 
-The three PDF files have the same visible title and filename. Each has a selectable
+The three PDF files share the visible title 试点安排确认函 and the
+portable filename `pilot-arrangement-letter.pdf`. Each has a selectable
 Chinese text layer on page 1. Use a fresh project for independent cases. To
 exercise replacement, upload B with A selected as the document it replaces.
 
